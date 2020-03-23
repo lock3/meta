@@ -319,6 +319,119 @@ ExprDependence clang::computeDependence(DependentCoawaitExpr *E) {
          ExprDependence::TypeValueInstantiation;
 }
 
+ExprDependence clang::computeDependence(CXXReflectExpr *E) {
+  const ReflectionOperand &Operand = E->getOperand();
+  switch (Operand.getKind()) {
+  case ReflectionOperand::Type: {
+    QualType T = Operand.getAsType();
+    if (T->isDependentType())
+      return ExprDependence::ValueInstantiation;
+
+    return ExprDependence::None;
+  }
+  case ReflectionOperand::Template: {
+    TemplateName T = Operand.getAsTemplate();
+    if (T.isDependent())
+      return ExprDependence::ValueInstantiation;
+
+    return ExprDependence::None;
+  }
+  case ReflectionOperand::Expression: {
+    Expr *E = Operand.getAsExpression();
+    if (E->isTypeDependent() || E->isValueDependent())
+      return ExprDependence::ValueInstantiation;
+
+    return ExprDependence::None;
+  }
+  case ReflectionOperand::Declaration: {
+    Decl *D = Operand.getAsDeclaration();
+    if (const TagDecl *TD = dyn_cast<TagDecl>(D)) {
+      if (TD->isDependentType())
+        return ExprDependence::Value;
+    }
+
+    return ExprDependence::None;
+  }
+
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Namespace:
+  case ReflectionOperand::BaseSpecifier:
+    return ExprDependence::None;
+  }
+
+  llvm_unreachable("unexpected reflection operand when computing dependence");
+}
+
+ExprDependence clang::computeDependence(CXXInvalidReflectionExpr *E) {
+  auto D = E->getMessage()->getDependence();
+  if (D & ExprDependence::Type)
+    D = (D & ~ExprDependence::Type) | ExprDependence::Value;
+  return D;
+}
+
+ExprDependence clang::computeDependence(CXXReflectionReadQueryExpr *E) {
+  auto D = ExprDependence::None;
+  for (unsigned I = 0; I < E->getNumArgs(); ++I) {
+    Expr *SE = E->getArg(I);
+    D |= SE->getDependence();
+  }
+  return D & ~ExprDependence::UnexpandedPack;
+}
+
+ExprDependence clang::computeDependence(CXXReflectPrintLiteralExpr *E) {
+  auto D = ExprDependence::None;
+  for (unsigned I = 0; I < E->getNumArgs(); ++I) {
+    Expr *SE = E->getArg(I);
+    D |= SE->getDependence();
+  }
+  return D & ~ExprDependence::UnexpandedPack;
+}
+
+ExprDependence clang::computeDependence(CXXReflectPrintReflectionExpr *E) {
+  return E->getReflection()->getDependence();
+}
+
+ExprDependence clang::computeDependence(CXXReflectDumpReflectionExpr *E) {
+  return E->getReflection()->getDependence();
+}
+ExprDependence clang::computeDependence(CXXCompilerErrorExpr *E) {
+  auto D = E->getMessage()->getDependence();
+  if (D & ExprDependence::Type)
+    D = (D & ~ExprDependence::Type) | ExprDependence::Value;
+  return D;
+}
+
+ExprDependence clang::computeDependence(CXXIdExprExpr *E) {
+  return ExprDependence::TypeValueInstantiation;
+}
+
+ExprDependence clang::computeDependence(CXXDependentVariadicReifierExpr *E) {
+  return E->getRange()->getDependence() | ExprDependence::TypeValue;
+}
+
+ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
+  auto D = E->getBase()->getDependence() | E->getSelector()->getDependence();
+  D &= ~ExprDependence::UnexpandedPack;
+  return D;
+}
+
+ExprDependence clang::computeDependence(CXXReflectedIdExpr *E) {
+  return ExprDependence::TypeValueInstantiation;
+}
+
+ExprDependence clang::computeDependence(CXXValueOfExpr *E) {
+  return ExprDependence::TypeValueInstantiation;
+}
+
+ExprDependence clang::computeDependence(CXXConcatenateExpr *E) {
+  auto D = ExprDependence::None;
+  for (unsigned I = 0; I < E->getNumOperands(); ++I) {
+    Expr *SE = E->getOperand(I);
+    D |= SE->getDependence();
+  }
+  return D & ~ExprDependence::Type & ~ExprDependence::UnexpandedPack;
+}
+
 ExprDependence clang::computeDependence(ObjCBoxedExpr *E) {
   return E->getSubExpr()->getDependence();
 }

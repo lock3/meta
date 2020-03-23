@@ -4938,11 +4938,10 @@ class CXXInvalidReflectionExpr : public Expr {
 
   CXXInvalidReflectionExpr(QualType Type, Expr *Message,
                            SourceLocation BuiltinLoc, SourceLocation RParenLoc)
-      : Expr(CXXInvalidReflectionExprClass, Type, VK_RValue, OK_Ordinary, false,
-         Message->isTypeDependent() || Message->isValueDependent(),
-         Message->isInstantiationDependent(),
-         Message->containsUnexpandedParameterPack()),
-    Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) { }
+      : Expr(CXXInvalidReflectionExprClass, Type, VK_RValue, OK_Ordinary),
+    Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   explicit CXXInvalidReflectionExpr(EmptyShell Empty)
     : Expr(CXXInvalidReflectionExprClass, Empty) { }
@@ -5122,13 +5121,11 @@ public:
                                 SourceLocation KeywordLoc,
                                 SourceLocation LParenLoc,
                                 SourceLocation RParenLoc)
-    : Expr(CXXReflectPrintReflectionExprClass, T, VK_RValue, OK_Ordinary,
-           Reflection->isTypeDependent(),
-           Reflection->isValueDependent(),
-           Reflection->isInstantiationDependent(),
-           Reflection->containsUnexpandedParameterPack()),
+    : Expr(CXXReflectPrintReflectionExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection), KeywordLoc(KeywordLoc),
-      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   CXXReflectPrintReflectionExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
@@ -5174,13 +5171,11 @@ public:
                                SourceLocation KeywordLoc,
                                SourceLocation LParenLoc,
                                SourceLocation RParenLoc)
-    : Expr(CXXReflectDumpReflectionExprClass, T, VK_RValue, OK_Ordinary,
-           Reflection->isTypeDependent(),
-           Reflection->isValueDependent(),
-           Reflection->isInstantiationDependent(),
-           Reflection->containsUnexpandedParameterPack()),
+    : Expr(CXXReflectDumpReflectionExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection), KeywordLoc(KeywordLoc),
-      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   CXXReflectDumpReflectionExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
@@ -5228,11 +5223,10 @@ class CXXCompilerErrorExpr : public Expr {
 
   CXXCompilerErrorExpr(QualType Type, Expr *Message, SourceLocation BuiltinLoc,
                     SourceLocation RParenLoc)
-      : Expr(CXXCompilerErrorExprClass, Type, VK_RValue, OK_Ordinary, false,
-             Message->isTypeDependent() || Message->isValueDependent(),
-             Message->isInstantiationDependent(),
-             Message->containsUnexpandedParameterPack()),
-        Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
+      : Expr(CXXCompilerErrorExprClass, Type, VK_RValue, OK_Ordinary),
+        Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   explicit CXXCompilerErrorExpr(EmptyShell Empty)
       : Expr(CXXCompilerErrorExprClass, Empty) {}
@@ -5289,11 +5283,11 @@ public:
   CXXIdExprExpr(QualType T, Expr *Reflection,
                 SourceLocation KeywordLoc,
                 SourceLocation LParenLoc, SourceLocation RParenLoc)
-    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary,
-           /*TD=*/true, /*VD=*/true, /*ID=*/true,
-           /*ContainsUnexpandedParameterPack=*/false),
+    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   CXXIdExprExpr(EmptyShell Empty)
     : Expr(CXXIdExprExprClass, Empty) {}
@@ -5346,11 +5340,10 @@ public:
                                   SourceLocation RParenLoc,
                                   SourceLocation EllipsisLoc)
     : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
-           OK_Ordinary, /*TypeDependent*/true, /*ValueDependent*/true,
-           Range->isInstantiationDependent(),
-           Range->containsUnexpandedParameterPack()),
-      Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
-      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {}
+           OK_Ordinary), Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {
+    setDependence(computeDependence(this));
+  }
 
   CXXDependentVariadicReifierExpr(EmptyShell Empty)
     : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
@@ -5408,14 +5401,11 @@ public:
   CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
                    Expr *Sel, std::size_t NumFields,
                    SourceLocation SelectLoc, SourceLocation BaseLoc)
-    : Expr(SC, T, Base->getValueKind(),
-           Base->getObjectKind(),
-           Base->isTypeDependent() || Sel->isTypeDependent(),
-           Base->isValueDependent() || Sel->isValueDependent(),
-           Base->isInstantiationDependent() || Sel->isInstantiationDependent(),
-           /*ContainsUnexpandedParameterPack=*/false),
+    : Expr(SC, T, Base->getValueKind(), Base->getObjectKind()),
       SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel},
-      NumFields(NumFields) {}
+      NumFields(NumFields) {
+    setDependence(computeDependence(this));
+  }
 
   CXXSelectionExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
@@ -5482,8 +5472,7 @@ public:
                       SourceLocation KWLoc = SourceLocation(),
                       SourceLocation BaseLoc = SourceLocation())
     : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, NumFields,
-                       KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc)
-    {}
+                       KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc) { }
 
   CXXSelectMemberExpr(EmptyShell Empty)
     : CXXSelectionExpr(CXXSelectMemberExprClass, Empty) {}
@@ -5510,8 +5499,7 @@ public:
                     SourceLocation KWLoc = SourceLocation(),
                     SourceLocation BaseLoc = SourceLocation())
     : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, NumFields,
-                       KWLoc, BaseLoc), Pack(Pack)
-    {}
+                       KWLoc, BaseLoc), Pack(Pack) { }
 
   CXXSelectPackExpr(EmptyShell Empty)
     : CXXSelectionExpr(CXXSelectPackExprClass, Empty) {}
@@ -5661,12 +5649,12 @@ public:
                  SourceLocation LParenLoc,
                  SourceLocation RParenLoc,
                  SourceLocation EllipsisLoc = SourceLocation())
-    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
-           /*TD=*/true, /*VD=*/true, /*ID=*/true,
-           /*ContainsUnexpandedParameterPack=*/false),
+    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
-      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
+      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {
+    setDependence(computeDependence(this));
+  }
 
   CXXValueOfExpr(EmptyShell Empty)
     : Expr(CXXValueOfExprClass, Empty) {}
@@ -5717,7 +5705,7 @@ public:
 
   explicit CXXConcatenateExpr(EmptyShell Empty)
       : Expr(CXXConcatenateExprClass, Empty), Loc(), NumOperands(),
-        Operands() {}
+        Operands() { }
 
   /// The number of captured declarations.
   std::size_t getNumOperands() const { return NumOperands; }

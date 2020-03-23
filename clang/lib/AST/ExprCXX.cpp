@@ -1361,14 +1361,14 @@ CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
     const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
     SourceLocation OperatorLoc, Expr *IdExpr)
     : Expr(CXXDependentScopeMemberExprClass, C.DependentTy, VK_LValue,
-           OK_Ordinary, true, true, true,
-           (Base && Base->containsUnexpandedParameterPack())),
+           OK_Ordinary),
       Base(Base), BaseType(BaseType), IdExpr(IdExpr) {
   CXXDependentScopeMemberExprBits.IsArrow = IsArrow;
   CXXDependentScopeMemberExprBits.HasTemplateKWAndArgsInfo = false;
   // FIXME: Is this right?
   CXXDependentScopeMemberExprBits.HasFirstQualifierFoundInScope = false;
   CXXDependentScopeMemberExprBits.OperatorLoc = OperatorLoc;
+  setDependence(computeDependence(this));
 }
 
 CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
@@ -1664,50 +1664,45 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
   return new (Mem) TypeTraitExpr(EmptyShell());
 }
 
-// Returns true if E is type or value dependent.
-static bool isDependent(const Expr *E) {
-  return E->isTypeDependent() || E->isValueDependent();
-}
-
-static bool isDependentType(const Decl *D) {
-  if (const TagDecl *TD = dyn_cast<TagDecl>(D))
-    return TD->isDependentType();
-
-  return false;
-}
-
 CXXReflectExpr::CXXReflectExpr(QualType T)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, false, false, false), Ref() { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref() {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, InvalidReflection *Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, false, false, false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, QualType Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, Arg->isDependentType(), Arg->isDependentType(), false),
-    Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, TemplateName Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, Arg.isDependent(), Arg.isDependent(), false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, NamespaceName Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, false, false, false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, Expr *Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, isDependent(Arg), isDependent(Arg), false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, Decl *Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, isDependentType(Arg), false, false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr::CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, false, false, false), Ref(Arg) { }
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary), Ref(Arg) {
+  setDependence(computeDependence(this));
+}
 
 CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, InvalidReflection *Arg,
@@ -1803,39 +1798,28 @@ CXXInvalidReflectionExpr::CreateEmpty(const ASTContext &C,
   return new (C) CXXInvalidReflectionExpr(Empty);
 }
 
-template<typename P>
-bool AnyOf(ArrayRef<Expr *> A, P pred) {
-  return std::any_of(A.begin(), A.end(), pred);
-}
-
 CXXReflectionReadQueryExpr::CXXReflectionReadQueryExpr(ASTContext &C, QualType T,
                                                        ReflectionQuery Q,
                                                        ArrayRef<Expr *> Args,
                                                        SourceLocation KW,
                                                        SourceLocation LP,
                                                        SourceLocation RP)
-  : Expr(CXXReflectionReadQueryExprClass, T, VK_RValue, OK_Ordinary,
-         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
+  : Expr(CXXReflectionReadQueryExprClass, T, VK_RValue, OK_Ordinary),
     Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
     KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
   std::copy(Args.begin(), Args.end(), this->Args);
+  setDependence(computeDependence(this));
 }
 
 CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
     ASTContext &C, QualType T, ArrayRef<Expr *> Args,
     SourceLocation KeywordLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc)
-  : Expr(CXXReflectPrintLiteralExprClass, T, VK_RValue, OK_Ordinary,
-         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
+  : Expr(CXXReflectPrintLiteralExprClass, T, VK_RValue, OK_Ordinary),
     NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
     KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
   std::copy(Args.begin(), Args.end(), this->Args);
+  setDependence(computeDependence(this));
 }
 
 CXXCompilerErrorExpr *CXXCompilerErrorExpr::Create(const ASTContext &C,
@@ -1857,9 +1841,7 @@ CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
       const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
       SourceLocation TemplateKWLoc, bool TrailingLParen, bool AddressOfOperand,
                                    const TemplateArgumentListInfo *TemplateArgs)
-  : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary,
-         /*TD=*/true, /*VD=*/true, /*ID=*/true,
-         /*ContainsUnexpandedParameterPack=*/false),
+  : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary),
     NameInfo(DNI),
     // FIXME: This allocation is an explicit memory leak to get around
     // APValues not being trivially destructible.
@@ -1876,6 +1858,8 @@ CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
   } else if (TemplateKWLoc.isValid()) {
     getTrailingASTTemplateKWAndArgsInfo()->initializeFrom(TemplateKWLoc);
   }
+
+  setDependence(computeDependence(this));
 }
 
 CXXReflectedIdExpr *CXXReflectedIdExpr::Create(
@@ -1902,11 +1886,8 @@ CXXReflectedIdExpr *CXXReflectedIdExpr::CreateEmpty(const ASTContext &C,
 CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
                                        QualType T, SourceLocation L,
                                        ArrayRef<Expr *> Parts)
-  : Expr(CXXConcatenateExprClass, T, VK_RValue, OK_Ordinary,
-         false, AnyOf(Parts, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Parts, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
-    Loc(L), NumOperands(Parts.size()), Operands(new (Ctx) Stmt*[NumOperands])
-{
+  : Expr(CXXConcatenateExprClass, T, VK_RValue, OK_Ordinary),
+    Loc(L), NumOperands(Parts.size()), Operands(new (Ctx) Stmt*[NumOperands]) {
   std::copy(Parts.begin(), Parts.end(), Operands);
+  setDependence(computeDependence(this));
 }
