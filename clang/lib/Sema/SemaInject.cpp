@@ -373,9 +373,7 @@ public:
       // This is fine as we should only be using the ConstantExpr's value
       // rather than the expression which created it.
 
-      CE->setTypeDependent(false);
-      CE->setValueDependent(false);
-      CE->setInstantiationDependent(false);
+      CE->setDependence(ExprDependence::None);
 
       return CE;
     } else {

@@ -57,6 +57,7 @@ namespace clang {
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
+  class InjectionContext;
   struct InjectionEffect;
 
 /// A simple array of base specifiers.
@@ -1040,6 +1041,7 @@ public:
   friend TrailingObjects;
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
+  friend class InjectionContext;
   static ConstantExpr *Create(const ASTContext &Context, Expr *E,
                               const APValue &Result);
   static ConstantExpr *Create(const ASTContext &Context, Expr *E,
