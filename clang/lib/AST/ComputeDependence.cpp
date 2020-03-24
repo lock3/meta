@@ -343,19 +343,10 @@ ExprDependence clang::computeDependence(CXXReflectExpr *E) {
 
     return ExprDependence::None;
   }
-  case ReflectionOperand::Declaration: {
-    Decl *D = Operand.getAsDeclaration();
-    if (const TagDecl *TD = dyn_cast<TagDecl>(D)) {
-      if (TD->isDependentType())
-        return ExprDependence::Value;
-    }
-
-    return ExprDependence::None;
-  }
-
   case ReflectionOperand::Invalid:
   case ReflectionOperand::Namespace:
   case ReflectionOperand::BaseSpecifier:
+  case ReflectionOperand::Declaration:
     return ExprDependence::None;
   }
 
