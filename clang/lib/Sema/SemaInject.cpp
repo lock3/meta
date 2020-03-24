@@ -3213,7 +3213,7 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   Class->setFragment(true);
 
   QualType ClassTy = Context.getRecordType(Class);
-  TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
+  TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy, Loc);
 
   // Build the class fields.
   SmallVector<FieldDecl *, 4> Fields;
