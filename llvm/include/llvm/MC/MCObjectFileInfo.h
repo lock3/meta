@@ -171,7 +171,6 @@ protected:
 
   /// Section containing metadata on function stack sizes.
   MCSection *StackSizesSection = nullptr;
-  mutable DenseMap<const MCSymbol *, unsigned> StackSizesUniquing;
 
   // ELF specific sections.
   MCSection *DataRelROSection = nullptr;
@@ -216,9 +215,13 @@ protected:
   MCSection *GFIDsSection = nullptr;
   MCSection *GLJMPSection = nullptr;
 
+  // XCOFF specific sections
+  MCSection *TOCBaseSection = nullptr;
+
 public:
   void InitMCObjectFileInfo(const Triple &TT, bool PIC, MCContext &ctx,
                             bool LargeCodeModel = false);
+  MCContext &getContext() const { return *Ctx; }
 
   bool getSupportsWeakOmittedEHFrame() const {
     return SupportsWeakOmittedEHFrame;
@@ -390,6 +393,9 @@ public:
   MCSection *getSXDataSection() const { return SXDataSection; }
   MCSection *getGFIDsSection() const { return GFIDsSection; }
   MCSection *getGLJMPSection() const { return GLJMPSection; }
+
+  // XCOFF specific sections
+  MCSection *getTOCBaseSection() const { return TOCBaseSection; }
 
   MCSection *getEHFrameSection() {
     return EHFrameSection;

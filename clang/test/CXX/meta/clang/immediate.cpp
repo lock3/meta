@@ -25,7 +25,7 @@ enum E2 {} consteval; // expected-error {{enum cannot be marked consteval}}
 consteval int x = 0; // expected-error {{consteval can only be used in function declarations}}
 
 struct S3 {
-  consteval ~S3() { }
+  consteval ~S3() { } // expected-error {{destructor cannot be declared consteval}}
 };
 
 consteval int f1() { return 0; }
@@ -81,24 +81,29 @@ namespace Bad {
 
   void test(int n) { // expected-note {{declared here}}
     int x = 0; // expected-note {{declared here}}
-    f(x); // expected-error {{cannot evaluate call to consteval function}} \
-          // expected-note {{read of non-const variable 'x' is not allowed in a constant expression}}
+    f(x); // expected-error {{call to consteval function 'Bad::f' is not a constant expression}} \
+          // expected-note {{read of non-const variable 'x' is not allowed in a constant expression}} \
+          // expected-warning {{expression result unused}}
 
     int y = 1; // expected-note {{declared here}}
     S s1 {3};
-    s1.f(y); // expected-error {{cannot evaluate call to consteval member function}} \
-             // expected-note {{read of non-const variable 'y' is not allowed in a constant expression}}
+    s1.f(y); // expected-error {{call to consteval function 'Bad::S::f' is not a constant expression}} \
+             // expected-note {{read of non-const variable 'y' is not allowed in a constant expression}} \
+             // expected-warning {{expression result unused}}
 
     S s2 {3}; // expected-note {{declared here}}
-    s2.f(0); // expected-error {{cannot evaluate call to consteval member function}} \
-             // expected-note {{in call to '&s2->f(0)'}}
+    s2.f(0); // expected-error {{call to consteval function 'Bad::S::f' is not a constant expression}} \
+             // expected-note {{in call to '&s2->f(0)'}} \
+             // expected-warning {{expression result unused}}
 
-    f2(n + 1); // expected-error {{cannot evaluate call to consteval function}} \
-               // expected-note {{read of non-const variable 'n' is not allowed in a constant expression}}
+    f2(n + 1); // expected-error {{call to consteval function 'Bad::f2<int>' is not a constant expression}} \
+               // expected-note {{read of non-const variable 'n' is not allowed in a constant expression}} \
+               // expected-warning {{expression result unused}}
 
     S2<int> s3{n}; // expected-note {{declared here}}
-    s3.f(0); // expected-error {{cannot evaluate call to consteval member function}} \
-             // expected-note {{in call to '&s3->f(0)'}}
+    s3.f(0); // expected-error {{call to consteval function 'Bad::S2<int>::f' is not a constant expression}} \
+             // expected-note {{in call to '&s3->f(0)'}} \
+             // expected-warning {{expression result unused}}
   }
 }
 

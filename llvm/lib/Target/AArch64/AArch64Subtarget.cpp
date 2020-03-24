@@ -88,7 +88,16 @@ void AArch64Subtarget::initializeProperties() {
   case CortexA76:
     PrefFunctionLogAlignment = 4;
     break;
-  case Cyclone:
+  case A64FX:
+    CacheLineSize = 256;
+    PrefFunctionLogAlignment = 5;
+    PrefLoopLogAlignment = 5;
+    break;
+  case AppleA7:
+  case AppleA10:
+  case AppleA11:
+  case AppleA12:
+  case AppleA13:
     CacheLineSize = 64;
     PrefetchDistance = 280;
     MinPrefetchStride = 2048;

@@ -21,7 +21,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR LIBCXXABI_STANDALONE_B
   project(libcxxabi CXX C)
 
   set(PACKAGE_NAME libcxxabi)
-  set(PACKAGE_VERSION 9.0.0svn)
+  set(PACKAGE_VERSION 11.0.0git)
   set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
   set(PACKAGE_BUGREPORT "llvm-bugs@lists.llvm.org")
 
@@ -209,7 +209,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${LIBCXXABI_LIBRARY_DIR})
 # directory.
 if (NOT LIBCXXABI_LIBCXX_LIBRARY_PATH)
   set(LIBCXXABI_LIBCXX_LIBRARY_PATH "${LIBCXXABI_LIBRARY_DIR}" CACHE PATH
-      "The path to libc++ library.")
+      "The path to libc++ library." FORCE)
 endif()
 
 # Check that we can build with 32 bits if requested.

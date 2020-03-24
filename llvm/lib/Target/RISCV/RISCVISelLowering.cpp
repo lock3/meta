@@ -51,6 +51,20 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
   RISCVABI::ABI ABI = Subtarget.getTargetABI();
   assert(ABI != RISCVABI::ABI_Unknown && "Improperly initialised target ABI");
 
+  if ((ABI == RISCVABI::ABI_ILP32F || ABI == RISCVABI::ABI_LP64F) &&
+      !Subtarget.hasStdExtF()) {
+    errs() << "Hard-float 'f' ABI can't be used for a target that "
+                "doesn't support the F instruction set extension (ignoring "
+                          "target-abi)\n";
+    ABI = Subtarget.is64Bit() ? RISCVABI::ABI_LP64 : RISCVABI::ABI_ILP32;
+  } else if ((ABI == RISCVABI::ABI_ILP32D || ABI == RISCVABI::ABI_LP64D) &&
+             !Subtarget.hasStdExtD()) {
+    errs() << "Hard-float 'd' ABI can't be used for a target that "
+              "doesn't support the D instruction set extension (ignoring "
+              "target-abi)\n";
+    ABI = Subtarget.is64Bit() ? RISCVABI::ABI_LP64 : RISCVABI::ABI_ILP32;
+  }
+
   switch (ABI) {
   default:
     report_fatal_error("Don't know how to lower this ABI");
@@ -320,6 +334,17 @@ bool RISCVTargetLowering::isZExtFree(SDValue Val, EVT VT2) const {
 
 bool RISCVTargetLowering::isSExtCheaperThanZExt(EVT SrcVT, EVT DstVT) const {
   return Subtarget.is64Bit() && SrcVT == MVT::i32 && DstVT == MVT::i64;
+}
+
+bool RISCVTargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT,
+                                       bool ForCodeSize) const {
+  if (VT == MVT::f32 && !Subtarget.hasStdExtF())
+    return false;
+  if (VT == MVT::f64 && !Subtarget.hasStdExtD())
+    return false;
+  if (Imm.isNegZero())
+    return false;
+  return Imm.isZero();
 }
 
 bool RISCVTargetLowering::hasBitPreservingFPLogic(EVT VT) const {
@@ -870,8 +895,8 @@ void RISCVTargetLowering::ReplaceNodeResults(SDNode *N,
     SDValue RCW =
         DAG.getNode(RISCVISD::READ_CYCLE_WIDE, DL, VTs, N->getOperand(0));
 
-    Results.push_back(RCW);
-    Results.push_back(RCW.getValue(1));
+    Results.push_back(
+        DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64, RCW, RCW.getValue(1)));
     Results.push_back(RCW.getValue(2));
     break;
   }
@@ -2126,17 +2151,17 @@ SDValue RISCVTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
     SDValue Arg = OutVals[i];
     unsigned Size = Flags.getByValSize();
-    unsigned Align = Flags.getByValAlign();
+    Align Alignment = Flags.getNonZeroByValAlign();
 
-    int FI = MF.getFrameInfo().CreateStackObject(Size, Align, /*isSS=*/false);
+    int FI =
+        MF.getFrameInfo().CreateStackObject(Size, Alignment, /*isSS=*/false);
     SDValue FIPtr = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
     SDValue SizeNode = DAG.getConstant(Size, DL, XLenVT);
 
-    Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Align,
+    Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Alignment,
                           /*IsVolatile=*/false,
-                          /*AlwaysInline=*/false,
-                          IsTailCall, MachinePointerInfo(),
-                          MachinePointerInfo());
+                          /*AlwaysInline=*/false, IsTailCall,
+                          MachinePointerInfo(), MachinePointerInfo());
     ByValArgs.push_back(FIPtr);
   }
 
@@ -2478,6 +2503,10 @@ void RISCVTargetLowering::validateCCReservedRegs(
       }))
     F.getContext().diagnose(DiagnosticInfoUnsupported{
         F, "Argument register required, but has been reserved."});
+}
+
+bool RISCVTargetLowering::mayBeEmittedAsTailCall(const CallInst *CI) const {
+  return CI->isTailCall();
 }
 
 const char *RISCVTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -2893,7 +2922,7 @@ bool RISCVTargetLowering::shouldExtendTypeInLibCall(EVT Type) const {
 #include "RISCVGenAsmMatcher.inc"
 
 Register
-RISCVTargetLowering::getRegisterByName(const char *RegName, EVT VT,
+RISCVTargetLowering::getRegisterByName(const char *RegName, LLT VT,
                                        const MachineFunction &MF) const {
   Register Reg = MatchRegisterAltName(RegName);
   if (Reg == RISCV::NoRegister)

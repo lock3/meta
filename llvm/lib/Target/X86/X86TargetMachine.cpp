@@ -61,7 +61,7 @@ static cl::opt<bool> EnableCondBrFoldingPass("x86-condbr-folding",
                                         "folding pass"),
                                cl::init(false), cl::Hidden);
 
-extern "C" void LLVMInitializeX86Target() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeX86Target() {
   // Register the target.
   RegisterTargetMachine<X86TargetMachine> X(getTheX86_32Target());
   RegisterTargetMachine<X86TargetMachine> Y(getTheX86_64Target());
@@ -79,6 +79,7 @@ extern "C" void LLVMInitializeX86Target() {
   initializeX86ExecutionDomainFixPass(PR);
   initializeX86DomainReassignmentPass(PR);
   initializeX86AvoidSFBPassPass(PR);
+  initializeX86AvoidTrailingCallPassPass(PR);
   initializeX86SpeculativeLoadHardeningPassPass(PR);
   initializeX86FlagsCopyLoweringPassPass(PR);
   initializeX86CondBrFoldingPassPass(PR);
@@ -92,19 +93,9 @@ static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
     return std::make_unique<TargetLoweringObjectFileMachO>();
   }
 
-  if (TT.isOSFreeBSD())
-    return std::make_unique<X86FreeBSDTargetObjectFile>();
-  if (TT.isOSLinux() || TT.isOSNaCl() || TT.isOSIAMCU())
-    return std::make_unique<X86LinuxNaClTargetObjectFile>();
-  if (TT.isOSSolaris())
-    return std::make_unique<X86SolarisTargetObjectFile>();
-  if (TT.isOSFuchsia())
-    return std::make_unique<X86FuchsiaTargetObjectFile>();
-  if (TT.isOSBinFormatELF())
-    return std::make_unique<X86ELFTargetObjectFile>();
   if (TT.isOSBinFormatCOFF())
     return std::make_unique<TargetLoweringObjectFileCOFF>();
-  llvm_unreachable("unknown subtarget type");
+  return std::make_unique<X86ELFTargetObjectFile>();
 }
 
 static std::string computeDataLayout(const Triple &TT) {
@@ -231,6 +222,9 @@ X86TargetMachine::X86TargetMachine(const Target &T, const Triple &TT,
   }
 
   setMachineOutliner(true);
+
+  // x86 supports the debug entry values.
+  setSupportsDebugEntryValues(true);
 
   initAsmInfo();
 }
@@ -519,6 +513,7 @@ void X86PassConfig::addPreEmitPass() {
   }
   addPass(createX86DiscriminateMemOpsPass());
   addPass(createX86InsertPrefetchPass());
+  addPass(createX86InsertX87waitPass());
 }
 
 void X86PassConfig::addPreEmitPass2() {

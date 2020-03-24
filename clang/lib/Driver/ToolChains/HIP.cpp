@@ -105,9 +105,8 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
   CmdArgs.push_back("-o");
   auto OutputFileName = getOutputFileName(C, OutputFilePrefix, "-linked", "bc");
   CmdArgs.push_back(OutputFileName);
-  SmallString<128> ExecPath(C.getDriver().Dir);
-  llvm::sys::path::append(ExecPath, "llvm-link");
-  const char *Exec = Args.MakeArgString(ExecPath);
+  const char *Exec =
+      Args.MakeArgString(getToolChain().GetProgramPath("llvm-link"));
   C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
   return OutputFileName;
 }
@@ -133,9 +132,8 @@ const char *AMDGCN::Linker::constructOptCommand(
   auto OutputFileName =
       getOutputFileName(C, OutputFilePrefix, "-optimized", "bc");
   OptArgs.push_back(OutputFileName);
-  SmallString<128> OptPath(C.getDriver().Dir);
-  llvm::sys::path::append(OptPath, "opt");
-  const char *OptExec = Args.MakeArgString(OptPath);
+  const char *OptExec =
+      Args.MakeArgString(getToolChain().GetProgramPath("opt"));
   C.addCommand(std::make_unique<Command>(JA, *this, OptExec, OptArgs, Inputs));
   return OutputFileName;
 }
@@ -180,9 +178,7 @@ const char *AMDGCN::Linker::constructLlcCommand(
   auto LlcOutputFile =
       getOutputFileName(C, OutputFilePrefix, "", OutputIsAsm ? "s" : "o");
   LlcArgs.push_back(LlcOutputFile);
-  SmallString<128> LlcPath(C.getDriver().Dir);
-  llvm::sys::path::append(LlcPath, "llc");
-  const char *Llc = Args.MakeArgString(LlcPath);
+  const char *Llc = Args.MakeArgString(getToolChain().GetProgramPath("llc"));
   C.addCommand(std::make_unique<Command>(JA, *this, Llc, LlcArgs, Inputs));
   return LlcOutputFile;
 }
@@ -196,9 +192,7 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
   // The output from ld.lld is an HSA code object file.
   ArgStringList LldArgs{
       "-flavor", "gnu", "-shared", "-o", Output.getFilename(), InputFileName};
-  SmallString<128> LldPath(C.getDriver().Dir);
-  llvm::sys::path::append(LldPath, "lld");
-  const char *Lld = Args.MakeArgString(LldPath);
+  const char *Lld = Args.MakeArgString(getToolChain().GetProgramPath("lld"));
   C.addCommand(std::make_unique<Command>(JA, *this, Lld, LldArgs, Inputs));
 }
 
@@ -226,13 +220,12 @@ void AMDGCN::constructHIPFatbinCommand(Compilation &C, const JobAction &JA,
   BundlerArgs.push_back(Args.MakeArgString(BundlerTargetArg));
   BundlerArgs.push_back(Args.MakeArgString(BundlerInputArg));
 
-  auto BundlerOutputArg =
-      Args.MakeArgString(std::string("-outputs=").append(OutputFileName));
+  auto BundlerOutputArg = Args.MakeArgString(
+      std::string("-outputs=").append(std::string(OutputFileName)));
   BundlerArgs.push_back(BundlerOutputArg);
 
-  SmallString<128> BundlerPath(C.getDriver().Dir);
-  llvm::sys::path::append(BundlerPath, "clang-offload-bundler");
-  const char *Bundler = Args.MakeArgString(BundlerPath);
+  const char *Bundler = Args.MakeArgString(
+      T.getToolChain().GetProgramPath("clang-offload-bundler"));
   C.addCommand(std::make_unique<Command>(JA, T, Bundler, BundlerArgs, Inputs));
 }
 
@@ -295,10 +288,6 @@ void HIPToolChain::addClangTargetOptions(
   CC1Args.push_back(DriverArgs.MakeArgStringRef(GpuArch));
   CC1Args.push_back("-fcuda-is-device");
 
-  if (DriverArgs.hasFlag(options::OPT_fcuda_flush_denormals_to_zero,
-                         options::OPT_fno_cuda_flush_denormals_to_zero, false))
-    CC1Args.push_back("-fcuda-flush-denormals-to-zero");
-
   if (DriverArgs.hasFlag(options::OPT_fcuda_approx_transcendentals,
                          options::OPT_fno_cuda_approx_transcendentals, false))
     CC1Args.push_back("-fcuda-approx-transcendentals");
@@ -338,7 +327,7 @@ void HIPToolChain::addClangTargetOptions(
        DriverArgs.getAllArgValues(options::OPT_hip_device_lib_path_EQ))
     LibraryPaths.push_back(DriverArgs.MakeArgString(Path));
 
-  addDirectoryList(DriverArgs, LibraryPaths, "-L", "HIP_DEVICE_LIB_PATH");
+  addDirectoryList(DriverArgs, LibraryPaths, "", "HIP_DEVICE_LIB_PATH");
 
   llvm::SmallVector<std::string, 10> BCLibs;
 
@@ -367,10 +356,11 @@ void HIPToolChain::addClangTargetOptions(
       WaveFrontSizeBC = "oclc_wavefrontsize64_off.amdgcn.bc";
 
     BCLibs.append({"hip.amdgcn.bc", "ocml.amdgcn.bc", "ockl.amdgcn.bc",
-                   "oclc_finite_only_off.amdgcn.bc", FlushDenormalControlBC,
+                   "oclc_finite_only_off.amdgcn.bc",
+                   std::string(FlushDenormalControlBC),
                    "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
                    "oclc_unsafe_math_off.amdgcn.bc", ISAVerBC,
-                   WaveFrontSizeBC});
+                   std::string(WaveFrontSizeBC)});
   }
   for (auto Lib : BCLibs)
     addBCLib(getDriver(), DriverArgs, CC1Args, LibraryPaths, Lib);
@@ -392,31 +382,7 @@ HIPToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
       // Skip this argument unless the architecture matches BoundArch.
       if (BoundArch.empty() || A->getValue(0) != BoundArch)
         continue;
-
-      unsigned Index = Args.getBaseArgs().MakeIndex(A->getValue(1));
-      unsigned Prev = Index;
-      std::unique_ptr<Arg> XarchArg(Opts.ParseOneArg(Args, Index));
-
-      // If the argument parsing failed or more than one argument was
-      // consumed, the -Xarch_ argument's parameter tried to consume
-      // extra arguments. Emit an error and ignore.
-      //
-      // We also want to disallow any options which would alter the
-      // driver behavior; that isn't going to work in our model. We
-      // use isDriverOption() as an approximation, although things
-      // like -O4 are going to slip through.
-      if (!XarchArg || Index > Prev + 1) {
-        getDriver().Diag(diag::err_drv_invalid_Xarch_argument_with_args)
-            << A->getAsString(Args);
-        continue;
-      } else if (XarchArg->getOption().hasFlag(options::DriverOption)) {
-        getDriver().Diag(diag::err_drv_invalid_Xarch_argument_isdriver)
-            << A->getAsString(Args);
-        continue;
-      }
-      XarchArg->setBaseArg(A);
-      A = XarchArg.release();
-      DAL->AddSynthesizedArg(A);
+      TranslateXarchArgs(Args, A, DAL);
     }
     DAL->append(A);
   }

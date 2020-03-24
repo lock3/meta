@@ -16,6 +16,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
+#include "clang/AST/DependenceFlags.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -197,75 +198,49 @@ CXXRecordDecl *NestedNameSpecifier::getAsRecordDecl() const {
   llvm_unreachable("Invalid NNS Kind!");
 }
 
-/// Whether this nested name specifier refers to a dependent
-/// type or not.
-bool NestedNameSpecifier::isDependent() const {
+NestedNameSpecifierDependence NestedNameSpecifier::getDependence() const {
   switch (getKind()) {
-  case Identifier:
+  case Identifier: {
     // Identifier specifiers always represent dependent types
-    return true;
+    auto F = NestedNameSpecifierDependence::Dependent |
+             NestedNameSpecifierDependence::Instantiation;
+    // Prefix can contain unexpanded template parameters.
+    if (getPrefix())
+      return F | getPrefix()->getDependence();
+    return F;
+  }
 
   case Namespace:
   case NamespaceAlias:
   case Global:
-    return false;
+    return NestedNameSpecifierDependence::None;
 
   case Super: {
     CXXRecordDecl *RD = static_cast<CXXRecordDecl *>(Specifier);
     for (const auto &Base : RD->bases())
       if (Base.getType()->isDependentType())
-        return true;
-
-    return false;
+        // FIXME: must also be instantiation-dependent.
+        return NestedNameSpecifierDependence::Dependent;
+    return NestedNameSpecifierDependence::None;
   }
 
   case TypeSpec:
   case TypeSpecWithTemplate:
-    return getAsType()->isDependentType();
+    return toNestedNameSpecifierDependendence(getAsType()->getDependence());
   }
-
   llvm_unreachable("Invalid NNS Kind!");
 }
 
-/// Whether this nested name specifier refers to a dependent
-/// type or not.
+bool NestedNameSpecifier::isDependent() const {
+  return getDependence() & NestedNameSpecifierDependence::Dependent;
+}
+
 bool NestedNameSpecifier::isInstantiationDependent() const {
-  switch (getKind()) {
-  case Identifier:
-    // Identifier specifiers always represent dependent types
-    return true;
-
-  case Namespace:
-  case NamespaceAlias:
-  case Global:
-  case Super:
-    return false;
-
-  case TypeSpec:
-  case TypeSpecWithTemplate:
-    return getAsType()->isInstantiationDependentType();
-  }
-
-  llvm_unreachable("Invalid NNS Kind!");
+  return getDependence() & NestedNameSpecifierDependence::Instantiation;
 }
 
 bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
-  switch (getKind()) {
-  case Identifier:
-    return getPrefix() && getPrefix()->containsUnexpandedParameterPack();
-
-  case Namespace:
-  case NamespaceAlias:
-  case Global:
-  case Super:
-    return false;
-
-  case TypeSpec:
-  case TypeSpecWithTemplate:
-    return getAsType()->containsUnexpandedParameterPack();
-  }
-
-  llvm_unreachable("Invalid NNS Kind!");
+  return getDependence() & NestedNameSpecifierDependence::UnexpandedPack;
 }
 
 /// Print this nested name specifier to the given output
@@ -472,7 +447,7 @@ TypeLoc NestedNameSpecifierLoc::getTypeLoc() const {
 }
 
 static void Append(char *Start, char *End, char *&Buffer, unsigned &BufferSize,
-              unsigned &BufferCapacity) {
+                   unsigned &BufferCapacity) {
   if (Start == End)
     return;
 
@@ -482,16 +457,17 @@ static void Append(char *Start, char *End, char *&Buffer, unsigned &BufferSize,
         (unsigned)(BufferCapacity ? BufferCapacity * 2 : sizeof(void *) * 2),
         (unsigned)(BufferSize + (End - Start)));
     char *NewBuffer = static_cast<char *>(llvm::safe_malloc(NewCapacity));
-    if (BufferCapacity) {
+    if (Buffer) {
       memcpy(NewBuffer, Buffer, BufferSize);
-      free(Buffer);
+      if (BufferCapacity)
+        free(Buffer);
     }
     Buffer = NewBuffer;
     BufferCapacity = NewCapacity;
   }
-
+  assert(Buffer && Start && End && End > Start && "Illegal memory buffer copy");
   memcpy(Buffer + BufferSize, Start, End - Start);
-  BufferSize += End-Start;
+  BufferSize += End - Start;
 }
 
 /// Save a source location to the given buffer.
@@ -712,107 +688,4 @@ NestedNameSpecifierLocBuilder::getWithLocInContext(ASTContext &Context) const {
   void *Mem = Context.Allocate(BufferSize, alignof(void *));
   memcpy(Mem, Buffer, BufferSize);
   return NestedNameSpecifierLoc(Representation, Mem);
-}
-
-void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
-                          TypeLoc TL, SourceLocation ColonColonLoc) {
-  Builder.Extend(Context, TemplateKWLoc, TL, ColonColonLoc);
-  if (Range.getBegin().isInvalid())
-    Range.setBegin(TL.getBeginLoc());
-  Range.setEnd(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
-                          SourceLocation IdentifierLoc,
-                          SourceLocation ColonColonLoc) {
-  Builder.Extend(Context, Identifier, IdentifierLoc, ColonColonLoc);
-
-  if (Range.getBegin().isInvalid())
-    Range.setBegin(IdentifierLoc);
-  Range.setEnd(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
-                          SourceLocation NamespaceLoc,
-                          SourceLocation ColonColonLoc) {
-  Builder.Extend(Context, Namespace, NamespaceLoc, ColonColonLoc);
-
-  if (Range.getBegin().isInvalid())
-    Range.setBegin(NamespaceLoc);
-  Range.setEnd(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
-                          SourceLocation AliasLoc,
-                          SourceLocation ColonColonLoc) {
-  Builder.Extend(Context, Alias, AliasLoc, ColonColonLoc);
-
-  if (Range.getBegin().isInvalid())
-    Range.setBegin(AliasLoc);
-  Range.setEnd(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::MakeGlobal(ASTContext &Context,
-                              SourceLocation ColonColonLoc) {
-  Builder.MakeGlobal(Context, ColonColonLoc);
-
-  Range = SourceRange(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
-                             SourceLocation SuperLoc,
-                             SourceLocation ColonColonLoc) {
-  Builder.MakeSuper(Context, RD, SuperLoc, ColonColonLoc);
-
-  Range.setBegin(SuperLoc);
-  Range.setEnd(ColonColonLoc);
-
-  assert(Range == Builder.getSourceRange() &&
-  "NestedNameSpecifierLoc range computation incorrect");
-}
-
-void CXXScopeSpec::MakeTrivial(ASTContext &Context,
-                               NestedNameSpecifier *Qualifier, SourceRange R) {
-  Builder.MakeTrivial(Context, Qualifier, R);
-  Range = R;
-}
-
-void CXXScopeSpec::Adopt(NestedNameSpecifierLoc Other) {
-  if (!Other) {
-    Range = SourceRange();
-    Builder.Clear();
-    return;
-  }
-
-  Range = Other.getSourceRange();
-  Builder.Adopt(Other);
-}
-
-SourceLocation CXXScopeSpec::getLastQualifierNameLoc() const {
-  if (!Builder.getRepresentation())
-    return SourceLocation();
-  return Builder.getTemporary().getLocalBeginLoc();
-}
-
-NestedNameSpecifierLoc
-CXXScopeSpec::getWithLocInContext(ASTContext &Context) const {
-  if (!Builder.getRepresentation())
-    return NestedNameSpecifierLoc();
-
-  return Builder.getWithLocInContext(Context);
 }

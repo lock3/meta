@@ -628,7 +628,16 @@ protected:
     setModuleOwnershipKind(ModuleOwnershipKind::ModulePrivate);
   }
 
-  /// Set the owning module ID.
+public:
+  /// Set the FromASTFile flag. This indicates that this declaration
+  /// was deserialized and not parsed from source code and enables
+  /// features such as module ownership information.
+  void setFromASTFile() {
+    FromASTFile = true;
+  }
+
+  /// Set the owning module ID.  This may only be called for
+  /// deserialized Decls.
   void setOwningModuleID(unsigned ID) {
     assert(isFromASTFile() && "Only works on a deserialized declaration");
     *((unsigned*)this - 2) = ID;
@@ -1897,9 +1906,6 @@ public:
   /// Determines whether this context is dependent on a
   /// template parameter.
   bool isDependentContext() const;
-
-  /// Determine whether this context is a constexpr context.
-  bool isConstexprContext() const;
 
   /// isTransparentContext - Determines whether this context is a
   /// "transparent" context, meaning that the members declared in this

@@ -14,9 +14,11 @@
 #define LLVM_CLANG_STATICANALYZER_CORE_CHECKERMANAGER_H
 
 #include "clang/Analysis/ProgramPoint.h"
+#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
+#include "clang/StaticAnalyzer/Frontend/CheckerRegistry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -40,7 +42,6 @@ class BugReporter;
 class CallEvent;
 class CheckerBase;
 class CheckerContext;
-class CheckerRegistry;
 class ExplodedGraph;
 class ExplodedNode;
 class ExplodedNodeSet;
@@ -121,14 +122,42 @@ enum class ObjCMessageVisitKind {
 };
 
 class CheckerManager {
-  ASTContext &Context;
+  ASTContext *Context;
   const LangOptions LangOpts;
   AnalyzerOptions &AOptions;
   CheckerNameRef CurrentCheckerName;
+  DiagnosticsEngine &Diags;
+  CheckerRegistry Registry;
 
 public:
+  CheckerManager(
+      ASTContext &Context, AnalyzerOptions &AOptions,
+      ArrayRef<std::string> plugins,
+      ArrayRef<std::function<void(CheckerRegistry &)>> checkerRegistrationFns)
+      : Context(&Context), LangOpts(Context.getLangOpts()), AOptions(AOptions),
+        Diags(Context.getDiagnostics()),
+        Registry(plugins, Context.getDiagnostics(), AOptions,
+                 checkerRegistrationFns) {
+    Registry.initializeRegistry(*this);
+    Registry.initializeManager(*this);
+    finishedCheckerRegistration();
+  }
+
+  /// Constructs a CheckerManager that ignores all non TblGen-generated
+  /// checkers. Useful for unit testing, unless the checker infrastructure
+  /// itself is tested.
   CheckerManager(ASTContext &Context, AnalyzerOptions &AOptions)
-      : Context(Context), LangOpts(Context.getLangOpts()), AOptions(AOptions) {}
+      : CheckerManager(Context, AOptions, {}, {}) {}
+
+  /// Constructs a CheckerManager without requiring an AST. No checker
+  /// registration will take place. Only useful for retrieving the
+  /// CheckerRegistry and print for help flags where the AST is unavalaible.
+  CheckerManager(AnalyzerOptions &AOptions, const LangOptions &LangOpts,
+                 DiagnosticsEngine &Diags, ArrayRef<std::string> plugins)
+      : LangOpts(LangOpts), AOptions(AOptions), Diags(Diags),
+        Registry(plugins, Diags, AOptions) {
+    Registry.initializeRegistry(*this);
+  }
 
   ~CheckerManager();
 
@@ -140,14 +169,19 @@ public:
   void finishedCheckerRegistration();
 
   const LangOptions &getLangOpts() const { return LangOpts; }
-  AnalyzerOptions &getAnalyzerOptions() { return AOptions; }
-  ASTContext &getASTContext() { return Context; }
+  AnalyzerOptions &getAnalyzerOptions() const { return AOptions; }
+  const CheckerRegistry &getCheckerRegistry() const { return Registry; }
+  DiagnosticsEngine &getDiagnostics() const { return Diags; }
+  ASTContext &getASTContext() const {
+    assert(Context);
+    return *Context;
+  }
 
   /// Emits an error through a DiagnosticsEngine about an invalid user supplied
   /// checker option value.
   void reportInvalidCheckerOptionValue(const CheckerBase *C,
                                        StringRef OptionName,
-                                       StringRef ExpectedValueDesc);
+                                       StringRef ExpectedValueDesc) const;
 
   using CheckerRef = CheckerBase *;
   using CheckerTag = const void *;
@@ -620,7 +654,7 @@ private:
   /// Returns the checkers that have registered for callbacks of the
   /// given \p Kind.
   const std::vector<CheckObjCMessageFunc> &
-  getObjCMessageCheckers(ObjCMessageVisitKind Kind);
+  getObjCMessageCheckers(ObjCMessageVisitKind Kind) const;
 
   std::vector<CheckObjCMessageFunc> PreObjCMessageCheckers;
   std::vector<CheckObjCMessageFunc> PostObjCMessageCheckers;

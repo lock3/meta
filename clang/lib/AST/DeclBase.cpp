@@ -458,7 +458,8 @@ ExternalSourceSymbolAttr *Decl::getExternalSourceSymbolAttr() const {
 }
 
 bool Decl::hasDefiningAttr() const {
-  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>();
+  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>() ||
+         hasAttr<LoaderUninitializedAttr>();
 }
 
 const Attr *Decl::getDefiningAttr() const {
@@ -466,6 +467,8 @@ const Attr *Decl::getDefiningAttr() const {
     return AA;
   if (auto *IFA = getAttr<IFuncAttr>())
     return IFA;
+  if (auto *NZA = getAttr<LoaderUninitializedAttr>())
+    return NZA;
   return nullptr;
 }
 
@@ -591,7 +594,7 @@ AvailabilityResult Decl::getAvailability(std::string *Message,
         continue;
 
       if (Message)
-        ResultMessage = Deprecated->getMessage();
+        ResultMessage = std::string(Deprecated->getMessage());
 
       Result = AR_Deprecated;
       continue;
@@ -599,7 +602,7 @@ AvailabilityResult Decl::getAvailability(std::string *Message,
 
     if (const auto *Unavailable = dyn_cast<UnavailableAttr>(A)) {
       if (Message)
-        *Message = Unavailable->getMessage();
+        *Message = std::string(Unavailable->getMessage());
       return AR_Unavailable;
     }
 
@@ -810,6 +813,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPCapturedExpr:
     case Empty:
     case LifetimeExtendedTemporary:
+    case RequiresExprBody:
     case CXXFragment:
     case CXXMetaprogram:
     case CXXInjection:
@@ -1163,16 +1167,6 @@ bool DeclContext::isDependentContext() const {
   return getParent() && getParent()->isDependentContext();
 }
 
-bool DeclContext::isConstexprContext() const {
-  const DeclContext *DC = this;
-  do {
-    if (auto *FD = dyn_cast<FunctionDecl>(DC))
-      return FD->isConstexpr();
-    DC = DC->getParent();
-  } while (DC);
-  return false;
-}
-
 bool DeclContext::isTransparentContext() const {
   if (getDeclKind() == Decl::Enum)
     return !cast<EnumDecl>(this)->isScoped();
@@ -1231,6 +1225,7 @@ DeclContext *DeclContext::getPrimaryContext() {
   case Decl::Captured:
   case Decl::OMPDeclareReduction:
   case Decl::OMPDeclareMapper:
+  case Decl::RequiresExprBody:
   case Decl::CXXFragment:
   case Decl::CXXStmtFragment:
     // There is only one DeclContext for these entities.

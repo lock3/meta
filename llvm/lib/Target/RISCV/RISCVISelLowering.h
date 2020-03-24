@@ -74,6 +74,8 @@ public:
   bool isTruncateFree(EVT SrcVT, EVT DstVT) const override;
   bool isZExtFree(SDValue Val, EVT VT2) const override;
   bool isSExtCheaperThanZExt(EVT SrcVT, EVT DstVT) const override;
+  bool isFPImmLegal(const APFloat &Imm, EVT VT,
+                    bool ForCodeSize) const override;
 
   bool hasBitPreservingFPLogic(EVT VT) const override;
 
@@ -151,7 +153,7 @@ public:
   /// method is necessary to lower the llvm.read_register.* and
   /// llvm.write_register.* intrinsics. Allocatable registers must be reserved
   /// with the clang -ffixed-xX flag for access to be allowed.
-  Register getRegisterByName(const char *RegName, EVT VT,
+  Register getRegisterByName(const char *RegName, LLT VT,
                              const MachineFunction &MF) const override;
 
 private:
@@ -181,6 +183,7 @@ private:
                                          Type *Ty) const override {
     return true;
   }
+  bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
 
   template <class NodeTy>
   SDValue getAddr(NodeTy *N, SelectionDAG &DAG, bool IsLocal = true) const;

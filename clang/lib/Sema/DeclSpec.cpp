@@ -17,6 +17,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Sema.h"
@@ -41,6 +42,111 @@ void UnqualifiedId::setConstructorTemplateId(TemplateIdAnnotation *TemplateId) {
   this->TemplateId = TemplateId;
   StartLocation = TemplateId->TemplateNameLoc;
   EndLocation = TemplateId->RAngleLoc;
+}
+
+void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
+                          TypeLoc TL, SourceLocation ColonColonLoc) {
+  Builder.Extend(Context, TemplateKWLoc, TL, ColonColonLoc);
+  if (Range.getBegin().isInvalid())
+    Range.setBegin(TL.getBeginLoc());
+  Range.setEnd(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
+                          SourceLocation IdentifierLoc,
+                          SourceLocation ColonColonLoc) {
+  Builder.Extend(Context, Identifier, IdentifierLoc, ColonColonLoc);
+
+  if (Range.getBegin().isInvalid())
+    Range.setBegin(IdentifierLoc);
+  Range.setEnd(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
+                          SourceLocation NamespaceLoc,
+                          SourceLocation ColonColonLoc) {
+  Builder.Extend(Context, Namespace, NamespaceLoc, ColonColonLoc);
+
+  if (Range.getBegin().isInvalid())
+    Range.setBegin(NamespaceLoc);
+  Range.setEnd(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
+                          SourceLocation AliasLoc,
+                          SourceLocation ColonColonLoc) {
+  Builder.Extend(Context, Alias, AliasLoc, ColonColonLoc);
+
+  if (Range.getBegin().isInvalid())
+    Range.setBegin(AliasLoc);
+  Range.setEnd(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::MakeGlobal(ASTContext &Context,
+                              SourceLocation ColonColonLoc) {
+  Builder.MakeGlobal(Context, ColonColonLoc);
+
+  Range = SourceRange(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
+                             SourceLocation SuperLoc,
+                             SourceLocation ColonColonLoc) {
+  Builder.MakeSuper(Context, RD, SuperLoc, ColonColonLoc);
+
+  Range.setBegin(SuperLoc);
+  Range.setEnd(ColonColonLoc);
+
+  assert(Range == Builder.getSourceRange() &&
+  "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::MakeTrivial(ASTContext &Context,
+                               NestedNameSpecifier *Qualifier, SourceRange R) {
+  Builder.MakeTrivial(Context, Qualifier, R);
+  Range = R;
+}
+
+void CXXScopeSpec::Adopt(NestedNameSpecifierLoc Other) {
+  if (!Other) {
+    Range = SourceRange();
+    Builder.Clear();
+    return;
+  }
+
+  Range = Other.getSourceRange();
+  Builder.Adopt(Other);
+  assert(Range == Builder.getSourceRange() &&
+         "NestedNameSpecifierLoc range computation incorrect");
+}
+
+SourceLocation CXXScopeSpec::getLastQualifierNameLoc() const {
+  if (!Builder.getRepresentation())
+    return SourceLocation();
+  return Builder.getTemporary().getLocalBeginLoc();
+}
+
+NestedNameSpecifierLoc
+CXXScopeSpec::getWithLocInContext(ASTContext &Context) const {
+  if (!Builder.getRepresentation())
+    return NestedNameSpecifierLoc();
+
+  return Builder.getWithLocInContext(Context);
 }
 
 /// DeclaratorChunk::getFunction - Return a DeclaratorChunk for a function.
@@ -679,6 +785,15 @@ bool DeclSpec::SetTypeSpecType(TST T, SourceLocation TagKwLoc,
   TSTNameLoc = TagNameLoc;
   TypeSpecOwned = Owned && Rep != nullptr;
   return false;
+}
+
+bool DeclSpec::SetTypeSpecType(TST T, SourceLocation Loc, const char *&PrevSpec,
+                               unsigned &DiagID, TemplateIdAnnotation *Rep,
+                               const PrintingPolicy &Policy) {
+  assert(T == TST_auto || T == TST_decltype_auto);
+  ConstrainedAuto = true;
+  TemplateIdRep = Rep;
+  return SetTypeSpecType(T, Loc, PrevSpec, DiagID, Policy);
 }
 
 bool DeclSpec::SetTypeSpecType(TST T, SourceLocation Loc,

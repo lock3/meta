@@ -230,6 +230,27 @@ declare void @escape(i32* %a)
 
 ; Canonicalize a nonnull assumption on a load into metadata form.
 
+define i32 @bundle1(i32* %P) {
+; CHECK-LABEL: @bundle1(
+; CHECK-NEXT:    tail call void @llvm.assume(i1 true) [ "nonnull"(i32* [[P:%.*]]) ]
+; CHECK-NEXT:    [[LOAD:%.*]] = load i32, i32* [[P]], align 4
+; CHECK-NEXT:    ret i32 [[LOAD]]
+;
+  tail call void @llvm.assume(i1 true) ["nonnull"(i32* %P)]
+  %load = load i32, i32* %P
+  ret i32 %load
+}
+
+define i32 @bundle2(i32* %P) {
+; CHECK-LABEL: @bundle2(
+; CHECK-NEXT:    [[LOAD:%.*]] = load i32, i32* [[P:%.*]], align 4
+; CHECK-NEXT:    ret i32 [[LOAD]]
+;
+  tail call void @llvm.assume(i1 true) ["ignore"(i32* undef)]
+  %load = load i32, i32* %P
+  ret i32 %load
+}
+
 define i1 @nonnull1(i32** %a) {
 ; CHECK-LABEL: @nonnull1(
 ; CHECK-NEXT:    [[LOAD:%.*]] = load i32*, i32** [[A:%.*]], align 8, !nonnull !6
@@ -332,7 +353,10 @@ define i1 @nonnull5(i32** %a) {
 
 define i32 @assumption_conflicts_with_known_bits(i32 %a, i32 %b) {
 ; CHECK-LABEL: @assumption_conflicts_with_known_bits(
+; CHECK-NEXT:    [[AND1:%.*]] = and i32 [[B:%.*]], 3
 ; CHECK-NEXT:    tail call void @llvm.assume(i1 false)
+; CHECK-NEXT:    [[CMP2:%.*]] = icmp eq i32 [[AND1]], 0
+; CHECK-NEXT:    tail call void @llvm.assume(i1 [[CMP2]])
 ; CHECK-NEXT:    ret i32 0
 ;
   %and1 = and i32 %b, 3

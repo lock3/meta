@@ -80,7 +80,7 @@ Basic Usage
 Intro to how to use a C compiler for newbies.
 
 compile + link compile then link debug info enabling optimizations
-picking a language to use, defaults to C11 by default. Autosenses based
+picking a language to use, defaults to C17 by default. Autosenses based
 on extension. using a makefile
 
 Command Line Options
@@ -2399,10 +2399,10 @@ See :doc:`LanguageExtensions`.
 Differences between various standard modes
 ------------------------------------------
 
-clang supports the -std option, which changes what language mode clang
-uses. The supported modes for C are c89, gnu89, c99, gnu99, c11, gnu11,
-c17, gnu17, and various aliases for those modes. If no -std option is
-specified, clang defaults to gnu11 mode. Many C99 and C11 features are
+clang supports the -std option, which changes what language mode clang uses.
+The supported modes for C are c89, gnu89, c99, gnu99, c11, gnu11, c17, gnu17,
+c2x, gnu2x, and various aliases for those modes. If no -std option is
+specified, clang defaults to gnu17 mode. Many C99 and C11 features are
 supported in earlier modes as a conforming extension, with a warning. Use
 ``-pedantic-errors`` to request an error if a feature from a later standard
 revision is used in an earlier mode.
@@ -2661,7 +2661,8 @@ This will produce a generic test.bc file that can be used in vendor toolchains
 to perform machine code generation.
 
 Clang currently supports OpenCL C language standards up to v2.0. Starting from
-clang 9 a C++ mode is available for OpenCL (see :ref:`C++ for OpenCL <opencl_cpp>`).
+clang 9 a C++ mode is available for OpenCL (see
+:ref:`C++ for OpenCL <cxx_for_opencl>`).
 
 OpenCL Specific Options
 -----------------------
@@ -3024,7 +3025,7 @@ There are some standard OpenCL functions that are implemented as Clang builtins:
   enqueue query functions from `section 6.13.17.5
   <https://www.khronos.org/registry/cl/specs/opencl-2.0-openclc.pdf#171>`_.
 
-.. _opencl_cpp:
+.. _cxx_for_opencl:
 
 C++ for OpenCL
 --------------

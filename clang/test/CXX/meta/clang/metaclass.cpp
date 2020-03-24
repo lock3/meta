@@ -3,7 +3,7 @@
 
 #include "reflection_iterator.h"
 
-constexpr void interface(meta::info source) {
+consteval void interface(meta::info source) {
   int default_val = 1;
   -> __fragment struct {
     int val = default_val;

@@ -3093,6 +3093,9 @@ ExpansionStatementBuilder::Build()
     return StmtError();
   FinishRangeVar();
 
+  EnterExpressionEvaluationContext Ctx(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
   // The order in which we determine the expansion style must follow
   // the order in which structured bindings proceeds. That is:
   //
@@ -3910,22 +3913,24 @@ static void DiagnoseForRangeReferenceVariableCopies(Sema &SemaRef,
     E = E->IgnoreImpCasts();
   }
 
-  bool ReturnsReference = false;
+  QualType ReferenceReturnType;
   if (isa<UnaryOperator>(E)) {
-    ReturnsReference = true;
+    ReferenceReturnType = SemaRef.Context.getLValueReferenceType(E->getType());
   } else {
     const CXXOperatorCallExpr *Call = cast<CXXOperatorCallExpr>(E);
     const FunctionDecl *FD = Call->getDirectCallee();
     QualType ReturnType = FD->getReturnType();
-    ReturnsReference = ReturnType->isReferenceType();
+    if (ReturnType->isReferenceType())
+      ReferenceReturnType = ReturnType;
   }
 
-  if (ReturnsReference) {
+  if (!ReferenceReturnType.isNull()) {
     // Loop variable creates a temporary.  Suggest either to go with
     // non-reference loop variable to indicate a copy is made, or
-    // the correct time to bind a const reference.
-    SemaRef.Diag(VD->getLocation(), diag::warn_for_range_const_reference_copy)
-        << VD << VariableType << E->getType();
+    // the correct type to bind a const reference.
+    SemaRef.Diag(VD->getLocation(),
+                 diag::warn_for_range_const_ref_binds_temp_built_from_ref)
+        << VD << VariableType << ReferenceReturnType;
     QualType NonReferenceType = VariableType.getNonReferenceType();
     NonReferenceType.removeLocalConst();
     QualType NewReferenceType =
@@ -3938,7 +3943,7 @@ static void DiagnoseForRangeReferenceVariableCopies(Sema &SemaRef,
     // Suggest removing the reference from the loop variable.
     // If the type is a rvalue reference do not warn since that changes the
     // semantic of the code.
-    SemaRef.Diag(VD->getLocation(), diag::warn_for_range_variable_always_copy)
+    SemaRef.Diag(VD->getLocation(), diag::warn_for_range_ref_binds_ret_temp)
         << VD << RangeInitType;
     QualType NonReferenceType = VariableType.getNonReferenceType();
     NonReferenceType.removeLocalConst();
@@ -3946,6 +3951,15 @@ static void DiagnoseForRangeReferenceVariableCopies(Sema &SemaRef,
         << NonReferenceType << VD->getSourceRange()
         << FixItHint::CreateRemoval(VD->getTypeSpecEndLoc());
   }
+}
+
+/// Determines whether the @p VariableType's declaration is a record with the
+/// clang::trivial_abi attribute.
+static bool hasTrivialABIAttr(QualType VariableType) {
+  if (CXXRecordDecl *RD = VariableType->getAsCXXRecordDecl())
+    return RD->hasAttr<TrivialABIAttr>();
+
+  return false;
 }
 
 // Warns when the loop variable can be changed to a reference type to
@@ -3969,16 +3983,19 @@ static void DiagnoseForRangeConstVariableCopies(Sema &SemaRef,
     return;
   }
 
-  // TODO: Determine a maximum size that a POD type can be before a diagnostic
-  // should be emitted.  Also, only ignore POD types with trivial copy
-  // constructors.
-  if (VariableType.isPODType(SemaRef.Context))
+  // Small trivially copyable types are cheap to copy. Do not emit the
+  // diagnostic for these instances. 64 bytes is a common size of a cache line.
+  // (The function `getTypeSize` returns the size in bits.)
+  ASTContext &Ctx = SemaRef.Context;
+  if (Ctx.getTypeSize(VariableType) <= 64 * 8 &&
+      (VariableType.isTriviallyCopyableType(Ctx) ||
+       hasTrivialABIAttr(VariableType)))
     return;
 
   // Suggest changing from a const variable to a const reference variable
   // if doing so will prevent a copy.
   SemaRef.Diag(VD->getLocation(), diag::warn_for_range_copy)
-      << VD << VariableType << InitExpr->getType();
+      << VD << VariableType;
   SemaRef.Diag(VD->getBeginLoc(), diag::note_use_reference_type)
       << SemaRef.Context.getLValueReferenceType(VariableType)
       << VD->getSourceRange()
@@ -3995,9 +4012,13 @@ static void DiagnoseForRangeConstVariableCopies(Sema &SemaRef,
 ///    Suggest "const foo &x" to prevent the copy.
 static void DiagnoseForRangeVariableCopies(Sema &SemaRef,
                                            const CXXForRangeStmt *ForStmt) {
-  if (SemaRef.Diags.isIgnored(diag::warn_for_range_const_reference_copy,
-                              ForStmt->getBeginLoc()) &&
-      SemaRef.Diags.isIgnored(diag::warn_for_range_variable_always_copy,
+  if (SemaRef.inTemplateInstantiation())
+    return;
+
+  if (SemaRef.Diags.isIgnored(
+          diag::warn_for_range_const_ref_binds_temp_built_from_ref,
+          ForStmt->getBeginLoc()) &&
+      SemaRef.Diags.isIgnored(diag::warn_for_range_ref_binds_ret_temp,
                               ForStmt->getBeginLoc()) &&
       SemaRef.Diags.isIgnored(diag::warn_for_range_copy,
                               ForStmt->getBeginLoc())) {
@@ -4015,6 +4036,9 @@ static void DiagnoseForRangeVariableCopies(Sema &SemaRef,
 
   const Expr *InitExpr = VD->getInit();
   if (!InitExpr)
+    return;
+
+  if (InitExpr->getExprLoc().isMacroID())
     return;
 
   if (VariableType->isReferenceType()) {

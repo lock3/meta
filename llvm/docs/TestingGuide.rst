@@ -45,7 +45,7 @@ Unit tests
 ----------
 
 Unit tests are written using `Google Test <https://github.com/google/googletest/blob/master/googletest/docs/primer.md>`_
-and `Google Mock <https://github.com/google/googletest/blob/master/googlemock/docs/ForDummies.md>`_
+and `Google Mock <https://github.com/google/googletest/blob/master/googlemock/docs/for_dummies.md>`_
 and are located in the ``llvm/unittests`` directory.
 
 Regression tests
@@ -129,7 +129,7 @@ in release mode, i.e.
 
     % cmake -DCMAKE_BUILD_TYPE="Release" -DLLVM_ENABLE_ASSERTIONS=On
 
-If you have `Clang <http://clang.llvm.org/>`_ checked out and built, you
+If you have `Clang <https://clang.llvm.org/>`_ checked out and built, you
 can run the LLVM and Clang tests simultaneously using:
 
 .. code-block:: bash

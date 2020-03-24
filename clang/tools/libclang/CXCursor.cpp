@@ -265,6 +265,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::TypeTraitExprClass:
   case Stmt::CoawaitExprClass:
   case Stmt::ConceptSpecializationExprClass:
+  case Stmt::RequiresExprClass:
   case Stmt::DependentCoawaitExprClass:
   case Stmt::CoyieldExprClass:
   case Stmt::CXXBindTemporaryExprClass:
@@ -272,7 +273,6 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXDefaultInitExprClass:
   case Stmt::CXXFoldExprClass:
   case Stmt::CXXRewrittenBinaryOperatorClass:
-  case Stmt::CXXConstantExprClass:
   case Stmt::CXXReflectExprClass:
   case Stmt::CXXInvalidReflectionExprClass:
   case Stmt::CXXReflectionReadQueryExprClass:
@@ -658,6 +658,12 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
   case Stmt::OMPFlushDirectiveClass:
     K = CXCursor_OMPFlushDirective;
+    break;
+  case Stmt::OMPDepobjDirectiveClass:
+    K = CXCursor_OMPDepobjDirective;
+    break;
+  case Stmt::OMPScanDirectiveClass:
+    K = CXCursor_OMPScanDirective;
     break;
   case Stmt::OMPOrderedDirectiveClass:
     K = CXCursor_OMPOrderedDirective;

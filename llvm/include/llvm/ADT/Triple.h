@@ -95,7 +95,8 @@ public:
     wasm64,         // WebAssembly with 64-bit pointers
     renderscript32, // 32-bit RenderScript
     renderscript64, // 64-bit RenderScript
-    LastArchType = renderscript64
+    ve,             // NEC SX-Aurora Vector Engine
+    LastArchType = ve
   };
   enum SubArchType {
     NoSubArch,
@@ -128,7 +129,9 @@ public:
     KalimbaSubArch_v4,
     KalimbaSubArch_v5,
 
-    MipsSubArch_r6
+    MipsSubArch_r6,
+
+    PPCSubArch_spe
   };
   enum VendorType {
     UnknownVendor,
@@ -203,8 +206,6 @@ public:
     CODE16,
     EABI,
     EABIHF,
-    ELFv1,
-    ELFv2,
     Android,
     Musl,
     MuslEABI,
@@ -690,6 +691,10 @@ public:
     return getArch() == Triple::nvptx || getArch() == Triple::nvptx64;
   }
 
+  bool isAMDGPU() const {
+    return getArch() == Triple::r600 || getArch() == Triple::amdgcn;
+  }
+
   /// Tests whether the target is Thumb (little and big endian).
   bool isThumb() const {
     return getArch() == Triple::thumb || getArch() == Triple::thumbeb;
@@ -735,9 +740,19 @@ public:
     return getArch() == Triple::x86 || getArch() == Triple::x86_64;
   }
 
+  /// Tests whether the target is VE
+  bool isVE() const {
+    return getArch() == Triple::ve;
+  }
+
+  /// Tests whether the target is wasm (32- and 64-bit).
+  bool isWasm() const {
+    return getArch() == Triple::wasm32 || getArch() == Triple::wasm64;
+  }
+
   /// Tests whether the target supports comdat
   bool supportsCOMDAT() const {
-    return !isOSBinFormatMachO();
+    return !(isOSBinFormatMachO() || isOSBinFormatXCOFF());
   }
 
   /// Tests whether the target uses emulated TLS as default.

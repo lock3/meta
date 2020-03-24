@@ -18,6 +18,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/PrettyStackTrace.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/DataLayout.h"
@@ -253,6 +254,12 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
     break;
   case Stmt::OMPFlushDirectiveClass:
     EmitOMPFlushDirective(cast<OMPFlushDirective>(*S));
+    break;
+  case Stmt::OMPDepobjDirectiveClass:
+    EmitOMPDepobjDirective(cast<OMPDepobjDirective>(*S));
+    break;
+  case Stmt::OMPScanDirectiveClass:
+    llvm_unreachable("Scan directive not supported yet.");
     break;
   case Stmt::OMPOrderedDirectiveClass:
     EmitOMPOrderedDirective(cast<OMPOrderedDirective>(*S));
@@ -570,8 +577,7 @@ void CodeGenFunction::EmitLabel(const LabelDecl *D) {
 
   // Emit debug info for labels.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    if (CGM.getCodeGenOpts().getDebugInfo() >=
-        codegenoptions::LimitedDebugInfo) {
+    if (CGM.getCodeGenOpts().hasReducedDebugInfo()) {
       DI->setLocation(D->getLocation());
       DI->EmitLabel(D, Builder);
     }
@@ -1150,8 +1156,13 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   // statements following block literals with non-trivial cleanups.
   RunCleanupsScope cleanupScope(*this);
   if (const FullExpr *fe = dyn_cast_or_null<FullExpr>(RV)) {
-    enterFullExpression(fe);
-    RV = fe->getSubExpr();
+    // Constant expressions will emit their cached APValues, so
+    // we don't want to handle this here, as it will unwrap them,
+    // preventing the cached results from being used.
+    if (!isa<ConstantExpr>(fe)) {
+      enterFullExpression(fe);
+      RV = fe->getSubExpr();
+    }
   }
 
   // FIXME: Clean this up by using an LValue for ReturnTemp,
@@ -2162,8 +2173,9 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
       // Update largest vector width for any vector types.
       if (auto *VT = dyn_cast<llvm::VectorType>(ResultRegTypes.back()))
-        LargestVectorWidth = std::max((uint64_t)LargestVectorWidth,
-                                   VT->getPrimitiveSizeInBits().getFixedSize());
+        LargestVectorWidth =
+            std::max((uint64_t)LargestVectorWidth,
+                     VT->getPrimitiveSizeInBits().getKnownMinSize());
     } else {
       ArgTypes.push_back(Dest.getAddress(*this).getType());
       Args.push_back(Dest.getPointer(*this));
@@ -2187,8 +2199,9 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
       // Update largest vector width for any vector types.
       if (auto *VT = dyn_cast<llvm::VectorType>(Arg->getType()))
-        LargestVectorWidth = std::max((uint64_t)LargestVectorWidth,
-                                   VT->getPrimitiveSizeInBits().getFixedSize());
+        LargestVectorWidth =
+            std::max((uint64_t)LargestVectorWidth,
+                     VT->getPrimitiveSizeInBits().getKnownMinSize());
       if (Info.allowsRegister())
         InOutConstraints += llvm::utostr(i);
       else
@@ -2274,20 +2287,14 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
     // Update largest vector width for any vector types.
     if (auto *VT = dyn_cast<llvm::VectorType>(Arg->getType()))
-      LargestVectorWidth = std::max((uint64_t)LargestVectorWidth,
-                                   VT->getPrimitiveSizeInBits().getFixedSize());
+      LargestVectorWidth =
+          std::max((uint64_t)LargestVectorWidth,
+                   VT->getPrimitiveSizeInBits().getKnownMinSize());
 
     ArgTypes.push_back(Arg->getType());
     Args.push_back(Arg);
     Constraints += InputConstraint;
   }
-
-  // Append the "input" part of inout constraints last.
-  for (unsigned i = 0, e = InOutArgs.size(); i != e; i++) {
-    ArgTypes.push_back(InOutArgTypes[i]);
-    Args.push_back(InOutArgs[i]);
-  }
-  Constraints += InOutConstraints;
 
   // Labels
   SmallVector<llvm::BasicBlock *, 16> Transfer;
@@ -2296,7 +2303,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   if (const auto *GS =  dyn_cast<GCCAsmStmt>(&S)) {
     IsGCCAsmGoto = GS->isAsmGoto();
     if (IsGCCAsmGoto) {
-      for (auto *E : GS->labels()) {
+      for (const auto *E : GS->labels()) {
         JumpDest Dest = getJumpDestForLabel(E->getLabel());
         Transfer.push_back(Dest.getBlock());
         llvm::BlockAddress *BA =
@@ -2307,10 +2314,16 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
           Constraints += ',';
         Constraints += 'X';
       }
-      StringRef Name = "asm.fallthrough";
-      Fallthrough = createBasicBlock(Name);
+      Fallthrough = createBasicBlock("asm.fallthrough");
     }
   }
+
+  // Append the "input" part of inout constraints last.
+  for (unsigned i = 0, e = InOutArgs.size(); i != e; i++) {
+    ArgTypes.push_back(InOutArgTypes[i]);
+    Args.push_back(InOutArgs[i]);
+  }
+  Constraints += InOutConstraints;
 
   // Clobbers
   for (unsigned i = 0, e = S.getNumClobbers(); i != e; i++) {
@@ -2318,8 +2331,14 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
     if (Clobber == "memory")
       ReadOnly = ReadNone = false;
-    else if (Clobber != "cc")
+    else if (Clobber != "cc") {
       Clobber = getTarget().getNormalizedGCCRegisterName(Clobber);
+      if (CGM.getCodeGenOpts().StackClashProtector &&
+          getTarget().isSPRegName(Clobber)) {
+        CGM.getDiags().Report(S.getAsmLoc(),
+                              diag::warn_stack_clash_protection_inline_asm);
+      }
+    }
 
     if (!Constraints.empty())
       Constraints += ',';
@@ -2358,9 +2377,9 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   if (IsGCCAsmGoto) {
     llvm::CallBrInst *Result =
         Builder.CreateCallBr(IA, Fallthrough, Transfer, Args);
+    EmitBlock(Fallthrough);
     UpdateAsmCallInst(cast<llvm::CallBase>(*Result), HasSideEffect, ReadOnly,
                       ReadNone, S, ResultRegTypes, *this, RegResults);
-    EmitBlock(Fallthrough);
   } else {
     llvm::CallInst *Result =
         Builder.CreateCall(IA, Args, getBundlesForFunclet(IA));

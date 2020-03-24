@@ -1169,9 +1169,7 @@ public:
   }
 
   llvm::Constant *VisitExprWithCleanups(ExprWithCleanups *E, QualType T) {
-    if (!E->cleanupsHaveSideEffects())
-      return Visit(E->getSubExpr(), T);
-    return nullptr;
+    return Visit(E->getSubExpr(), T);
   }
 
   llvm::Constant *VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E,
@@ -1271,19 +1269,7 @@ public:
     if (!E->getConstructor()->isTrivial())
       return nullptr;
 
-    // FIXME: We should not have to call getBaseElementType here.
-    const auto *RT =
-        CGM.getContext().getBaseElementType(Ty)->castAs<RecordType>();
-    const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
-
-    // If the class doesn't have a trivial destructor, we can't emit it as a
-    // constant expr.
-    if (!RD->hasTrivialDestructor())
-      return nullptr;
-
-    // Only copy and default constructors can be trivial.
-
-
+    // Only default and copy/move constructors can be trivial.
     if (E->getNumArgs()) {
       assert(E->getNumArgs() == 1 && "trivial ctor with > 1 argument");
       assert(E->getConstructor()->isCopyOrMoveConstructor() &&
@@ -1342,7 +1328,7 @@ public:
             return ConstantAddress(CGM.GetAddrOfGlobalVar(VD), Align);
           else if (VD->isLocalVarDecl()) {
             auto Ptr = CGM.getOrCreateStaticVarDecl(
-	      *VD, CGM.getLLVMLinkageVarDefinition(VD, /*isConstant=*/false));
+                *VD, CGM.getLLVMLinkageVarDefinition(VD, /*isConstant=*/false));
             return ConstantAddress(Ptr, Align);
           }
         }
@@ -1357,7 +1343,7 @@ public:
       CompoundLiteralExpr *CLE = cast<CompoundLiteralExpr>(E);
       CharUnits Align = CGM.getContext().getTypeAlignInChars(E->getType());
       if (llvm::GlobalVariable *Addr =
-	  CGM.getAddrOfConstantCompoundLiteralIfEmitted(CLE))
+          CGM.getAddrOfConstantCompoundLiteralIfEmitted(CLE))
         return ConstantAddress(Addr, Align);
 
       llvm::Constant* C = CGM.EmitConstantExpr(CLE->getInitializer(),
@@ -1366,11 +1352,11 @@ public:
       if (!C) return ConstantAddress::invalid();
 
       auto GV = new llvm::GlobalVariable(CGM.getModule(), C->getType(),
-					 E->getType().isConstant(CGM.getContext()),
-					 llvm::GlobalValue::InternalLinkage,
-					 C, ".compoundliteral", nullptr,
-					 llvm::GlobalVariable::NotThreadLocal,
-					 CGM.getContext().getTargetAddressSpace(E->getType()));
+                                         E->getType().isConstant(CGM.getContext()),
+                                         llvm::GlobalValue::InternalLinkage,
+                                         C, ".compoundliteral", nullptr,
+                                         llvm::GlobalVariable::NotThreadLocal,
+                                         CGM.getContext().getTargetAddressSpace(E->getType()));
       GV->setAlignment(Align.getAsAlign());
       CGM.setAddrOfConstantCompoundLiteral(CLE, GV);
       return ConstantAddress(GV, Align);
@@ -1382,7 +1368,7 @@ public:
     case Expr::ObjCStringLiteralClass: {
       ObjCStringLiteral* SL = cast<ObjCStringLiteral>(E);
       ConstantAddress C =
-	CGM.getObjCRuntime().GenerateConstantString(SL->getString());
+          CGM.getObjCRuntime().GenerateConstantString(SL->getString());
       return C.getElementBitCast(ConvertType(E->getType()));
     }
     case Expr::PredefinedExprClass: {
@@ -1407,14 +1393,14 @@ public:
       CallExpr* CE = cast<CallExpr>(E);
       unsigned builtin = CE->getBuiltinCallee();
       if (builtin !=
-	  Builtin::BI__builtin___CFStringMakeConstantString &&
+          Builtin::BI__builtin___CFStringMakeConstantString &&
           builtin !=
-	  Builtin::BI__builtin___NSStringMakeConstantString)
+          Builtin::BI__builtin___NSStringMakeConstantString)
         break;
       const Expr *Arg = CE->getArg(0)->IgnoreParenCasts();
       const StringLiteral *Literal = cast<StringLiteral>(Arg);
       if (builtin ==
-	  Builtin::BI__builtin___NSStringMakeConstantString) {
+          Builtin::BI__builtin___NSStringMakeConstantString) {
         return CGM.getObjCRuntime().GenerateConstantString(Literal);
       }
       // FIXME: need to deal with UCN conversion issues.
@@ -1850,6 +1836,10 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
   return C;
 }
 
+llvm::Constant *CodeGenModule::getNullPointer(llvm::PointerType *T, QualType QT) {
+  return getTargetCodeGenInfo().getNullPointer(*this, T, QT);
+}
+
 llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
                                                 QualType DestType,
                                                 CodeGenFunction *CGF) {
@@ -1876,10 +1866,6 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
     C = llvm::ConstantExpr::getZExt(C, BoolTy);
   }
   return C;
-}
-
-llvm::Constant *CodeGenModule::getNullPointer(llvm::PointerType *T, QualType QT) {
-  return getTargetCodeGenInfo().getNullPointer(*this, T, QT);
 }
 
 llvm::Constant *CodeGenModule::EmitConstantValue(const APValue &Value,
@@ -1920,8 +1906,8 @@ llvm::Constant *CodeGenModule::EmitConstantValue(const APValue &Value,
       // An array can be represented as an lvalue referring to the base.
       if (isa<llvm::ArrayType>(DestTy)) {
         assert(Offset->isNullValue() && "offset on array initializer");
-	ConstantEmitter Emitter(*this, CGF);
-	/// FIXME: Is this the right ParamTy?
+        ConstantEmitter Emitter(*this, CGF);
+        /// FIXME: Is this the right ParamTy?
         return ConstExprEmitter(Emitter).Visit(
           const_cast<Expr*>(LVBase.get<const Expr*>()), DestType);
       }

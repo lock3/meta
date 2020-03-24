@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -fsyntax-only -verify %s
 
-consteval int foo() { return 0; }
+consteval int foo() { return 0; } // expected-note {{declared here}} expected-note {{declared here}}
 
 template<typename F>
 constexpr bool test(F callee) {
@@ -15,12 +15,12 @@ consteval bool consteval_explicit_test() {
   return test(&foo);
 }
 
-constexpr bool constexpr_implicit_test() { // expected-error {{no return statement in constexpr function}}
-  return test(foo); // expected-error {{immediate functions can only be converted to function pointers inside of an immediate function context or, as part of an immediate invocation}}
+constexpr bool constexpr_implicit_test() {
+  return test(foo); // expected-error {{cannot take address of consteval function 'foo' outside of an immediate invocation}}
 }
 
 constexpr bool constexpr_explicit_test() {
-  return test(&foo); // expected-error {{immediate functions can only be converted to function pointers inside of an immediate function context or, as part of an immediate invocation}}
+  return test(&foo); // expected-error {{cannot take address of consteval function 'foo' outside of an immediate invocation}}
 }
 
 int main() {

@@ -152,7 +152,7 @@ struct InjectionInfo {
 class InjectionContext : public TreeTransform<InjectionContext> {
   using Base = TreeTransform<InjectionContext>;
 
-  using InjectionType = llvm::PointerUnion3<Decl *, CXXBaseSpecifier *, Stmt *>;
+  using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *, Stmt *>;
 public:
   InjectionContext(Sema &SemaRef, Decl *Injectee)
     : Base(SemaRef), Injectee(Injectee) { }
@@ -359,7 +359,23 @@ public:
       const TypedValue &TV = Iter->second;
       Expr *Opaque = new (getContext()) OpaqueValueExpr(
           E->getLocation(), TV.Type, VK_RValue, OK_Ordinary, E);
-      return new (getContext()) CXXConstantExpr(Opaque, TV.Value);
+      auto *CE = ConstantExpr::Create(getContext(), Opaque, TV.Value);
+
+      // Override dependence.
+      //
+      // By passing the DeclRefExpr onto OpaqueValueExpr we inherit
+      // its dependence flags, and that is then inherited by the ConstantExpr.
+      // Rather than causing conflict with upstream and changing
+      // semantics of OpaqueValueExpr
+      // (to allow us to traffic the DeclRefExpr for diagnostics),
+      // override this behavior for the ConstantExpr.
+      //
+      // This is fine as we should only be using the ConstantExpr's value
+      // rather than the expression which created it.
+
+      CE->setDependence(ExprDependence::None);
+
+      return CE;
     } else {
       return nullptr;
     }
@@ -834,6 +850,9 @@ static ParmVarDecl *GetReflectedPVD(const Reflection &R) {
 bool InjectionContext::ExpandInjectedParameter(
                                         const CXXInjectedParmsInfo &Injected,
                                         SmallVectorImpl<ParmVarDecl *> &Parms) {
+  EnterExpressionEvaluationContext EvalContext(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
   ExprResult TransformedOperand = getDerived().TransformExpr(
                                                             Injected.Operand);
   if (TransformedOperand.isInvalid())
@@ -1206,7 +1225,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
       D->getStorageClass(), D->isInlineSpecified(), D->hasWrittenPrototype(),
-      D->getConstexprKind());
+      D->getConstexprKind(), D->getTrailingRequiresClause());
   AddDeclSubstitution(D, Fn);
   UpdateFunctionParms(D, Fn);
 
@@ -3194,7 +3213,7 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   Class->setFragment(true);
 
   QualType ClassTy = Context.getRecordType(Class);
-  TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
+  TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy, Loc);
 
   // Build the class fields.
   SmallVector<FieldDecl *, 4> Fields;
@@ -3428,9 +3447,8 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *Operand) {
-  // An injection stmt can only appear in constexpr contexts
-  if (!CurContext->isConstexprContext()) {
-    Diag(Loc, diag::err_injection_stmt_constexpr);
+  if (!isConstantEvaluated()) {
+    Diag(Loc, diag::err_requires_manifest_constevaluation) << 1;
     return StmtError();
   }
 
@@ -4422,7 +4440,8 @@ ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
                            FunctionTy, FunctionTyInfo, SC_None,
                            /*isInlineSpecified=*/false,
                            /*hasWrittenPrototype=*/true,
-                           /*ConstexprKind=*/CSK_consteval);
+                           /*ConstexprKind=*/CSK_consteval,
+                           /*TrailingRequiresClause=*/nullptr);
   Function->setImplicit();
   Function->setMetaprogram();
 
@@ -4489,6 +4508,9 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   Expr::EvalResult Result;
   Result.Diag = &Notes;
   Result.InjectionEffects = &Effects;
+
+  EnterExpressionEvaluationContext ConstantEvaluated(
+      Sema, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
   bool Folded = Call->EvaluateAsRValue(Result, EvalCtx);

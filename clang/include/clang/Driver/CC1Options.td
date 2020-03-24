@@ -284,8 +284,6 @@ def new_struct_path_tbaa : Flag<["-"], "new-struct-path-tbaa">,
   HelpText<"Enable enhanced struct-path aware Type Based Alias Analysis">;
 def masm_verbose : Flag<["-"], "masm-verbose">,
   HelpText<"Generate verbose assembly output">;
-def mcode_model : Separate<["-"], "mcode-model">,
-  HelpText<"The code model to use">, Values<"tiny,small,kernel,medium,large">;
 def mdebug_pass : Separate<["-"], "mdebug-pass">,
   HelpText<"Enable additional debug output">;
 def mframe_pointer_EQ : Joined<["-"], "mframe-pointer=">,
@@ -315,6 +313,8 @@ def mno_zero_initialized_in_bss : Flag<["-"], "mno-zero-initialized-in-bss">,
   HelpText<"Do not put zero initialized data in the BSS">;
 def mregparm : Separate<["-"], "mregparm">,
   HelpText<"Limit the number of registers available for integer arguments">;
+def msmall_data_limit : Separate<["-"], "msmall-data-limit">,
+  HelpText<"Put global and static data smaller than the limit into a special section">;
 def munwind_tables : Flag<["-"], "munwind-tables">,
   HelpText<"Generate unwinding tables for all functions">;
 def mconstructor_aliases : Flag<["-"], "mconstructor-aliases">,
@@ -372,6 +372,9 @@ def fsanitize_coverage_no_prune
 def fsanitize_coverage_stack_depth
     : Flag<["-"], "fsanitize-coverage-stack-depth">,
       HelpText<"Enable max stack depth tracing">;
+def fpatchable_function_entry_offset_EQ
+    : Joined<["-"], "fpatchable-function-entry-offset=">, MetaVarName<"<M>">,
+      HelpText<"Generate M NOPs before function entry">;
 def fprofile_instrument_EQ : Joined<["-"], "fprofile-instrument=">,
     HelpText<"Enable PGO instrumentation. The accepted value is clang, llvm, "
              "or none">, Values<"none,clang,llvm">;
@@ -387,8 +390,6 @@ def flto_visibility_public_std:
 def flto_unit: Flag<["-"], "flto-unit">,
     HelpText<"Emit IR to support LTO unit features (CFI, whole program vtable opt)">;
 def fno_lto_unit: Flag<["-"], "fno-lto-unit">;
-def femit_debug_entry_values : Flag<["-"], "femit-debug-entry-values">,
-    HelpText<"Enables debug info about call site parameter's entry values">;
 def fdebug_pass_manager : Flag<["-"], "fdebug-pass-manager">,
     HelpText<"Prints debug information for the new pass manager">;
 def fno_debug_pass_manager : Flag<["-"], "fno-debug-pass-manager">,
@@ -404,6 +405,9 @@ def cfguard_no_checks : Flag<["-"], "cfguard-no-checks">,
     HelpText<"Emit Windows Control Flow Guard tables only (no checks)">;
 def cfguard : Flag<["-"], "cfguard">,
     HelpText<"Emit Windows Control Flow Guard tables and checks">;
+
+def fdenormal_fp_math_f32_EQ : Joined<["-"], "fdenormal-fp-math-f32=">,
+   Group<f_Group>;
 
 //===----------------------------------------------------------------------===//
 // Dependency Output Options
@@ -476,6 +480,10 @@ def cc1as : Flag<["-"], "cc1as">;
 def ast_merge : Separate<["-"], "ast-merge">,
   MetaVarName<"<ast file>">,
   HelpText<"Merge the given AST file into the translation unit being compiled.">;
+def aux_target_cpu : Separate<["-"], "aux-target-cpu">,
+  HelpText<"Target a specific auxiliary cpu type">;
+def aux_target_feature : Separate<["-"], "aux-target-feature">,
+  HelpText<"Target specific auxiliary attributes">;
 def aux_triple : Separate<["-"], "aux-triple">,
   HelpText<"Auxiliary target triple.">;
 def code_completion_at : Separate<["-"], "code-completion-at">,
@@ -553,7 +561,10 @@ def ftest_module_file_extension_EQ :
   HelpText<"introduce a module file extension for testing purposes. "
            "The argument is parsed as blockname:major:minor:hashed:user info">;
 def fconcepts_ts : Flag<["-"], "fconcepts-ts">,
-  HelpText<"Enable C++ Extensions for Concepts.">;
+  HelpText<"Enable C++ Extensions for Concepts. (deprecated - use -std=c++2a)">;
+def fno_concept_satisfaction_caching : Flag<["-"],
+                                            "fno-concept-satisfaction-caching">,
+  HelpText<"Disable satisfaction caching for C++2a Concepts.">;
 
 let Group = Action_Group in {
 
@@ -853,6 +864,8 @@ def detailed_preprocessing_record : Flag<["-"], "detailed-preprocessing-record">
   HelpText<"include a detailed record of preprocessing actions">;
 def setup_static_analyzer : Flag<["-"], "setup-static-analyzer">,
   HelpText<"Set up preprocessor for static analyzer (done automatically when static analyzer is run).">;
+def disable_pragma_debug_crash : Flag<["-"], "disable-pragma-debug-crash">,
+  HelpText<"Disable any #pragma clang __debug that can lead to crashing behavior. This is meant for testing.">;
 
 //===----------------------------------------------------------------------===//
 // OpenCL Options

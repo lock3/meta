@@ -16,7 +16,7 @@ files needed to process intermediate representations and converts it into
 object files.  Tools include an assembler, disassembler, bitcode analyzer, and
 bitcode optimizer.  It also contains basic regression tests.
 
-C-like languages use the `Clang <http://clang.llvm.org/>`_ front end.  This
+C-like languages use the `Clang <https://clang.llvm.org/>`_ front end.  This
 component compiles C, C++, Objective C, and Objective C++ code into LLVM bitcode
 -- and from there into object files, using LLVM.
 
@@ -28,7 +28,7 @@ Getting the Source Code and Building LLVM
 =========================================
 
 The LLVM Getting Started documentation may be out of date.  The `Clang
-Getting Started <http://clang.llvm.org/get_started.html>`_ page might have more
+Getting Started <https://clang.llvm.org/get_started.html>`_ page might have more
 accurate information.
 
 This is an example workflow and configuration to get and build the LLVM source:
@@ -39,14 +39,14 @@ This is an example workflow and configuration to get and build the LLVM source:
    * Or, on windows, ``git clone --config core.autocrlf=false
      https://github.com/llvm/llvm-project.git``
 
-#. Configure and build LLVM and Clang:.
+#. Configure and build LLVM and Clang:
 
    * ``cd llvm-project``
    * ``mkdir build``
    * ``cd build``
    * ``cmake -G <generator> [options] ../llvm``
 
-     Some common generators are:
+     Some common build system generators are:
 
      * ``Ninja`` --- for generating `Ninja <https://ninja-build.org>`_
        build files. Most llvm developers use Ninja.
@@ -75,9 +75,11 @@ This is an example workflow and configuration to get and build the LLVM source:
      * ``-DLLVM_ENABLE_ASSERTIONS=On`` --- Compile with assertion checks enabled
        (default is Yes for Debug builds, No for all other build types).
 
-   * Run your build tool of choice!
+   * ``cmake --build . [--target <target>]`` or the build system specified
+     above directly.
 
-     * The default target (i.e. ``ninja`` or ``make``) will build all of LLVM.
+     * The default target (i.e. ``cmake --build .`` or ``make``) will build all of
+       LLVM.
 
      * The ``check-all`` target (i.e. ``ninja check-all``) will run the
        regression tests to ensure everything is in working order.
@@ -85,10 +87,10 @@ This is an example workflow and configuration to get and build the LLVM source:
      * CMake will generate build targets for each tool and library, and most
        LLVM sub-projects generate their own ``check-<project>`` target.
 
-     * Running a serial build will be *slow*.  To improve speed, try running a
-       parallel build. That's done by default in Ninja; for ``make``, use
-       ``make -j NNN`` (NNN is the number of parallel jobs, use e.g. number of
-       CPUs you have.)
+     * Running a serial build will be **slow**.  To improve speed, try running a
+       parallel build. That's done by default in Ninja; for ``make``, use the
+       option ``-j NN``, where ``NN`` is the number of parallel jobs, e.g. the
+       number of available CPUs.
 
    * For more information see `CMake <CMake.html>`__
 
@@ -402,10 +404,7 @@ The files are as follows, with *x.y* marking the version number:
 Checkout LLVM from Git
 ----------------------
 
-You can also checkout the source code for LLVM from Git. While the LLVM
-project's official source-code repository is Subversion, we are in the process
-of migrating to git. We currently recommend that all developers use Git for
-day-to-day development.
+You can also checkout the source code for LLVM from Git.
 
 .. note::
 
@@ -491,11 +490,21 @@ For developers to commit changes from Git
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Once a patch is reviewed, you should rebase it, re-test locally, and commit the
-changes to LLVM's master branch. This is done using `git push`.
+changes to LLVM's master branch. This is done using `git push` if you have the
+required access rights. See `committing a change
+<Phabricator.html#committing-a-change>`_ for Phabricator based commits or
+`obtaining commit access <DeveloperPolicy.html#obtaining-commit-access>`_
+for commit access.
 
 LLVM currently has a linear-history policy, which means that merge commits are
 not allowed. The `llvm-project` repo on github is configured to reject pushes
 that include merges, so the `git rebase` step above is required.
+
+Bisecting commits
+^^^^^^^^^^^^^^^^^
+
+See `Bisecting LLVM code <GitBisecting.html>`_ for how to use ``git bisect``
+on LLVM.
 
 Reverting a change
 ^^^^^^^^^^^^^^^^^^
@@ -513,7 +522,7 @@ you need to check the code out of SVN rather than git for some reason, you can
 do it like so:
 
 * ``cd where-you-want-llvm-to-live``
-* Read-Only: ``svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm``
+* Read-Only: ``svn co https://llvm.org/svn/llvm-project/llvm/trunk llvm``
 * Read-Write: ``svn co https://user@llvm.org/svn/llvm-project/llvm/trunk llvm``
 
 This will create an '``llvm``' directory in the current directory and fully
@@ -595,7 +604,7 @@ used by people developing LLVM.
 |                         | overridden with ``LLVM_DYLIB_COMPONENTS``. The     |
 |                         | default contains most of LLVM and is defined in    |
 |                         | ``tools/llvm-shlib/CMakelists.txt``. This option is|
-|                         | not avialable on Windows.                          |
+|                         | not available on Windows.                          |
 +-------------------------+----------------------------------------------------+
 | LLVM_OPTIMIZED_TABLEGEN | Builds a release tablegen that gets used during    |
 |                         | the LLVM build. This can dramatically speed up     |
@@ -713,7 +722,7 @@ Note: There are some additional flags that need to be passed when building for
 iOS due to limitations in the iOS SDK.
 
 Check :doc:`HowToCrossCompileLLVM` and `Clang docs on how to cross-compile in general
-<http://clang.llvm.org/docs/CrossCompilation.html>`_ for more information
+<https://clang.llvm.org/docs/CrossCompilation.html>`_ for more information
 about cross-compiling.
 
 The Location of LLVM Object Files
@@ -780,7 +789,7 @@ Directory Layout
 
 One useful source of information about the LLVM source base is the LLVM `doxygen
 <http://www.doxygen.org/>`_ documentation available at
-`<http://llvm.org/doxygen/>`_.  The following is a brief introduction to code
+`<https://llvm.org/doxygen/>`_.  The following is a brief introduction to code
 layout:
 
 ``llvm/examples``
@@ -1096,8 +1105,8 @@ things... there are many more interesting and complicated things that you can do
 that aren't documented here (but we'll gladly accept a patch if you want to
 write something up!).  For more information about LLVM, check out:
 
-* `LLVM Homepage <http://llvm.org/>`_
-* `LLVM Doxygen Tree <http://llvm.org/doxygen/>`_
-* `Starting a Project that Uses LLVM <http://llvm.org/docs/Projects.html>`_
+* `LLVM Homepage <https://llvm.org/>`_
+* `LLVM Doxygen Tree <https://llvm.org/doxygen/>`_
+* `Starting a Project that Uses LLVM <https://llvm.org/docs/Projects.html>`_
 
 .. _installing arcanist: https://secure.phabricator.com/book/phabricator/article/arcanist_quick_start/

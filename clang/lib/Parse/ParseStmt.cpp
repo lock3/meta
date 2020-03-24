@@ -1045,9 +1045,9 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
                                 Tok.getLocation(),
                                 "in compound statement ('{}')");
 
-  // Record the state of the FP_CONTRACT pragma, restore on leaving the
+  // Record the state of the FPFeatures, restore on leaving the
   // compound statement.
-  Sema::FPContractStateRAII SaveFPContractState(Actions);
+  Sema::FPFeaturesStateRAII SaveFPContractState(Actions);
 
   InMessageExpressionRAIIObject InMessage(*this, false);
   BalancedDelimiterTracker T(*this, tok::l_brace);
@@ -1370,10 +1370,21 @@ StmtResult Parser::ParseIfStatement(SourceLocation *TrailingElseLoc) {
   // Parse the condition.
   StmtResult InitStmt;
   Sema::ConditionResult Cond;
-  if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
-                                IsConstexpr ? Sema::ConditionKind::ConstexprIf
-                                            : Sema::ConditionKind::Boolean))
-    return StmtError();
+
+  if (IsConstexpr) {
+    EnterExpressionEvaluationContext Unevaluated(
+        Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
+        /*LambdaContextDecl=*/nullptr, /*ExprContext=*/
+        Sema::ExpressionEvaluationContextRecord::EK_Other);
+
+    if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
+                                  Sema::ConditionKind::ConstexprIf))
+      return StmtError();
+  } else {
+    if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
+                                  Sema::ConditionKind::Boolean))
+      return StmtError();
+  }
 
   llvm::Optional<bool> ConstexprCondition;
   if (IsConstexpr)

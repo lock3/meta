@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBTarget_h_
-#define LLDB_SBTarget_h_
+#ifndef LLDB_API_SBTARGET_H
+#define LLDB_API_SBTARGET_H
 
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBAttachInfo.h"
@@ -127,7 +127,9 @@ public:
   ///     The argument array.
   ///
   /// \param[in] envp
-  ///     The environment array.
+  ///     The environment array. If this is null, the default
+  ///     environment values (provided through `settings set
+  ///     target.env-vars`) will be used.
   ///
   /// \param[in] stdin_path
   ///     The path to use when re-directing the STDIN of the new
@@ -175,7 +177,9 @@ public:
   ///     The argument array.
   ///
   /// \param[in] envp
-  ///     The environment array.
+  ///     The environment array. If this isn't provided, the default
+  ///     environment values (provided through `settings set
+  ///     target.env-vars`) will be used.
   ///
   /// \param[in] working_directory
   ///     The working directory to have the child process run in
@@ -829,6 +833,7 @@ protected:
   friend class SBFunction;
   friend class SBInstruction;
   friend class SBModule;
+  friend class SBPlatform;
   friend class SBProcess;
   friend class SBSection;
   friend class SBSourceManager;
@@ -849,4 +854,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_SBTarget_h_
+#endif // LLDB_API_SBTARGET_H

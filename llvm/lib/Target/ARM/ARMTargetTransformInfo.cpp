@@ -22,6 +22,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/Type.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/Casting.h"
@@ -46,6 +47,8 @@ static cl::opt<bool> DisableLowOverheadLoops(
 
 extern cl::opt<bool> DisableTailPredication;
 
+extern cl::opt<bool> EnableMaskedGatherScatters;
+
 bool ARMTTIImpl::areInlineCompatible(const Function *Caller,
                                      const Function *Callee) const {
   const TargetMachine &TM = getTLI()->getTargetMachine();
@@ -62,6 +65,20 @@ bool ARMTTIImpl::areInlineCompatible(const Function *Caller,
   bool MatchSubset = ((CallerBits & CalleeBits) & InlineFeatureWhitelist) ==
                      (CalleeBits & InlineFeatureWhitelist);
   return MatchExact && MatchSubset;
+}
+
+bool ARMTTIImpl::shouldFavorBackedgeIndex(const Loop *L) const {
+  if (L->getHeader()->getParent()->hasOptSize())
+    return false;
+  if (ST->hasMVEIntegerOps())
+    return false;
+  return ST->isMClass() && ST->isThumb2() && L->getNumBlocks() == 1;
+}
+
+bool ARMTTIImpl::shouldFavorPostInc() const {
+  if (ST->hasMVEIntegerOps())
+    return true;
+  return false;
 }
 
 int ARMTTIImpl::getIntImmCost(const APInt &Imm, Type *Ty) {
@@ -514,6 +531,27 @@ bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy, MaybeAlign Alignment) {
          (EltWidth == 8);
 }
 
+bool ARMTTIImpl::isLegalMaskedGather(Type *Ty, MaybeAlign Alignment) {
+  if (!EnableMaskedGatherScatters || !ST->hasMVEIntegerOps())
+    return false;
+
+  // This method is called in 2 places:
+  //  - from the vectorizer with a scalar type, in which case we need to get
+  //  this as good as we can with the limited info we have (and rely on the cost
+  //  model for the rest).
+  //  - from the masked intrinsic lowering pass with the actual vector type.
+  // For MVE, we have a custom lowering pass that will already have custom
+  // legalised any gathers that we can to MVE intrinsics, and want to expand all
+  // the rest. The pass runs before the masked intrinsic lowering pass, so if we
+  // are here, we know we want to expand.
+  if (isa<VectorType>(Ty))
+    return false;
+
+  unsigned EltWidth = Ty->getScalarSizeInBits();
+  return ((EltWidth == 32 && (!Alignment || Alignment >= 4)) ||
+          (EltWidth == 16 && (!Alignment || Alignment >= 2)) || EltWidth == 8);
+}
+
 int ARMTTIImpl::getMemcpyCost(const Instruction *I) {
   const MemCpyInst *MI = dyn_cast<MemCpyInst>(I);
   assert(MI && "MemcpyInst expected");
@@ -528,8 +566,8 @@ int ARMTTIImpl::getMemcpyCost(const Instruction *I) {
     return LibCallCost;
 
   const unsigned Size = C->getValue().getZExtValue();
-  const unsigned DstAlign = MI->getDestAlignment();
-  const unsigned SrcAlign = MI->getSourceAlignment();
+  const Align DstAlign = *MI->getDestAlign();
+  const Align SrcAlign = *MI->getSourceAlign();
   const Function *F = I->getParent()->getParent();
   const unsigned Limit = TLI->getMaxStoresPerMemmove(F->hasMinSize());
   std::vector<EVT> MemOps;
@@ -538,8 +576,9 @@ int ARMTTIImpl::getMemcpyCost(const Instruction *I) {
   // loaded and stored. That's why we multiply the number of elements by 2 to
   // get the cost for this memcpy.
   if (getTLI()->findOptimalMemOpLowering(
-          MemOps, Limit, Size, DstAlign, SrcAlign, false /*IsMemset*/,
-          false /*ZeroMemset*/, false /*MemcpyStrSrc*/, false /*AllowOverlap*/,
+          MemOps, Limit,
+          MemOp::Copy(Size, /*DstAlignCanChange*/ false, DstAlign, SrcAlign,
+                      /*IsVolatile*/ true),
           MI->getDestAddressSpace(), MI->getSourceAddressSpace(),
           F->getAttributes()))
     return MemOps.size() * 2;
@@ -820,6 +859,104 @@ int ARMTTIImpl::getInterleavedMemoryOpCost(
   return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
                                            Alignment, AddressSpace,
                                            UseMaskForCond, UseMaskForGaps);
+}
+
+unsigned ARMTTIImpl::getGatherScatterOpCost(unsigned Opcode, Type *DataTy,
+                                            Value *Ptr, bool VariableMask,
+                                            unsigned Alignment,
+                                            const Instruction *I) {
+  using namespace PatternMatch;
+  if (!ST->hasMVEIntegerOps() || !EnableMaskedGatherScatters)
+    return BaseT::getGatherScatterOpCost(Opcode, DataTy, Ptr, VariableMask,
+                                         Alignment, I);
+
+  assert(DataTy->isVectorTy() && "Can't do gather/scatters on scalar!");
+  VectorType *VTy = cast<VectorType>(DataTy);
+
+  // TODO: Splitting, once we do that.
+
+  unsigned NumElems = VTy->getNumElements();
+  unsigned EltSize = VTy->getScalarSizeInBits();
+  std::pair<int, MVT> LT = TLI->getTypeLegalizationCost(DL, DataTy);
+
+  // For now, it is assumed that for the MVE gather instructions the loads are
+  // all effectively serialised. This means the cost is the scalar cost
+  // multiplied by the number of elements being loaded. This is possibly very
+  // conservative, but even so we still end up vectorising loops because the
+  // cost per iteration for many loops is lower than for scalar loops.
+  unsigned VectorCost = NumElems * LT.first;
+  // The scalarization cost should be a lot higher. We use the number of vector
+  // elements plus the scalarization overhead.
+  unsigned ScalarCost =
+      NumElems * LT.first + BaseT::getScalarizationOverhead(DataTy, {});
+
+  if (Alignment < EltSize / 8)
+    return ScalarCost;
+
+  unsigned ExtSize = EltSize;
+  // Check whether there's a single user that asks for an extended type
+  if (I != nullptr) {
+    // Dependent of the caller of this function, a gather instruction will
+    // either have opcode Instruction::Load or be a call to the masked_gather
+    // intrinsic
+    if ((I->getOpcode() == Instruction::Load ||
+         match(I, m_Intrinsic<Intrinsic::masked_gather>())) &&
+        I->hasOneUse()) {
+      const User *Us = *I->users().begin();
+      if (isa<ZExtInst>(Us) || isa<SExtInst>(Us)) {
+        // only allow valid type combinations
+        unsigned TypeSize =
+            cast<Instruction>(Us)->getType()->getScalarSizeInBits();
+        if (((TypeSize == 32 && (EltSize == 8 || EltSize == 16)) ||
+             (TypeSize == 16 && EltSize == 8)) &&
+            TypeSize * NumElems == 128) {
+          ExtSize = TypeSize;
+        }
+      }
+    }
+    // Check whether the input data needs to be truncated
+    TruncInst *T;
+    if ((I->getOpcode() == Instruction::Store ||
+         match(I, m_Intrinsic<Intrinsic::masked_scatter>())) &&
+        (T = dyn_cast<TruncInst>(I->getOperand(0)))) {
+      // Only allow valid type combinations
+      unsigned TypeSize = T->getOperand(0)->getType()->getScalarSizeInBits();
+      if (((EltSize == 16 && TypeSize == 32) ||
+           (EltSize == 8 && (TypeSize == 32 || TypeSize == 16))) &&
+          TypeSize * NumElems == 128)
+        ExtSize = TypeSize;
+    }
+  }
+
+  if (ExtSize * NumElems != 128 || NumElems < 4)
+    return ScalarCost;
+
+  // Any (aligned) i32 gather will not need to be scalarised.
+  if (ExtSize == 32)
+    return VectorCost;
+  // For smaller types, we need to ensure that the gep's inputs are correctly
+  // extended from a small enough value. Other sizes (including i64) are
+  // scalarized for now.
+  if (ExtSize != 8 && ExtSize != 16)
+    return ScalarCost;
+
+  if (auto BC = dyn_cast<BitCastInst>(Ptr))
+    Ptr = BC->getOperand(0);
+  if (auto *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
+    if (GEP->getNumOperands() != 2)
+      return ScalarCost;
+    unsigned Scale = DL.getTypeAllocSize(GEP->getResultElementType());
+    // Scale needs to be correct (which is only relevant for i16s).
+    if (Scale != 1 && Scale * 8 != ExtSize)
+      return ScalarCost;
+    // And we need to zext (not sext) the indexes from a small enough type.
+    if (auto ZExt = dyn_cast<ZExtInst>(GEP->getOperand(1))) {
+      if (ZExt->getOperand(0)->getType()->getScalarSizeInBits() <= ExtSize)
+        return VectorCost;
+    }
+    return ScalarCost;
+  }
+  return ScalarCost;
 }
 
 bool ARMTTIImpl::isLoweredToCall(const Function *F) {
@@ -1211,6 +1348,11 @@ void ARMTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
   unsigned Cost = 0;
   for (auto *BB : L->getBlocks()) {
     for (auto &I : *BB) {
+      // Don't unroll vectorised loop. MVE does not benefit from it as much as
+      // scalar code.
+      if (I.getType()->isVectorTy())
+        return;
+
       if (isa<CallInst>(I) || isa<InvokeInst>(I)) {
         ImmutableCallSite CS(&I);
         if (const Function *F = CS.getCalledFunction()) {
@@ -1219,10 +1361,6 @@ void ARMTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
         }
         return;
       }
-      // Don't unroll vectorised loop. MVE does not benefit from it as much as
-      // scalar code.
-      if (I.getType()->isVectorTy())
-        return;
 
       SmallVector<const Value*, 4> Operands(I.value_op_begin(),
                                             I.value_op_end());
@@ -1264,7 +1402,8 @@ bool ARMTTIImpl::useReductionIntrinsic(unsigned Opcode, Type *Ty,
     return false;
   case Instruction::ICmp:
   case Instruction::Add:
-    return ScalarBits < 64 && ScalarBits * Ty->getVectorNumElements() == 128;
+    return ScalarBits < 64 &&
+           (ScalarBits * Ty->getVectorNumElements()) % 128 == 0;
   default:
     llvm_unreachable("Unhandled reduction opcode");
   }

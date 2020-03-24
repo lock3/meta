@@ -104,6 +104,7 @@ namespace clang {
     void VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
     void VisitTemplateDecl(TemplateDecl *D);
     void VisitConceptDecl(ConceptDecl *D);
+    void VisitRequiresExprBodyDecl(RequiresExprBodyDecl *D);
     void VisitRedeclarableTemplateDecl(RedeclarableTemplateDecl *D);
     void VisitClassTemplateDecl(ClassTemplateDecl *D);
     void VisitVarTemplateDecl(VarTemplateDecl *D);
@@ -527,8 +528,11 @@ void ASTDeclWriter::VisitDeclaratorDecl(DeclaratorDecl *D) {
   VisitValueDecl(D);
   Record.AddSourceLocation(D->getInnerLocStart());
   Record.push_back(D->hasExtInfo());
-  if (D->hasExtInfo())
-    Record.AddQualifierInfo(*D->getExtInfo());
+  if (D->hasExtInfo()) {
+    DeclaratorDecl::ExtInfo *Info = D->getExtInfo();
+    Record.AddQualifierInfo(*Info);
+    Record.AddStmt(Info->TrailingRequiresClause);
+  }
   // The location information is deferred until the end of the record.
   Record.AddTypeRef(D->getTypeSourceInfo() ? D->getTypeSourceInfo()->getType()
                                            : QualType());
@@ -1506,6 +1510,10 @@ void ASTDeclWriter::VisitConceptDecl(ConceptDecl *D) {
   Code = serialization::DECL_CONCEPT;
 }
 
+void ASTDeclWriter::VisitRequiresExprBodyDecl(RequiresExprBodyDecl *D) {
+  Code = serialization::DECL_REQUIRES_EXPR_BODY;
+}
+
 void ASTDeclWriter::VisitRedeclarableTemplateDecl(RedeclarableTemplateDecl *D) {
   VisitRedeclarable(D);
 
@@ -1662,10 +1670,26 @@ void ASTDeclWriter::VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
 }
 
 void ASTDeclWriter::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
+  Record.push_back(D->hasTypeConstraint());
   VisitTypeDecl(D);
 
   Record.push_back(D->wasDeclaredWithTypename());
-  // TODO: Concepts - constrained parameters.
+
+  const TypeConstraint *TC = D->getTypeConstraint();
+  Record.push_back(TC != nullptr);
+  if (TC) {
+    Record.AddNestedNameSpecifierLoc(TC->getNestedNameSpecifierLoc());
+    Record.AddDeclarationNameInfo(TC->getConceptNameInfo());
+    Record.AddDeclRef(TC->getNamedConcept());
+    Record.push_back(TC->getTemplateArgsAsWritten() != nullptr);
+    if (TC->getTemplateArgsAsWritten())
+      Record.AddASTTemplateArgumentListInfo(TC->getTemplateArgsAsWritten());
+    Record.AddStmt(TC->getImmediatelyDeclaredConstraint());
+    Record.push_back(D->isExpandedParameterPack());
+    if (D->isExpandedParameterPack())
+      Record.push_back(D->getNumExpansionParameters());
+  }
+
   bool OwnsDefaultArg = D->hasDefaultArgument() &&
                         !D->defaultArgumentWasInherited();
   Record.push_back(OwnsDefaultArg);
@@ -1679,6 +1703,8 @@ void ASTDeclWriter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
   // For an expanded parameter pack, record the number of expansion types here
   // so that it's easier for deserialization to allocate the right amount of
   // memory.
+  Expr *TypeConstraint = D->getPlaceholderTypeConstraint();
+  Record.push_back(!!TypeConstraint);
   if (D->isExpandedParameterPack())
     Record.push_back(D->getNumExpansionTypes());
 
@@ -1686,6 +1712,8 @@ void ASTDeclWriter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
   // TemplateParmPosition.
   Record.push_back(D->getDepth());
   Record.push_back(D->getPosition());
+  if (TypeConstraint)
+    Record.AddStmt(TypeConstraint);
 
   if (D->isExpandedParameterPack()) {
     for (unsigned I = 0, N = D->getNumExpansionTypes(); I != N; ++I) {
@@ -1695,7 +1723,6 @@ void ASTDeclWriter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
 
     Code = serialization::DECL_EXPANDED_NON_TYPE_TEMPLATE_PARM_PACK;
   } else {
-    // TODO: Concepts - constrained parameters.
     // Rest of NonTypeTemplateParmDecl.
     Record.push_back(D->isParameterPack());
     bool OwnsDefaultArg = D->hasDefaultArgument() &&
@@ -1725,7 +1752,6 @@ void ASTDeclWriter::VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D) {
       Record.AddTemplateParameterList(D->getExpansionTemplateParameters(I));
     Code = serialization::DECL_EXPANDED_TEMPLATE_TEMPLATE_PARM_PACK;
   } else {
-    // TODO: Concepts - constrained parameters.
     // Rest of TemplateTemplateParmDecl.
     Record.push_back(D->isParameterPack());
     bool OwnsDefaultArg = D->hasDefaultArgument() &&
@@ -2277,13 +2303,13 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_DECL_REF));
   //Stmt
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
   // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //DeclRefExpr
@@ -2301,13 +2327,13 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_INTEGER_LITERAL));
   //Stmt
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
   // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //Integer Literal
@@ -2320,13 +2346,13 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_CHARACTER_LITERAL));
   //Stmt
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
   // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //Character Literal
@@ -2339,13 +2365,13 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_IMPLICIT_CAST));
   // Stmt
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
   // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   // CastExpr
@@ -2463,11 +2489,12 @@ void ASTRecordWriter::AddFunctionDefinition(const FunctionDecl *FD) {
     }
     if (Writer->Context->getLangOpts().ModulesCodegen) {
       // Under -fmodules-codegen, codegen is performed for all non-internal,
-      // non-always_inline functions.
+      // non-always_inline functions, unless they are available elsewhere.
       if (!FD->hasAttr<AlwaysInlineAttr>()) {
         if (!Linkage)
           Linkage = Writer->Context->GetGVALinkageForFunction(FD);
-        ModulesCodegen = *Linkage != GVA_Internal;
+        ModulesCodegen =
+            *Linkage != GVA_Internal && *Linkage != GVA_AvailableExternally;
       }
     }
   }

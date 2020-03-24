@@ -243,6 +243,15 @@ These each perform their respective integer arithmetic on a scalar.
 
   %2:_(s32) = G_ADD %0:_(s32), %1:_(s32)
 
+G_SADDSAT, G_UADDSAT, G_SSUBSAT, G_USUBSAT
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Signed and unsigned addition and subtraction with saturation.
+
+.. code-block:: none
+
+  %2:_(s32) = G_SADDSAT %0:_(s32), %1:_(s32)
+
 G_SHL, G_LSHR, G_ASHR
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -633,7 +642,7 @@ G_INTRINSIC, G_INTRINSIC_W_SIDE_EFFECTS
 Call an intrinsic
 
 The _W_SIDE_EFFECTS version is considered to have unknown side-effects and
-as such cannot be reordered acrosss other side-effecting instructions.
+as such cannot be reordered across other side-effecting instructions.
 
 .. note::
 

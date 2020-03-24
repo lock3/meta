@@ -1,6 +1,6 @@
 //===- VectorOps.td - Vector op definitions ---------------*- tablegen -*-====//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -13,17 +13,19 @@
 #ifndef VECTOR_OPS
 #define VECTOR_OPS
 
-include "mlir/IR/OpBase.td"
-include "mlir/Dialect/AffineOps/AffineOpsBase.td"
+include "mlir/Dialect/Affine/IR/AffineOpsBase.td"
+include "mlir/Interfaces/SideEffects.td"
 
-def Vector_Dialect : Dialect {
+
+def VectorOps_Dialect : Dialect {
   let name = "vector";
   let cppNamespace = "vector";
+  let hasConstantMaterializer = 1;
 }
 
 // Base class for Vector dialect ops.
 class Vector_Op<string mnemonic, list<OpTrait> traits = []> :
-    Op<Vector_Dialect, mnemonic, traits> {
+    Op<VectorOps_Dialect, mnemonic, traits> {
   // For every vector op, there needs to be a:
   //   * void print(OpAsmPrinter &p, ${C++ class of Op} op)
   //   * LogicalResult verify(${C++ class of Op} op)
@@ -38,18 +40,25 @@ class Vector_Op<string mnemonic, list<OpTrait> traits = []> :
 // TODO(andydavis, ntv) Add an attribute to specify a different algebra
 // with operators other than the current set: {*, +}.
 def Vector_ContractionOp :
-  Vector_Op<"contract", [NoSideEffect]>,
-    Arguments<(ins AnyVector:$lhs, AnyVector:$rhs, AnyVector:$acc,
+  Vector_Op<"contract", [NoSideEffect,
+     PredOpTrait<"first operand lhs and result have same element type",
+                 TCresVTEtIsSameAsOpBase<0, 0>>,
+     PredOpTrait<"second operand rhs and result have same element type",
+                 TCresVTEtIsSameAsOpBase<0, 1>>,
+     PredOpTrait<"third operand acc and result have same element type",
+                 TCresVTEtIsSameAsOpBase<0, 1>>]>,
+    Arguments<(ins AnyVector:$lhs, AnyVector:$rhs, AnyType:$acc,
                Variadic<VectorOf<[I1]>>:$masks,
                AffineMapArrayAttr:$indexing_maps, ArrayAttr:$iterator_types)>,
-    Results<(outs AnyVector)> {
+    Results<(outs AnyType)> {
   let summary = "vector contraction operation";
   let description = [{
     Computes the sum of products of vector elements along contracting
     dimension pairs from 2 vectors of rank M and N respectively, adds this
     intermediate result to the accumulator argument of rank K, and returns a
     vector result of rank K (where K = num_lhs_free_dims + num_rhs_free_dims +
-    num_batch_dims (see dimension type descriptions below)).
+    num_batch_dims (see dimension type descriptions below)). For K = 0 (no
+    free or batch dimensions), the accumulator and output are a scalar.
 
     Optional vector mask arguments (produced by CreateMaskOp or ConstantMaskOp)
     specify the dynamic dimension sizes of valid data within the lhs/rhs vector
@@ -59,7 +68,7 @@ def Vector_ContractionOp :
     the list represents an iterator with one of the following types:
 
     *) "reduction": reduction dimensions are present in the lhs and rhs
-                    arguments but not in the output (or optional accumulator
+                    arguments but not in the output (and accumulator
                     argument). These are the dimensions along which the vector
                     contraction op computes the sum of products, and
                     contracting dimension pair dimension sizes must match
@@ -81,30 +90,44 @@ def Vector_ContractionOp :
 
     Examples:
 
-      // 2D vector contraction with one contracting dimension (matmul).
+      // Simple dot product (K = 0).
       #contraction_accesses = [
-        (i, j, k) -> (i, k),
-        (i, j, k) -> (k, j),
-        (i, j, k) -> (i, j)
+       affine_map<(i) -> (i)>,
+       affine_map<(i) -> (i)>,
+       affine_map<(i) -> ()>
       ]
       #contraction_trait = {
         indexing_maps = #contraction_accesses,
-        iterator_types = [parallel, parallel, reduction]
+        iterator_types = ["reduction"]
+      }
+      %3 = vector.contract #contraction_trait %0, %1, %2
+        : vector<10xf32>, vector<10xf32> into f32
+
+      // 2D vector contraction with one contracting dimension (matmul, K = 2).
+      #contraction_accesses = [
+        affine_map<(i, j, k) -> (i, k)>,
+        affine_map<(i, j, k) -> (k, j)>,
+        affine_map<(i, j, k) -> (i, j)>
+      ]
+      #contraction_trait = {
+        indexing_maps = #contraction_accesses,
+        iterator_types = ["parallel", "parallel", "reduction"]
       }
 
       %3 = vector.contract #contraction_trait %0, %1, %2
         : vector<4x3xf32>, vector<3x7xf32> into vector<4x7xf32>
 
       // 4D to 3D vector contraction with two contracting dimensions and
-      // one batch dimension.
+      // one batch dimension (K = 3).
       #contraction_accesses = [
-        (b0, f0, f1, c0, c1) -> (c0, b0, c1, f0),
-        (b0, f0, f1, c0, c1) -> (b0, c1, c0, f1),
-        (b0, f0, f1, c0, c1) -> (b0, f0, f1)
+        affine_map<(b0, f0, f1, c0, c1) -> (c0, b0, c1, f0)>,
+        affine_map<(b0, f0, f1, c0, c1) -> (b0, c1, c0, f1)>,
+        affine_map<(b0, f0, f1, c0, c1) -> (b0, f0, f1)>
       ]
       #contraction_trait = {
         indexing_maps = #contraction_accesses,
-        iterator_types = [parallel, parallel, parallel reduction, reduction]
+        iterator_types = ["parallel", "parallel", "parallel",
+                          "reduction", "reduction"]
       }
 
       %4 = vector.contract #contraction_trait %0, %1, %2
@@ -120,28 +143,28 @@ def Vector_ContractionOp :
   }];
   let builders = [OpBuilder<
     "Builder *builder, OperationState &result, Value lhs, Value rhs, "
-    "Value acc, ArrayAttr indexingMaps, ArrayAttr iteratorTypes">];
+    "Value acc, ArrayAttr indexingMaps, ArrayAttr iteratorTypes">,
+    OpBuilder<
+      "Builder *builder, OperationState &result, Value lhs, Value rhs, "
+      "Value acc, ArrayRef<ArrayRef<AffineExpr>> indexingExprs, "
+      "ArrayRef<StringRef> iteratorTypes">];
   let extraClassDeclaration = [{
     VectorType getLhsType() {
-      return lhs()->getType().cast<VectorType>();
+      return lhs().getType().cast<VectorType>();
     }
     VectorType getRhsType() {
-      return rhs()->getType().cast<VectorType>();
+      return rhs().getType().cast<VectorType>();
     }
-    VectorType getAccType() {
-      return acc()->getType().cast<VectorType>();
-    }
+    Type getAccType() { return acc().getType(); }
     VectorType getLHSVectorMaskType() {
       if (llvm::size(masks()) != 2) return VectorType();
-      return getOperand(3)->getType().cast<VectorType>();
+      return getOperand(3).getType().cast<VectorType>();
     }
     VectorType getRHSVectorMaskType() {
       if (llvm::size(masks()) != 2) return VectorType();
-      return getOperand(4)->getType().cast<VectorType>();
+      return getOperand(4).getType().cast<VectorType>();
     }
-    VectorType getResultType() {
-      return getResult()->getType().cast<VectorType>();
-    }
+    Type getResultType() { return getResult().getType(); }
     ArrayRef<StringRef> getTraitAttrNames();
     SmallVector<AffineMap, 4> getIndexingMaps();
     static unsigned getAccOperandIndex() { return 2; }
@@ -159,6 +182,40 @@ def Vector_ContractionOp :
 
     std::vector<std::pair<int64_t, int64_t>> getContractingDimMap();
     std::vector<std::pair<int64_t, int64_t>> getBatchDimMap();
+  }];
+}
+
+def Vector_ReductionOp :
+  Vector_Op<"reduction", [NoSideEffect,
+     PredOpTrait<"source operand and result have same element type",
+                 TCresVTEtIsSameAsOpBase<0, 0>>]>,
+    Arguments<(ins StrAttr:$kind, AnyVector:$vector, Variadic<AnyType>:$acc)>,
+    Results<(outs AnyType:$dest)> {
+  let summary = "reduction operation";
+  let description = [{
+    Reduces an 1-D vector "horizontally" into a scalar using the given
+    operation (add/mul/min/max for int/fp and and/or/xor for int only).
+    Some reductions (add/mul for fp) also allow an optional fused
+    accumulator.
+
+    Note that these operations are restricted to 1-D vectors to remain
+    close to the corresponding LLVM intrinsics:
+
+    http://llvm.org/docs/LangRef.html#experimental-vector-reduction-intrinsics
+
+    Examples:
+    ```
+      %1 = vector.reduction "add", %0 : vector<16xf32> into f32
+
+      %3 = vector.reduction "xor", %2 : vector<4xi32> into i32
+
+      %4 = vector.reduction "mul", %0, %1 : vector<16xf32> into f32
+    ```
+  }];
+  let extraClassDeclaration = [{
+    VectorType getVectorType() {
+      return vector().getType().cast<VectorType>();
+    }
   }];
 }
 
@@ -198,11 +255,12 @@ def Vector_BroadcastOp :
     ```
   }];
   let extraClassDeclaration = [{
-    Type getSourceType() { return source()->getType(); }
+    Type getSourceType() { return source().getType(); }
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
   }];
+  let assemblyFormat = "$source attr-dict `:` type($source) `to` type($vector)";
 }
 
 def Vector_ShuffleOp :
@@ -228,7 +286,7 @@ def Vector_ShuffleOp :
               v2 : <t_1 x t_2 x .. x t_k x type>
       we have s_i = t_i for all 1 < i <= k
     * the mask length equals the leading dimension size of the result
-    * numbering the input vector indices left to right accross the operands, all
+    * numbering the input vector indices left to right across the operands, all
       mask values must be within range, viz. given two k-D operands v1 and v2
       above, all mask values are in the range [0,s_1+t_1)
 
@@ -248,23 +306,24 @@ def Vector_ShuffleOp :
   let extraClassDeclaration = [{
     static StringRef getMaskAttrName() { return "mask"; }
     VectorType getV1VectorType() {
-      return v1()->getType().cast<VectorType>();
+      return v1().getType().cast<VectorType>();
     }
     VectorType getV2VectorType() {
-      return v2()->getType().cast<VectorType>();
+      return v2().getType().cast<VectorType>();
     }
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
   }];
 }
 
 def Vector_ExtractElementOp :
   Vector_Op<"extractelement", [NoSideEffect,
-     PredOpTrait<"operand and result have same element type",
-                 TCresVTEtIsSameAsOpBase<0, 0>>]>,
-    Arguments<(ins AnyVector:$vector, AnyInteger:$position)>,
-    Results<(outs AnyType)> {
+     TypesMatchWith<"result type matches element type of vector operand",
+                    "vector", "result",
+                    "$_self.cast<ShapedType>().getElementType()">]>,
+    Arguments<(ins AnyVector:$vector, AnySignlessInteger:$position)>,
+    Results<(outs AnyType:$result)> {
   let summary = "extractelement operation";
   let description = [{
     Takes an 1-D vector and a dynamic index position and extracts the
@@ -281,8 +340,12 @@ def Vector_ExtractElementOp :
   }];
   let extraClassDeclaration = [{
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
+  }];
+
+  let assemblyFormat = [{
+    $vector `[` $position `:` type($position) `]` attr-dict `:` type($vector)
   }];
 }
 
@@ -309,7 +372,7 @@ def Vector_ExtractOp :
   let extraClassDeclaration = [{
     static StringRef getPositionAttrName() { return "position"; }
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
   }];
 }
@@ -354,26 +417,63 @@ def Vector_ExtractSlicesOp :
     "ArrayRef<int64_t> strides">];
   let extraClassDeclaration = [{
     VectorType getSourceVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
     TupleType getResultTupleType() {
-      return getResult()->getType().cast<TupleType>();
+      return getResult().getType().cast<TupleType>();
     }
     void getSizes(SmallVectorImpl<int64_t> &results);
     void getStrides(SmallVectorImpl<int64_t> &results);
     static StringRef getSizesAttrName() { return "sizes"; }
     static StringRef getStridesAttrName() { return "strides"; }
   }];
+  let assemblyFormat = [{
+    $vector `,` $sizes `,` $strides attr-dict `:` type($vector) `into`
+    type(results)
+  }];
+}
+
+def Vector_FMAOp :
+  Op<VectorOps_Dialect, "fma", [NoSideEffect,
+                             AllTypesMatch<["lhs", "rhs", "acc", "result"]>]>,
+    Arguments<(ins AnyVector:$lhs, AnyVector:$rhs, AnyVector:$acc)>,
+    Results<(outs AnyVector:$result)> {
+  let summary = "vector fused multiply-add";
+  let description = [{
+    Multiply-add expressions operate on n-D vectors and compute a fused
+    pointwise multiply-and-accumulate: `$result = `$lhs * $rhs + $acc`.
+    All operands and result have the same vector type. The semantics
+    of the operation correspond to those of the `llvm.fma`
+    [intrinsic](https://llvm.org/docs/LangRef.html#int-fma). In the
+    particular case of lowering to LLVM, this is guaranteed to lower
+    to the `llvm.fma.*` intrinsic.
+
+    Example:
+
+    ```
+      %3 = vector.fma %0, %1, %2: vector<8x16xf32>
+    ```
+  }];
+  // Fully specified by traits.
+  let verifier = ?;
+  let assemblyFormat = "$lhs `,` $rhs `,` $acc attr-dict `:` type($lhs)";
+  let builders = [OpBuilder<
+    "Builder *b, OperationState &result, Value lhs, Value rhs, Value acc",
+    "build(b, result, lhs.getType(), lhs, rhs, acc);">];
+  let extraClassDeclaration = [{
+    VectorType getVectorType() { return lhs().getType().cast<VectorType>(); }
+  }];
 }
 
 def Vector_InsertElementOp :
   Vector_Op<"insertelement", [NoSideEffect,
-     PredOpTrait<"source operand and result have same element type",
-                 TCresVTEtIsSameAsOpBase<0, 0>>,
-     PredOpTrait<"dest operand and result have same type",
-                 TCresIsSameAsOpBase<0, 1>>]>,
-     Arguments<(ins AnyType:$source, AnyVector:$dest, AnyInteger:$position)>,
-     Results<(outs AnyVector)> {
+     TypesMatchWith<"source operand type matches element type of result",
+                    "result", "source",
+                    "$_self.cast<ShapedType>().getElementType()">,
+     AllTypesMatch<["dest", "result"]>]>,
+     Arguments<(ins AnyType:$source, AnyVector:$dest,
+                    AnySignlessInteger:$position)>,
+     Results<(outs AnyVector:$result)> {
   let summary = "insertelement operation";
   let description = [{
     Takes a scalar source, an 1-D destination vector and a dynamic index
@@ -391,10 +491,15 @@ def Vector_InsertElementOp :
     ```
   }];
   let extraClassDeclaration = [{
-    Type getSourceType() { return source()->getType(); }
+    Type getSourceType() { return source().getType(); }
     VectorType getDestVectorType() {
-      return dest()->getType().cast<VectorType>();
+      return dest().getType().cast<VectorType>();
     }
+  }];
+
+  let assemblyFormat = [{
+    $source `,` $dest `[` $position `:` type($position) `]` attr-dict `:`
+    type($result)
   }];
 }
 
@@ -402,10 +507,9 @@ def Vector_InsertOp :
   Vector_Op<"insert", [NoSideEffect,
      PredOpTrait<"source operand and result have same element type",
                  TCresVTEtIsSameAsOpBase<0, 0>>,
-     PredOpTrait<"dest operand and result have same type",
-                 TCresIsSameAsOpBase<0, 1>>]>,
+     AllTypesMatch<["dest", "res"]>]>,
      Arguments<(ins AnyType:$source, AnyVector:$dest, I64ArrayAttr:$position)>,
-     Results<(outs AnyVector)> {
+     Results<(outs AnyVector:$res)> {
   let summary = "insert operation";
   let description = [{
     Takes an n-D source vector, an (n+k)-D destination vector and a k-D position
@@ -420,14 +524,18 @@ def Vector_InsertOp :
         f32 into vector<4x8x16xf32>
     ```
   }];
+  let assemblyFormat = [{
+    $source `,` $dest $position attr-dict `:` type($source) `into` type($dest)
+  }];
+
   let builders = [OpBuilder<
     "Builder *builder, OperationState &result, Value source, " #
     "Value dest, ArrayRef<int64_t>">];
   let extraClassDeclaration = [{
     static StringRef getPositionAttrName() { return "position"; }
-    Type getSourceType() { return source()->getType(); }
+    Type getSourceType() { return source().getType(); }
     VectorType getDestVectorType() {
-      return dest()->getType().cast<VectorType>();
+      return dest().getType().cast<VectorType>();
     }
   }];
 }
@@ -472,15 +580,19 @@ def Vector_InsertSlicesOp :
 
   let extraClassDeclaration = [{
     TupleType getSourceTupleType() {
-      return vectors()->getType().cast<TupleType>();
+      return vectors().getType().cast<TupleType>();
     }
     VectorType getResultVectorType() {
-      return getResult()->getType().cast<VectorType>();
+      return getResult().getType().cast<VectorType>();
     }
     void getSizes(SmallVectorImpl<int64_t> &results);
     void getStrides(SmallVectorImpl<int64_t> &results);
     static StringRef getSizesAttrName() { return "sizes"; }
     static StringRef getStridesAttrName() { return "strides"; }
+  }];
+  let assemblyFormat = [{
+    $vectors `,` $sizes `,` $strides attr-dict `:` type($vectors) `into`
+    type(results)
   }];
 }
 
@@ -488,17 +600,16 @@ def Vector_InsertStridedSliceOp :
   Vector_Op<"insert_strided_slice", [NoSideEffect,
     PredOpTrait<"operand #0 and result have same element type",
                  TCresVTEtIsSameAsOpBase<0, 0>>,
-    PredOpTrait<"dest operand and result have same type",
-                 TCresIsSameAsOpBase<0, 1>>]>,
+    AllTypesMatch<["dest", "res"]>]>,
     Arguments<(ins AnyVector:$source, AnyVector:$dest, I64ArrayAttr:$offsets,
                I64ArrayAttr:$strides)>,
-    Results<(outs AnyVector)> {
+    Results<(outs AnyVector:$res)> {
   let summary = "strided_slice operation";
   let description = [{
-    Takes a k-D source vector, an n-D destination vector (n >= k), n-D `offsets`
-    integer array attribute, a k-D `strides` integer array attribute and inserts
-    the k-D source vector as a strided subvector at the proper offset into the
-    n-D destination vector.
+    Takes a k-D source vector, an n-D destination vector (n >= k), n-sized
+    `offsets` integer array attribute, a k-sized `strides` integer array attribute
+    and inserts the k-D source vector as a strided subvector at the proper offset
+    into the n-D destination vector.
 
     At the moment strides must contain only 1s.
 
@@ -509,10 +620,15 @@ def Vector_InsertStridedSliceOp :
     Examples:
     ```
       %2 = vector.insert_strided_slice %0, %1
-          {offsets : [0, 0, 2], strides : [1, 1]}:
+          {offsets = [0, 0, 2], strides = [1, 1]}:
         vector<2x4xf32> into vector<16x4x8xf32>
     ```
   }];
+
+  let assemblyFormat = [{
+    $source `,` $dest attr-dict `:` type($source) `into` type($dest)
+  }];
+
   let builders = [OpBuilder<
     "Builder *builder, OperationState &result, Value source, Value dest, " #
     "ArrayRef<int64_t> offsets, ArrayRef<int64_t> strides">];
@@ -520,10 +636,10 @@ def Vector_InsertStridedSliceOp :
     static StringRef getOffsetsAttrName() { return "offsets"; }
     static StringRef getStridesAttrName() { return "strides"; }
     VectorType getSourceVectorType() {
-      return source()->getType().cast<VectorType>();
+      return source().getType().cast<VectorType>();
     }
     VectorType getDestVectorType() {
-      return dest()->getType().cast<VectorType>();
+      return dest().getType().cast<VectorType>();
     }
   }];
 }
@@ -534,35 +650,39 @@ def Vector_OuterProductOp :
     Results<(outs AnyVector)> {
   let summary = "vector outerproduct with optional fused add";
   let description = [{
-    Takes 2 1-D vectors and returns the 2-D vector containing the outer product.
+    Takes 2 1-D vectors and returns the 2-D vector containing the outer-product.
 
     An optional extra 2-D vector argument may be specified in which case the
-    operation returns the sum of the outer product and the extra vector. When
-    lowered to the LLVMIR dialect, this form emits `llvm.intr.fmuladd`, which
-    can lower to actual `fma` instructions in LLVM.
+    operation returns the sum of the outer-product and the extra vector. In this
+    multiply-accumulate scenario, the rounding mode is that obtained by
+    guaranteeing that a fused-multiply add operation is emitted. When lowered to
+    the LLVMIR dialect, this form emits `llvm.intr.fma`, which is guaranteed to
+    lower to actual `fma` instructions on x86.
 
-    Examples
+    Examples:
 
+    ```
       %2 = vector.outerproduct %0, %1: vector<4xf32>, vector<8xf32>
       return %2: vector<4x8xf32>
 
       %3 = vector.outerproduct %0, %1, %2:
         vector<4xf32>, vector<8xf32>, vector<4x8xf32>
       return %3: vector<4x8xf32>
+    ```
   }];
   let extraClassDeclaration = [{
     VectorType getOperandVectorTypeLHS() {
-      return lhs()->getType().cast<VectorType>();
+      return lhs().getType().cast<VectorType>();
     }
     VectorType getOperandVectorTypeRHS() {
-      return rhs()->getType().cast<VectorType>();
+      return rhs().getType().cast<VectorType>();
     }
     VectorType getOperandVectorTypeACC() {
       return (llvm::size(acc()) == 0) ? VectorType() :
-        (*acc().begin())->getType().cast<VectorType>();
+        (*acc().begin()).getType().cast<VectorType>();
     }
     VectorType getVectorType() {
-      return getResult()->getType().cast<VectorType>();
+      return getResult().getType().cast<VectorType>();
     }
   }];
 }
@@ -573,9 +693,8 @@ def Vector_ReshapeOp :
   Vector_Op<"reshape", [AttrSizedOperandSegments, NoSideEffect]>,
     Arguments<(ins AnyVector:$vector, Variadic<Index>:$input_shape,
                Variadic<Index>:$output_shape,
-               I64ArrayAttr:$fixed_vector_sizes,
-               I32ElementsAttr:$operand_segment_sizes)>,
-    Results<(outs AnyVector)> {
+               I64ArrayAttr:$fixed_vector_sizes)>,
+    Results<(outs AnyVector:$result)> {
   let summary = "vector reshape operation";
   let description = [{
     Reshapes its vector operand from 'input_shape' to 'output_shape' maintaining
@@ -662,10 +781,10 @@ def Vector_ReshapeOp :
 
   let extraClassDeclaration = [{
     VectorType getInputVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
     VectorType getOutputVectorType() {
-      return getResult()->getType().cast<VectorType>();
+      return getResult().getType().cast<VectorType>();
     }
 
     /// Returns as integer value the number of input shape operands.
@@ -682,6 +801,11 @@ def Vector_ReshapeOp :
     static StringRef getInputShapeAttrName() { return "input_shape"; }
     static StringRef getOutputShapeAttrName() { return "output_shape"; }
   }];
+
+  let assemblyFormat = [{
+    $vector `,` `[` $input_shape `]` `,` `[` $output_shape `]` `,`
+    $fixed_vector_sizes attr-dict `:` type($vector) `to` type($result)
+  }];
 }
 
 def Vector_StridedSliceOp :
@@ -693,9 +817,9 @@ def Vector_StridedSliceOp :
     Results<(outs AnyVector)> {
   let summary = "strided_slice operation";
   let description = [{
-    Takes an n-D vector, k-D `offsets` integer array attribute, a k-D `sizes`
-    integer array attribute, a k-D `strides` integer array attribute and
-    extracts the n-D subvector at the proper offset.
+    Takes an n-D vector, k-D `offsets` integer array attribute, a k-sized
+    `sizes` integer array attribute, a k-sized `strides` integer array
+    attribute and extracts the n-D subvector at the proper offset.
 
     At the moment strides must contain only 1s.
     // TODO(ntv) support non-1 strides.
@@ -707,7 +831,7 @@ def Vector_StridedSliceOp :
     Examples:
     ```
       %1 = vector.strided_slice %0
-          {offsets : [0, 2], sizes : [2, 4], strides : [1, 1]}:
+          {offsets = [0, 2], sizes = [2, 4], strides = [1, 1]}:
         vector<4x8x16xf32> to vector<2x4x16xf32>
     ```
 
@@ -723,10 +847,11 @@ def Vector_StridedSliceOp :
     static StringRef getOffsetsAttrName() { return "offsets"; }
     static StringRef getSizesAttrName() { return "sizes"; }
     static StringRef getStridesAttrName() { return "strides"; }
-    VectorType getVectorType(){ return vector()->getType().cast<VectorType>(); }
+    VectorType getVectorType(){ return vector().getType().cast<VectorType>(); }
     void getOffsets(SmallVectorImpl<int64_t> &results);
   }];
   let hasCanonicalizer = 1;
+  let assemblyFormat = "$vector attr-dict `:` type($vector) `to` type(results)";
 }
 
 def Vector_TransferReadOp :
@@ -742,9 +867,9 @@ def Vector_TransferReadOp :
     a [MemRef](../LangRef.md#memref-type) supplied as its first operand
     into a [vector](../LangRef.md#vector-type) of the same base elemental type.
 
-    A vector memref operand must have its vector element type match a suffix
-    (shape and element type) of the vector (e.g. memref<3x2x6x4x3xf32>,
-    vector<1x1x4x3xf32>).
+    A memref operand with vector element type, must have its vector element
+    type match a suffix (shape and element type) of the vector (e.g.
+    memref<3x2x6x4x3xf32>, vector<1x1x4x3xf32>).
 
     The slice is further defined by a full-rank index within the MemRef,
     supplied as the operands `2 .. 1 + rank(memref)`. The permutation_map
@@ -862,10 +987,10 @@ def Vector_TransferReadOp :
 
   let extraClassDeclaration = [{
     MemRefType getMemRefType() {
-      return memref()->getType().cast<MemRefType>();
+      return memref().getType().cast<MemRefType>();
     }
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
   }];
 }
@@ -933,12 +1058,72 @@ def Vector_TransferWriteOp :
 
   let extraClassDeclaration = [{
     VectorType getVectorType() {
-      return vector()->getType().cast<VectorType>();
+      return vector().getType().cast<VectorType>();
     }
     MemRefType getMemRefType() {
-      return memref()->getType().cast<MemRefType>();
+      return memref().getType().cast<MemRefType>();
     }
   }];
+  let assemblyFormat = [{
+    $vector `,` $memref `[` $indices `]` attr-dict `:` type($vector) `,`
+    type($memref)
+  }];
+}
+
+def Vector_ShapeCastOp :
+  Vector_Op<"shape_cast", [NoSideEffect]>,
+    Arguments<(ins AnyTypeOf<[AnyVector, TupleOf<[AnyVector]>]>:$source)>,
+    Results<(outs AnyTypeOf<[AnyVector, TupleOf<[AnyVector]>]>:$result)> {
+  let summary = "shape_cast casts between vector shapes";
+  let description = [{
+    The shape_cast operation casts between an n-D source vector shape and
+    a k-D result vector shape (the element type remains the same).
+
+    If reducing rank (n > k), result dimension sizes must be a product
+    of contiguous source dimension sizes.
+    If expanding rank (n < k), source dimensions must factor into a
+    contiguous sequence of destination dimension sizes.
+    Each source dim is expanded (or contiguous sequence of source dims combined)
+    in source dimension list order (i.e. 0 <= i < n), to produce a contiguous
+    sequence of result dims (or a single result dim), in result dimension list
+    order (i.e. 0 <= j < k). The product of all source dimension sizes and all
+    result dimension sizes must match.
+
+    If the source/result types are a tuple of vectors, the casting operation
+    described above is applied to each source/result tuple element pair.
+
+    It is currently assumed that this operation does not require moving data,
+    and that it will be folded away before lowering vector operations.
+
+    There is an exception to the folding expectation when targeting
+    llvm.intr.matrix operations. We need a type conversion back and forth from a
+    2-D MLIR vector to a 1-D flattened LLVM vector.shape_cast lowering to LLVM
+    is supported in that particular case, for now.
+
+    Examples:
+
+    ```mlir
+    // Example casting to a lower vector rank.
+    %1 = vector.shape_cast %0 : vector<5x1x4x3xf32> to vector<20x3xf32>
+
+    // Example casting to a higher vector rank.
+    %3 = vector.shape_cast %2 : vector<10x12x8xf32> to vector<5x2x3x4x8xf32>
+
+    // Example casting a tuple of vectors of same rank, where tuple elements
+    // may have different shapes.
+    %5 = vector.shape_cast %4 : tuple<vector<3x4x2xf32>, vector<3x3x2xf32>> to
+                                tuple<vector<12x2xf32>, vector<9x2xf32>>
+    ```
+  }];
+  let extraClassDeclaration = [{
+    VectorType getSourceVectorType() {
+      return source().getType().cast<VectorType>();
+    }
+    VectorType getResultVectorType() {
+      return getResult().getType().cast<VectorType>();
+    }
+  }];
+  let assemblyFormat = "$source attr-dict `:` type($source) `to` type($result)";
 }
 
 def Vector_TypeCastOp :
@@ -976,10 +1161,10 @@ def Vector_TypeCastOp :
 
   let extraClassDeclaration = [{
     MemRefType getMemRefType() {
-      return memref()->getType().cast<MemRefType>();
+      return memref().getType().cast<MemRefType>();
     }
     MemRefType getResultMemRefType() {
-      return getResult()->getType().cast<MemRefType>();
+      return getResult().getType().cast<MemRefType>();
     }
   }];
 }
@@ -1017,6 +1202,7 @@ def Vector_ConstantMaskOp :
   let extraClassDeclaration = [{
     static StringRef getMaskDimSizesAttrName() { return "mask_dim_sizes"; }
   }];
+  let assemblyFormat = "$mask_dim_sizes attr-dict `:` type(results)";
 }
 
 def Vector_CreateMaskOp :
@@ -1048,6 +1234,7 @@ def Vector_CreateMaskOp :
   }];
 
   let hasCanonicalizer = 1;
+  let assemblyFormat = "$operands attr-dict `:` type(results)";
 }
 
 def Vector_TupleOp :
@@ -1078,7 +1265,7 @@ def Vector_TupleOp :
 
   let extraClassDeclaration = [{
     TupleType getResultTupleType() {
-      return getResult()->getType().cast<TupleType>();
+      return getResult().getType().cast<TupleType>();
     }
   }];
 }
@@ -1108,13 +1295,14 @@ def Vector_TupleGetOp :
 
   let extraClassDeclaration = [{
     VectorType getResultVectorType() {
-      return getResult()->getType().cast<VectorType>();
+      return getResult().getType().cast<VectorType>();
     }
     int64_t getIndex() {
       return getAttrOfType<IntegerAttr>("index").getValue().getSExtValue();
     }
     static StringRef getIndexAttrName() { return "index"; }
   }];
+  let hasFolder = 1;
 }
 
 def Vector_PrintOp :
@@ -1144,9 +1332,71 @@ def Vector_PrintOp :
   let verifier = ?;
   let extraClassDeclaration = [{
     Type getPrintType() {
-      return source()->getType();
+      return source().getType();
     }
   }];
+  let assemblyFormat = "$source attr-dict `:` type($source)";
+}
+
+//===----------------------------------------------------------------------===//
+// Ops used for supporting progressive lowering and conversion type changes.
+//===----------------------------------------------------------------------===//
+
+/// Vector dialect matrix multiplication op that operates on flattened 1-D
+/// MLIR vectors. This is the counterpart of llvm.matrix.multiply in MLIR.
+/// This may seem redundant with vector.contract but it serves the purposes of
+/// more progressive lowering and localized type conversion on the path:
+///   `vector<...x...xf32> -> vector<...xf32> -> !llvm<... x float>`.
+def Vector_MatmulOp : Vector_Op<"matrix_multiply", [NoSideEffect,
+        PredOpTrait<"lhs operand and result have same element type",
+                    TCresVTEtIsSameAsOpBase<0, 0>>,
+        PredOpTrait<"rhs operand and result have same element type",
+                    TCresVTEtIsSameAsOpBase<0, 1>>]>,
+      Arguments<(
+        // TODO(ntv, fhahn): tighten vector element types that make sense.
+        ins VectorOfRankAndType<[1],
+              [AnySignlessInteger, AnySignedInteger, AnyFloat]>:$lhs,
+            VectorOfRankAndType<[1],
+              [AnySignlessInteger, AnySignedInteger, AnyFloat]>:$rhs,
+            I32Attr:$lhs_rows, I32Attr:$lhs_columns, I32Attr:$rhs_columns)>,
+      Results<(
+        outs VectorOfRankAndType<[1],
+               [AnySignlessInteger, AnySignedInteger, AnyFloat]>:$res)>
+{
+  let summary = "Vector matrix multiplication op that operates on flattened 1-D"
+    " MLIR vectors";
+  let description = [{
+    This is the counterpart of llvm.matrix.multiply in MLIR. It serves the
+    purposes of more progressive lowering and localized type conversion.
+
+    The ‘vector.matrix_multiply’ op treats `lhs` as matrix with <lhs_rows> rows
+    and <lhs_columns> columns, `rhs` as matrix with <lhs_columns> rows and
+    <rhs_columns> and multiplies them. The result matrix is returned embedded in
+    the result vector.
+
+    Example:
+
+    ```
+      %C = vector.matrix_multiply %A, %B
+        { lhs_rows = 4: i32, lhs_columns = 16: i32 , rhs_columns = 3: i32 } :
+        (vector<64xf64>, vector<48xf64>) -> vector<12xf64>
+    ```
+  }];
+  let builders = [
+   OpBuilder<"Builder *builder, OperationState &result, Value lhs, Value rhs, "
+             "unsigned lhsRows, unsigned lhsColumns, unsigned rhsColumns",
+   [{
+     result.addOperands({lhs, rhs});
+     result.addAttribute("lhs_rows", builder->getI32IntegerAttr(lhsRows));
+     result.addAttribute("lhs_columns", builder->getI32IntegerAttr(lhsColumns));
+     result.addAttribute("rhs_columns", builder->getI32IntegerAttr(rhsColumns));
+     result.addTypes(VectorType::get(lhsRows * lhsColumns,
+       lhs.getType().cast<VectorType>().getElementType()));
+   }]>,
+  ];
+  let verifier = ?;
+  let assemblyFormat = "$lhs `,` $rhs attr-dict "
+    "`:` `(` type($lhs) `,` type($rhs) `)` `->` type($res)";
 }
 
 #endif // VECTOR_OPS

@@ -664,7 +664,7 @@ bool CXXRecordDecl::lambdaIsDefaultConstructibleAndAssignable() const {
   // C++17 [expr.prim.lambda]p21:
   //   The closure type associated with a lambda-expression has no default
   //   constructor and a deleted copy assignment operator.
-  if (getLambdaCaptureDefault() != LCD_None || 
+  if (getLambdaCaptureDefault() != LCD_None ||
       getLambdaData().NumCaptures != 0)
     return false;
   return getASTContext().getLangOpts().CPlusPlus2a;
@@ -739,49 +739,55 @@ void CXXRecordDecl::addedMember(Decl *D) {
 
   // Handle constructors.
   if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(D)) {
-    if (!Constructor->isImplicit()) {
-      // Note that we have a user-declared constructor.
-      data().UserDeclaredConstructor = true;
+    if (Constructor->isInheritingConstructor()) {
+      // Ignore constructor shadow declarations. They are lazily created and
+      // so shouldn't affect any properties of the class.
+    } else {
+      if (!Constructor->isImplicit()) {
+        // Note that we have a user-declared constructor.
+        data().UserDeclaredConstructor = true;
 
-      // C++ [class]p4:
-      //   A POD-struct is an aggregate class [...]
-      // Since the POD bit is meant to be C++03 POD-ness, clear it even if the
-      // type is technically an aggregate in C++0x since it wouldn't be in 03.
-      data().PlainOldData = false;
+        // C++ [class]p4:
+        //   A POD-struct is an aggregate class [...]
+        // Since the POD bit is meant to be C++03 POD-ness, clear it even if
+        // the type is technically an aggregate in C++0x since it wouldn't be
+        // in 03.
+        data().PlainOldData = false;
+      }
+
+      if (Constructor->isDefaultConstructor()) {
+        SMKind |= SMF_DefaultConstructor;
+
+        if (Constructor->isUserProvided())
+          data().UserProvidedDefaultConstructor = true;
+        if (Constructor->isConstexpr())
+          data().HasConstexprDefaultConstructor = true;
+        if (Constructor->isDefaulted())
+          data().HasDefaultedDefaultConstructor = true;
+      }
+
+      if (!FunTmpl) {
+        unsigned Quals;
+        if (Constructor->isCopyConstructor(Quals)) {
+          SMKind |= SMF_CopyConstructor;
+
+          if (Quals & Qualifiers::Const)
+            data().HasDeclaredCopyConstructorWithConstParam = true;
+        } else if (Constructor->isMoveConstructor())
+          SMKind |= SMF_MoveConstructor;
+      }
+
+      // C++11 [dcl.init.aggr]p1: DR1518
+      //   An aggregate is an array or a class with no user-provided [or]
+      //   explicit [...] constructors
+      // C++20 [dcl.init.aggr]p1:
+      //   An aggregate is an array or a class with no user-declared [...]
+      //   constructors
+      if (getASTContext().getLangOpts().CPlusPlus2a
+              ? !Constructor->isImplicit()
+              : (Constructor->isUserProvided() || Constructor->isExplicit()))
+        data().Aggregate = false;
     }
-
-    if (Constructor->isDefaultConstructor()) {
-      SMKind |= SMF_DefaultConstructor;
-
-      if (Constructor->isUserProvided())
-        data().UserProvidedDefaultConstructor = true;
-      if (Constructor->isConstexpr())
-        data().HasConstexprDefaultConstructor = true;
-      if (Constructor->isDefaulted())
-        data().HasDefaultedDefaultConstructor = true;
-    }
-
-    if (!FunTmpl) {
-      unsigned Quals;
-      if (Constructor->isCopyConstructor(Quals)) {
-        SMKind |= SMF_CopyConstructor;
-
-        if (Quals & Qualifiers::Const)
-          data().HasDeclaredCopyConstructorWithConstParam = true;
-      } else if (Constructor->isMoveConstructor())
-        SMKind |= SMF_MoveConstructor;
-    }
-
-    // C++11 [dcl.init.aggr]p1: DR1518
-    //   An aggregate is an array or a class with no user-provided [or]
-    //   explicit [...] constructors
-    // C++20 [dcl.init.aggr]p1:
-    //   An aggregate is an array or a class with no user-declared [...]
-    //   constructors
-    if (getASTContext().getLangOpts().CPlusPlus2a
-            ? !Constructor->isImplicit()
-            : (Constructor->isUserProvided() || Constructor->isExplicit()))
-      data().Aggregate = false;
   }
 
   // Handle constructors, including those inherited from base classes.
@@ -1918,6 +1924,18 @@ bool CXXRecordDecl::mayBeAbstract() const {
   return false;
 }
 
+bool CXXRecordDecl::isEffectivelyFinal() const {
+  auto *Def = getDefinition();
+  if (!Def)
+    return false;
+  if (Def->hasAttr<FinalAttr>())
+    return true;
+  if (const auto *Dtor = Def->getDestructor())
+    if (Dtor->hasAttr<FinalAttr>())
+      return true;
+  return false;
+}
+
 /// A prototype class is nested within a generated class.
 bool CXXRecordDecl::isPrototypeClass() const {
   if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext())) {
@@ -1928,6 +1946,7 @@ bool CXXRecordDecl::isPrototypeClass() const {
 
     return Parent->getMetafunction() && isImplicit() && isFragment();
   }
+
   return false;
 }
 
@@ -1974,6 +1993,16 @@ CXXDeductionGuideDecl *CXXDeductionGuideDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXDeductionGuideDecl(
       C, nullptr, SourceLocation(), ExplicitSpecifier(), DeclarationNameInfo(),
       QualType(), nullptr, SourceLocation());
+}
+
+RequiresExprBodyDecl *RequiresExprBodyDecl::Create(
+    ASTContext &C, DeclContext *DC, SourceLocation StartLoc) {
+  return new (C, DC) RequiresExprBodyDecl(C, DC, StartLoc);
+}
+
+RequiresExprBodyDecl *RequiresExprBodyDecl::CreateDeserialized(ASTContext &C,
+                                                               unsigned ID) {
+  return new (C, ID) RequiresExprBodyDecl(C, nullptr, SourceLocation());
 }
 
 void CXXMethodDecl::anchor() {}
@@ -2036,17 +2065,36 @@ CXXMethodDecl::getCorrespondingMethodInClass(const CXXRecordDecl *RD,
   if (auto *MD = getCorrespondingMethodDeclaredInClass(RD, MayBeBase))
     return MD;
 
+  llvm::SmallVector<CXXMethodDecl*, 4> FinalOverriders;
+  auto AddFinalOverrider = [&](CXXMethodDecl *D) {
+    // If this function is overridden by a candidate final overrider, it is not
+    // a final overrider.
+    for (CXXMethodDecl *OtherD : FinalOverriders) {
+      if (declaresSameEntity(D, OtherD) || recursivelyOverrides(OtherD, D))
+        return;
+    }
+
+    // Other candidate final overriders might be overridden by this function.
+    FinalOverriders.erase(
+        std::remove_if(FinalOverriders.begin(), FinalOverriders.end(),
+                       [&](CXXMethodDecl *OtherD) {
+                         return recursivelyOverrides(D, OtherD);
+                       }),
+        FinalOverriders.end());
+
+    FinalOverriders.push_back(D);
+  };
+
   for (const auto &I : RD->bases()) {
     const RecordType *RT = I.getType()->getAs<RecordType>();
     if (!RT)
       continue;
     const auto *Base = cast<CXXRecordDecl>(RT->getDecl());
-    CXXMethodDecl *T = this->getCorrespondingMethodInClass(Base);
-    if (T)
-      return T;
+    if (CXXMethodDecl *D = this->getCorrespondingMethodInClass(Base))
+      AddFinalOverrider(D);
   }
 
-  return nullptr;
+  return FinalOverriders.size() == 1 ? FinalOverriders.front() : nullptr;
 }
 
 CXXMethodDecl *CXXMethodDecl::Create(ASTContext &C, CXXRecordDecl *RD,
@@ -2055,16 +2103,19 @@ CXXMethodDecl *CXXMethodDecl::Create(ASTContext &C, CXXRecordDecl *RD,
                                      QualType T, TypeSourceInfo *TInfo,
                                      StorageClass SC, bool isInline,
                                      ConstexprSpecKind ConstexprKind,
-                                     SourceLocation EndLocation) {
+                                     SourceLocation EndLocation,
+                                     Expr *TrailingRequiresClause) {
   return new (C, RD)
       CXXMethodDecl(CXXMethod, C, RD, StartLoc, NameInfo, T, TInfo, SC,
-                    isInline, ConstexprKind, EndLocation);
+                    isInline, ConstexprKind, EndLocation,
+                    TrailingRequiresClause);
 }
 
 CXXMethodDecl *CXXMethodDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXMethodDecl(
       CXXMethod, C, nullptr, SourceLocation(), DeclarationNameInfo(),
-      QualType(), nullptr, SC_None, false, CSK_unspecified, SourceLocation());
+      QualType(), nullptr, SC_None, false, CSK_unspecified, SourceLocation(),
+      nullptr);
 }
 
 CXXMethodDecl *CXXMethodDecl::getDevirtualizedMethod(const Expr *Base,
@@ -2100,6 +2151,11 @@ CXXMethodDecl *CXXMethodDecl::getDevirtualizedMethod(const Expr *Base,
   CXXMethodDecl *DevirtualizedMethod =
       getCorrespondingMethodInClass(BestDynamicDecl);
 
+  // If there final overrider in the dynamic type is ambiguous, we can't
+  // devirtualize this call.
+  if (!DevirtualizedMethod)
+    return nullptr;
+
   // If that method is pure virtual, we can't devirtualize. If this code is
   // reached, the result would be UB, not a direct call to the derived class
   // function, and we can't assume the derived class function is defined.
@@ -2111,14 +2167,10 @@ CXXMethodDecl *CXXMethodDecl::getDevirtualizedMethod(const Expr *Base,
     return DevirtualizedMethod;
 
   // Similarly, if the class itself or its destructor is marked 'final',
-  // the class can't be derived from and we can therefore devirtualize the 
+  // the class can't be derived from and we can therefore devirtualize the
   // member function call.
-  if (BestDynamicDecl->hasAttr<FinalAttr>())
+  if (BestDynamicDecl->isEffectivelyFinal())
     return DevirtualizedMethod;
-  if (const auto *dtor = BestDynamicDecl->getDestructor()) {
-    if (dtor->hasAttr<FinalAttr>())
-      return DevirtualizedMethod;
-  }
 
   if (const auto *DRE = dyn_cast<DeclRefExpr>(Base)) {
     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl()))
@@ -2327,17 +2379,15 @@ QualType CXXMethodDecl::getThisType() const {
   // volatile X*, and if the member function is declared const volatile,
   // the type of this is const volatile X*.
   assert(isInstance() && "No 'this' for static methods!");
-
-  return CXXMethodDecl::getThisType(getType()->getAs<FunctionProtoType>(),
+  return CXXMethodDecl::getThisType(getType()->castAs<FunctionProtoType>(),
                                     getParent());
 }
 
 QualType CXXMethodDecl::getThisObjectType() const {
   // Ditto getThisType.
   assert(isInstance() && "No 'this' for static methods!");
-
-  return CXXMethodDecl::getThisObjectType(getType()->getAs<FunctionProtoType>(),
-                                          getParent());
+  return CXXMethodDecl::getThisObjectType(
+      getType()->castAs<FunctionProtoType>(), getParent());
 }
 
 bool CXXMethodDecl::hasInlineBody() const {
@@ -2445,9 +2495,11 @@ CXXConstructorDecl::CXXConstructorDecl(
     ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
     const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
     ExplicitSpecifier ES, bool isInline, bool isImplicitlyDeclared,
-    ConstexprSpecKind ConstexprKind, InheritedConstructor Inherited)
+    ConstexprSpecKind ConstexprKind, InheritedConstructor Inherited,
+    Expr *TrailingRequiresClause)
     : CXXMethodDecl(CXXConstructor, C, RD, StartLoc, NameInfo, T, TInfo,
-                    SC_None, isInline, ConstexprKind, SourceLocation()) {
+                    SC_None, isInline, ConstexprKind, SourceLocation(),
+                    TrailingRequiresClause) {
   setNumCtorInitializers(0);
   setInheritingConstructor(static_cast<bool>(Inherited));
   setImplicit(isImplicitlyDeclared);
@@ -2471,7 +2523,7 @@ CXXConstructorDecl *CXXConstructorDecl::CreateDeserialized(ASTContext &C,
   auto *Result = new (C, ID, Extra)
       CXXConstructorDecl(C, nullptr, SourceLocation(), DeclarationNameInfo(),
                          QualType(), nullptr, ExplicitSpecifier(), false, false,
-                         CSK_unspecified, InheritedConstructor());
+                         CSK_unspecified, InheritedConstructor(), nullptr);
   Result->setInheritingConstructor(isInheritingConstructor);
   Result->CXXConstructorDeclBits.HasTrailingExplicitSpecifier =
       hasTraillingExplicit;
@@ -2483,7 +2535,8 @@ CXXConstructorDecl *CXXConstructorDecl::Create(
     ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
     const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
     ExplicitSpecifier ES, bool isInline, bool isImplicitlyDeclared,
-    ConstexprSpecKind ConstexprKind, InheritedConstructor Inherited) {
+    ConstexprSpecKind ConstexprKind, InheritedConstructor Inherited,
+    Expr *TrailingRequiresClause) {
   assert(NameInfo.getName().getNameKind()
          == DeclarationName::CXXConstructorName &&
          "Name must refer to a constructor");
@@ -2492,7 +2545,8 @@ CXXConstructorDecl *CXXConstructorDecl::Create(
           Inherited ? 1 : 0, ES.getExpr() ? 1 : 0);
   return new (C, RD, Extra)
       CXXConstructorDecl(C, RD, StartLoc, NameInfo, T, TInfo, ES, isInline,
-                         isImplicitlyDeclared, ConstexprKind, Inherited);
+                         isImplicitlyDeclared, ConstexprKind, Inherited,
+                         TrailingRequiresClause);
 }
 
 CXXConstructorDecl::init_const_iterator CXXConstructorDecl::init_begin() const {
@@ -2613,19 +2667,22 @@ CXXDestructorDecl *
 CXXDestructorDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
       CXXDestructorDecl(C, nullptr, SourceLocation(), DeclarationNameInfo(),
-                        QualType(), nullptr, false, false, CSK_unspecified);
+                        QualType(), nullptr, false, false, CSK_unspecified,
+                        nullptr);
 }
 
 CXXDestructorDecl *CXXDestructorDecl::Create(
     ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
     const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
-    bool isInline, bool isImplicitlyDeclared, ConstexprSpecKind ConstexprKind) {
+    bool isInline, bool isImplicitlyDeclared, ConstexprSpecKind ConstexprKind,
+    Expr *TrailingRequiresClause) {
   assert(NameInfo.getName().getNameKind()
          == DeclarationName::CXXDestructorName &&
          "Name must refer to a destructor");
   return new (C, RD)
       CXXDestructorDecl(C, RD, StartLoc, NameInfo, T, TInfo, isInline,
-                        isImplicitlyDeclared, ConstexprKind);
+                        isImplicitlyDeclared, ConstexprKind,
+                        TrailingRequiresClause);
 }
 
 void CXXDestructorDecl::setOperatorDelete(FunctionDecl *OD, Expr *ThisArg) {
@@ -2644,20 +2701,20 @@ CXXConversionDecl *
 CXXConversionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXConversionDecl(
       C, nullptr, SourceLocation(), DeclarationNameInfo(), QualType(), nullptr,
-      false, ExplicitSpecifier(), CSK_unspecified, SourceLocation());
+      false, ExplicitSpecifier(), CSK_unspecified, SourceLocation(), nullptr);
 }
 
 CXXConversionDecl *CXXConversionDecl::Create(
     ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
     const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
     bool isInline, ExplicitSpecifier ES, ConstexprSpecKind ConstexprKind,
-    SourceLocation EndLocation) {
+    SourceLocation EndLocation, Expr *TrailingRequiresClause) {
   assert(NameInfo.getName().getNameKind()
          == DeclarationName::CXXConversionFunctionName &&
          "Name must refer to a conversion function");
   return new (C, RD)
       CXXConversionDecl(C, RD, StartLoc, NameInfo, T, TInfo, isInline, ES,
-                        ConstexprKind, EndLocation);
+                        ConstexprKind, EndLocation, TrailingRequiresClause);
 }
 
 bool CXXConversionDecl::isLambdaToBlockPointerConversion() const {
@@ -2999,7 +3056,7 @@ VarDecl *BindingDecl::getHoldingVar() const {
   if (!DRE)
     return nullptr;
 
-  auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
+  auto *VD = cast<VarDecl>(DRE->getDecl());
   assert(VD->isImplicit() && "holding var for binding decl not implicit");
   return VD;
 }
