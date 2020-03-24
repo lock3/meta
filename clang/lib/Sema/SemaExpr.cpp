@@ -15700,16 +15700,7 @@ void Sema::PopExpressionEvaluationContext() {
   // temporaries that we may have created as part of the evaluation of
   // the expression in that context: they aren't relevant because they
   // will never be constructed.
-  //
-  // FIXME: The condition Rec.ExprContext != EK_ConstexprVarInit
-  // has been added as a stop gap fix. After adding a ConstEvaluated
-  // context to constexpr variable initializers, an issue manifests here
-  // where the cleanups are dropped prior to VarDecl::evaluateValue, which
-  // subsequently requires them. This has been done as a temporary workaround
-  // as it was not obvious how to produce.
-  if (Rec.isUnevaluated() ||
-      (Rec.isConstantEvaluated() &&
-       Rec.ExprContext != ExpressionKind::EK_ConstexprVarInit)) {
+  if (Rec.isUnevaluated() || Rec.isConstantEvaluated()) {
     ExprCleanupObjects.erase(ExprCleanupObjects.begin() + Rec.NumCleanupObjects,
                              ExprCleanupObjects.end());
     Cleanup = Rec.ParentCleanup;
