@@ -922,6 +922,14 @@ def ThreadSafetyBeta : DiagGroup<"thread-safety-beta">;
 // Uniqueness Analysis warnings
 def Consumed       : DiagGroup<"consumed">;
 
+def LifetimeNull     : DiagGroup<"lifetime-null">;
+def LifetimeDisabled : DiagGroup<"lifetime-disabled">;
+def LifetimeGlobal   : DiagGroup<"lifetime-global">;
+def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull]>;
+def LifetimeDebug    : DiagGroup<"lifetime-debug">;
+def LifetimeCategory : DiagGroup<"suggest-lifetime-category">;
+def LifetimeFiltered : DiagGroup<"lifetime-filter">;
+
 // Note that putting warnings in -Wall will not disable them by default. If a
 // warning should be active _only_ when -Wall is passed in, mark it as
 // DefaultIgnore in addition to putting it here.

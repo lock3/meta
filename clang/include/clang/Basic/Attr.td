@@ -2974,6 +2974,50 @@ def Pointer : InheritableAttr {
   let Documentation = [LifetimePointerDocs];
 }
 
+def Lifetimeconst : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[Function, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+  let MeaningfulToClassTemplateDefinition = 1;
+}
+
+def LifetimeContract : InheritableAttr {
+  let Spellings = [CXX11<"gsl", "pre">, CXX11<"gsl", "post">];
+  let Accessors = [Accessor<"isPre", [CXX11<"gsl", "pre">]>,
+                   Accessor<"isPost", [CXX11<"gsl", "post">]>];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"Expr">];
+  let AdditionalMembers = [{
+public:
+  using PointsToMap = std::map<ContractVariable, ContractPSet>;
+  SmallVector<const Expr *, 8> PreExprs;
+  SmallVector<const Expr *, 8> PostExprs;
+  PointsToMap PrePSets;
+  PointsToMap PostPSets;
+
+  // TODO: have a more restrictive public API.
+  }];
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def LifetimeIO : InheritableAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_in">, CXX11<"gsl", "lifetime_out">];
+  let Accessors = [Accessor<"isIn", [CXX11<"gsl", "lifetime_in">]>,
+                   Accessor<"isOut", [CXX11<"gsl", "lifetime_out">]>];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"Expr">];
+  let AdditionalMembers = [{
+public:
+  SmallVector<const Expr *, 8> InLocExprs;
+  SmallVector<const Expr *, 8> OutLocExprs;
+  SmallVector<ContractVariable, 8> InVars;
+  SmallVector<ContractVariable, 8> OutVars;
+
+  // TODO: have a more restrictive public API.
+  }];
+  let Documentation = [Undocumented]; // FIXME
+}
+
 // Microsoft-related attributes
 
 def MSNoVTable : InheritableAttr, TargetSpecificAttr<TargetMicrosoftCXXABI> {

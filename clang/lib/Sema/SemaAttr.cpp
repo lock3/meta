@@ -14,6 +14,7 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Expr.h"
+#include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Lookup.h"
@@ -151,6 +152,27 @@ void Sema::inferGslPointerAttribute(TypedefNameDecl *TD) {
   inferGslPointerAttribute(TD, RD);
 }
 
+void Sema::suggestLifetimeAttribute(CXXRecordDecl *Record) {
+  if (Record->getDescribedClassTemplate())
+    return;
+  if (Record->hasAttr<OwnerAttr>() || Record->hasAttr<PointerAttr>())
+    return;
+
+  if (SourceMgr.isInSystemHeader(Record->getBeginLoc()))
+    return;
+
+  lifetime::TypeClassification TC =
+      lifetime::classifyTypeCategory(Context.getRecordType(Record));
+
+  if (TC == lifetime::TypeCategory::Owner) {
+    Diag(Record->getBeginLoc(), diag::warn_lifetime_category)
+        << Record->getQualifiedNameAsString() << "[[gsl::Owner]]";
+  } else if (TC == lifetime::TypeCategory::Pointer) {
+    Diag(Record->getBeginLoc(), diag::warn_lifetime_category)
+        << Record->getQualifiedNameAsString() << "[[gsl::Pointer]]";
+  }
+}
+
 void Sema::inferGslOwnerPointerAttribute(CXXRecordDecl *Record) {
   static llvm::StringSet<> StdOwners{
       "any",
@@ -178,8 +200,10 @@ void Sema::inferGslOwnerPointerAttribute(CXXRecordDecl *Record) {
   };
   static llvm::StringSet<> StdPointers{
       "basic_string_view",
+      "initializer_list",
       "reference_wrapper",
       "regex_iterator",
+      "span",
   };
 
   if (!Record->getIdentifier())

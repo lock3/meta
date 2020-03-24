@@ -69,16 +69,16 @@ void dangligGslPtrFromTemporary() {
 }
 
 struct DanglingGslPtrField {
-  MyIntPointer p; // expected-note {{pointer member declared here}}
+  MyIntPointer p; // expected-note 2{{pointer member declared here}}
   MyLongPointerFromConversion p2; // expected-note {{pointer member declared here}}
-  DanglingGslPtrField(int i) : p(&i) {} // TODO
+  DanglingGslPtrField(int i) : p(&i) {} // expected-warning {{initializing pointer member 'p' with the stack address of parameter 'i'}}
   DanglingGslPtrField() : p2(MyLongOwnerWithConversion{}) {} // expected-warning {{initializing pointer member 'p2' to point to a temporary object whose lifetime is shorter than the lifetime of the constructed object}}
   DanglingGslPtrField(double) : p(MyIntOwner{}) {} // expected-warning {{initializing pointer member 'p' to point to a temporary object whose lifetime is shorter than the lifetime of the constructed object}}
 };
 
 MyIntPointer danglingGslPtrFromLocal() {
   int j;
-  return &j; // TODO
+  return &j; // expected-warning {{address of stack memory associated with local variable 'j' returned}}
 }
 
 MyIntPointer returningLocalPointer() {
@@ -338,17 +338,17 @@ void handleTernaryOperator(bool cond) {
 
 std::reference_wrapper<int> danglingPtrFromNonOwnerLocal() {
   int i = 5;
-  return i; // TODO
+  return i; // expected-warning {{address of stack memory associated with local variable 'i' returned}}
 }
 
 std::reference_wrapper<int> danglingPtrFromNonOwnerLocal2() {
   int i = 5;
-  return std::ref(i); // TODO
+  return std::ref(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
 }
 
 std::reference_wrapper<int> danglingPtrFromNonOwnerLocal3() {
   int i = 5;
-  return std::reference_wrapper<int>(i); // TODO
+  return std::reference_wrapper<int>(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
 }
 
 std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal4() {
@@ -363,7 +363,7 @@ std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal5() {
 
 int *returnPtrToLocalArray() {
   int a[5];
-  return std::begin(a); // TODO
+  return std::begin(a); // expected-warning {{address of stack memory associated with local variable 'a' returned}}
 }
 
 struct ptr_wrapper {

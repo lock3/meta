@@ -6755,6 +6755,9 @@ void Sema::CheckCompletedCXXClass(Scope *S, CXXRecordDecl *Record) {
     // is especially required for cases like vtable assumption loads.
     MarkVTableUsed(Record->getInnerLocStart(), Record);
   }
+
+  if (!Diags.isIgnored(diag::warn_lifetime_category, SourceLocation()))
+    suggestLifetimeAttribute(Record);
 }
 
 /// Look up the special member function that would be called by a special

@@ -10595,6 +10595,16 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
                                 MergeTypeWithPrevious, Previous))
     return Redeclaration;
 
+  // TODO: There might be some incompatibilities with multiversioning attrs.
+  if (!NewFD->getCanonicalDecl()->hasAttr<LifetimeContractAttr>() &&
+      NewFD->getMultiVersionKind() == MultiVersionKind::None &&
+      (unsigned)!getDiagnostics().isIgnored(diag::warn_deref_dangling,
+                                            SourceLocation())) {
+    NewFD->getCanonicalDecl()->addAttr(LifetimeContractAttr::CreateImplicit(
+        Context, nullptr, SourceRange{}, AttributeCommonInfo::AS_CXX11,
+        LifetimeContractAttr::CXX11_gsl_pre));
+  }
+
   // C++11 [dcl.constexpr]p8:
   //   A constexpr specifier for a non-static member function that is not
   //   a constructor declares that member function to be const.
@@ -14113,6 +14123,16 @@ static void diagnoseImplicitlyRetainedSelf(Sema &S) {
 Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
                                     bool IsInstantiation) {
   FunctionDecl *FD = dcl ? dcl->getAsFunction() : nullptr;
+
+  // Functions from instantiations might not have the attr yet.
+  if (FD && !FD->getCanonicalDecl()->hasAttr<LifetimeContractAttr>() &&
+      FD->getMultiVersionKind() == MultiVersionKind::None &&
+      (unsigned)!getDiagnostics().isIgnored(diag::warn_deref_dangling,
+                                            SourceLocation())) {
+    FD->getCanonicalDecl()->addAttr(LifetimeContractAttr::CreateImplicit(
+        Context, nullptr, SourceRange{}, AttributeCommonInfo::AS_CXX11,
+        LifetimeContractAttr::CXX11_gsl_pre));
+  }
 
   sema::AnalysisBasedWarnings::Policy WP = AnalysisWarnings.getDefaultPolicy();
   sema::AnalysisBasedWarnings::Policy *ActivePolicy = nullptr;

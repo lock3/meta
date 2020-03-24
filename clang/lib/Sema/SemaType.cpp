@@ -7759,6 +7759,13 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
         HandleLifetimeBoundAttr(state, type, attr);
       break;
 
+    // Move function type attribute to the declarator.
+    case ParsedAttr::AT_LifetimeContract:
+    case ParsedAttr::AT_LifetimeIO:
+      moveAttrFromListToList(attr, state.getCurrentAttributes(),
+                             state.getDeclarator().getAttributes());
+      break;
+
     case ParsedAttr::AT_NoDeref: {
       ASTContext &Ctx = state.getSema().Context;
       type = state.getAttributedType(createSimpleAttr<NoDerefAttr>(Ctx, attr),

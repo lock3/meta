@@ -1249,6 +1249,7 @@ public:
     bool AddCXXDefaultInitExprInCtors = false;
     bool AddCXXDefaultInitExprInAggregates = false;
     bool AddRichCXXConstructors = false;
+    bool AddExprWithCleanups = false;
     bool MarkElidedCXXConstructors = false;
     bool AddVirtualBaseBranches = false;
     bool OmitImplicitValueInitializers = false;
