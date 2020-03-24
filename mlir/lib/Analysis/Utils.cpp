@@ -14,9 +14,9 @@
 #include "mlir/Analysis/Utils.h"
 
 #include "mlir/Analysis/AffineAnalysis.h"
-#include "mlir/Dialect/AffineOps/AffineOps.h"
-#include "mlir/Dialect/AffineOps/AffineValueMap.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Affine/IR/AffineValueMap.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -974,11 +974,12 @@ void mlir::getSequentialLoops(AffineForOp forOp,
 bool mlir::isLoopParallel(AffineForOp forOp) {
   // Collect all load and store ops in loop nest rooted at 'forOp'.
   SmallVector<Operation *, 8> loadAndStoreOpInsts;
-  auto walkResult = forOp.walk([&](Operation *opInst) {
+  auto walkResult = forOp.walk([&](Operation *opInst) -> WalkResult {
     if (isa<AffineLoadOp>(opInst) || isa<AffineStoreOp>(opInst))
       loadAndStoreOpInsts.push_back(opInst);
     else if (!isa<AffineForOp>(opInst) && !isa<AffineTerminatorOp>(opInst) &&
-             !isa<AffineIfOp>(opInst) && !opInst->hasNoSideEffect())
+             !isa<AffineIfOp>(opInst) &&
+             !MemoryEffectOpInterface::hasNoEffect(opInst))
       return WalkResult::interrupt();
 
     return WalkResult::advance();

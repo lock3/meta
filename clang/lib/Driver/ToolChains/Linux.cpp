@@ -676,7 +676,7 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     CIncludeDirs.split(dirs, ":");
     for (StringRef dir : dirs) {
       StringRef Prefix =
-          llvm::sys::path::is_absolute(dir) ? StringRef(SysRoot) : "";
+          llvm::sys::path::is_absolute(dir) ? "" : StringRef(SysRoot);
       addExternCSystemInclude(DriverArgs, CC1Args, Prefix + dir);
     }
     return;
@@ -1006,4 +1006,9 @@ llvm::DenormalMode Linux::getDefaultDenormalModeForType(
   default:
     return llvm::DenormalMode::getIEEE();
   }
+}
+
+void Linux::addExtraOpts(llvm::opt::ArgStringList &CmdArgs) const {
+  for (const auto &Opt : ExtraOpts)
+    CmdArgs.push_back(Opt.c_str());
 }

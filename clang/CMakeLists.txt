@@ -588,6 +588,7 @@ if(CLANG_LIBS)
     add_dependencies(clang-libraries ${lib})
     if(NOT LLVM_ENABLE_IDE)
       add_dependencies(install-clang-libraries install-${lib})
+      add_dependencies(install-clang-libraries-stripped install-${lib}-stripped)
     endif()
   endforeach()
 endif()
@@ -864,7 +865,7 @@ add_subdirectory(utils/hmaptool)
 
 if(CLANG_BUILT_STANDALONE)
   llvm_distribution_add_targets()
-  process_llvm_pass_plugins(NO_GEN)
+  process_llvm_pass_plugins()
 endif()
 
 configure_file(

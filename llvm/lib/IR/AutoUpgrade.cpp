@@ -99,7 +99,6 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name.startswith("fma4.vfmadd.s") || // Added in 7.0
       Name.startswith("fma.vfmadd.") || // Added in 7.0
       Name.startswith("fma.vfmsub.") || // Added in 7.0
-      Name.startswith("fma.vfmaddsub.") || // Added in 7.0
       Name.startswith("fma.vfmsubadd.") || // Added in 7.0
       Name.startswith("fma.vfnmadd.") || // Added in 7.0
       Name.startswith("fma.vfnmsub.") || // Added in 7.0
@@ -205,6 +204,8 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name.startswith("avx512.mask.cvtqq2pd.") || // Added in 7.0 updated 9.0
       Name.startswith("avx512.mask.cvtuqq2pd.") || // Added in 7.0 updated 9.0
       Name.startswith("avx512.mask.cvtdq2ps.") || // Added in 7.0 updated 9.0
+      Name == "avx512.mask.vcvtph2ps.128" || // Added in 11.0
+      Name == "avx512.mask.vcvtph2ps.256" || // Added in 11.0
       Name == "avx512.mask.cvtqq2ps.256" || // Added in 9.0
       Name == "avx512.mask.cvtqq2ps.512" || // Added in 9.0
       Name == "avx512.mask.cvtuqq2ps.256" || // Added in 9.0
@@ -317,6 +318,7 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name == "avx.cvtdq2.pd.256" || // Added in 3.9
       Name == "avx.cvtdq2.ps.256" || // Added in 7.0
       Name == "avx.cvt.ps2.pd.256" || // Added in 3.9
+      Name.startswith("vcvtph2ps.") || // Added in 11.0
       Name.startswith("avx.vinsertf128.") || // Added in 3.7
       Name == "avx2.vinserti128" || // Added in 3.7
       Name.startswith("avx512.mask.insert") || // Added in 4.0
@@ -2136,6 +2138,23 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       if (CI->getNumArgOperands() >= 3)
         Rep = EmitX86Select(Builder, CI->getArgOperand(2), Rep,
                             CI->getArgOperand(1));
+    } else if (IsX86 && (Name.startswith("avx512.mask.vcvtph2ps.") ||
+                         Name.startswith("vcvtph2ps."))) {
+      Type *DstTy = CI->getType();
+      Rep = CI->getArgOperand(0);
+      Type *SrcTy = Rep->getType();
+      unsigned NumDstElts = DstTy->getVectorNumElements();
+      if (NumDstElts != SrcTy->getVectorNumElements()) {
+        assert(NumDstElts == 4 && "Unexpected vector size");
+        uint32_t ShuffleMask[4] = {0, 1, 2, 3};
+        Rep = Builder.CreateShuffleVector(Rep, Rep, ShuffleMask);
+      }
+      Rep = Builder.CreateBitCast(
+          Rep, VectorType::get(Type::getHalfTy(C), NumDstElts));
+      Rep = Builder.CreateFPExt(Rep, DstTy, "cvtph2ps");
+      if (CI->getNumArgOperands() >= 3)
+        Rep = EmitX86Select(Builder, CI->getArgOperand(2), Rep,
+                            CI->getArgOperand(1));
     } else if (IsX86 && (Name.startswith("avx512.mask.loadu."))) {
       Rep = UpgradeMaskedLoad(Builder, CI->getArgOperand(0),
                               CI->getArgOperand(1), CI->getArgOperand(2),
@@ -3212,28 +3231,26 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
                                   CI->getArgOperand(0);
 
       Rep = EmitX86Select(Builder, CI->getArgOperand(3), Rep, PassThru);
-    } else if (IsX86 && (Name.startswith("fma.vfmaddsub.p") ||
-                         Name.startswith("fma.vfmsubadd.p"))) {
-      bool IsSubAdd = Name[7] == 's';
-      int NumElts = CI->getType()->getVectorNumElements();
+    } else if (IsX86 &&  Name.startswith("fma.vfmsubadd.p")) {
+      unsigned VecWidth = CI->getType()->getPrimitiveSizeInBits();
+      unsigned EltWidth = CI->getType()->getScalarSizeInBits();
+      Intrinsic::ID IID;
+      if (VecWidth == 128 && EltWidth == 32)
+        IID = Intrinsic::x86_fma_vfmaddsub_ps;
+      else if (VecWidth == 256 && EltWidth == 32)
+        IID = Intrinsic::x86_fma_vfmaddsub_ps_256;
+      else if (VecWidth == 128 && EltWidth == 64)
+        IID = Intrinsic::x86_fma_vfmaddsub_pd;
+      else if (VecWidth == 256 && EltWidth == 64)
+        IID = Intrinsic::x86_fma_vfmaddsub_pd_256;
+      else
+        llvm_unreachable("Unexpected intrinsic");
 
       Value *Ops[] = { CI->getArgOperand(0), CI->getArgOperand(1),
                        CI->getArgOperand(2) };
-
-      Function *FMA = Intrinsic::getDeclaration(CI->getModule(), Intrinsic::fma,
-                                                Ops[0]->getType());
-      Value *Odd = Builder.CreateCall(FMA, Ops);
       Ops[2] = Builder.CreateFNeg(Ops[2]);
-      Value *Even = Builder.CreateCall(FMA, Ops);
-
-      if (IsSubAdd)
-        std::swap(Even, Odd);
-
-      SmallVector<uint32_t, 32> Idxs(NumElts);
-      for (int i = 0; i != NumElts; ++i)
-        Idxs[i] = i + (i % 2) * NumElts;
-
-      Rep = Builder.CreateShuffleVector(Even, Odd, Idxs);
+      Rep = Builder.CreateCall(Intrinsic::getDeclaration(F->getParent(), IID),
+                               Ops);
     } else if (IsX86 && (Name.startswith("avx512.mask.vfmaddsub.p") ||
                          Name.startswith("avx512.mask3.vfmaddsub.p") ||
                          Name.startswith("avx512.maskz.vfmaddsub.p") ||
@@ -3243,9 +3260,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       // Drop the "avx512.mask." to make it easier.
       Name = Name.drop_front(IsMask3 || IsMaskZ ? 13 : 12);
       bool IsSubAdd = Name[3] == 's';
-      if (CI->getNumArgOperands() == 5 &&
-          (!isa<ConstantInt>(CI->getArgOperand(4)) ||
-           cast<ConstantInt>(CI->getArgOperand(4))->getZExtValue() != 4)) {
+      if (CI->getNumArgOperands() == 5) {
         Intrinsic::ID IID;
         // Check the character before ".512" in string.
         if (Name[Name.size()-5] == 's')
@@ -4007,6 +4022,12 @@ bool llvm::UpgradeModuleFlags(Module &M) {
     return false;
 
   bool HasObjCFlag = false, HasClassProperties = false, Changed = false;
+  bool HasSwiftVersionFlag = false;
+  uint8_t SwiftMajorVersion, SwiftMinorVersion;
+  uint32_t SwiftABIVersion;
+  auto Int8Ty = Type::getInt8Ty(M.getContext());
+  auto Int32Ty = Type::getInt32Ty(M.getContext());
+
   for (unsigned I = 0, E = ModFlags->getNumOperands(); I != E; ++I) {
     MDNode *Op = ModFlags->getOperand(I);
     if (Op->getNumOperands() != 3)
@@ -4052,6 +4073,31 @@ bool llvm::UpgradeModuleFlags(Module &M) {
         }
       }
     }
+
+    // IRUpgrader turns a i32 type "Objective-C Garbage Collection" into i8 value.
+    // If the higher bits are set, it adds new module flag for swift info.
+    if (ID->getString() == "Objective-C Garbage Collection") {
+      auto Md = dyn_cast<ConstantAsMetadata>(Op->getOperand(2));
+      if (Md) {
+        assert(Md->getValue() && "Expected non-empty metadata");
+        auto Type = Md->getValue()->getType();
+        if (Type == Int8Ty)
+          continue;
+        unsigned Val = Md->getValue()->getUniqueInteger().getZExtValue();
+        if ((Val & 0xff) != Val) {
+          HasSwiftVersionFlag = true;
+          SwiftABIVersion = (Val & 0xff00) >> 8;
+          SwiftMajorVersion = (Val & 0xff000000) >> 24;
+          SwiftMinorVersion = (Val & 0xff0000) >> 16;
+        }
+        Metadata *Ops[3] = {
+          ConstantAsMetadata::get(ConstantInt::get(Int32Ty,Module::Error)),
+          Op->getOperand(1),
+          ConstantAsMetadata::get(ConstantInt::get(Int8Ty,Val & 0xff))};
+        ModFlags->setOperand(I, MDNode::get(M.getContext(), Ops));
+        Changed = true;
+      }
+    }
   }
 
   // "Objective-C Class Properties" is recently added for Objective-C. We
@@ -4062,6 +4108,16 @@ bool llvm::UpgradeModuleFlags(Module &M) {
   if (HasObjCFlag && !HasClassProperties) {
     M.addModuleFlag(llvm::Module::Override, "Objective-C Class Properties",
                     (uint32_t)0);
+    Changed = true;
+  }
+
+  if (HasSwiftVersionFlag) {
+    M.addModuleFlag(Module::Error, "Swift ABI Version",
+                    SwiftABIVersion);
+    M.addModuleFlag(Module::Error, "Swift Major Version",
+                    ConstantInt::get(Int8Ty, SwiftMajorVersion));
+    M.addModuleFlag(Module::Error, "Swift Minor Version",
+                    ConstantInt::get(Int8Ty, SwiftMinorVersion));
     Changed = true;
   }
 

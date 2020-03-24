@@ -1139,10 +1139,17 @@ DEF_TRAVERSE_TYPE(PipeType, { TRY_TO(TraverseType(T->getElementType())); })
 #define DEF_TRAVERSE_TYPELOC(TYPE, CODE)                                       \
   template <typename Derived>                                                  \
   bool RecursiveASTVisitor<Derived>::Traverse##TYPE##Loc(TYPE##Loc TL) {       \
-    if (getDerived().shouldWalkTypesOfTypeLocs())                              \
-      TRY_TO(WalkUpFrom##TYPE(const_cast<TYPE *>(TL.getTypePtr())));           \
-    TRY_TO(WalkUpFrom##TYPE##Loc(TL));                                         \
+    if (!getDerived().shouldTraversePostOrder()) {                             \
+      TRY_TO(WalkUpFrom##TYPE##Loc(TL));                                       \
+      if (getDerived().shouldWalkTypesOfTypeLocs())                            \
+        TRY_TO(WalkUpFrom##TYPE(const_cast<TYPE *>(TL.getTypePtr())));         \
+    }                                                                          \
     { CODE; }                                                                  \
+    if (getDerived().shouldTraversePostOrder()) {                              \
+      TRY_TO(WalkUpFrom##TYPE##Loc(TL));                                       \
+      if (getDerived().shouldWalkTypesOfTypeLocs())                            \
+        TRY_TO(WalkUpFrom##TYPE(const_cast<TYPE *>(TL.getTypePtr())));         \
+    }                                                                          \
     return true;                                                               \
   }
 
@@ -1211,22 +1218,22 @@ bool RecursiveASTVisitor<Derived>::TraverseArrayTypeLocHelper(ArrayTypeLoc TL) {
 
 DEF_TRAVERSE_TYPELOC(ConstantArrayType, {
   TRY_TO(TraverseTypeLoc(TL.getElementLoc()));
-  return TraverseArrayTypeLocHelper(TL);
+  TRY_TO(TraverseArrayTypeLocHelper(TL));
 })
 
 DEF_TRAVERSE_TYPELOC(IncompleteArrayType, {
   TRY_TO(TraverseTypeLoc(TL.getElementLoc()));
-  return TraverseArrayTypeLocHelper(TL);
+  TRY_TO(TraverseArrayTypeLocHelper(TL));
 })
 
 DEF_TRAVERSE_TYPELOC(VariableArrayType, {
   TRY_TO(TraverseTypeLoc(TL.getElementLoc()));
-  return TraverseArrayTypeLocHelper(TL);
+  TRY_TO(TraverseArrayTypeLocHelper(TL));
 })
 
 DEF_TRAVERSE_TYPELOC(DependentSizedArrayType, {
   TRY_TO(TraverseTypeLoc(TL.getElementLoc()));
-  return TraverseArrayTypeLocHelper(TL);
+  TRY_TO(TraverseArrayTypeLocHelper(TL));
 })
 
 DEF_TRAVERSE_TYPELOC(DependentAddressSpaceType, {
@@ -2920,6 +2927,12 @@ DEF_TRAVERSE_STMT(OMPCancelDirective,
 DEF_TRAVERSE_STMT(OMPFlushDirective,
                   { TRY_TO(TraverseOMPExecutableDirective(S)); })
 
+DEF_TRAVERSE_STMT(OMPDepobjDirective,
+                  { TRY_TO(TraverseOMPExecutableDirective(S)); })
+
+DEF_TRAVERSE_STMT(OMPScanDirective,
+                  { TRY_TO(TraverseOMPExecutableDirective(S)); })
+
 DEF_TRAVERSE_STMT(OMPOrderedDirective,
                   { TRY_TO(TraverseOMPExecutableDirective(S)); })
 
@@ -3235,11 +3248,30 @@ bool RecursiveASTVisitor<Derived>::VisitOMPNogroupClause(OMPNogroupClause *) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPDestroyClause(OMPDestroyClause *) {
+  return true;
+}
+
+template <typename Derived>
 template <typename T>
 bool RecursiveASTVisitor<Derived>::VisitOMPClauseList(T *Node) {
   for (auto *E : Node->varlists()) {
     TRY_TO(TraverseStmt(E));
   }
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPInclusiveClause(
+    OMPInclusiveClause *C) {
+  TRY_TO(VisitOMPClauseList(C));
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPExclusiveClause(
+    OMPExclusiveClause *C) {
+  TRY_TO(VisitOMPClauseList(C));
   return true;
 }
 
@@ -3426,6 +3458,12 @@ bool RecursiveASTVisitor<Derived>::VisitOMPFlushClause(OMPFlushClause *C) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPDepobjClause(OMPDepobjClause *C) {
+  TRY_TO(TraverseStmt(C->getDepobj()));
+  return true;
+}
+
+template <typename Derived>
 bool RecursiveASTVisitor<Derived>::VisitOMPDependClause(OMPDependClause *C) {
   TRY_TO(VisitOMPClauseList(C));
   return true;
@@ -3542,6 +3580,12 @@ bool RecursiveASTVisitor<Derived>::VisitOMPNontemporalClause(
 
 template <typename Derived>
 bool RecursiveASTVisitor<Derived>::VisitOMPOrderClause(OMPOrderClause *) {
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPDetachClause(OMPDetachClause *C) {
+  TRY_TO(TraverseStmt(C->getEventHandler()));
   return true;
 }
 

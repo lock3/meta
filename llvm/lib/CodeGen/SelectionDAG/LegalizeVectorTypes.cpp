@@ -20,10 +20,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "LegalizeTypes.h"
+#include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/TypeSize.h"
+#include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "legalize-types"
@@ -166,7 +167,9 @@ void DAGTypeLegalizer::ScalarizeVectorResult(SDNode *N, unsigned ResNo) {
   case ISD::UMULFIX:
   case ISD::UMULFIXSAT:
   case ISD::SDIVFIX:
+  case ISD::SDIVFIXSAT:
   case ISD::UDIVFIX:
+  case ISD::UDIVFIXSAT:
     R = ScalarizeVecRes_FIX(N);
     break;
   }
@@ -956,7 +959,9 @@ void DAGTypeLegalizer::SplitVectorResult(SDNode *N, unsigned ResNo) {
   case ISD::UMULFIX:
   case ISD::UMULFIXSAT:
   case ISD::SDIVFIX:
+  case ISD::SDIVFIXSAT:
   case ISD::UDIVFIX:
+  case ISD::UDIVFIXSAT:
     SplitVecRes_FIX(N, Lo, Hi);
     break;
   }
@@ -1501,6 +1506,14 @@ void DAGTypeLegalizer::SplitVecRes_LOAD(LoadSDNode *LD, SDValue &Lo,
   EVT LoMemVT, HiMemVT;
   std::tie(LoMemVT, HiMemVT) = DAG.GetSplitDestVTs(MemoryVT);
 
+  if (!LoMemVT.isByteSized() || !HiMemVT.isByteSized()) {
+    SDValue Value, NewChain;
+    std::tie(Value, NewChain) = TLI.scalarizeVectorLoad(LD, DAG);
+    std::tie(Lo, Hi) = DAG.SplitVector(Value, dl);
+    ReplaceValueWith(SDValue(LD, 1), NewChain);
+    return;
+  }
+
   Lo = DAG.getLoad(ISD::UNINDEXED, ExtType, LoVT, dl, Ch, Ptr, Offset,
                    LD->getPointerInfo(), LoMemVT, Alignment, MMOFlags, AAInfo);
 
@@ -1615,11 +1628,6 @@ void DAGTypeLegalizer::SplitVecRes_MGATHER(MaskedGatherSDNode *MGT,
       std::tie(MaskLo, MaskHi) = DAG.SplitVector(Mask, dl);
   }
 
-  EVT MemoryVT = MGT->getMemoryVT();
-  EVT LoMemVT, HiMemVT;
-  // Split MemoryVT
-  std::tie(LoMemVT, HiMemVT) = DAG.GetSplitDestVTs(MemoryVT);
-
   SDValue PassThruLo, PassThruHi;
   if (getTypeAction(PassThru.getValueType()) == TargetLowering::TypeSplitVector)
     GetSplitVector(PassThru, PassThruLo, PassThruHi);
@@ -1632,10 +1640,10 @@ void DAGTypeLegalizer::SplitVecRes_MGATHER(MaskedGatherSDNode *MGT,
   else
     std::tie(IndexLo, IndexHi) = DAG.SplitVector(Index, dl);
 
-  MachineMemOperand *MMO = DAG.getMachineFunction().
-    getMachineMemOperand(MGT->getPointerInfo(),
-                         MachineMemOperand::MOLoad,  LoMemVT.getStoreSize(),
-                         Alignment, MGT->getAAInfo(), MGT->getRanges());
+  MachineMemOperand *MMO = DAG.getMachineFunction().getMachineMemOperand(
+      MGT->getPointerInfo(), MachineMemOperand::MOLoad,
+      MemoryLocation::UnknownSize, Alignment, MGT->getAAInfo(),
+      MGT->getRanges());
 
   SDValue OpsLo[] = {Ch, PassThruLo, MaskLo, Ptr, IndexLo, Scale};
   Lo = DAG.getMaskedGather(DAG.getVTList(LoVT, MVT::Other), LoVT, dl, OpsLo,
@@ -2364,13 +2372,10 @@ SDValue DAGTypeLegalizer::SplitVecOp_MSCATTER(MaskedScatterSDNode *N,
   SDValue Index = N->getIndex();
   SDValue Scale = N->getScale();
   SDValue Data = N->getValue();
-  EVT MemoryVT = N->getMemoryVT();
   unsigned Alignment = N->getOriginalAlignment();
   SDLoc DL(N);
 
   // Split all operands
-  EVT LoMemVT, HiMemVT;
-  std::tie(LoMemVT, HiMemVT) = DAG.GetSplitDestVTs(MemoryVT);
 
   SDValue DataLo, DataHi;
   if (getTypeAction(Data.getValueType()) == TargetLowering::TypeSplitVector)
@@ -2397,19 +2402,13 @@ SDValue DAGTypeLegalizer::SplitVecOp_MSCATTER(MaskedScatterSDNode *N,
     std::tie(IndexLo, IndexHi) = DAG.SplitVector(Index, DL);
 
   SDValue Lo;
-  MachineMemOperand *MMO = DAG.getMachineFunction().
-    getMachineMemOperand(N->getPointerInfo(),
-                         MachineMemOperand::MOStore, LoMemVT.getStoreSize(),
-                         Alignment, N->getAAInfo(), N->getRanges());
+  MachineMemOperand *MMO = DAG.getMachineFunction().getMachineMemOperand(
+      N->getPointerInfo(), MachineMemOperand::MOStore,
+      MemoryLocation::UnknownSize, Alignment, N->getAAInfo(), N->getRanges());
 
   SDValue OpsLo[] = {Ch, DataLo, MaskLo, Ptr, IndexLo, Scale};
   Lo = DAG.getMaskedScatter(DAG.getVTList(MVT::Other), DataLo.getValueType(),
                             DL, OpsLo, MMO, N->getIndexType());
-
-  MMO = DAG.getMachineFunction().
-    getMachineMemOperand(N->getPointerInfo(),
-                         MachineMemOperand::MOStore,  HiMemVT.getStoreSize(),
-                         Alignment, N->getAAInfo(), N->getRanges());
 
   // The order of the Scatter operation after split is well defined. The "Hi"
   // part comes after the "Lo". So these two operations should be chained one
@@ -3298,7 +3297,7 @@ SDValue DAGTypeLegalizer::WidenVecRes_Convert_StrictFP(SDNode *N) {
 
   // Otherwise unroll into some nasty scalar code and rebuild the vector.
   EVT EltVT = WidenVT.getVectorElementType();
-  std::array<EVT, 2> EltVTs = {EltVT, MVT::Other};
+  std::array<EVT, 2> EltVTs = {{EltVT, MVT::Other}};
   SmallVector<SDValue, 16> Ops(WidenNumElts, DAG.getUNDEF(EltVT));
   SmallVector<SDValue, 32> OpChains;
   // Use the original element count so we don't do more scalar opts than
@@ -3662,6 +3661,20 @@ SDValue DAGTypeLegalizer::WidenVecRes_INSERT_VECTOR_ELT(SDNode *N) {
 SDValue DAGTypeLegalizer::WidenVecRes_LOAD(SDNode *N) {
   LoadSDNode *LD = cast<LoadSDNode>(N);
   ISD::LoadExtType ExtType = LD->getExtensionType();
+
+  // A vector must always be stored in memory as-is, i.e. without any padding
+  // between the elements, since various code depend on it, e.g. in the
+  // handling of a bitcast of a vector type to int, which may be done with a
+  // vector store followed by an integer load. A vector that does not have
+  // elements that are byte-sized must therefore be stored as an integer
+  // built out of the extracted vector elements.
+  if (!LD->getMemoryVT().isByteSized()) {
+    SDValue Value, NewChain;
+    std::tie(Value, NewChain) = TLI.scalarizeVectorLoad(LD, DAG);
+    ReplaceValueWith(SDValue(LD, 0), Value);
+    ReplaceValueWith(SDValue(LD, 1), NewChain);
+    return SDValue();
+  }
 
   SDValue Result;
   SmallVector<SDValue, 16> LdChain;  // Chain for the series of load

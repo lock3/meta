@@ -23,6 +23,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/PartialDiagnostic.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Stack.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/HeaderSearch.h"
@@ -1459,21 +1460,26 @@ void Sema::emitDeferredDiags(FunctionDecl *FD, bool ShowCallStack) {
   if (It == DeviceDeferredDiags.end())
     return;
   bool HasWarningOrError = false;
+  bool FirstDiag = true;
   for (PartialDiagnosticAt &PDAt : It->second) {
     const SourceLocation &Loc = PDAt.first;
     const PartialDiagnostic &PD = PDAt.second;
     HasWarningOrError |= getDiagnostics().getDiagnosticLevel(
                              PD.getDiagID(), Loc) >= DiagnosticsEngine::Warning;
-    DiagnosticBuilder Builder(Diags.Report(Loc, PD.getDiagID()));
-    Builder.setForceEmit();
-    PD.Emit(Builder);
+    {
+      DiagnosticBuilder Builder(Diags.Report(Loc, PD.getDiagID()));
+      Builder.setForceEmit();
+      PD.Emit(Builder);
+    }
+
+    // Emit the note on the first diagnostic in case too many diagnostics cause
+    // the note not emitted.
+    if (FirstDiag && HasWarningOrError && ShowCallStack) {
+      emitCallStackNotes(*this, FD);
+      FirstDiag = false;
+    }
   }
 
-  // FIXME: Should this be called after every warning/error emitted in the loop
-  // above, instead of just once per function?  That would be consistent with
-  // how we handle immediate errors, but it also seems like a bit much.
-  if (HasWarningOrError && ShowCallStack)
-    emitCallStackNotes(*this, FD);
 }
 
 namespace {
@@ -1492,38 +1498,14 @@ public:
   DeferredDiagnosticsEmitter(Sema &S)
       : Inherited(S), ShouldEmit(false), InOMPDeviceContext(0) {}
 
-  void VisitDeclRefExpr(DeclRefExpr *E) {
-    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(E->getDecl())) {
-      visitUsedDecl(E->getLocation(), FD);
-    }
-  }
-
-  void VisitMemberExpr(MemberExpr *E) {
-    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(E->getMemberDecl()))
-      visitUsedDecl(E->getMemberLoc(), FD);
-  }
-
   void VisitOMPTargetDirective(OMPTargetDirective *Node) {
     ++InOMPDeviceContext;
     Inherited::VisitOMPTargetDirective(Node);
     --InOMPDeviceContext;
   }
 
-  void VisitCapturedStmt(CapturedStmt *Node) {
-    visitUsedDecl(Node->getBeginLoc(), Node->getCapturedDecl());
-    Inherited::VisitCapturedStmt(Node);
-  }
-
   void visitUsedDecl(SourceLocation Loc, Decl *D) {
-    if (auto *TD = dyn_cast<TranslationUnitDecl>(D)) {
-      for (auto *DD : TD->decls()) {
-        visitUsedDecl(Loc, DD);
-      }
-    } else if (auto *FTD = dyn_cast<FunctionTemplateDecl>(D)) {
-      for (auto *DD : FTD->specializations()) {
-        visitUsedDecl(Loc, DD);
-      }
-    } else if (auto *FD = dyn_cast<FunctionDecl>(D)) {
+    if (auto *FD = dyn_cast<FunctionDecl>(D)) {
       FunctionDecl *Caller = UseStack.empty() ? nullptr : UseStack.back();
       auto IsKnownEmitted = S.getEmissionStatus(FD, /*Final=*/true) ==
                             Sema::FunctionEmissionStatus::Emitted;
@@ -1546,14 +1528,6 @@ public:
       }
       UseStack.pop_back();
       Visited.erase(D);
-    } else if (auto *RD = dyn_cast<RecordDecl>(D)) {
-      for (auto *DD : RD->decls()) {
-        visitUsedDecl(Loc, DD);
-      }
-    } else if (auto *CD = dyn_cast<CapturedDecl>(D)) {
-      if (auto *S = CD->getBody()) {
-        this->Visit(S);
-      }
     } else if (auto *VD = dyn_cast<VarDecl>(D)) {
       if (auto *Init = VD->getInit()) {
         auto DevTy = OMPDeclareTargetDeclAttr::getDeviceType(VD);
@@ -1565,17 +1539,24 @@ public:
         if (IsDev)
           --InOMPDeviceContext;
       }
-    }
+    } else
+      Inherited::visitUsedDecl(Loc, D);
   }
 };
 } // namespace
 
 void Sema::emitDeferredDiags() {
-  if (DeviceDeferredDiags.empty() && !LangOpts.OpenMP)
+  if (ExternalSource)
+    ExternalSource->ReadDeclsToCheckForDeferredDiags(
+        DeclsToCheckForDeferredDiags);
+
+  if ((DeviceDeferredDiags.empty() && !LangOpts.OpenMP) ||
+      DeclsToCheckForDeferredDiags.empty())
     return;
 
-  DeferredDiagnosticsEmitter(*this).visitUsedDecl(
-      SourceLocation(), Context.getTranslationUnitDecl());
+  DeferredDiagnosticsEmitter DDE(*this);
+  for (auto D : DeclsToCheckForDeferredDiags)
+    DDE.visitUsedDecl(SourceLocation(), D);
 }
 
 // In CUDA, there are some constructs which may appear in semantically-valid

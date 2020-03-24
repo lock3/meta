@@ -9,6 +9,7 @@
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Host.h"
 
 #include "ThinLtoDiscoveryThread.h"
 #include "ThinLtoInstrumentationLayer.h"
@@ -158,7 +159,7 @@ ThinLtoJIT::ThinLtoJIT(ArrayRef<std::string> InputFiles,
 
   // We are restricted to a single dylib currently. Add runtime overrides and
   // symbol generators.
-  MainJD = &ES.createJITDylib("main");
+  MainJD = &ES.createBareJITDylib("main");
   Err = setupJITDylib(MainJD, AllowNudgeIntoDiscovery, PrintStats);
   if (Err)
     return;
@@ -190,7 +191,7 @@ Expected<ThreadSafeModule> ThinLtoJIT::setupMainModule(StringRef MainFunction) {
   }
 
   if (auto TSM = GlobalIndex->parseModuleFromFile(*M))
-    return TSM;
+    return std::move(TSM); // Not a redundant move: fix build on gcc-7.5
 
   return createStringError(inconvertibleErrorCode(),
                            "Failed to parse main module");

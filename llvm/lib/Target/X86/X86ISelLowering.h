@@ -33,10 +33,12 @@ namespace llvm {
       /// Bit scan reverse.
       BSR,
 
-      /// Double shift instructions. These correspond to
-      /// X86::SHLDxx and X86::SHRDxx instructions.
-      SHLD,
-      SHRD,
+      /// X86 funnel/double shift i16 instructions. These correspond to
+      /// X86::SHLDW and X86::SHRDW instructions which have different amt
+      /// modulo rules to generic funnel shifts.
+      /// NOTE: The operand order matches ISD::FSHL/FSHR not SHLD/SHRD.
+      FSHL,
+      FSHR,
 
       /// Bitwise logical AND of floating point values. This corresponds
       /// to X86::ANDPS or X86::ANDPD.
@@ -720,7 +722,10 @@ namespace llvm {
 
     /// If Op is a constant whose elements are all the same constant or
     /// undefined, return true and return the constant value in \p SplatVal.
-    bool isConstantSplat(SDValue Op, APInt &SplatVal);
+    /// If we have undef bits that don't cover an entire element, we treat these
+    /// as zero if AllowPartialUndefs is set, else we fail and return false.
+    bool isConstantSplat(SDValue Op, APInt &SplatVal,
+                         bool AllowPartialUndefs = true);
   } // end namespace X86
 
   //===--------------------------------------------------------------------===//
@@ -1150,7 +1155,8 @@ namespace llvm {
     /// Overflow nodes should get combined/lowered to optimal instructions
     /// (they should allow eliminating explicit compares by getting flags from
     /// math ops).
-    bool shouldFormOverflowOp(unsigned Opcode, EVT VT) const override;
+    bool shouldFormOverflowOp(unsigned Opcode, EVT VT,
+                              bool MathUsed) const override;
 
     bool storeOfVectorConstantIsCheap(EVT MemVT, unsigned NumElem,
                                       unsigned AddrSpace) const override {
@@ -1206,8 +1212,10 @@ namespace llvm {
     /// offset as appropriate.
     Value *getSafeStackPointerLocation(IRBuilder<> &IRB) const override;
 
-    std::pair<SDValue, SDValue> BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain,
-                                          SDValue StackSlot,
+    std::pair<SDValue, SDValue> BuildFILD(EVT DstVT, EVT SrcVT, const SDLoc &DL,
+                                          SDValue Chain, SDValue Pointer,
+                                          MachinePointerInfo PtrInfo,
+                                          unsigned Align,
                                           SelectionDAG &DAG) const;
 
     bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override;
@@ -1323,7 +1331,7 @@ namespace llvm {
 
     unsigned getAddressSpace(void) const;
 
-    SDValue FP_TO_INTHelper(SDValue Op, SelectionDAG &DAG, bool isSigned,
+    SDValue FP_TO_INTHelper(SDValue Op, SelectionDAG &DAG, bool IsSigned,
                             SDValue &Chain) const;
     SDValue LRINT_LLRINTHelper(SDNode *N, SelectionDAG &DAG) const;
 
@@ -1416,7 +1424,7 @@ namespace llvm {
     const MCPhysReg *getScratchRegisters(CallingConv::ID CC) const override;
 
     TargetLoweringBase::AtomicExpansionKind
-    shouldExpandAtomicLoadInIR(LoadInst *SI) const override;
+    shouldExpandAtomicLoadInIR(LoadInst *LI) const override;
     bool shouldExpandAtomicStoreInIR(StoreInst *SI) const override;
     TargetLoweringBase::AtomicExpansionKind
     shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const override;
@@ -1495,15 +1503,15 @@ namespace llvm {
                               SDValue &X86CC) const;
 
     /// Check if replacement of SQRT with RSQRT should be disabled.
-    bool isFsqrtCheap(SDValue Operand, SelectionDAG &DAG) const override;
+    bool isFsqrtCheap(SDValue Op, SelectionDAG &DAG) const override;
 
     /// Use rsqrt* to speed up sqrt calculations.
-    SDValue getSqrtEstimate(SDValue Operand, SelectionDAG &DAG, int Enabled,
+    SDValue getSqrtEstimate(SDValue Op, SelectionDAG &DAG, int Enabled,
                             int &RefinementSteps, bool &UseOneConstNR,
                             bool Reciprocal) const override;
 
     /// Use rcp* to speed up fdiv calculations.
-    SDValue getRecipEstimate(SDValue Operand, SelectionDAG &DAG, int Enabled,
+    SDValue getRecipEstimate(SDValue Op, SelectionDAG &DAG, int Enabled,
                              int &RefinementSteps) const override;
 
     /// Reassociate floating point divisions into multiply by reciprocal.
@@ -1518,101 +1526,14 @@ namespace llvm {
                              const TargetLibraryInfo *libInfo);
   } // end namespace X86
 
-  // Base class for all X86 non-masked store operations.
-  class X86StoreSDNode : public MemSDNode {
-  public:
-    X86StoreSDNode(unsigned Opcode, unsigned Order, const DebugLoc &dl,
-                   SDVTList VTs, EVT MemVT,
-                   MachineMemOperand *MMO)
-      :MemSDNode(Opcode, Order, dl, VTs, MemVT, MMO) {}
-    const SDValue &getValue() const { return getOperand(1); }
-    const SDValue &getBasePtr() const { return getOperand(2); }
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VTRUNCSTORES ||
-        N->getOpcode() == X86ISD::VTRUNCSTOREUS;
-    }
-  };
-
-  // Base class for all X86 masked store operations.
-  // The class has the same order of operands as MaskedStoreSDNode for
-  // convenience.
-  class X86MaskedStoreSDNode : public MemSDNode {
-  public:
-    X86MaskedStoreSDNode(unsigned Opcode, unsigned Order,
-                         const DebugLoc &dl, SDVTList VTs, EVT MemVT,
-                         MachineMemOperand *MMO)
-      : MemSDNode(Opcode, Order, dl, VTs, MemVT, MMO) {}
-
-    const SDValue &getValue()   const { return getOperand(1); }
-    const SDValue &getBasePtr() const { return getOperand(2); }
-    const SDValue &getMask()    const { return getOperand(3); }
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VMTRUNCSTORES ||
-        N->getOpcode() == X86ISD::VMTRUNCSTOREUS;
-    }
-  };
-
-  // X86 Truncating Store with Signed saturation.
-  class TruncSStoreSDNode : public X86StoreSDNode {
-  public:
-    TruncSStoreSDNode(unsigned Order, const DebugLoc &dl,
-                        SDVTList VTs, EVT MemVT, MachineMemOperand *MMO)
-      : X86StoreSDNode(X86ISD::VTRUNCSTORES, Order, dl, VTs, MemVT, MMO) {}
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VTRUNCSTORES;
-    }
-  };
-
-  // X86 Truncating Store with Unsigned saturation.
-  class TruncUSStoreSDNode : public X86StoreSDNode {
-  public:
-    TruncUSStoreSDNode(unsigned Order, const DebugLoc &dl,
-                      SDVTList VTs, EVT MemVT, MachineMemOperand *MMO)
-      : X86StoreSDNode(X86ISD::VTRUNCSTOREUS, Order, dl, VTs, MemVT, MMO) {}
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VTRUNCSTOREUS;
-    }
-  };
-
-  // X86 Truncating Masked Store with Signed saturation.
-  class MaskedTruncSStoreSDNode : public X86MaskedStoreSDNode {
-  public:
-    MaskedTruncSStoreSDNode(unsigned Order,
-                         const DebugLoc &dl, SDVTList VTs, EVT MemVT,
-                         MachineMemOperand *MMO)
-      : X86MaskedStoreSDNode(X86ISD::VMTRUNCSTORES, Order, dl, VTs, MemVT, MMO) {}
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VMTRUNCSTORES;
-    }
-  };
-
-  // X86 Truncating Masked Store with Unsigned saturation.
-  class MaskedTruncUSStoreSDNode : public X86MaskedStoreSDNode {
-  public:
-    MaskedTruncUSStoreSDNode(unsigned Order,
-                            const DebugLoc &dl, SDVTList VTs, EVT MemVT,
-                            MachineMemOperand *MMO)
-      : X86MaskedStoreSDNode(X86ISD::VMTRUNCSTOREUS, Order, dl, VTs, MemVT, MMO) {}
-
-    static bool classof(const SDNode *N) {
-      return N->getOpcode() == X86ISD::VMTRUNCSTOREUS;
-    }
-  };
-
   // X86 specific Gather/Scatter nodes.
   // The class has the same order of operands as MaskedGatherScatterSDNode for
   // convenience.
-  class X86MaskedGatherScatterSDNode : public MemSDNode {
+  class X86MaskedGatherScatterSDNode : public MemIntrinsicSDNode {
   public:
-    X86MaskedGatherScatterSDNode(unsigned Opc, unsigned Order,
-                                 const DebugLoc &dl, SDVTList VTs, EVT MemVT,
-                                 MachineMemOperand *MMO)
-        : MemSDNode(Opc, Order, dl, VTs, MemVT, MMO) {}
+    // This is a intended as a utility and should never be directly created.
+    X86MaskedGatherScatterSDNode() = delete;
+    ~X86MaskedGatherScatterSDNode() = delete;
 
     const SDValue &getBasePtr() const { return getOperand(3); }
     const SDValue &getIndex()   const { return getOperand(4); }
@@ -1627,11 +1548,6 @@ namespace llvm {
 
   class X86MaskedGatherSDNode : public X86MaskedGatherScatterSDNode {
   public:
-    X86MaskedGatherSDNode(unsigned Order, const DebugLoc &dl, SDVTList VTs,
-                          EVT MemVT, MachineMemOperand *MMO)
-        : X86MaskedGatherScatterSDNode(X86ISD::MGATHER, Order, dl, VTs, MemVT,
-                                       MMO) {}
-
     const SDValue &getPassThru() const { return getOperand(1); }
 
     static bool classof(const SDNode *N) {
@@ -1641,11 +1557,6 @@ namespace llvm {
 
   class X86MaskedScatterSDNode : public X86MaskedGatherScatterSDNode {
   public:
-    X86MaskedScatterSDNode(unsigned Order, const DebugLoc &dl, SDVTList VTs,
-                           EVT MemVT, MachineMemOperand *MMO)
-        : X86MaskedGatherScatterSDNode(X86ISD::MSCATTER, Order, dl, VTs, MemVT,
-                                       MMO) {}
-
     const SDValue &getValue() const { return getOperand(1); }
 
     static bool classof(const SDNode *N) {
@@ -1684,32 +1595,6 @@ namespace llvm {
     }
   }
 
-  /// Helper function to scale a shuffle or target shuffle mask, replacing each
-  /// mask index with the scaled sequential indices for an equivalent narrowed
-  /// mask. This is the reverse process to canWidenShuffleElements, but can
-  /// always succeed.
-  template <typename T>
-  void scaleShuffleMask(size_t Scale, ArrayRef<T> Mask,
-                        SmallVectorImpl<T> &ScaledMask) {
-    assert(0 < Scale && "Unexpected scaling factor");
-    size_t NumElts = Mask.size();
-    ScaledMask.assign(NumElts * Scale, -1);
-
-    for (size_t i = 0; i != NumElts; ++i) {
-      int M = Mask[i];
-
-      // Repeat sentinel values in every mask element.
-      if (M < 0) {
-        for (size_t s = 0; s != Scale; ++s)
-          ScaledMask[(Scale * i) + s] = M;
-        continue;
-      }
-
-      // Scale mask element and increment across each mask element.
-      for (size_t s = 0; s != Scale; ++s)
-        ScaledMask[(Scale * i) + s] = (Scale * M) + s;
-    }
-  }
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_X86_X86ISELLOWERING_H

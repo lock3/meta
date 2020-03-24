@@ -12,7 +12,7 @@
 
 #include "mlir/Dialect/GPU/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/FunctionImplementation.h"
@@ -28,15 +28,13 @@ using namespace mlir::gpu;
 // GPUDialect
 //===----------------------------------------------------------------------===//
 
-StringRef GPUDialect::getDialectName() { return "gpu"; }
-
 bool GPUDialect::isKernel(Operation *op) {
   UnitAttr isKernelAttr = op->getAttrOfType<UnitAttr>(getKernelFuncAttrName());
   return static_cast<bool>(isKernelAttr);
 }
 
 GPUDialect::GPUDialect(MLIRContext *context)
-    : Dialect(getDialectName(), context) {
+    : Dialect(getDialectNamespace(), context) {
   addOperations<
 #define GET_OP_LIST
 #include "mlir/Dialect/GPU/GPUOps.cpp.inc"
@@ -148,6 +146,14 @@ static LogicalResult verifyAllReduce(gpu::AllReduceOp allReduce) {
     }
     if (yieldCount == 0)
       return allReduce.emitError("expected gpu.yield op in region");
+  } else {
+    StringRef opName = *allReduce.op();
+    if ((opName == "and" || opName == "or" || opName == "xor") &&
+        !allReduce.getType().isa<IntegerType>()) {
+      return allReduce.emitError()
+             << '`' << opName << '`'
+             << " accumulator is only compatible with Integer type";
+    }
   }
   return success();
 }
@@ -158,7 +164,7 @@ static LogicalResult verifyShuffleOp(gpu::ShuffleOp shuffleOp) {
     return shuffleOp.emitOpError()
            << "requires the same type for value operand and result";
   }
-  if (!type.isIntOrFloat() || type.getIntOrFloatBitWidth() != 32) {
+  if (!type.isSignlessIntOrFloat() || type.getIntOrFloatBitWidth() != 32) {
     return shuffleOp.emitOpError()
            << "requires value operand type to be f32 or i32";
   }

@@ -27,6 +27,10 @@ class IntrinsicProperty;
 // effects.  It may be CSE'd deleted if dead, etc.
 def IntrNoMem : IntrinsicProperty;
 
+// IntrNoSync - Threads executing the intrinsic will not synchronize using
+// memory or other means.
+def IntrNoSync : IntrinsicProperty;
+
 // IntrReadMem - This intrinsic only reads from memory. It does not write to
 // memory and has no other side effects. Therefore, it cannot be moved across
 // potentially aliasing stores. However, it can be reordered otherwise and can
@@ -232,6 +236,7 @@ def llvm_v8i1_ty       : LLVMType<v8i1>;     //   8 x i1
 def llvm_v16i1_ty      : LLVMType<v16i1>;    //  16 x i1
 def llvm_v32i1_ty      : LLVMType<v32i1>;    //  32 x i1
 def llvm_v64i1_ty      : LLVMType<v64i1>;    //  64 x i1
+def llvm_v128i1_ty     : LLVMType<v128i1>;   // 128 x i1
 def llvm_v512i1_ty     : LLVMType<v512i1>;   // 512 x i1
 def llvm_v1024i1_ty    : LLVMType<v1024i1>;  //1024 x i1
 
@@ -968,6 +973,14 @@ def int_umul_fix_sat : Intrinsic<[llvm_anyint_ty],
                                  [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
                                  [IntrNoMem, IntrSpeculatable, IntrWillReturn, Commutative, ImmArg<2>]>;
 
+def int_sdiv_fix_sat : Intrinsic<[llvm_anyint_ty],
+                                 [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
+                                 [IntrNoMem, ImmArg<2>]>;
+
+def int_udiv_fix_sat : Intrinsic<[llvm_anyint_ty],
+                                 [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
+                                 [IntrNoMem, ImmArg<2>]>;
+
 //===------------------------- Memory Use Markers -------------------------===//
 //
 def int_lifetime_start  : Intrinsic<[],
@@ -1143,6 +1156,79 @@ def int_is_constant : Intrinsic<[llvm_i1_ty], [llvm_any_ty], [IntrNoMem, IntrWil
 // Intrinsic to mask out bits of a pointer.
 def int_ptrmask: Intrinsic<[llvm_anyptr_ty], [llvm_anyptr_ty, llvm_anyint_ty],
                            [IntrNoMem, IntrSpeculatable, IntrWillReturn]>;
+
+//===---------------- Vector Predication Intrinsics --------------===//
+
+// Binary operators
+let IntrProperties = [IntrNoMem, IntrNoSync, IntrWillReturn] in {
+  def int_vp_add : Intrinsic<[ llvm_anyvector_ty ],
+                             [ LLVMMatchType<0>,
+                               LLVMMatchType<0>,
+                               LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                               llvm_i32_ty]>;
+  def int_vp_sub : Intrinsic<[ llvm_anyvector_ty ],
+                             [ LLVMMatchType<0>,
+                               LLVMMatchType<0>,
+                               LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                               llvm_i32_ty]>;
+  def int_vp_mul  : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_sdiv : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_udiv : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_srem : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_urem : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_ashr : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_lshr : Intrinsic<[ llvm_anyvector_ty ],
+                              [ LLVMMatchType<0>,
+                                LLVMMatchType<0>,
+                                LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                                llvm_i32_ty]>;
+  def int_vp_shl : Intrinsic<[ llvm_anyvector_ty ],
+                             [ LLVMMatchType<0>,
+                               LLVMMatchType<0>,
+                               LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                               llvm_i32_ty]>;
+  def int_vp_or : Intrinsic<[ llvm_anyvector_ty ],
+                            [ LLVMMatchType<0>,
+                              LLVMMatchType<0>,
+                              LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                              llvm_i32_ty]>;
+  def int_vp_and : Intrinsic<[ llvm_anyvector_ty ],
+                             [ LLVMMatchType<0>,
+                               LLVMMatchType<0>,
+                               LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                               llvm_i32_ty]>;
+  def int_vp_xor : Intrinsic<[ llvm_anyvector_ty ],
+                             [ LLVMMatchType<0>,
+                               LLVMMatchType<0>,
+                               LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
+                               llvm_i32_ty]>;
+
+}
+
 
 //===-------------------------- Masked Intrinsics -------------------------===//
 //

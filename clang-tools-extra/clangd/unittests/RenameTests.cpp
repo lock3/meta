@@ -202,6 +202,13 @@ TEST(RenameTest, WithinFileRename) {
         }
       )cpp",
 
+      // Incomplete class specializations
+      R"cpp(
+        template <typename T>
+        class [[Fo^o]] {};
+        void func([[Foo]]<int>);
+      )cpp",
+
       // Template class instantiations.
       R"cpp(
         template <typename T>
@@ -586,6 +593,14 @@ TEST(RenameTest, Renameable) {
          }
        )cpp",
        "not a supported kind", !HeaderFile, Index},
+      {R"cpp(// disallow rename on blacklisted symbols (e.g. std symbols)
+         namespace std {
+         inline namespace __u {
+         class str^ing {};
+         }
+         }
+       )cpp",
+       "not a supported kind", !HeaderFile, Index},
 
       {R"cpp(
          void foo(int);
@@ -714,8 +729,13 @@ TEST(CrossFileRenameTests, DirtyBuffer) {
   TestTU TU = TestTU::withCode(MainCode.code());
   auto AST = TU.build();
   llvm::StringRef NewName = "newName";
-  auto Results = rename({MainCode.point(), NewName, AST, MainFilePath,
-                         Index.get(), /*CrossFile=*/true, GetDirtyBuffer});
+  auto Results = rename({MainCode.point(),
+                         NewName,
+                         AST,
+                         MainFilePath,
+                         Index.get(),
+                         {/*CrossFile=*/true},
+                         GetDirtyBuffer});
   ASSERT_TRUE(bool(Results)) << Results.takeError();
   EXPECT_THAT(
       applyEdits(std::move(*Results)),
@@ -730,8 +750,13 @@ TEST(CrossFileRenameTests, DirtyBuffer) {
   // Set a file "bar.cc" on disk.
   TU.AdditionalFiles["bar.cc"] = std::string(BarCode.code());
   AST = TU.build();
-  Results = rename({MainCode.point(), NewName, AST, MainFilePath, Index.get(),
-                    /*CrossFile=*/true, GetDirtyBuffer});
+  Results = rename({MainCode.point(),
+                    NewName,
+                    AST,
+                    MainFilePath,
+                    Index.get(),
+                    {/*CrossFile=*/true},
+                    GetDirtyBuffer});
   ASSERT_TRUE(bool(Results)) << Results.takeError();
   EXPECT_THAT(
       applyEdits(std::move(*Results)),
@@ -761,55 +786,16 @@ TEST(CrossFileRenameTests, DirtyBuffer) {
                        Callback) const override {}
     size_t estimateMemoryUsage() const override { return 0; }
   } PIndex;
-  Results = rename({MainCode.point(), NewName, AST, MainFilePath, &PIndex,
-                    /*CrossFile=*/true, GetDirtyBuffer});
+  Results = rename({MainCode.point(),
+                    NewName,
+                    AST,
+                    MainFilePath,
+                    &PIndex,
+                    {/*CrossFile=*/true},
+                    GetDirtyBuffer});
   EXPECT_FALSE(Results);
   EXPECT_THAT(llvm::toString(Results.takeError()),
               testing::HasSubstr("too many occurrences"));
-}
-
-TEST(CrossFileRename, QueryCtorInIndex) {
-  const auto MainCode = Annotations("F^oo f;");
-  auto TU = TestTU::withCode(MainCode.code());
-  TU.HeaderCode = R"cpp(
-    class Foo {
-    public:
-      Foo() = default;
-    };
-  )cpp";
-  auto AST = TU.build();
-
-  RefsRequest Req;
-  class RecordIndex : public SymbolIndex {
-  public:
-    RecordIndex(RefsRequest *R) : Out(R) {}
-    bool refs(const RefsRequest &Req,
-              llvm::function_ref<void(const Ref &)> Callback) const override {
-      *Out = Req;
-      return false;
-    }
-
-    bool fuzzyFind(const FuzzyFindRequest &,
-                   llvm::function_ref<void(const Symbol &)>) const override {
-      return false;
-    }
-    void lookup(const LookupRequest &,
-                llvm::function_ref<void(const Symbol &)>) const override {}
-
-    void relations(const RelationsRequest &,
-                   llvm::function_ref<void(const SymbolID &, const Symbol &)>)
-        const override {}
-    size_t estimateMemoryUsage() const override { return 0; }
-
-    RefsRequest *Out;
-  } RIndex(&Req);
-  auto Results =
-      rename({MainCode.point(), "NewName", AST, testPath("main.cc"), &RIndex,
-              /*CrossFile=*/true});
-  ASSERT_TRUE(bool(Results)) << Results.takeError();
-  const auto HeaderSymbols = TU.headerSymbols();
-  EXPECT_THAT(Req.IDs,
-              testing::Contains(findSymbol(HeaderSymbols, "Foo::Foo").ID));
 }
 
 TEST(CrossFileRenameTests, DeduplicateRefsFromIndex) {
@@ -850,8 +836,12 @@ TEST(CrossFileRenameTests, DeduplicateRefsFromIndex) {
     Ref ReturnedRef;
   } DIndex(XRefInBarCC);
   llvm::StringRef NewName = "newName";
-  auto Results = rename({MainCode.point(), NewName, AST, MainFilePath, &DIndex,
-                         /*CrossFile=*/true});
+  auto Results = rename({MainCode.point(),
+                         NewName,
+                         AST,
+                         MainFilePath,
+                         &DIndex,
+                         {/*CrossFile=*/true}});
   ASSERT_TRUE(bool(Results)) << Results.takeError();
   EXPECT_THAT(
       applyEdits(std::move(*Results)),
@@ -884,6 +874,23 @@ TEST(CrossFileRenameTests, WithUpToDateIndex) {
 
         void func() {
           [[Foo]] foo;
+        }
+      )cpp",
+      },
+      {
+          // class templates.
+          R"cpp(
+        template <typename T>
+        class [[Foo]] {};
+        // FIXME: explicit template specilizations are not supported due the
+        // clangd index limitations.
+        template <>
+        class Foo<double> {};
+      )cpp",
+          R"cpp(
+        #include "foo.h"
+        void func() {
+          [[F^oo]]<int> foo;
         }
       )cpp",
       },
@@ -1021,7 +1028,6 @@ TEST(CrossFileRenameTests, WithUpToDateIndex) {
     FS.Files[FooCCPath] = std::string(FooCC.code());
 
     auto ServerOpts = ClangdServer::optsForTest();
-    ServerOpts.CrossFileRename = true;
     ServerOpts.BuildDynamicSymbolIndex = true;
     ClangdServer Server(CDB, FS, ServerOpts);
 
@@ -1032,8 +1038,8 @@ TEST(CrossFileRenameTests, WithUpToDateIndex) {
 
     llvm::StringRef NewName = "NewName";
     for (const auto &RenamePos : FooH.points()) {
-      auto FileEditsList =
-          llvm::cantFail(runRename(Server, FooHPath, RenamePos, NewName));
+      auto FileEditsList = llvm::cantFail(runRename(
+          Server, FooHPath, RenamePos, NewName, {/*CrossFile=*/true}));
       EXPECT_THAT(
           applyEdits(std::move(FileEditsList)),
           UnorderedElementsAre(

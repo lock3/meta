@@ -119,9 +119,23 @@ unsigned AArch64InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case AArch64::SPACE:
     NumBytes = MI.getOperand(1).getImm();
     break;
+  case TargetOpcode::BUNDLE:
+    NumBytes = getInstBundleLength(MI);
+    break;
   }
 
   return NumBytes;
+}
+
+unsigned AArch64InstrInfo::getInstBundleLength(const MachineInstr &MI) const {
+  unsigned Size = 0;
+  MachineBasicBlock::const_instr_iterator I = MI.getIterator();
+  MachineBasicBlock::const_instr_iterator E = MI.getParent()->instr_end();
+  while (++I != E && I->isInsideBundle()) {
+    assert(!I->isBundle() && "No nested bundle!");
+    Size += getInstSizeInBytes(*I);
+  }
+  return Size;
 }
 
 static void parseCondBranch(MachineInstr *LastInst, MachineBasicBlock *&Target,
@@ -6144,6 +6158,14 @@ AArch64InstrInfo::getOutliningType(MachineBasicBlock::iterator &MIT,
   if (FuncInfo->getLOHRelated().count(&MI))
     return outliner::InstrType::Illegal;
 
+  // We can only outline these if we will tail call the outlined function, or
+  // fix up the CFI offsets. For the sake of safety, don't outline CFI
+  // instructions.
+  //
+  // FIXME: If the proper fixups are implemented, this should be possible.
+  if (MI.isCFIInstruction())
+    return outliner::InstrType::Illegal;
+
   // Don't allow debug values to impact outlining type.
   if (MI.isDebugInstr() || MI.isIndirectDebugValue())
     return outliner::InstrType::Invisible;
@@ -6585,7 +6607,8 @@ Optional<RegImmPair> AArch64InstrInfo::isAddImmediate(const MachineInstr &MI,
 
   // TODO: Handle cases where Reg is a super- or sub-register of the
   // destination register.
-  if (Reg != MI.getOperand(0).getReg())
+  const MachineOperand &Op0 = MI.getOperand(0);
+  if (!Op0.isReg() || Reg != Op0.getReg())
     return None;
 
   switch (MI.getOpcode()) {
@@ -6680,5 +6703,10 @@ AArch64InstrInfo::describeLoadedValue(const MachineInstr &MI,
   return TargetInstrInfo::describeLoadedValue(MI, Reg);
 }
 
+uint64_t AArch64InstrInfo::getElementSizeForOpcode(unsigned Opc) const {
+  return get(Opc).TSFlags & AArch64::ElementSizeMask;
+}
+
 #define GET_INSTRINFO_HELPERS
+#define GET_INSTRMAP_INFO
 #include "AArch64GenInstrInfo.inc"

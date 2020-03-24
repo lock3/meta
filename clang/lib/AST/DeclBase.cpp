@@ -458,7 +458,8 @@ ExternalSourceSymbolAttr *Decl::getExternalSourceSymbolAttr() const {
 }
 
 bool Decl::hasDefiningAttr() const {
-  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>();
+  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>() ||
+         hasAttr<LoaderUninitializedAttr>();
 }
 
 const Attr *Decl::getDefiningAttr() const {
@@ -466,6 +467,8 @@ const Attr *Decl::getDefiningAttr() const {
     return AA;
   if (auto *IFA = getAttr<IFuncAttr>())
     return IFA;
+  if (auto *NZA = getAttr<LoaderUninitializedAttr>())
+    return NZA;
   return nullptr;
 }
 

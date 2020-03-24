@@ -80,7 +80,7 @@ Basic Usage
 Intro to how to use a C compiler for newbies.
 
 compile + link compile then link debug info enabling optimizations
-picking a language to use, defaults to C11 by default. Autosenses based
+picking a language to use, defaults to C17 by default. Autosenses based
 on extension. using a makefile
 
 Command Line Options
@@ -1190,50 +1190,8 @@ installed.
 Controlling Floating Point Behavior
 -----------------------------------
 
-Clang provides a number of ways to control floating point behavior, including
-with command line options and source pragmas. This section
-describes the various floating point semantic modes and the corresponding options.
-
-.. csv-table:: Floating Point Semantic Modes
-  :header: "Mode", "Values"
-  :widths: 15, 30, 30
-
-  "except_behavior", "{ignore, strict, may_trap}", "ffp-exception-behavior"
-  "fenv_access", "{off, on}", "(none)"
-  "rounding_mode", "{dynamic, tonearest, downward, upward, towardzero}", "frounding-math"
-  "contract", "{on, off, fast}", "ffp-contract"
-  "denormal_fp_math", "{IEEE, PreserveSign, PositiveZero}", "fdenormal-fp-math"
-  "denormal_fp32_math", "{IEEE, PreserveSign, PositiveZero}", "fdenormal-fp-math-fp32"
-  "support_math_errno", "{on, off}", "fmath-errno"
-  "no_honor_nans", "{on, off}", "fhonor-nans"
-  "no_honor_infinities", "{on, off}", "fhonor-infinities"
-  "no_signed_zeros", "{on, off}", "fsigned-zeros"
-  "allow_reciprocal", "{on, off}", "freciprocal-math"
-  "allow_approximate_fns", "{on, off}", "(none)"
-  "allow_reassociation", "{on, off}", "fassociative-math"
-
-
-This table describes the option settings that correspond to the three
-floating point semantic models: precise (the default), strict, and fast.
-
-
-.. csv-table:: Floating Point Models
-  :header: "Mode", "Precise", "Strict", "Fast"
-  :widths: 25, 15, 15, 15
-
-  "except_behavior", "ignore", "strict", "ignore"
-  "fenv_access", "off", "on", "off"
-  "rounding_mode", "tonearest", "dynamic", "tonearest"
-  "contract", "on", "off", "fast"
-  "denormal_fp_math", "IEEE", "IEEE", "PreserveSign"
-  "denormal_fp32_math", "IEEE","IEEE", "PreserveSign"
-  "support_math_errno", "on", "on", "off"
-  "no_honor_nans", "off", "off", "on"
-  "no_honor_infinities", "off", "off", "on"
-  "no_signed_zeros", "off", "off", "on"
-  "allow_reciprocal", "off", "off", "on"
-  "allow_approximate_fns", "off", "off", "on"
-  "allow_reassociation", "off", "off", "on"
+Clang provides a number of ways to control floating point behavior. The options
+are listed below.
 
 .. option:: -ffast-math
 
@@ -1427,7 +1385,7 @@ Note that floating-point operations performed as part of constant initialization
    and ``fast``.
    Details:
 
-   * ``precise`` Disables optimizations that are not value-safe on floating-point data, although FP contraction (FMA) is enabled (``-ffp-contract=on``).  This is the default behavior.
+   * ``precise`` Disables optimizations that are not value-safe on floating-point data, although FP contraction (FMA) is enabled (``-ffp-contract=fast``).  This is the default behavior.
    * ``strict`` Enables ``-frounding-math`` and ``-ffp-exception-behavior=strict``, and disables contractions (FMA).  All of the ``-ffast-math`` enablements are disabled.
    * ``fast`` Behaves identically to specifying both ``-ffast-math`` and ``ffp-contract=fast``
 
@@ -2441,10 +2399,10 @@ See :doc:`LanguageExtensions`.
 Differences between various standard modes
 ------------------------------------------
 
-clang supports the -std option, which changes what language mode clang
-uses. The supported modes for C are c89, gnu89, c99, gnu99, c11, gnu11,
-c17, gnu17, and various aliases for those modes. If no -std option is
-specified, clang defaults to gnu11 mode. Many C99 and C11 features are
+clang supports the -std option, which changes what language mode clang uses.
+The supported modes for C are c89, gnu89, c99, gnu99, c11, gnu11, c17, gnu17,
+c2x, gnu2x, and various aliases for those modes. If no -std option is
+specified, clang defaults to gnu17 mode. Many C99 and C11 features are
 supported in earlier modes as a conforming extension, with a warning. Use
 ``-pedantic-errors`` to request an error if a feature from a later standard
 revision is used in an earlier mode.

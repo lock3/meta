@@ -13,7 +13,7 @@
 
 #include "mlir/Transforms/FoldUtils.h"
 
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
@@ -57,7 +57,7 @@ static Operation *materializeConstant(Dialect *dialect, OpBuilder &builder,
   // Ask the dialect to materialize a constant operation for this value.
   if (auto *constOp = dialect->materializeConstant(builder, value, type, loc)) {
     assert(insertPt == builder.getInsertionPoint());
-    assert(matchPattern(constOp, m_Constant(&value)));
+    assert(matchPattern(constOp, m_Constant()));
     return constOp;
   }
 
@@ -85,17 +85,17 @@ LogicalResult OperationFolder::tryToFold(
   if (failed(tryToFold(op, results, processGeneratedConstants)))
     return failure();
 
-  // Constant folding succeeded. We will start replacing this op's uses and
-  // eventually erase this op. Invoke the callback provided by the caller to
-  // perform any pre-replacement action.
-  if (preReplaceAction)
-    preReplaceAction(op);
-
   // Check to see if the operation was just updated in place.
   if (results.empty())
     return success();
 
-  // Otherwise, replace all of the result values and erase the operation.
+  // Constant folding succeeded. We will start replacing this op's uses and
+  // erase this op. Invoke the callback provided by the caller to perform any
+  // pre-replacement action.
+  if (preReplaceAction)
+    preReplaceAction(op);
+
+  // Replace all of the result values and erase the operation.
   for (unsigned i = 0, e = results.size(); i != e; ++i)
     op->getResult(i).replaceAllUsesWith(results[i]);
   op->erase();
@@ -124,6 +124,12 @@ void OperationFolder::notifyRemoval(Operation *op) {
   for (auto *dialect : it->second)
     uniquedConstants.erase(std::make_tuple(dialect, constValue, type));
   referencedDialects.erase(it);
+}
+
+/// Clear out any constants cached inside of the folder.
+void OperationFolder::clear() {
+  foldScopes.clear();
+  referencedDialects.clear();
 }
 
 /// Tries to perform folding on the given `op`. If successful, populates

@@ -399,7 +399,8 @@ class TypePromotionTransaction;
     bool simplifyOffsetableRelocate(Instruction &I);
 
     bool tryToSinkFreeOperands(Instruction *I);
-    bool replaceMathCmpWithIntrinsic(BinaryOperator *BO, CmpInst *Cmp,
+    bool replaceMathCmpWithIntrinsic(BinaryOperator *BO, Value *Arg0,
+                                     Value *Arg1, CmpInst *Cmp,
                                      Intrinsic::ID IID);
     bool optimizeCmp(CmpInst *Cmp, bool &ModifiedDT);
     bool combineToUSubWithOverflow(CmpInst *Cmp, bool &ModifiedDT);
@@ -1185,6 +1186,7 @@ static bool OptimizeNoopCopyExpression(CastInst *CI, const TargetLowering &TLI,
 }
 
 bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
+                                                 Value *Arg0, Value *Arg1,
                                                  CmpInst *Cmp,
                                                  Intrinsic::ID IID) {
   if (BO->getParent() != Cmp->getParent()) {
@@ -1202,8 +1204,6 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
   }
 
   // We allow matching the canonical IR (add X, C) back to (usubo X, -C).
-  Value *Arg0 = BO->getOperand(0);
-  Value *Arg1 = BO->getOperand(1);
   if (BO->getOpcode() == Instruction::Add &&
       IID == Intrinsic::usub_with_overflow) {
     assert(isa<Constant>(Arg1) && "Unexpected input for usubo");
@@ -1213,7 +1213,9 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
   // Insert at the first instruction of the pair.
   Instruction *InsertPt = nullptr;
   for (Instruction &Iter : *Cmp->getParent()) {
-    if (&Iter == BO || &Iter == Cmp) {
+    // If BO is an XOR, it is not guaranteed that it comes after both inputs to
+    // the overflow intrinsic are defined.
+    if ((BO->getOpcode() != Instruction::Xor && &Iter == BO) || &Iter == Cmp) {
       InsertPt = &Iter;
       break;
     }
@@ -1222,12 +1224,16 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
 
   IRBuilder<> Builder(InsertPt);
   Value *MathOV = Builder.CreateBinaryIntrinsic(IID, Arg0, Arg1);
-  Value *Math = Builder.CreateExtractValue(MathOV, 0, "math");
+  if (BO->getOpcode() != Instruction::Xor) {
+    Value *Math = Builder.CreateExtractValue(MathOV, 0, "math");
+    BO->replaceAllUsesWith(Math);
+  } else
+    assert(BO->hasOneUse() &&
+           "Patterns with XOr should use the BO only in the compare");
   Value *OV = Builder.CreateExtractValue(MathOV, 1, "ov");
-  BO->replaceAllUsesWith(Math);
   Cmp->replaceAllUsesWith(OV);
-  BO->eraseFromParent();
   Cmp->eraseFromParent();
+  BO->eraseFromParent();
   return true;
 }
 
@@ -1267,12 +1273,17 @@ bool CodeGenPrepare::combineToUAddWithOverflow(CmpInst *Cmp,
                                                bool &ModifiedDT) {
   Value *A, *B;
   BinaryOperator *Add;
-  if (!match(Cmp, m_UAddWithOverflow(m_Value(A), m_Value(B), m_BinOp(Add))))
+  if (!match(Cmp, m_UAddWithOverflow(m_Value(A), m_Value(B), m_BinOp(Add)))) {
     if (!matchUAddWithOverflowConstantEdgeCases(Cmp, Add))
       return false;
+    // Set A and B in case we match matchUAddWithOverflowConstantEdgeCases.
+    A = Add->getOperand(0);
+    B = Add->getOperand(1);
+  }
 
   if (!TLI->shouldFormOverflowOp(ISD::UADDO,
-                                 TLI->getValueType(*DL, Add->getType())))
+                                 TLI->getValueType(*DL, Add->getType()),
+                                 Add->hasNUsesOrMore(2)))
     return false;
 
   // We don't want to move around uses of condition values this late, so we
@@ -1281,7 +1292,8 @@ bool CodeGenPrepare::combineToUAddWithOverflow(CmpInst *Cmp,
   if (Add->getParent() != Cmp->getParent() && !Add->hasOneUse())
     return false;
 
-  if (!replaceMathCmpWithIntrinsic(Add, Cmp, Intrinsic::uadd_with_overflow))
+  if (!replaceMathCmpWithIntrinsic(Add, A, B, Cmp,
+                                   Intrinsic::uadd_with_overflow))
     return false;
 
   // Reset callers - do not crash by iterating over a dead instruction.
@@ -1339,10 +1351,12 @@ bool CodeGenPrepare::combineToUSubWithOverflow(CmpInst *Cmp,
     return false;
 
   if (!TLI->shouldFormOverflowOp(ISD::USUBO,
-                                 TLI->getValueType(*DL, Sub->getType())))
+                                 TLI->getValueType(*DL, Sub->getType()),
+                                 Sub->hasNUsesOrMore(2)))
     return false;
 
-  if (!replaceMathCmpWithIntrinsic(Sub, Cmp, Intrinsic::usub_with_overflow))
+  if (!replaceMathCmpWithIntrinsic(Sub, Sub->getOperand(0), Sub->getOperand(1),
+                                   Cmp, Intrinsic::usub_with_overflow))
     return false;
 
   // Reset callers - do not crash by iterating over a dead instruction.
@@ -2042,7 +2056,8 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
   // to fortified library functions (e.g. __memcpy_chk) that have the default
   // "don't know" as the objectsize.  Anything else should be left alone.
   FortifiedLibCallSimplifier Simplifier(TLInfo, true);
-  if (Value *V = Simplifier.optimizeCall(CI)) {
+  IRBuilder<> Builder(CI);
+  if (Value *V = Simplifier.optimizeCall(CI, Builder)) {
     CI->replaceAllUsesWith(V);
     CI->eraseFromParent();
     return true;
@@ -2087,12 +2102,21 @@ bool CodeGenPrepare::dupRetToEnableTailCallOpts(BasicBlock *BB, bool &ModifiedDT
     return false;
 
   PHINode *PN = nullptr;
+  ExtractValueInst *EVI = nullptr;
   BitCastInst *BCI = nullptr;
   Value *V = RetI->getReturnValue();
   if (V) {
     BCI = dyn_cast<BitCastInst>(V);
     if (BCI)
       V = BCI->getOperand(0);
+
+    EVI = dyn_cast<ExtractValueInst>(V);
+    if (EVI) {
+      V = EVI->getOperand(0);
+      if (!std::all_of(EVI->idx_begin(), EVI->idx_end(),
+                       [](unsigned idx) { return idx == 0; }))
+        return false;
+    }
 
     PN = dyn_cast<PHINode>(V);
     if (!PN)
@@ -2107,7 +2131,9 @@ bool CodeGenPrepare::dupRetToEnableTailCallOpts(BasicBlock *BB, bool &ModifiedDT
   if (PN) {
     BasicBlock::iterator BI = BB->begin();
     // Skip over debug and the bitcast.
-    do { ++BI; } while (isa<DbgInfoIntrinsic>(BI) || &*BI == BCI);
+    do {
+      ++BI;
+    } while (isa<DbgInfoIntrinsic>(BI) || &*BI == BCI || &*BI == EVI);
     if (&*BI != RetI)
       return false;
   } else {
@@ -6105,7 +6131,8 @@ bool CodeGenPrepare::optimizeSelectInst(SelectInst *SI) {
   // Into:
   //    start:
   //       %cmp = cmp uge i32 %a, %b
-  //       br i1 %cmp, label %select.true, label %select.false
+  //       %cmp.frozen = freeze %cmp
+  //       br i1 %cmp.frozen, label %select.true, label %select.false
   //    select.true:
   //       br label %select.end
   //    select.false:
@@ -6113,6 +6140,7 @@ bool CodeGenPrepare::optimizeSelectInst(SelectInst *SI) {
   //    select.end:
   //       %sel = phi i32 [ %c, %select.true ], [ %d, %select.false ]
   //
+  // %cmp should be frozen, otherwise it may introduce undefined behavior.
   // In addition, we may sink instructions that produce %c or %d from
   // the entry block into the destination(s) of the new branch.
   // If the true or false blocks do not contain a sunken instruction, that
@@ -6191,7 +6219,9 @@ bool CodeGenPrepare::optimizeSelectInst(SelectInst *SI) {
     TT = TrueBlock;
     FT = FalseBlock;
   }
-  IRBuilder<>(SI).CreateCondBr(SI->getCondition(), TT, FT, SI);
+  IRBuilder<> IB(SI);
+  auto CondFr = IB.CreateFreeze(SI->getCondition(), SI->getName() + ".frozen");
+  IB.CreateCondBr(CondFr, TT, FT, SI);
 
   SmallPtrSet<const Instruction *, 2> INS;
   INS.insert(ASI.begin(), ASI.end());
@@ -6539,19 +6569,23 @@ class VectorPromoteHelper {
         UseSplat = true;
     }
 
-    unsigned End = getTransitionType()->getVectorNumElements();
+    ElementCount EC = getTransitionType()->getVectorElementCount();
     if (UseSplat)
-      return ConstantVector::getSplat(End, Val);
+      return ConstantVector::getSplat(EC, Val);
 
-    SmallVector<Constant *, 4> ConstVec;
-    UndefValue *UndefVal = UndefValue::get(Val->getType());
-    for (unsigned Idx = 0; Idx != End; ++Idx) {
-      if (Idx == ExtractIdx)
-        ConstVec.push_back(Val);
-      else
-        ConstVec.push_back(UndefVal);
-    }
-    return ConstantVector::get(ConstVec);
+    if (!EC.Scalable) {
+      SmallVector<Constant *, 4> ConstVec;
+      UndefValue *UndefVal = UndefValue::get(Val->getType());
+      for (unsigned Idx = 0; Idx != EC.Min; ++Idx) {
+        if (Idx == ExtractIdx)
+          ConstVec.push_back(Val);
+        else
+          ConstVec.push_back(UndefVal);
+      }
+      return ConstantVector::get(ConstVec);
+    } else
+      llvm_unreachable(
+          "Generate scalable vector for non-splat is unimplemented");
   }
 
   /// Check if promoting to a vector type an operand at \p OperandIdx
@@ -7161,6 +7195,35 @@ bool CodeGenPrepare::optimizeInst(Instruction *I, bool &ModifiedDT) {
     }
     if (tryUnmergingGEPsAcrossIndirectBr(GEPI, TTI)) {
       return true;
+    }
+    return false;
+  }
+
+  if (FreezeInst *FI = dyn_cast<FreezeInst>(I)) {
+    // br(freeze(icmp a, const)) -> br(icmp (freeze a), const)
+    // This helps generate efficient conditional jumps.
+    Instruction *CmpI = nullptr;
+    if (ICmpInst *II = dyn_cast<ICmpInst>(FI->getOperand(0)))
+      CmpI = II;
+    else if (FCmpInst *F = dyn_cast<FCmpInst>(FI->getOperand(0)))
+      CmpI = F->getFastMathFlags().none() ? F : nullptr;
+
+    if (CmpI && CmpI->hasOneUse()) {
+      auto Op0 = CmpI->getOperand(0), Op1 = CmpI->getOperand(1);
+      bool Const0 = isa<ConstantInt>(Op0) || isa<ConstantFP>(Op0) ||
+                    isa<ConstantPointerNull>(Op0);
+      bool Const1 = isa<ConstantInt>(Op1) || isa<ConstantFP>(Op1) ||
+                    isa<ConstantPointerNull>(Op1);
+      if (Const0 || Const1) {
+        if (!Const0 || !Const1) {
+          auto *F = new FreezeInst(Const0 ? Op1 : Op0, "", CmpI);
+          F->takeName(FI);
+          CmpI->setOperand(Const0 ? 1 : 0, F);
+        }
+        FI->replaceAllUsesWith(CmpI);
+        FI->eraseFromParent();
+        return true;
+      }
     }
     return false;
   }

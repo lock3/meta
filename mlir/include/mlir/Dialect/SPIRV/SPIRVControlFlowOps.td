@@ -15,11 +15,15 @@
 #define SPIRV_CONTROLFLOW_OPS
 
 include "mlir/Dialect/SPIRV/SPIRVBase.td"
-include "mlir/Analysis/CallInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/SideEffects.td"
 
 // -----
 
-def SPV_BranchOp : SPV_Op<"Branch", [InFunctionScope, Terminator]> {
+def SPV_BranchOp : SPV_Op<"Branch", [
+    DeclareOpInterfaceMethods<BranchOpInterface>, InFunctionScope, NoSideEffect,
+    Terminator]> {
   let summary = "Unconditional branch to target block.";
 
   let description = [{
@@ -41,17 +45,20 @@ def SPV_BranchOp : SPV_Op<"Branch", [InFunctionScope, Terminator]> {
     ```
   }];
 
-  let arguments = (ins
-    Variadic<AnyType>:$block_arguments
-  );
+  let arguments = (ins Variadic<SPV_Type>:$targetOperands);
 
   let results = (outs);
+
+  let successors = (successor AnySuccessor:$target);
+
+  let verifier = [{ return success(); }];
 
   let builders = [
     OpBuilder<
       "Builder *, OperationState &state, "
       "Block *successor, ValueRange arguments = {}", [{
-        state.addSuccessor(successor, arguments);
+        state.addSuccessors(successor);
+        state.addOperands(arguments);
       }]
     >
   ];
@@ -60,21 +67,24 @@ def SPV_BranchOp : SPV_Op<"Branch", [InFunctionScope, Terminator]> {
 
   let extraClassDeclaration = [{
     /// Returns the branch target block.
-    Block *getTarget() { return getOperation()->getSuccessor(0); }
+    Block *getTarget() { return target(); }
 
     /// Returns the block arguments.
-    operand_range getBlockArguments() {
-      return getOperation()->getSuccessorOperands(0);
-    }
+    operand_range getBlockArguments() { return targetOperands(); }
   }];
 
   let autogenSerialization = 0;
+
+  let assemblyFormat = [{
+    $target (`(` $targetOperands^ `:` type($targetOperands) `)`)? attr-dict
+  }];
 }
 
 // -----
 
-def SPV_BranchConditionalOp : SPV_Op<"BranchConditional",
-                                     [InFunctionScope, Terminator]> {
+def SPV_BranchConditionalOp : SPV_Op<"BranchConditional", [
+    AttrSizedOperandSegments, DeclareOpInterfaceMethods<BranchOpInterface>,
+    InFunctionScope, NoSideEffect, Terminator]> {
   let summary = [{
     If Condition is true, branch to true block, otherwise branch to false
     block.
@@ -115,11 +125,15 @@ def SPV_BranchConditionalOp : SPV_Op<"BranchConditional",
 
   let arguments = (ins
     SPV_Bool:$condition,
-    Variadic<AnyType>:$branch_arguments,
+    Variadic<SPV_Type>:$trueTargetOperands,
+    Variadic<SPV_Type>:$falseTargetOperands,
     OptionalAttr<I32ArrayAttr>:$branch_weights
   );
 
   let results = (outs);
+
+  let successors = (successor AnySuccessor:$trueTarget,
+                              AnySuccessor:$falseTarget);
 
   let builders = [
     OpBuilder<
@@ -128,20 +142,17 @@ def SPV_BranchConditionalOp : SPV_Op<"BranchConditional",
       "Block *falseBlock, ValueRange falseArguments, "
       "Optional<std::pair<uint32_t, uint32_t>> weights = {}",
       [{
-        state.addOperands(condition);
-        state.addSuccessor(trueBlock, trueArguments);
-        state.addSuccessor(falseBlock, falseArguments);
+        ArrayAttr weightsAttr;
         if (weights) {
-          auto attr =
+          weightsAttr =
               builder->getI32ArrayAttr({static_cast<int32_t>(weights->first),
                                         static_cast<int32_t>(weights->second)});
-          state.addAttribute("branch_weights", attr);
         }
+        build(builder, state, condition, trueArguments, falseArguments,
+              weightsAttr, trueBlock, falseBlock);
       }]
     >
   ];
-
-  let skipDefaultBuilders = 1;
 
   let autogenSerialization = 0;
 
@@ -157,34 +168,22 @@ def SPV_BranchConditionalOp : SPV_Op<"BranchConditional",
 
     /// Returns the number of arguments to the true target block.
     unsigned getNumTrueBlockArguments() {
-      return getNumSuccessorOperands(kTrueIndex);
+      return trueTargetOperands().size();
     }
 
     /// Returns the number of arguments to the false target block.
     unsigned getNumFalseBlockArguments() {
-      return getNumSuccessorOperands(kFalseIndex);
+      return falseTargetOperands().size();
     }
 
     // Iterator and range support for true target block arguments.
-    operand_iterator true_block_argument_begin() {
-      return operand_begin() + getTrueBlockArgumentIndex();
-    }
-    operand_iterator true_block_argument_end() {
-      return true_block_argument_begin() + getNumTrueBlockArguments();
-    }
     operand_range getTrueBlockArguments() {
-      return {true_block_argument_begin(), true_block_argument_end()};
+      return trueTargetOperands();
     }
 
     // Iterator and range support for false target block arguments.
-    operand_iterator false_block_argument_begin() {
-      return true_block_argument_end();
-    }
-    operand_iterator false_block_argument_end() {
-      return false_block_argument_begin() + getNumFalseBlockArguments();
-    }
     operand_range getFalseBlockArguments() {
-      return {false_block_argument_begin(), false_block_argument_end()};
+      return falseTargetOperands();
     }
 
   private:
@@ -318,7 +317,7 @@ def SPV_LoopOp : SPV_Op<"loop", [InFunctionScope]> {
 
 // -----
 
-def SPV_MergeOp : SPV_Op<"_merge", [Terminator]> {
+def SPV_MergeOp : SPV_Op<"_merge", [NoSideEffect, Terminator]> {
   let summary = "A special terminator for merging a structured selection/loop.";
 
   let description = [{
@@ -342,7 +341,8 @@ def SPV_MergeOp : SPV_Op<"_merge", [Terminator]> {
 
 // -----
 
-def SPV_ReturnOp : SPV_Op<"Return", [InFunctionScope, Terminator]> {
+def SPV_ReturnOp : SPV_Op<"Return", [InFunctionScope, NoSideEffect,
+                                     Terminator]> {
   let summary = "Return with no value from a function with void return type.";
 
   let description = [{
@@ -386,7 +386,8 @@ def SPV_UnreachableOp : SPV_Op<"Unreachable", [InFunctionScope, Terminator]> {
 
 // -----
 
-def SPV_ReturnValueOp : SPV_Op<"ReturnValue", [InFunctionScope, Terminator]> {
+def SPV_ReturnValueOp : SPV_Op<"ReturnValue", [InFunctionScope, NoSideEffect,
+                                               Terminator]> {
   let summary = "Return a value from a function.";
 
   let description = [{

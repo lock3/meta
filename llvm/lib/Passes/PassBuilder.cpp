@@ -38,6 +38,7 @@
 #include "llvm/Analysis/LoopAccessAnalysis.h"
 #include "llvm/Analysis/LoopCacheAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/LoopNestAnalysis.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Analysis/ModuleSummaryAnalysis.h"
@@ -58,6 +59,7 @@
 #include "llvm/CodeGen/UnreachableBlockElim.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/KnowledgeRetention.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/SafepointIRVerifier.h"
 #include "llvm/IR/Verifier.h"
@@ -67,7 +69,10 @@
 #include "llvm/Support/Regex.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
+#include "llvm/Transforms/Coroutines/CoroCleanup.h"
 #include "llvm/Transforms/Coroutines/CoroEarly.h"
+#include "llvm/Transforms/Coroutines/CoroElide.h"
+#include "llvm/Transforms/Coroutines/CoroSplit.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/ArgumentPromotion.h"
 #include "llvm/Transforms/IPO/Attributor.h"
@@ -175,7 +180,6 @@
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
 #include "llvm/Transforms/Utils/EntryExitInstrumenter.h"
 #include "llvm/Transforms/Utils/InjectTLIMappings.h"
-#include "llvm/Transforms/Utils/KnowledgeRetention.h"
 #include "llvm/Transforms/Utils/LCSSA.h"
 #include "llvm/Transforms/Utils/LibCallsShrinkWrap.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
@@ -239,6 +243,7 @@ PipelineTuningOptions::PipelineTuningOptions() {
   SLPVectorization = RunSLPVectorization;
   LoopUnrolling = true;
   ForgetAllSCEVInLoopUnroll = ForgetSCEVInLoopUnroll;
+  Coroutines = false;
   LicmMssaOptCap = SetLicmMssaOptCap;
   LicmMssaNoAccForPromotionCap = SetLicmMssaNoAccForPromotionCap;
 }
@@ -557,6 +562,9 @@ PassBuilder::buildFunctionSimplificationPipeline(OptimizationLevel Level,
         EnableMSSALoopDependency, DebugLogging));
   }
 
+  if (PTO.Coroutines)
+    FPM.addPass(CoroElidePass());
+
   for (auto &C : ScalarOptimizerLateEPCallbacks)
     C(FPM, Level);
 
@@ -718,6 +726,8 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   EarlyFPM.addPass(SROA());
   EarlyFPM.addPass(EarlyCSEPass());
   EarlyFPM.addPass(LowerExpectIntrinsicPass());
+  if (PTO.Coroutines)
+    EarlyFPM.addPass(CoroEarlyPass());
   if (Level == OptimizationLevel::O3)
     EarlyFPM.addPass(CallSiteSplittingPass());
 
@@ -751,12 +761,6 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
                                            true /* SamplePGO */));
   }
   MPM.addPass(AttributorPass());
-
-  // Lower type metadata and the type.test intrinsic in the ThinLTO
-  // post link pipeline after ICP. This is to enable usage of the type
-  // tests in ICP sequences.
-  if (Phase == ThinLTOPhase::PostLink)
-    MPM.addPass(LowerTypeTestsPass(nullptr, nullptr, true));
 
   // Interprocedural constant propagation now that basic cleanup has occurred
   // and prior to optimizing globals.
@@ -840,6 +844,9 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   MainCGPipeline.addPass(InlinerPass(IP));
 
   MainCGPipeline.addPass(AttributorCGSCCPass());
+
+  if (PTO.Coroutines)
+    MainCGPipeline.addPass(CoroSplitPass());
 
   // Now deduce any function attributes based in the current code.
   MainCGPipeline.addPass(PostOrderFunctionAttrsPass());
@@ -959,12 +966,15 @@ ModulePassManager PassBuilder::buildModuleOptimizationPipeline(
   OptimizePM.addPass(LoopVectorizePass(
       LoopVectorizeOptions(!PTO.LoopInterleaving, !PTO.LoopVectorization)));
 
+  // Enhance/cleanup vector code.
+  OptimizePM.addPass(VectorCombinePass());
+  OptimizePM.addPass(EarlyCSEPass());
+
   // Eliminate loads by forwarding stores from the previous iteration to loads
   // of the current iteration.
   OptimizePM.addPass(LoopLoadEliminationPass());
 
   // Cleanup after the loop optimization passes.
-  OptimizePM.addPass(VectorCombinePass());
   OptimizePM.addPass(InstCombinePass());
 
   // Now that we've formed fast to execute loop structures, we do further
@@ -983,10 +993,8 @@ ModulePassManager PassBuilder::buildModuleOptimizationPipeline(
                                      sinkCommonInsts(true)));
 
   // Optimize parallel scalar instruction chains into SIMD instructions.
-  if (PTO.SLPVectorization) {
+  if (PTO.SLPVectorization)
     OptimizePM.addPass(SLPVectorizerPass());
-    OptimizePM.addPass(VectorCombinePass());
-  }
 
   OptimizePM.addPass(InstCombinePass());
 
@@ -1042,6 +1050,9 @@ ModulePassManager PassBuilder::buildModuleOptimizationPipeline(
   // pass needs to be run after any PRE or similar pass as it is essentially
   // inserting redundancies into the program. This even includes SimplifyCFG.
   OptimizePM.addPass(SpeculateAroundPHIsPass());
+
+  if (PTO.Coroutines)
+    OptimizePM.addPass(CoroCleanupPass());
 
   for (auto &C : OptimizerLastEPCallbacks)
     C(OptimizePM, Level);
@@ -1126,6 +1137,12 @@ PassBuilder::buildThinLTOPreLinkDefaultPipeline(OptimizationLevel Level,
   // Reduce the size of the IR as much as possible.
   MPM.addPass(GlobalOptPass());
 
+  // Module simplification splits coroutines, but does not fully clean up
+  // coroutine intrinsics. To ensure ThinLTO optimization passes don't trip up
+  // on these, we schedule the cleanup here.
+  if (PTO.Coroutines)
+    MPM.addPass(createModuleToFunctionPassAdaptor(CoroCleanupPass()));
+
   return MPM;
 }
 
@@ -1190,9 +1207,6 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level, bool DebugLogging,
     // metadata and intrinsics.
     MPM.addPass(WholeProgramDevirtPass(ExportSummary, nullptr));
     MPM.addPass(LowerTypeTestsPass(ExportSummary, nullptr));
-    // Run a second time to clean up any type tests left behind by WPD for use
-    // in ICP.
-    MPM.addPass(LowerTypeTestsPass(nullptr, nullptr, true));
     return MPM;
   }
 
@@ -1259,10 +1273,6 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level, bool DebugLogging,
     // The LowerTypeTestsPass needs to run to lower type metadata and the
     // type.test intrinsics. The pass does nothing if CFI is disabled.
     MPM.addPass(LowerTypeTestsPass(ExportSummary, nullptr));
-    // Run a second time to clean up any type tests left behind by WPD for use
-    // in ICP (which is performed earlier than this in the regular LTO
-    // pipeline).
-    MPM.addPass(LowerTypeTestsPass(nullptr, nullptr, true));
     return MPM;
   }
 
@@ -1390,9 +1400,6 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level, bool DebugLogging,
   // to be run at link time if CFI is enabled. This pass does nothing if
   // CFI is disabled.
   MPM.addPass(LowerTypeTestsPass(ExportSummary, nullptr));
-  // Run a second time to clean up any type tests left behind by WPD for use
-  // in ICP (which is performed earlier than this in the regular LTO pipeline).
-  MPM.addPass(LowerTypeTestsPass(nullptr, nullptr, true));
 
   // Enable splitting late in the FullLTO post-link pipeline. This is done in
   // the same stage in the old pass manager (\ref addLateLTOOptimizationPasses).
@@ -1962,6 +1969,20 @@ Error PassBuilder::parseModulePass(ModulePassManager &MPM,
             /* RunProfileGen */ (PGOOpt->Action == PGOOptions::IRInstr),
             /* IsCS */ false, PGOOpt->ProfileFile,
             PGOOpt->ProfileRemappingFile);
+
+      // For IR that makes use of coroutines intrinsics, coroutine passes must
+      // be run, even at -O0.
+      if (PTO.Coroutines) {
+        MPM.addPass(createModuleToFunctionPassAdaptor(CoroEarlyPass()));
+
+        CGSCCPassManager CGPM(DebugLogging);
+        CGPM.addPass(CoroSplitPass());
+        CGPM.addPass(createCGSCCToFunctionPassAdaptor(CoroElidePass()));
+        MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+
+        MPM.addPass(createModuleToFunctionPassAdaptor(CoroCleanupPass()));
+      }
+
       // Do nothing else at all!
       return Error::success();
     }

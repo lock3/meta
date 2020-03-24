@@ -24,14 +24,15 @@
 #include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/IVDescriptors.h"
+#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/MustExecute.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 
 namespace llvm {
 
@@ -39,6 +40,7 @@ class AliasSet;
 class AliasSetTracker;
 class BasicBlock;
 class DataLayout;
+class IRBuilderBase;
 class Loop;
 class LoopInfo;
 class MemoryAccess;
@@ -309,20 +311,20 @@ bool canSinkOrHoistInst(Instruction &I, AAResults *AA, DominatorTree *DT,
                         OptimizationRemarkEmitter *ORE = nullptr);
 
 /// Returns a Min/Max operation corresponding to MinMaxRecurrenceKind.
-Value *createMinMaxOp(IRBuilder<> &Builder,
+Value *createMinMaxOp(IRBuilderBase &Builder,
                       RecurrenceDescriptor::MinMaxRecurrenceKind RK,
                       Value *Left, Value *Right);
 
 /// Generates an ordered vector reduction using extracts to reduce the value.
 Value *
-getOrderedReduction(IRBuilder<> &Builder, Value *Acc, Value *Src, unsigned Op,
+getOrderedReduction(IRBuilderBase &Builder, Value *Acc, Value *Src, unsigned Op,
                     RecurrenceDescriptor::MinMaxRecurrenceKind MinMaxKind =
                         RecurrenceDescriptor::MRK_Invalid,
                     ArrayRef<Value *> RedOps = None);
 
 /// Generates a vector reduction using shufflevectors to reduce the value.
 /// Fast-math-flags are propagated using the IRBuilder's setting.
-Value *getShuffleReduction(IRBuilder<> &Builder, Value *Src, unsigned Op,
+Value *getShuffleReduction(IRBuilderBase &Builder, Value *Src, unsigned Op,
                            RecurrenceDescriptor::MinMaxRecurrenceKind
                                MinMaxKind = RecurrenceDescriptor::MRK_Invalid,
                            ArrayRef<Value *> RedOps = None);
@@ -333,7 +335,7 @@ Value *getShuffleReduction(IRBuilder<> &Builder, Value *Src, unsigned Op,
 /// The target is queried to determine if intrinsics or shuffle sequences are
 /// required to implement the reduction.
 /// Fast-math-flags are propagated using the IRBuilder's setting.
-Value *createSimpleTargetReduction(IRBuilder<> &B,
+Value *createSimpleTargetReduction(IRBuilderBase &B,
                                    const TargetTransformInfo *TTI,
                                    unsigned Opcode, Value *Src,
                                    TargetTransformInfo::ReductionFlags Flags =
@@ -344,7 +346,7 @@ Value *createSimpleTargetReduction(IRBuilder<> &B,
 /// The target is queried to determine if intrinsics or shuffle sequences are
 /// required to implement the reduction.
 /// Fast-math-flags are propagated using the RecurrenceDescriptor.
-Value *createTargetReduction(IRBuilder<> &B, const TargetTransformInfo *TTI,
+Value *createTargetReduction(IRBuilderBase &B, const TargetTransformInfo *TTI,
                              RecurrenceDescriptor &Desc, Value *Src,
                              bool NoNaN = false);
 
@@ -380,8 +382,9 @@ enum ReplaceExitVal { NeverRepl, OnlyCheapRepl, NoHardUse, AlwaysRepl };
 /// Return the number of loop exit values that have been replaced, and the
 /// corresponding phi node will be added to DeadInsts.
 int rewriteLoopExitValues(Loop *L, LoopInfo *LI, TargetLibraryInfo *TLI,
-                          ScalarEvolution *SE, SCEVExpander &Rewriter,
-                          DominatorTree *DT, ReplaceExitVal ReplaceExitValue,
+                          ScalarEvolution *SE, const TargetTransformInfo *TTI,
+                          SCEVExpander &Rewriter, DominatorTree *DT,
+                          ReplaceExitVal ReplaceExitValue,
                           SmallVector<WeakTrackingVH, 16> &DeadInsts);
 
 /// Set weights for \p UnrolledLoop and \p RemainderLoop based on weights for
@@ -425,6 +428,12 @@ void appendReversedLoopsToWorklist(RangeT &&,
 /// already reversed loops in LI.
 /// FIXME: Consider changing the order in LoopInfo.
 void appendLoopsToWorklist(LoopInfo &, SmallPriorityWorklist<Loop *, 4> &);
+
+/// Recursively clone the specified loop and all of its children,
+/// mapping the blocks with the specified map.
+Loop *cloneLoop(Loop *L, Loop *PL, ValueToValueMapTy &VM,
+                LoopInfo *LI, LPPassManager *LPM);
+
 } // end namespace llvm
 
 #endif // LLVM_TRANSFORMS_UTILS_LOOPUTILS_H

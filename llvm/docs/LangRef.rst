@@ -910,8 +910,8 @@ The selection kind must be one of the following:
     The linker may choose any COMDAT key but the sections must contain the
     same amount of data.
 
-Note that the Mach-O platform doesn't support COMDATs, and ELF and WebAssembly
-only support ``any`` as a selection kind.
+Note that XCOFF and the Mach-O platform don't support COMDATs, and ELF and
+WebAssembly only support ``any`` as a selection kind.
 
 Here is an example of a COMDAT group where a function will only be selected if
 the COMDAT key's section is the largest:
@@ -1692,7 +1692,7 @@ example:
     functions.
 ``safestack``
     This attribute indicates that
-    `SafeStack <http://clang.llvm.org/docs/SafeStack.html>`_
+    `SafeStack <https://clang.llvm.org/docs/SafeStack.html>`_
     protection is enabled for this function.
 
     If a function that has a ``safestack`` attribute is inlined into a
@@ -2102,6 +2102,67 @@ site, these bundles may contain any values that are needed by the
 generated code.  For more details, see :ref:`GC Transitions
 <gc_transition_args>`.
 
+.. _assume_opbundles:
+
+Assume Operand Bundles
+^^^^^^^^^^^^^^^^^^^^^^
+
+Operand bundles on an :ref:`llvm.assume <int_assume>` allows representing
+assumptions that a :ref:`parameter attribute <paramattrs>` or a
+:ref:`function attribute <fnattrs>` holds for a certain value at a certain
+location. Operand bundles enable assumptions that are either hard or impossible
+to represent as a boolean argument of an :ref:`llvm.assume <int_assume>`.
+
+An assume operand bundle has the form:
+
+::
+
+      "<tag>"([ <holds for value> [, <attribute argument>] ])
+
+* The tag of the operand bundle is usually the name of attribute that can be
+  assumed to hold. It can also be `ignore`, this tag doesn't contain any
+  information and should be ignored.
+* The first argument if present is the value for which the attribute hold.
+* The second argument if present is an argument of the attribute.
+
+If there are no arguments the attribute is a property of the call location.
+
+If the represented attribute expects a constant argument, the argument provided
+to the operand bundle should be a constant as well.
+
+For example:
+
+.. code-block:: llvm
+
+      call void @llvm.assume(i1 true) ["align"(i32* %val, i32 8)]
+
+allows the optimizer to assume that at location of call to
+:ref:`llvm.assume <int_assume>` ``%val`` has an alignment of at least 8.
+
+.. code-block:: llvm
+
+      call void @llvm.assume(i1 %cond) ["cold"(), "nonnull"(i64* %val)]
+
+allows the optimizer to assume that the :ref:`llvm.assume <int_assume>`
+call location is cold and that ``%val`` may not be null.
+
+Just like for the argument of :ref:`llvm.assume <int_assume>`, if any of the
+provided guarantees are are violated at runtime the behavior is undefined.
+
+Even if the assumed property can be encoded as a boolean value, like
+``nonnull``, using operand bundles to express the property can still have
+benefits:
+
+* Attributes that can be expressed via operand bundles are directly the
+  property that the optimizer uses and cares about. Encoding attributes as
+  operand bundles removes the need for an instruction sequence that represents
+  the property (e.g., `icmp ne i32* %p, null` for `nonnull`) and for the
+  optimizer to deduce the property from that instruction sequence.
+* Expressing the property using operand bundles makes it easy to identify the
+  use of the value as a use in an :ref:`llvm.assume <int_assume>`. This then
+  simplifies and improves heuristics, e.g., for use "use-sensitive"
+  optimizations.
+
 .. _moduleasm:
 
 Module-Level Inline Assembly
@@ -2396,10 +2457,11 @@ The compiler may assume execution will continue after a volatile operation,
 so operations which modify memory or may have undefined behavior can be
 hoisted past a volatile operation.
 
-IR-level volatile loads and stores cannot safely be optimized into
-llvm.memcpy or llvm.memmove intrinsics even when those intrinsics are
-flagged volatile. Likewise, the backend should never split or merge
-target-legal volatile load/store instructions.
+IR-level volatile loads and stores cannot safely be optimized into llvm.memcpy
+or llvm.memmove intrinsics even when those intrinsics are flagged volatile.
+Likewise, the backend should never split or merge target-legal volatile
+load/store instructions. Similarly, IR-level volatile loads and stores cannot
+change from integer to floating-point or vice versa.
 
 .. admonition:: Rationale
 
@@ -3416,9 +3478,12 @@ the ``nsw`` flag.
 
 Poison value behavior is defined in terms of value *dependence*:
 
--  Values other than :ref:`phi <i_phi>` nodes depend on their operands.
+-  Values other than :ref:`phi <i_phi>` nodes and :ref:`select <i_select>`
+   instructions depend on their operands.
 -  :ref:`Phi <i_phi>` nodes depend on the operand corresponding to
    their dynamic predecessor basic block.
+-  Select instructions depend on their condition operand and their
+   selected operand.
 -  Function arguments depend on the corresponding actual argument values
    in the dynamic callers of their functions.
 -  :ref:`Call <i_call>` instructions depend on the :ref:`ret <i_ret>`
@@ -4506,7 +4571,7 @@ DIFile
 
 Files are sometimes used in ``scope:`` fields, and are the only valid target
 for ``file:`` fields.
-Valid values for ``checksumkind:`` field are: {CSK_None, CSK_MD5, CSK_SHA1}
+Valid values for ``checksumkind:`` field are: {CSK_None, CSK_MD5, CSK_SHA1, CSK_SHA256}
 
 .. _DIBasicType:
 
@@ -6625,7 +6690,7 @@ TypeIdInfo
 ^^^^^^^^^^
 
 The optional ``TypeIdInfo`` field, used for
-`Control Flow Integrity <http://clang.llvm.org/docs/ControlFlowIntegrity.html>`_,
+`Control Flow Integrity <https://clang.llvm.org/docs/ControlFlowIntegrity.html>`_,
 looks like:
 
 .. code-block:: text
@@ -6702,7 +6767,7 @@ Type ID Summary Entry
 
 Each type id summary entry corresponds to a type identifier resolution
 which is generated during the LTO link portion of the compile when building
-with `Control Flow Integrity <http://clang.llvm.org/docs/ControlFlowIntegrity.html>`_,
+with `Control Flow Integrity <https://clang.llvm.org/docs/ControlFlowIntegrity.html>`_,
 so these are only present in a combined summary index.
 
 Example:
@@ -7211,14 +7276,14 @@ Syntax:
 ::
 
       <result> = callbr [cconv] [ret attrs] [addrspace(<num>)] <ty>|<fnty> <fnptrval>(<function args>) [fn attrs]
-                    [operand bundles] to label <normal label> [other labels]
+                    [operand bundles] to label <fallthrough label> [indirect labels]
 
 Overview:
 """""""""
 
 The '``callbr``' instruction causes control to transfer to a specified
 function, with the possibility of control flow transfer to either the
-'``normal``' label or one of the '``other``' labels.
+'``fallthrough``' label or one of the '``indirect``' labels.
 
 This instruction should only be used to implement the "goto" feature of gcc
 style inline assembly. Any other usage is an error in the IR verifier.
@@ -7245,17 +7310,17 @@ This instruction requires several arguments:
    type can be omitted if the function is not varargs.
 #. '``fnptrval``': An LLVM value containing a pointer to a function to
    be called. In most cases, this is a direct function call, but
-   indirect ``callbr``'s are just as possible, calling an arbitrary pointer
+   other ``callbr``'s are just as possible, calling an arbitrary pointer
    to function value.
 #. '``function args``': argument list whose types match the function
    signature argument types and parameter attributes. All arguments must
    be of :ref:`first class <t_firstclass>` type. If the function signature
    indicates the function accepts a variable number of arguments, the
    extra arguments can be specified.
-#. '``normal label``': the label reached when the called function
-   executes a '``ret``' instruction.
-#. '``other labels``': the labels reached when a callee transfers control
-   to a location other than the normal '``normal label``'. The blockaddress
+#. '``fallthrough label``': the label reached when the inline assembly's
+   execution exits the bottom.
+#. '``indirect labels``': the labels reached when a callee transfers control
+   to a location other than the '``fallthrough label``'. The blockaddress
    constant for these should also be in the list of '``function args``'.
 #. The optional :ref:`function attributes <fnattrs>` list.
 #. The optional :ref:`operand bundles <opbundles>` list.
@@ -7268,6 +7333,10 @@ instruction in most regards. The primary difference is that it
 establishes an association with additional labels to define where control
 flow goes after the call.
 
+Outputs of a '``callbr``' instruction are valid only on the '``fallthrough``'
+path.  Use of outputs on the '``indirect``' path(s) results in :ref:`poison
+values <poisonvalues>`.
+
 The only use of this today is to implement the "goto" feature of gcc inline
 assembly where additional labels can be provided as locations for the inline
 assembly to jump to.
@@ -7275,10 +7344,15 @@ assembly to jump to.
 Example:
 """"""""
 
-.. code-block:: text
+.. code-block:: llvm
 
-      callbr void asm "", "r,x"(i32 %x, i8 *blockaddress(@foo, %fail))
-                  to label %normal [label %fail]
+      ; "asm goto" without output constraints.
+      callbr void asm "", "r,X"(i32 %x, i8 *blockaddress(@foo, %indirect))
+                  to label %fallthrough [label %indirect]
+
+      ; "asm goto" with output constraints.
+      <result> = callbr i32 asm "", "=r,r,X"(i32 %x, i8 *blockaddress(@foo, %indirect))
+                  to label %fallthrough [label %indirect]
 
 .. _i_resume:
 
@@ -7653,6 +7727,8 @@ Example:
 
       <result> = fadd float 4.0, %var          ; yields float:result = 4.0 + %var
 
+.. _i_sub:
+
 '``sub``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -7748,6 +7824,8 @@ Example:
       <result> = fsub float 4.0, %var           ; yields float:result = 4.0 - %var
       <result> = fsub float -0.0, %val          ; yields float:result = -%var
 
+.. _i_mul:
+
 '``mul``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -7842,6 +7920,8 @@ Example:
 
       <result> = fmul float 4.0, %var          ; yields float:result = 4.0 * %var
 
+.. _i_udiv:
+
 '``udiv``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -7887,6 +7967,8 @@ Example:
 .. code-block:: text
 
       <result> = udiv i32 4, %var          ; yields i32:result = 4 / %var
+
+.. _i_sdiv:
 
 '``sdiv``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -7976,6 +8058,8 @@ Example:
 
       <result> = fdiv float 4.0, %var          ; yields float:result = 4.0 / %var
 
+.. _i_urem:
+
 '``urem``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -8019,6 +8103,8 @@ Example:
 .. code-block:: text
 
       <result> = urem i32 4, %var          ; yields i32:result = 4 % %var
+
+.. _i_srem:
 
 '``srem``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -8133,6 +8219,8 @@ commonly be strength reduced from other instructions. They require two
 operands of the same type, execute an operation on them, and produce a
 single value. The resulting value is the same type as its operands.
 
+.. _i_shl:
+
 '``shl``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -8185,6 +8273,9 @@ Example:
       <result> = shl i32 1, 32     ; undefined
       <result> = shl <2 x i32> < i32 1, i32 1>, < i32 1, i32 2>   ; yields: result=<2 x i32> < i32 2, i32 4>
 
+.. _i_lshr:
+
+
 '``lshr``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -8233,6 +8324,8 @@ Example:
       <result> = lshr i8 -2, 1   ; yields i8:result = 0x7F
       <result> = lshr i32 1, 32  ; undefined
       <result> = lshr <2 x i32> < i32 -2, i32 4>, < i32 1, i32 2>   ; yields: result=<2 x i32> < i32 0x7FFFFFFF, i32 1>
+
+.. _i_ashr:
 
 '``ashr``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -8284,6 +8377,8 @@ Example:
       <result> = ashr i32 1, 32  ; undefined
       <result> = ashr <2 x i32> < i32 -2, i32 4>, < i32 1, i32 3>   ; yields: result=<2 x i32> < i32 -1, i32 0>
 
+.. _i_and:
+
 '``and``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -8333,6 +8428,8 @@ Example:
       <result> = and i32 15, 40          ; yields i32:result = 8
       <result> = and i32 4, 8            ; yields i32:result = 0
 
+.. _i_or:
+
 '``or``' Instruction
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -8381,6 +8478,8 @@ Example:
       <result> = or i32 4, %var         ; yields i32:result = 4 | %var
       <result> = or i32 15, 40          ; yields i32:result = 47
       <result> = or i32 4, 8            ; yields i32:result = 12
+
+.. _i_xor:
 
 '``xor``' Instruction
 ^^^^^^^^^^^^^^^^^^^^^
@@ -14271,6 +14370,136 @@ Examples
       %res = call i4 @llvm.udiv.fix.i4(i4 3, i4 4, i32 1)  ; %res = 2 (or 1) (1.5 / 2 = 0.75)
 
 
+'``llvm.sdiv.fix.sat.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.sdiv.fix.sat``
+on any integer bit width or vectors of integers.
+
+::
+
+      declare i16 @llvm.sdiv.fix.sat.i16(i16 %a, i16 %b, i32 %scale)
+      declare i32 @llvm.sdiv.fix.sat.i32(i32 %a, i32 %b, i32 %scale)
+      declare i64 @llvm.sdiv.fix.sat.i64(i64 %a, i64 %b, i32 %scale)
+      declare <4 x i32> @llvm.sdiv.fix.sat.v4i32(<4 x i32> %a, <4 x i32> %b, i32 %scale)
+
+Overview
+"""""""""
+
+The '``llvm.sdiv.fix.sat``' family of intrinsic functions perform signed
+fixed point saturation division on 2 arguments of the same scale.
+
+Arguments
+""""""""""
+
+The arguments (%a and %b) and the result may be of integer types of any bit
+width, but they must have the same bit width. ``%a`` and ``%b`` are the two
+values that will undergo signed fixed point division. The argument
+``%scale`` represents the scale of both operands, and must be a constant
+integer.
+
+Semantics:
+""""""""""
+
+This operation performs fixed point division on the 2 arguments of a
+specified scale. The result will also be returned in the same scale specified
+in the third argument.
+
+If the result value cannot be precisely represented in the given scale, the
+value is rounded up or down to the closest representable value. The rounding
+direction is unspecified.
+
+The maximum value this operation can clamp to is the largest signed value
+representable by the bit width of the first 2 arguments. The minimum value is the
+smallest signed value representable by this bit width.
+
+It is undefined behavior if the second argument is zero.
+
+
+Examples
+"""""""""
+
+.. code-block:: llvm
+
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 6, i4 2, i32 0)  ; %res = 3 (6 / 2 = 3)
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 6, i4 4, i32 1)  ; %res = 3 (3 / 2 = 1.5)
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 3, i4 -2, i32 1) ; %res = -3 (1.5 / -1 = -1.5)
+
+      ; The result in the following could be rounded up to 1 or down to 0.5
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 3, i4 4, i32 1)  ; %res = 2 (or 1) (1.5 / 2 = 0.75)
+
+      ; Saturation
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 -8, i4 -1, i32 0)  ; %res = 7 (-8 / -1 = 8 => 7)
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 4, i4 2, i32 2)  ; %res = 7 (1 / 0.5 = 2 => 1.75)
+      %res = call i4 @llvm.sdiv.fix.sat.i4(i4 -4, i4 1, i32 2)  ; %res = -8 (-1 / 0.25 = -4 => -2)
+
+
+'``llvm.udiv.fix.sat.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.udiv.fix.sat``
+on any integer bit width or vectors of integers.
+
+::
+
+      declare i16 @llvm.udiv.fix.sat.i16(i16 %a, i16 %b, i32 %scale)
+      declare i32 @llvm.udiv.fix.sat.i32(i32 %a, i32 %b, i32 %scale)
+      declare i64 @llvm.udiv.fix.sat.i64(i64 %a, i64 %b, i32 %scale)
+      declare <4 x i32> @llvm.udiv.fix.sat.v4i32(<4 x i32> %a, <4 x i32> %b, i32 %scale)
+
+Overview
+"""""""""
+
+The '``llvm.udiv.fix.sat``' family of intrinsic functions perform unsigned
+fixed point saturation division on 2 arguments of the same scale.
+
+Arguments
+""""""""""
+
+The arguments (%a and %b) and the result may be of integer types of any bit
+width, but they must have the same bit width. ``%a`` and ``%b`` are the two
+values that will undergo unsigned fixed point division. The argument
+``%scale`` represents the scale of both operands, and must be a constant
+integer.
+
+Semantics:
+""""""""""
+
+This operation performs fixed point division on the 2 arguments of a
+specified scale. The result will also be returned in the same scale specified
+in the third argument.
+
+If the result value cannot be precisely represented in the given scale, the
+value is rounded up or down to the closest representable value. The rounding
+direction is unspecified.
+
+The maximum value this operation can clamp to is the largest unsigned value
+representable by the bit width of the first 2 arguments. The minimum value is the
+smallest unsigned value representable by this bit width (zero).
+
+It is undefined behavior if the second argument is zero.
+
+Examples
+"""""""""
+
+.. code-block:: llvm
+
+      %res = call i4 @llvm.udiv.fix.sat.i4(i4 6, i4 2, i32 0)  ; %res = 3 (6 / 2 = 3)
+      %res = call i4 @llvm.udiv.fix.sat.i4(i4 6, i4 4, i32 1)  ; %res = 3 (3 / 2 = 1.5)
+
+      ; The result in the following could be rounded down to 0.5 or up to 1
+      %res = call i4 @llvm.udiv.fix.sat.i4(i4 3, i4 4, i32 1)  ; %res = 1 (or 2) (1.5 / 2 = 0.75)
+
+      ; Saturation
+      %res = call i4 @llvm.udiv.fix.sat.i4(i4 8, i4 2, i32 2)  ; %res = 15 (2 / 0.5 = 4 => 3.75)
+
+
 Specialised Arithmetic Intrinsics
 ---------------------------------
 
@@ -15054,6 +15283,678 @@ different than the address where the trampoline is actually stored. This
 intrinsic returns the executable address corresponding to ``tramp``
 after performing the required machine specific adjustments. The pointer
 returned can then be :ref:`bitcast and executed <int_trampoline>`.
+
+
+.. _int_vp:
+
+Vector Predication Intrinsics
+-----------------------------
+VP intrinsics are intended for predicated SIMD/vector code.  A typical VP
+operation takes a vector mask and an explicit vector length parameter as in:
+
+::
+
+      <W x T> llvm.vp.<opcode>.*(<W x T> %x, <W x T> %y, <W x i1> %mask, i32 %evl)
+
+The vector mask parameter (%mask) always has a vector of `i1` type, for example
+`<32 x i1>`.  The explicit vector length parameter always has the type `i32` and
+is an unsigned integer value.  The explicit vector length parameter (%evl) is in
+the range:
+
+::
+
+      0 <= %evl <= W,  where W is the number of vector elements
+
+Note that for :ref:`scalable vector types <t_vector>` ``W`` is the runtime
+length of the vector.
+
+The VP intrinsic has undefined behavior if ``%evl > W``.  The explicit vector
+length (%evl) creates a mask, %EVLmask, with all elements ``0 <= i < %evl`` set
+to True, and all other lanes ``%evl <= i < W`` to False.  A new mask %M is
+calculated with an element-wise AND from %mask and %EVLmask:
+
+::
+
+      M = %mask AND %EVLmask
+
+A vector operation ``<opcode>`` on vectors ``A`` and ``B`` calculates:
+
+::
+
+       A <opcode> B =  {  A[i] <opcode> B[i]   M[i] = True, and
+                       {  undef otherwise
+
+Optimization Hint
+^^^^^^^^^^^^^^^^^
+
+Some targets, such as AVX512, do not support the %evl parameter in hardware.
+The use of an effective %evl is discouraged for those targets.  The function
+``TargetTransformInfo::hasActiveVectorLength()`` returns true when the target
+has native support for %evl.
+
+
+.. _int_vp_add:
+
+'``llvm.vp.add.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.add.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.add.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.add.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated integer addition of two vectors of integers.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.add``' intrinsic performs integer addition (:ref:`add <i_add>`)
+of the first and second vector operand on each enabled lane.  The result on
+disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.add.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = add <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+.. _int_vp_sub:
+
+'``llvm.vp.sub.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.sub.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.sub.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.sub.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated integer subtraction of two vectors of integers.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.sub``' intrinsic performs integer subtraction
+(:ref:`sub <i_sub>`)  of the first and second vector operand on each enabled
+lane. The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.sub.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = sub <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+
+.. _int_vp_mul:
+
+'``llvm.vp.mul.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.mul.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.mul.nxv46i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.mul.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated integer multiplication of two vectors of integers.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+The '``llvm.vp.mul``' intrinsic performs integer multiplication
+(:ref:`mul <i_mul>`) of the first and second vector operand on each enabled
+lane. The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.mul.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = mul <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_sdiv:
+
+'``llvm.vp.sdiv.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.sdiv.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.sdiv.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.sdiv.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated, signed division of two vectors of integers.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.sdiv``' intrinsic performs signed division (:ref:`sdiv <i_sdiv>`)
+of the first and second vector operand on each enabled lane.  The result on
+disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.sdiv.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = sdiv <4 x i32> %a, %b
+      %also.r = select <4 x ii> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_udiv:
+
+'``llvm.vp.udiv.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.udiv.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.udiv.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.udiv.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated, unsigned division of two vectors of integers.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The third operand is the vector mask and has the same number of elements as the result vector type. The fourth operand is the explicit vector length of the operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.udiv``' intrinsic performs unsigned division
+(:ref:`udiv <i_udiv>`) of the first and second vector operand on each enabled
+lane. The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.udiv.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = udiv <4 x i32> %a, %b
+      %also.r = select <4 x ii> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+
+.. _int_vp_srem:
+
+'``llvm.vp.srem.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.srem.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.srem.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.srem.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated computations of the signed remainder of two integer vectors.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.srem``' intrinsic computes the remainder of the signed division
+(:ref:`srem <i_srem>`) of the first and second vector operand on each enabled
+lane.  The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.srem.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = srem <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+
+.. _int_vp_urem:
+
+'``llvm.vp.urem.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.urem.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.urem.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.urem.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Predicated computation of the unsigned remainder of two integer vectors.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.urem``' intrinsic computes the remainder of the unsigned division
+(:ref:`urem <i_urem>`) of the first and second vector operand on each enabled
+lane.  The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.urem.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = urem <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_ashr:
+
+'``llvm.vp.ashr.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.ashr.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.ashr.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.ashr.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated arithmetic right-shift.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.ashr``' intrinsic computes the arithmetic right shift
+(:ref:`ashr <i_ashr>`) of the first operand by the second operand on each
+enabled lane. The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.ashr.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = ashr <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_lshr:
+
+
+'``llvm.vp.lshr.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.lshr.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.lshr.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.lshr.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated logical right-shift.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.lshr``' intrinsic computes the logical right shift
+(:ref:`lshr <i_lshr>`) of the first operand by the second operand on each
+enabled lane. The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.lshr.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = lshr <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_shl:
+
+'``llvm.vp.shl.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.shl.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.shl.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.shl.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated left shift.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.shl``' intrinsic computes the left shift (:ref:`shl <i_shl>`) of
+the first operand by the second operand on each enabled lane.  The result on
+disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.shl.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = shl <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_or:
+
+'``llvm.vp.or.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.or.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.or.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.or.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated or.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.or``' intrinsic performs a bitwise or (:ref:`or <i_or>`) of the
+first two operands on each enabled lane.  The result on disabled lanes is
+undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.or.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = or <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_and:
+
+'``llvm.vp.and.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.and.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.and.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.and.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated and.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.and``' intrinsic performs a bitwise and (:ref:`and <i_or>`) of
+the first two operands on each enabled lane.  The result on disabled lanes is
+undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.and.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = and <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
+
+.. _int_vp_xor:
+
+'``llvm.vp.xor.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare <16 x i32>  @llvm.vp.xor.v16i32 (<16 x i32> <left_op>, <16 x i32> <right_op>, <16 x i1> <mask>, i32 <vector_length>)
+      declare <vscale x 4 x i32>  @llvm.vp.xor.nxv4i32 (<vscale x 4 x i32> <left_op>, <vscale x 4 x i32> <right_op>, <vscale x 4 x i1> <mask>, i32 <vector_length>)
+      declare <256 x i64>  @llvm.vp.xor.v256i64 (<256 x i64> <left_op>, <256 x i64> <right_op>, <256 x i1> <mask>, i32 <vector_length>)
+
+Overview:
+"""""""""
+
+Vector-predicated, bitwise xor.
+
+
+Arguments:
+""""""""""
+
+The first two operands and the result have the same vector of integer type. The
+third operand is the vector mask and has the same number of elements as the
+result vector type. The fourth operand is the explicit vector length of the
+operation.
+
+Semantics:
+""""""""""
+
+The '``llvm.vp.xor``' intrinsic performs a bitwise xor (:ref:`xor <i_xor>`) of
+the first two operands on each enabled lane.
+The result on disabled lanes is undefined.
+
+Examples:
+"""""""""
+
+.. code-block:: llvm
+
+      %r = call <4 x i32> @llvm.vp.xor.v4i32(<4 x i32> %a, <4 x i32> %b, <4 x i1> %mask, i32 %evl)
+      ;; For all lanes below %evl, %r is lane-wise equivalent to %also.r
+
+      %t = xor <4 x i32> %a, %b
+      %also.r = select <4 x i1> %mask, <4 x i32> %t, <4 x i32> undef
+
 
 .. _int_mload_mstore:
 
@@ -17534,10 +18435,14 @@ The ``llvm.assume`` allows the optimizer to assume that the provided
 condition is true. This information can then be used in simplifying other parts
 of the code.
 
+More complex assumptions can be encoded as
+:ref:`assume operand bundles <assume_opbundles>`.
+
 Arguments:
 """"""""""
 
-The condition which the optimizer may assume is always true.
+The argument of the call is the condition which the optimizer may assume is
+always true.
 
 Semantics:
 """"""""""

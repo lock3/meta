@@ -30,19 +30,11 @@ class SIMachineFunctionInfo;
 class SIRegisterInfo final : public AMDGPUGenRegisterInfo {
 private:
   const GCNSubtarget &ST;
-  unsigned SGPRSetID;
-  unsigned VGPRSetID;
-  unsigned AGPRSetID;
-  BitVector SGPRPressureSets;
-  BitVector VGPRPressureSets;
-  BitVector AGPRPressureSets;
   bool SpillSGPRToVGPR;
   bool isWave32;
 
   void reserveRegisterTuples(BitVector &, unsigned Reg) const;
 
-  void classifyPressureSet(unsigned PSetID, unsigned Reg,
-                           BitVector &PressureSets) const;
 public:
   SIRegisterInfo(const GCNSubtarget &ST);
 
@@ -57,11 +49,6 @@ public:
   /// Return the end register initially reserved for the scratch buffer in case
   /// spilling is needed.
   unsigned reservedPrivateSegmentBufferReg(const MachineFunction &MF) const;
-
-  /// Return the end register initially reserved for the scratch wave offset in
-  /// case spilling is needed.
-  unsigned reservedPrivateSegmentWaveByteOffsetReg(
-    const MachineFunction &MF) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
 
@@ -207,10 +194,6 @@ public:
                               const TargetRegisterClass *RC,
                               const MachineFunction &MF) const;
 
-  unsigned getSGPRPressureSet() const { return SGPRSetID; };
-  unsigned getVGPRPressureSet() const { return VGPRSetID; };
-  unsigned getAGPRPressureSet() const { return AGPRSetID; };
-
   const TargetRegisterClass *getRegClassForReg(const MachineRegisterInfo &MRI,
                                                unsigned Reg) const;
   bool isVGPR(const MachineRegisterInfo &MRI, unsigned Reg) const;
@@ -222,19 +205,6 @@ public:
   virtual bool
   isDivergentRegClass(const TargetRegisterClass *RC) const override {
     return !isSGPRClass(RC);
-  }
-
-  bool isSGPRPressureSet(unsigned SetID) const {
-    return SGPRPressureSets.test(SetID) && !VGPRPressureSets.test(SetID) &&
-           !AGPRPressureSets.test(SetID);
-  }
-  bool isVGPRPressureSet(unsigned SetID) const {
-    return VGPRPressureSets.test(SetID) && !SGPRPressureSets.test(SetID) &&
-           !AGPRPressureSets.test(SetID);
-  }
-  bool isAGPRPressureSet(unsigned SetID) const {
-    return AGPRPressureSets.test(SetID) && !SGPRPressureSets.test(SetID) &&
-           !VGPRPressureSets.test(SetID);
   }
 
   ArrayRef<int16_t> getRegSplitParts(const TargetRegisterClass *RC,

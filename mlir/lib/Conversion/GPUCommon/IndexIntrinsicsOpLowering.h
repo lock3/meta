@@ -11,7 +11,6 @@
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/GPU/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-
 #include "llvm/ADT/StringSwitch.h"
 
 namespace mlir {
@@ -22,7 +21,7 @@ namespace mlir {
 // `indexBitwidth`, sign-extend or truncate the resulting value to match the
 // bitwidth expected by the consumers of the value.
 template <typename Op, typename XOp, typename YOp, typename ZOp>
-struct GPUIndexIntrinsicOpLowering : public LLVMOpLowering {
+struct GPUIndexIntrinsicOpLowering : public ConvertToLLVMPattern {
 private:
   enum dimension { X = 0, Y = 1, Z = 2, invalid };
   unsigned indexBitwidth;
@@ -42,12 +41,12 @@ private:
 
 public:
   explicit GPUIndexIntrinsicOpLowering(LLVMTypeConverter &lowering_)
-      : LLVMOpLowering(Op::getOperationName(),
-                       lowering_.getDialect()->getContext(), lowering_),
+      : ConvertToLLVMPattern(Op::getOperationName(),
+                             lowering_.getDialect()->getContext(), lowering_),
         indexBitwidth(getIndexBitWidth(lowering_)) {}
 
   // Convert the kernel arguments to an LLVM type, preserve the rest.
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
@@ -64,7 +63,7 @@ public:
       newOp = rewriter.create<ZOp>(loc, LLVM::LLVMType::getInt32Ty(dialect));
       break;
     default:
-      return matchFailure();
+      return failure();
     }
 
     if (indexBitwidth > 32) {
@@ -76,7 +75,7 @@ public:
     }
 
     rewriter.replaceOp(op, {newOp});
-    return matchSuccess();
+    return success();
   }
 };
 

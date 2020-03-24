@@ -531,10 +531,13 @@ let usesCustomInserter = 1, hasNoSchedulingInfo = 1, Uses = [EFLAGS] in {
 
   defm _RFP80 : CMOVrr_PSEUDO<RFP80, f80>;
 
-  let Predicates = [NoAVX512] in {
+  let Predicates = [HasMMX] in
+    defm _VR64   : CMOVrr_PSEUDO<VR64, x86mmx>;
+
+  let Predicates = [HasSSE1,NoAVX512] in
     defm _FR32   : CMOVrr_PSEUDO<FR32, f32>;
+  let Predicates = [HasSSE2,NoAVX512] in
     defm _FR64   : CMOVrr_PSEUDO<FR64, f64>;
-  }
   let Predicates = [HasAVX512] in {
     defm _FR32X  : CMOVrr_PSEUDO<FR32X, f32>;
     defm _FR64X  : CMOVrr_PSEUDO<FR64X, f64>;
@@ -548,6 +551,7 @@ let usesCustomInserter = 1, hasNoSchedulingInfo = 1, Uses = [EFLAGS] in {
     defm _VR256X : CMOVrr_PSEUDO<VR256X, v4i64>;
   }
   defm _VR512  : CMOVrr_PSEUDO<VR512, v8i64>;
+  defm _VK1    : CMOVrr_PSEUDO<VK1,  v1i1>;
   defm _VK2    : CMOVrr_PSEUDO<VK2,  v2i1>;
   defm _VK4    : CMOVrr_PSEUDO<VK4,  v4i1>;
   defm _VK8    : CMOVrr_PSEUDO<VK8,  v8i1>;
@@ -1778,21 +1782,24 @@ multiclass MaskedRotateAmountPats<SDNode frag, string name> {
 defm : MaskedRotateAmountPats<rotl, "ROL">;
 defm : MaskedRotateAmountPats<rotr, "ROR">;
 
-// Double shift amount is implicitly masked.
-multiclass MaskedDoubleShiftAmountPats<SDNode frag, string name> {
-  // (shift x (and y, 31)) ==> (shift x, y)
-  def : Pat<(frag GR16:$src1, GR16:$src2, (shiftMask32 CL)),
-            (!cast<Instruction>(name # "16rrCL") GR16:$src1, GR16:$src2)>;
-  def : Pat<(frag GR32:$src1, GR32:$src2, (shiftMask32 CL)),
-            (!cast<Instruction>(name # "32rrCL") GR32:$src1, GR32:$src2)>;
+// Double "funnel" shift amount is implicitly masked.
+// (fshl/fshr x (and y, 31)) ==> (fshl/fshr x, y) (NOTE: modulo32)
+def : Pat<(X86fshl GR16:$src1, GR16:$src2, (shiftMask32 CL)),
+          (SHLD16rrCL GR16:$src1, GR16:$src2)>;
+def : Pat<(X86fshr GR16:$src2, GR16:$src1, (shiftMask32 CL)),
+          (SHRD16rrCL GR16:$src1, GR16:$src2)>;
 
-  // (shift x (and y, 63)) ==> (shift x, y)
-  def : Pat<(frag GR64:$src1, GR64:$src2, (shiftMask32 CL)),
-            (!cast<Instruction>(name # "64rrCL") GR64:$src1, GR64:$src2)>;
-}
+// (fshl/fshr x (and y, 31)) ==> (fshl/fshr x, y)
+def : Pat<(fshl GR32:$src1, GR32:$src2, (shiftMask32 CL)),
+          (SHLD32rrCL GR32:$src1, GR32:$src2)>;
+def : Pat<(fshr GR32:$src2, GR32:$src1, (shiftMask32 CL)),
+          (SHRD32rrCL GR32:$src1, GR32:$src2)>;
 
-defm : MaskedDoubleShiftAmountPats<X86shld, "SHLD">;
-defm : MaskedDoubleShiftAmountPats<X86shrd, "SHRD">;
+// (fshl/fshr x (and y, 63)) ==> (fshl/fshr x, y)
+def : Pat<(fshl GR64:$src1, GR64:$src2, (shiftMask64 CL)),
+          (SHLD64rrCL GR64:$src1, GR64:$src2)>;
+def : Pat<(fshr GR64:$src2, GR64:$src1, (shiftMask64 CL)),
+          (SHRD64rrCL GR64:$src1, GR64:$src2)>;
 
 let Predicates = [HasBMI2] in {
   let AddedComplexity = 1 in {

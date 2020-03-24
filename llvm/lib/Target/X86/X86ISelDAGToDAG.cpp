@@ -221,9 +221,9 @@ namespace {
     bool selectAddr(SDNode *Parent, SDValue N, SDValue &Base,
                     SDValue &Scale, SDValue &Index, SDValue &Disp,
                     SDValue &Segment);
-    bool selectVectorAddr(SDNode *Parent, SDValue N, SDValue &Base,
-                          SDValue &Scale, SDValue &Index, SDValue &Disp,
-                          SDValue &Segment);
+    bool selectVectorAddr(MemSDNode *Parent, SDValue BasePtr, SDValue IndexOp,
+                          SDValue ScaleOp, SDValue &Base, SDValue &Scale,
+                          SDValue &Index, SDValue &Disp, SDValue &Segment);
     bool selectMOV64Imm32(SDValue N, SDValue &Imm);
     bool selectLEAAddr(SDValue N, SDValue &Base,
                        SDValue &Scale, SDValue &Index, SDValue &Disp,
@@ -1100,14 +1100,17 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
       // operations.  Based on this, decide what we want to do.
       MVT MemVT = (N->getOpcode() == ISD::FP_ROUND) ? DstVT : SrcVT;
       SDValue MemTmp = CurDAG->CreateStackTemporary(MemVT);
+      int SPFI = cast<FrameIndexSDNode>(MemTmp)->getIndex();
+      MachinePointerInfo MPI =
+          MachinePointerInfo::getFixedStack(CurDAG->getMachineFunction(), SPFI);
       SDLoc dl(N);
 
       // FIXME: optimize the case where the src/dest is a load or store?
 
-      SDValue Store = CurDAG->getTruncStore(CurDAG->getEntryNode(), dl, N->getOperand(0),
-                                          MemTmp, MachinePointerInfo(), MemVT);
-      SDValue Result = CurDAG->getExtLoad(ISD::EXTLOAD, dl, DstVT, Store, MemTmp,
-                                          MachinePointerInfo(), MemVT);
+      SDValue Store = CurDAG->getTruncStore(
+          CurDAG->getEntryNode(), dl, N->getOperand(0), MemTmp, MPI, MemVT);
+      SDValue Result = CurDAG->getExtLoad(ISD::EXTLOAD, dl, DstVT, Store,
+                                          MemTmp, MPI, MemVT);
 
       // We're about to replace all uses of the FP_ROUND/FP_EXTEND with the
       // extload we created.  This will cause general havok on the dag because
@@ -1153,6 +1156,9 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
       // operations.  Based on this, decide what we want to do.
       MVT MemVT = (N->getOpcode() == ISD::STRICT_FP_ROUND) ? DstVT : SrcVT;
       SDValue MemTmp = CurDAG->CreateStackTemporary(MemVT);
+      int SPFI = cast<FrameIndexSDNode>(MemTmp)->getIndex();
+      MachinePointerInfo MPI =
+          MachinePointerInfo::getFixedStack(CurDAG->getMachineFunction(), SPFI);
       SDLoc dl(N);
 
       // FIXME: optimize the case where the src/dest is a load or store?
@@ -1163,7 +1169,7 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
         SDVTList VTs = CurDAG->getVTList(MVT::Other);
         SDValue Ops[] = {N->getOperand(0), N->getOperand(1), MemTmp};
         Store = CurDAG->getMemIntrinsicNode(X86ISD::FST, dl, VTs, Ops, MemVT,
-                                            MachinePointerInfo(), 0,
+                                            MPI, /*Align*/ 0,
                                             MachineMemOperand::MOStore);
         if (N->getFlags().hasNoFPExcept()) {
           SDNodeFlags Flags = Store->getFlags();
@@ -1173,15 +1179,15 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
       } else {
         assert(SrcVT == MemVT && "Unexpected VT!");
         Store = CurDAG->getStore(N->getOperand(0), dl, N->getOperand(1), MemTmp,
-                                 MachinePointerInfo());
+                                 MPI);
       }
 
       if (!DstIsSSE) {
         SDVTList VTs = CurDAG->getVTList(DstVT, MVT::Other);
         SDValue Ops[] = {Store, MemTmp};
-        Result = CurDAG->getMemIntrinsicNode(X86ISD::FLD, dl, VTs, Ops, MemVT,
-                                             MachinePointerInfo(), 0,
-                                             MachineMemOperand::MOLoad);
+        Result =
+            CurDAG->getMemIntrinsicNode(X86ISD::FLD, dl, VTs, Ops, MemVT, MPI,
+                                        /*Align*/ 0, MachineMemOperand::MOLoad);
         if (N->getFlags().hasNoFPExcept()) {
           SDNodeFlags Flags = Result->getFlags();
           Flags.setNoFPExcept(true);
@@ -1189,8 +1195,7 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
         }
       } else {
         assert(DstVT == MemVT && "Unexpected VT!");
-        Result =
-            CurDAG->getLoad(DstVT, dl, Store, MemTmp, MachinePointerInfo());
+        Result = CurDAG->getLoad(DstVT, dl, Store, MemTmp, MPI);
       }
 
       // We're about to replace all uses of the FP_ROUND/FP_EXTEND with the
@@ -1821,7 +1826,7 @@ static bool foldMaskAndShiftToScale(SelectionDAG &DAG, SDValue N,
 
   // There is nothing we can do here unless the mask is removing some bits.
   // Also, the addressing mode can only represent shifts of 1, 2, or 3 bits.
-  if (AMShiftAmt <= 0 || AMShiftAmt > 3) return true;
+  if (AMShiftAmt == 0 || AMShiftAmt > 3) return true;
 
   // We also need to ensure that mask is a continuous run of bits.
   if (countTrailingOnes(Mask >> MaskTZ) + MaskTZ + MaskLZ != 64) return true;
@@ -1916,7 +1921,7 @@ static bool foldMaskedShiftToBEXTR(SelectionDAG &DAG, SDValue N,
 
   // There is nothing we can do here unless the mask is removing some bits.
   // Also, the addressing mode can only represent shifts of 1, 2, or 3 bits.
-  if (AMShiftAmt <= 0 || AMShiftAmt > 3) return true;
+  if (AMShiftAmt == 0 || AMShiftAmt > 3) return true;
 
   MVT VT = N.getSimpleValueType();
   SDLoc DL(N);
@@ -2319,15 +2324,16 @@ bool X86DAGToDAGISel::matchVectorAddress(SDValue N, X86ISelAddressMode &AM) {
   return matchAddressBase(N, AM);
 }
 
-bool X86DAGToDAGISel::selectVectorAddr(SDNode *Parent, SDValue N, SDValue &Base,
-                                       SDValue &Scale, SDValue &Index,
-                                       SDValue &Disp, SDValue &Segment) {
+bool X86DAGToDAGISel::selectVectorAddr(MemSDNode *Parent, SDValue BasePtr,
+                                       SDValue IndexOp, SDValue ScaleOp,
+                                       SDValue &Base, SDValue &Scale,
+                                       SDValue &Index, SDValue &Disp,
+                                       SDValue &Segment) {
   X86ISelAddressMode AM;
-  auto *Mgs = cast<X86MaskedGatherScatterSDNode>(Parent);
-  AM.IndexReg = Mgs->getIndex();
-  AM.Scale = cast<ConstantSDNode>(Mgs->getScale())->getZExtValue();
+  AM.IndexReg = IndexOp;
+  AM.Scale = cast<ConstantSDNode>(ScaleOp)->getZExtValue();
 
-  unsigned AddrSpace = cast<MemSDNode>(Parent)->getPointerInfo().getAddrSpace();
+  unsigned AddrSpace = Parent->getPointerInfo().getAddrSpace();
   if (AddrSpace == X86AS::GS)
     AM.Segment = CurDAG->getRegister(X86::GS, MVT::i16);
   if (AddrSpace == X86AS::FS)
@@ -2335,11 +2341,11 @@ bool X86DAGToDAGISel::selectVectorAddr(SDNode *Parent, SDValue N, SDValue &Base,
   if (AddrSpace == X86AS::SS)
     AM.Segment = CurDAG->getRegister(X86::SS, MVT::i16);
 
-  SDLoc DL(N);
-  MVT VT = N.getSimpleValueType();
+  SDLoc DL(BasePtr);
+  MVT VT = BasePtr.getSimpleValueType();
 
   // Try to match into the base and displacement fields.
-  if (matchVectorAddress(N, AM))
+  if (matchVectorAddress(BasePtr, AM))
     return false;
 
   getAddressOperands(AM, DL, VT, Base, Scale, Index, Disp, Segment);
@@ -4839,23 +4845,23 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
     SDValue N0 = Node->getOperand(0);
     SDValue N1 = Node->getOperand(1);
 
-    unsigned Opc, MOpc;
+    unsigned ROpc, MOpc;
     bool isSigned = Opcode == ISD::SDIVREM;
     if (!isSigned) {
       switch (NVT.SimpleTy) {
       default: llvm_unreachable("Unsupported VT!");
-      case MVT::i8:  Opc = X86::DIV8r;  MOpc = X86::DIV8m;  break;
-      case MVT::i16: Opc = X86::DIV16r; MOpc = X86::DIV16m; break;
-      case MVT::i32: Opc = X86::DIV32r; MOpc = X86::DIV32m; break;
-      case MVT::i64: Opc = X86::DIV64r; MOpc = X86::DIV64m; break;
+      case MVT::i8:  ROpc = X86::DIV8r;  MOpc = X86::DIV8m;  break;
+      case MVT::i16: ROpc = X86::DIV16r; MOpc = X86::DIV16m; break;
+      case MVT::i32: ROpc = X86::DIV32r; MOpc = X86::DIV32m; break;
+      case MVT::i64: ROpc = X86::DIV64r; MOpc = X86::DIV64m; break;
       }
     } else {
       switch (NVT.SimpleTy) {
       default: llvm_unreachable("Unsupported VT!");
-      case MVT::i8:  Opc = X86::IDIV8r;  MOpc = X86::IDIV8m;  break;
-      case MVT::i16: Opc = X86::IDIV16r; MOpc = X86::IDIV16m; break;
-      case MVT::i32: Opc = X86::IDIV32r; MOpc = X86::IDIV32m; break;
-      case MVT::i64: Opc = X86::IDIV64r; MOpc = X86::IDIV64m; break;
+      case MVT::i8:  ROpc = X86::IDIV8r;  MOpc = X86::IDIV8m;  break;
+      case MVT::i16: ROpc = X86::IDIV16r; MOpc = X86::IDIV16m; break;
+      case MVT::i32: ROpc = X86::IDIV32r; MOpc = X86::IDIV32m; break;
+      case MVT::i64: ROpc = X86::IDIV64r; MOpc = X86::IDIV64m; break;
       }
     }
 
@@ -4964,7 +4970,7 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
       CurDAG->setNodeMemRefs(CNode, {cast<LoadSDNode>(N1)->getMemOperand()});
     } else {
       InFlag =
-        SDValue(CurDAG->getMachineNode(Opc, dl, MVT::Glue, N1, InFlag), 0);
+        SDValue(CurDAG->getMachineNode(ROpc, dl, MVT::Glue, N1, InFlag), 0);
     }
 
     // Prevent use of AH in a REX instruction by explicitly copying it to
@@ -5394,6 +5400,168 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
       CurDAG->RemoveDeadNode(Node);
       return;
     }
+    break;
+  }
+  case X86ISD::MGATHER: {
+    auto *Mgt = cast<X86MaskedGatherSDNode>(Node);
+    SDValue IndexOp = Mgt->getIndex();
+    SDValue Mask = Mgt->getMask();
+    MVT IndexVT = IndexOp.getSimpleValueType();
+    MVT ValueVT = Node->getSimpleValueType(0);
+    MVT MaskVT = Mask.getSimpleValueType();
+
+    // This is just to prevent crashes if the nodes are malformed somehow. We're
+    // otherwise only doing loose type checking in here based on type what
+    // a type constraint would say just like table based isel.
+    if (!ValueVT.isVector() || !MaskVT.isVector())
+      break;
+
+    unsigned NumElts = ValueVT.getVectorNumElements();
+    MVT ValueSVT = ValueVT.getVectorElementType();
+
+    bool IsFP = ValueSVT.isFloatingPoint();
+    unsigned EltSize = ValueSVT.getSizeInBits();
+
+    unsigned Opc = 0;
+    bool AVX512Gather = MaskVT.getVectorElementType() == MVT::i1;
+    if (AVX512Gather) {
+      if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERDPSZ128rm : X86::VPGATHERDDZ128rm;
+      else if (IndexVT == MVT::v8i32 && NumElts == 8 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERDPSZ256rm : X86::VPGATHERDDZ256rm;
+      else if (IndexVT == MVT::v16i32 && NumElts == 16 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERDPSZrm : X86::VPGATHERDDZrm;
+      else if (IndexVT == MVT::v4i32 && NumElts == 2 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERDPDZ128rm : X86::VPGATHERDQZ128rm;
+      else if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERDPDZ256rm : X86::VPGATHERDQZ256rm;
+      else if (IndexVT == MVT::v8i32 && NumElts == 8 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERDPDZrm : X86::VPGATHERDQZrm;
+      else if (IndexVT == MVT::v2i64 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERQPSZ128rm : X86::VPGATHERQDZ128rm;
+      else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERQPSZ256rm : X86::VPGATHERQDZ256rm;
+      else if (IndexVT == MVT::v8i64 && NumElts == 8 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERQPSZrm : X86::VPGATHERQDZrm;
+      else if (IndexVT == MVT::v2i64 && NumElts == 2 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERQPDZ128rm : X86::VPGATHERQQZ128rm;
+      else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERQPDZ256rm : X86::VPGATHERQQZ256rm;
+      else if (IndexVT == MVT::v8i64 && NumElts == 8 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERQPDZrm : X86::VPGATHERQQZrm;
+    } else {
+      assert(EVT(MaskVT) == EVT(ValueVT).changeVectorElementTypeToInteger() &&
+             "Unexpected mask VT!");
+      if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERDPSrm : X86::VPGATHERDDrm;
+      else if (IndexVT == MVT::v8i32 && NumElts == 8 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERDPSYrm : X86::VPGATHERDDYrm;
+      else if (IndexVT == MVT::v4i32 && NumElts == 2 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERDPDrm : X86::VPGATHERDQrm;
+      else if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERDPDYrm : X86::VPGATHERDQYrm;
+      else if (IndexVT == MVT::v2i64 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERQPSrm : X86::VPGATHERQDrm;
+      else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 32)
+        Opc = IsFP ? X86::VGATHERQPSYrm : X86::VPGATHERQDYrm;
+      else if (IndexVT == MVT::v2i64 && NumElts == 2 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERQPDrm : X86::VPGATHERQQrm;
+      else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 64)
+        Opc = IsFP ? X86::VGATHERQPDYrm : X86::VPGATHERQQYrm;
+    }
+
+    if (!Opc)
+      break;
+
+    SDValue Base, Scale, Index, Disp, Segment;
+    if (!selectVectorAddr(Mgt, Mgt->getBasePtr(), IndexOp, Mgt->getScale(),
+                          Base, Scale, Index, Disp, Segment))
+      break;
+
+    SDValue PassThru = Mgt->getPassThru();
+    SDValue Chain = Mgt->getChain();
+    // Gather instructions have a mask output not in the ISD node.
+    SDVTList VTs = CurDAG->getVTList(ValueVT, MaskVT, MVT::Other);
+
+    MachineSDNode *NewNode;
+    if (AVX512Gather) {
+      SDValue Ops[] = {PassThru, Mask, Base,    Scale,
+                       Index,    Disp, Segment, Chain};
+      NewNode = CurDAG->getMachineNode(Opc, SDLoc(dl), VTs, Ops);
+    } else {
+      SDValue Ops[] = {PassThru, Base,    Scale, Index,
+                       Disp,     Segment, Mask,  Chain};
+      NewNode = CurDAG->getMachineNode(Opc, SDLoc(dl), VTs, Ops);
+    }
+    CurDAG->setNodeMemRefs(NewNode, {Mgt->getMemOperand()});
+    ReplaceUses(SDValue(Node, 0), SDValue(NewNode, 0));
+    ReplaceUses(SDValue(Node, 1), SDValue(NewNode, 2));
+    CurDAG->RemoveDeadNode(Node);
+    return;
+  }
+  case X86ISD::MSCATTER: {
+    auto *Sc = cast<X86MaskedScatterSDNode>(Node);
+    SDValue Value = Sc->getValue();
+    SDValue IndexOp = Sc->getIndex();
+    MVT IndexVT = IndexOp.getSimpleValueType();
+    MVT ValueVT = Value.getSimpleValueType();
+
+    // This is just to prevent crashes if the nodes are malformed somehow. We're
+    // otherwise only doing loose type checking in here based on type what
+    // a type constraint would say just like table based isel.
+    if (!ValueVT.isVector())
+      break;
+
+    unsigned NumElts = ValueVT.getVectorNumElements();
+    MVT ValueSVT = ValueVT.getVectorElementType();
+
+    bool IsFP = ValueSVT.isFloatingPoint();
+    unsigned EltSize = ValueSVT.getSizeInBits();
+
+    unsigned Opc;
+    if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERDPSZ128mr : X86::VPSCATTERDDZ128mr;
+    else if (IndexVT == MVT::v8i32 && NumElts == 8 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERDPSZ256mr : X86::VPSCATTERDDZ256mr;
+    else if (IndexVT == MVT::v16i32 && NumElts == 16 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERDPSZmr : X86::VPSCATTERDDZmr;
+    else if (IndexVT == MVT::v4i32 && NumElts == 2 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERDPDZ128mr : X86::VPSCATTERDQZ128mr;
+    else if (IndexVT == MVT::v4i32 && NumElts == 4 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERDPDZ256mr : X86::VPSCATTERDQZ256mr;
+    else if (IndexVT == MVT::v8i32 && NumElts == 8 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERDPDZmr : X86::VPSCATTERDQZmr;
+    else if (IndexVT == MVT::v2i64 && NumElts == 4 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERQPSZ128mr : X86::VPSCATTERQDZ128mr;
+    else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERQPSZ256mr : X86::VPSCATTERQDZ256mr;
+    else if (IndexVT == MVT::v8i64 && NumElts == 8 && EltSize == 32)
+      Opc = IsFP ? X86::VSCATTERQPSZmr : X86::VPSCATTERQDZmr;
+    else if (IndexVT == MVT::v2i64 && NumElts == 2 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERQPDZ128mr : X86::VPSCATTERQQZ128mr;
+    else if (IndexVT == MVT::v4i64 && NumElts == 4 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERQPDZ256mr : X86::VPSCATTERQQZ256mr;
+    else if (IndexVT == MVT::v8i64 && NumElts == 8 && EltSize == 64)
+      Opc = IsFP ? X86::VSCATTERQPDZmr : X86::VPSCATTERQQZmr;
+    else
+      break;
+
+    SDValue Base, Scale, Index, Disp, Segment;
+    if (!selectVectorAddr(Sc, Sc->getBasePtr(), IndexOp, Sc->getScale(),
+                          Base, Scale, Index, Disp, Segment))
+      break;
+
+    SDValue Mask = Sc->getMask();
+    SDValue Chain = Sc->getChain();
+    // Scatter instructions have a mask output not in the ISD node.
+    SDVTList VTs = CurDAG->getVTList(Mask.getValueType(), MVT::Other);
+    SDValue Ops[] = {Base, Scale, Index, Disp, Segment, Mask, Value, Chain};
+
+    MachineSDNode *NewNode = CurDAG->getMachineNode(Opc, SDLoc(dl), VTs, Ops);
+    CurDAG->setNodeMemRefs(NewNode, {Sc->getMemOperand()});
+    ReplaceUses(SDValue(Node, 0), SDValue(NewNode, 1));
+    CurDAG->RemoveDeadNode(Node);
+    return;
   }
   }
 

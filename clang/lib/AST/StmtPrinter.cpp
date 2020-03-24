@@ -833,6 +833,16 @@ void StmtPrinter::VisitOMPFlushDirective(OMPFlushDirective *Node) {
   PrintOMPExecutableDirective(Node);
 }
 
+void StmtPrinter::VisitOMPDepobjDirective(OMPDepobjDirective *Node) {
+  Indent() << "#pragma omp depobj";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPScanDirective(OMPScanDirective *Node) {
+  Indent() << "#pragma omp scan";
+  PrintOMPExecutableDirective(Node);
+}
+
 void StmtPrinter::VisitOMPOrderedDirective(OMPOrderedDirective *Node) {
   Indent() << "#pragma omp ordered";
   PrintOMPExecutableDirective(Node, Node->hasClausesOfKind<OMPDependClause>());

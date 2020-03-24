@@ -53,6 +53,16 @@ def AOp : NS_Op<"a_op", []> {
 // DEF-NEXT:   auto attr = cAttrAttr()
 // DEF-NEXT:   return attr ? Optional<some-return-type>(attr.some-convert-from-storage()) : (llvm::None);
 
+// Test setter methods
+// ---
+
+// DEF:      void AOp::aAttrAttr(some-attr-kind attr) {
+// DEF-NEXT:   this->getOperation()->setAttr("aAttr", attr);
+// DEF:      void AOp::bAttrAttr(some-attr-kind attr) {
+// DEF-NEXT:   this->getOperation()->setAttr("bAttr", attr);
+// DEF:      void AOp::cAttrAttr(some-attr-kind attr) {
+// DEF-NEXT:   this->getOperation()->setAttr("cAttr", attr);
+
 // Test build methods
 // ---
 
@@ -127,8 +137,8 @@ def BOp : NS_Op<"b_op", []> {
 // DEF-LABEL: BOp::verify
 // DEF: if (!((true)))
 // DEF: if (!((tblgen_bool_attr.isa<BoolAttr>())))
-// DEF: if (!(((tblgen_i32_attr.isa<IntegerAttr>())) && ((tblgen_i32_attr.cast<IntegerAttr>().getType().isInteger(32)))))
-// DEF: if (!(((tblgen_i64_attr.isa<IntegerAttr>())) && ((tblgen_i64_attr.cast<IntegerAttr>().getType().isInteger(64)))))
+// DEF: if (!(((tblgen_i32_attr.isa<IntegerAttr>())) && ((tblgen_i32_attr.cast<IntegerAttr>().getType().isSignlessInteger(32)))))
+// DEF: if (!(((tblgen_i64_attr.isa<IntegerAttr>())) && ((tblgen_i64_attr.cast<IntegerAttr>().getType().isSignlessInteger(64)))))
 // DEF: if (!(((tblgen_f32_attr.isa<FloatAttr>())) && ((tblgen_f32_attr.cast<FloatAttr>().getType().isF32()))))
 // DEF: if (!(((tblgen_f64_attr.isa<FloatAttr>())) && ((tblgen_f64_attr.cast<FloatAttr>().getType().isF64()))))
 // DEF: if (!((tblgen_str_attr.isa<StringAttr>())))
@@ -191,6 +201,20 @@ def DOp : NS_Op<"d_op", []> {
 // DEF: odsState.addAttribute("str_attr", (*odsBuilder).getStringAttr(str_attr));
 // DEF: odsState.addAttribute("dv_str_attr", (*odsBuilder).getStringAttr(dv_str_attr));
 
+// Test derived type attr.
+// ---
+def DerivedTypeAttrOp : NS_Op<"derived_type_attr_op", []> {
+  let results = (outs AnyTensor:$output);
+  DerivedTypeAttr element_dtype = DerivedTypeAttr<"return output().getType();">;
+}
+
+// DECL: class DerivedTypeAttrOp : public Op
+// DECL-SAME: DerivedAttributeOpInterface::Trait
+// DECL: static bool isDerivedAttribute
+// DEF: bool DerivedTypeAttrOp::isDerivedAttribute(StringRef name) {
+// DEF:   if (name == "element_dtype") return true;
+// DEF:   return false;
+// DEF: }
 
 // Test that only default valued attributes at the end of the arguments
 // list get default values in the builder signature

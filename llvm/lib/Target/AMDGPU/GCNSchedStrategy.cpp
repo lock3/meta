@@ -50,9 +50,9 @@ void GCNMaxOccupancySchedStrategy::initialize(ScheduleDAGMI *DAG) {
     VGPRCriticalLimit = ST.getMaxNumVGPRs(TargetOccupancy);
   } else {
     SGPRCriticalLimit = SRI->getRegPressureSetLimit(DAG->MF,
-                                                    SRI->getSGPRPressureSet());
+        AMDGPU::RegisterPressureSets::SReg_32);
     VGPRCriticalLimit = SRI->getRegPressureSetLimit(DAG->MF,
-                                                    SRI->getVGPRPressureSet());
+        AMDGPU::RegisterPressureSets::VGPR_32);
   }
 
   SGPRCriticalLimit -= ErrorMargin;
@@ -83,8 +83,8 @@ void GCNMaxOccupancySchedStrategy::initCandidate(SchedCandidate &Cand, SUnit *SU
     TempTracker.getUpwardPressure(SU->getInstr(), Pressure, MaxPressure);
   }
 
-  unsigned NewSGPRPressure = Pressure[SRI->getSGPRPressureSet()];
-  unsigned NewVGPRPressure = Pressure[SRI->getVGPRPressureSet()];
+  unsigned NewSGPRPressure = Pressure[AMDGPU::RegisterPressureSets::SReg_32];
+  unsigned NewVGPRPressure = Pressure[AMDGPU::RegisterPressureSets::VGPR_32];
 
   // If two instructions increase the pressure of different register sets
   // by the same amount, the generic scheduler will prefer to schedule the
@@ -109,12 +109,12 @@ void GCNMaxOccupancySchedStrategy::initCandidate(SchedCandidate &Cand, SUnit *SU
   // marked as RegExcess in tryCandidate() when they are compared with
   // instructions that increase the register pressure.
   if (ShouldTrackVGPRs && NewVGPRPressure >= VGPRExcessLimit) {
-    Cand.RPDelta.Excess = PressureChange(SRI->getVGPRPressureSet());
+    Cand.RPDelta.Excess = PressureChange(AMDGPU::RegisterPressureSets::VGPR_32);
     Cand.RPDelta.Excess.setUnitInc(NewVGPRPressure - VGPRExcessLimit);
   }
 
   if (ShouldTrackSGPRs && NewSGPRPressure >= SGPRExcessLimit) {
-    Cand.RPDelta.Excess = PressureChange(SRI->getSGPRPressureSet());
+    Cand.RPDelta.Excess = PressureChange(AMDGPU::RegisterPressureSets::SReg_32);
     Cand.RPDelta.Excess.setUnitInc(NewSGPRPressure - SGPRExcessLimit);
   }
 
@@ -128,10 +128,12 @@ void GCNMaxOccupancySchedStrategy::initCandidate(SchedCandidate &Cand, SUnit *SU
 
   if (SGPRDelta >= 0 || VGPRDelta >= 0) {
     if (SGPRDelta > VGPRDelta) {
-      Cand.RPDelta.CriticalMax = PressureChange(SRI->getSGPRPressureSet());
+      Cand.RPDelta.CriticalMax =
+        PressureChange(AMDGPU::RegisterPressureSets::SReg_32);
       Cand.RPDelta.CriticalMax.setUnitInc(SGPRDelta);
     } else {
-      Cand.RPDelta.CriticalMax = PressureChange(SRI->getVGPRPressureSet());
+      Cand.RPDelta.CriticalMax =
+        PressureChange(AMDGPU::RegisterPressureSets::VGPR_32);
       Cand.RPDelta.CriticalMax.setUnitInc(VGPRDelta);
     }
   }
@@ -145,8 +147,8 @@ void GCNMaxOccupancySchedStrategy::pickNodeFromQueue(SchedBoundary &Zone,
                                          SchedCandidate &Cand) {
   const SIRegisterInfo *SRI = static_cast<const SIRegisterInfo*>(TRI);
   ArrayRef<unsigned> Pressure = RPTracker.getRegSetPressureAtPos();
-  unsigned SGPRPressure = Pressure[SRI->getSGPRPressureSet()];
-  unsigned VGPRPressure = Pressure[SRI->getVGPRPressureSet()];
+  unsigned SGPRPressure = Pressure[AMDGPU::RegisterPressureSets::SReg_32];
+  unsigned VGPRPressure = Pressure[AMDGPU::RegisterPressureSets::VGPR_32];
   ReadyQueue &Q = Zone.Available;
   for (SUnit *SU : Q) {
 
@@ -231,33 +233,11 @@ SUnit *GCNMaxOccupancySchedStrategy::pickNodeBidirectional(bool &IsTopNode) {
   // Pick best from BotCand and TopCand.
   LLVM_DEBUG(dbgs() << "Top Cand: "; traceCandidate(TopCand);
              dbgs() << "Bot Cand: "; traceCandidate(BotCand););
-  SchedCandidate Cand;
-  if (TopCand.Reason == BotCand.Reason) {
-    Cand = BotCand;
-    GenericSchedulerBase::CandReason TopReason = TopCand.Reason;
-    TopCand.Reason = NoCand;
-    GenericScheduler::tryCandidate(Cand, TopCand, nullptr);
-    if (TopCand.Reason != NoCand) {
-      Cand.setBest(TopCand);
-    } else {
-      TopCand.Reason = TopReason;
-    }
-  } else {
-    if (TopCand.Reason == RegExcess && TopCand.RPDelta.Excess.getUnitInc() <= 0) {
-      Cand = TopCand;
-    } else if (BotCand.Reason == RegExcess && BotCand.RPDelta.Excess.getUnitInc() <= 0) {
-      Cand = BotCand;
-    } else if (TopCand.Reason == RegCritical && TopCand.RPDelta.CriticalMax.getUnitInc() <= 0) {
-      Cand = TopCand;
-    } else if (BotCand.Reason == RegCritical && BotCand.RPDelta.CriticalMax.getUnitInc() <= 0) {
-      Cand = BotCand;
-    } else {
-      if (BotCand.Reason > TopCand.Reason) {
-        Cand = TopCand;
-      } else {
-        Cand = BotCand;
-      }
-    }
+  SchedCandidate Cand = BotCand;
+  TopCand.Reason = NoCand;
+  GenericScheduler::tryCandidate(Cand, TopCand, nullptr);
+  if (TopCand.Reason != NoCand) {
+    Cand.setBest(TopCand);
   }
   LLVM_DEBUG(dbgs() << "Picking: "; traceCandidate(Cand););
 

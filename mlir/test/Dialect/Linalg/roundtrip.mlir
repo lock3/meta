@@ -222,6 +222,28 @@ func @conv_view6(%arg0: memref<?x?x?x?x?x?xf32, offset: ?, strides: [?, ?, ?, ?,
 
 // -----
 
+func @conv_padding(%arg0: memref<?x?x?x?xf32>,
+                   %arg1: memref<?x?x?x?xf32>,
+                   %arg2: memref<?x?x?x?xf32>) {
+  linalg.conv(%arg0, %arg1, %arg2) {dilations = [1, 1],
+                                    padding = dense<[[0, 1], [1, 1]]> : tensor<2x2xi64>,
+                                    strides = [1, 1]} :
+    memref<?x?x?x?xf32>, memref<?x?x?x?xf32>, memref<?x?x?x?xf32>
+  return
+}
+
+// CHECK-LABEL: func @conv_padding(
+//       CHECK:   linalg.conv(%{{.*}}, %{{.*}}, %{{.*}}) {
+//  CHECK-SAME:     dilations = [1, 1],
+//  CHECK-SAME:     padding = dense<[
+//  CHECK-SAME:                      [0, 1], [1, 1]]> : tensor<2x2xi64>,
+//  CHECK-SAME:     strides = [1, 1]} :
+//  CHECK-SAME:     memref<?x?x?x?xf32>,
+//  CHECK-SAME:     memref<?x?x?x?xf32>,
+//  CHECK-SAME:     memref<?x?x?x?xf32>
+
+// -----
+
 // CHECK-DAG: #[[strided2D:.*]] = affine_map<(d0, d1)[s0, s1] -> (d0 * s1 + s0 + d1)>
 // CHECK-DAG: #[[strided3D:.*]] = affine_map<(d0, d1, d2)[s0, s1, s2] -> (d0 * s1 + s0 + d1 * s2 + d2)>
 
@@ -342,6 +364,39 @@ func @indexed_generic_with_tensor_input_and_output(
 //  CHECK-SAME:     library_call = "some_external_function_name_1"} %{{.*}}, %{{.*}} {foo = 1 : i64}:
 //  CHECK-SAME:     tensor<?x?xvector<3x4xi4>>, tensor<?x?x?xf32> -> tensor<?x?x?xf32>
 //       CHECK:   return {{.*}} : tensor<?x?x?xf32>
+
+// -----
+
+#broadcast_access = [
+  affine_map<(i, j) -> ()>,
+  affine_map<(i, j) -> (i, j)>
+]
+
+#trait_broadcast = {
+  args_in = 1,
+  args_out = 1,
+  indexing_maps = #broadcast_access,
+  iterator_types = ["parallel", "parallel"],
+  library_call = "some_broadcast_external_fn"
+}
+
+func @generic_op_zero_rank(%arg0: tensor<f32>) -> (tensor<3x4xf32>)
+{
+  %0 = linalg.generic #trait_broadcast %arg0 {
+    ^bb(%a: f32) :
+      linalg.yield %a : f32
+  } : tensor<f32> -> tensor<3x4xf32>
+  return %0 : tensor<3x4xf32>
+}
+
+func @indexed_generic_op_zero_rank(%arg0: tensor<f32>) -> (tensor<3x4xf32>)
+{
+  %0 = linalg.indexed_generic #trait_broadcast %arg0 {
+    ^bb(%i: index, %j: index, %a: f32) :
+      linalg.yield %a : f32
+  } : tensor<f32> -> tensor<3x4xf32>
+  return %0 : tensor<3x4xf32>
+}
 
 // -----
 

@@ -28,6 +28,7 @@
 #include "mlir/Support/STLExtras.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -1217,8 +1218,13 @@ Type Parser::parseNonFunctionType() {
       return nullptr;
     }
 
+    IntegerType::SignednessSemantics signSemantics = IntegerType::Signless;
+    if (Optional<bool> signedness = getToken().getIntTypeSignedness())
+      signSemantics = *signedness ? IntegerType::Signed : IntegerType::Unsigned;
+
+    auto loc = getEncodedSourceLocation(getToken().getLoc());
     consumeToken(Token::inttype);
-    return IntegerType::get(width.getValue(), builder.getContext());
+    return IntegerType::getChecked(width.getValue(), signSemantics, loc);
   }
 
   // float-type
@@ -1636,7 +1642,7 @@ Attribute Parser::parseAttribute(Type type) {
 ///
 ///   attribute-dict ::= `{` `}`
 ///                    | `{` attribute-entry (`,` attribute-entry)* `}`
-///   attribute-entry ::= bare-id `=` attribute-value
+///   attribute-entry ::= (bare-id | string-literal) `=` attribute-value
 ///
 ParseResult
 Parser::parseAttributeDict(SmallVectorImpl<NamedAttribute> &attributes) {
@@ -1644,17 +1650,21 @@ Parser::parseAttributeDict(SmallVectorImpl<NamedAttribute> &attributes) {
     return failure();
 
   auto parseElt = [&]() -> ParseResult {
-    // We allow keywords as attribute names.
-    if (getToken().isNot(Token::bare_identifier, Token::inttype) &&
-        !getToken().isKeyword())
+    // The name of an attribute can either be a bare identifier, or a string.
+    Optional<Identifier> nameId;
+    if (getToken().is(Token::string))
+      nameId = builder.getIdentifier(getToken().getStringValue());
+    else if (getToken().isAny(Token::bare_identifier, Token::inttype) ||
+             getToken().isKeyword())
+      nameId = builder.getIdentifier(getTokenSpelling());
+    else
       return emitError("expected attribute name");
-    Identifier nameId = builder.getIdentifier(getTokenSpelling());
     consumeToken();
 
     // Try to parse the '=' for the attribute value.
     if (!consumeIf(Token::equal)) {
       // If there is no '=', we treat this as a unit attribute.
-      attributes.push_back({nameId, builder.getUnitAttr()});
+      attributes.push_back({*nameId, builder.getUnitAttr()});
       return success();
     }
 
@@ -1662,7 +1672,7 @@ Parser::parseAttributeDict(SmallVectorImpl<NamedAttribute> &attributes) {
     if (!attr)
       return failure();
 
-    attributes.push_back({nameId, attr});
+    attributes.push_back({*nameId, attr});
     return success();
   };
 
@@ -1734,22 +1744,19 @@ Attribute Parser::parseFloatAttr(Type type, bool isNegative) {
 }
 
 /// Construct a float attribute bitwise equivalent to the integer literal.
-static FloatAttr buildHexadecimalFloatLiteral(Parser *p, FloatType type,
-                                              uint64_t value) {
+static Optional<APFloat> buildHexadecimalFloatLiteral(Parser *p, FloatType type,
+                                                      uint64_t value) {
   // FIXME: bfloat is currently stored as a double internally because it doesn't
   // have valid APFloat semantics.
-  if (type.isF64() || type.isBF16()) {
-    APFloat apFloat(type.getFloatSemantics(), APInt(/*numBits=*/64, value));
-    return p->builder.getFloatAttr(type, apFloat);
-  }
+  if (type.isF64() || type.isBF16())
+    return APFloat(type.getFloatSemantics(), APInt(/*numBits=*/64, value));
 
   APInt apInt(type.getWidth(), value);
   if (apInt != value) {
     p->emitError("hexadecimal float constant out of range for type");
-    return nullptr;
+    return llvm::None;
   }
-  APFloat apFloat(type.getFloatSemantics(), apInt);
-  return p->builder.getFloatAttr(type, apFloat);
+  return APFloat(type.getFloatSemantics(), apInt);
 }
 
 /// Parse a decimal or a hexadecimal literal, which can be either an integer
@@ -1787,12 +1794,20 @@ Attribute Parser::parseDecOrHexAttr(Type type, bool isNegative) {
     }
 
     // Construct a float attribute bitwise equivalent to the integer literal.
-    return buildHexadecimalFloatLiteral(this, floatType, *val);
+    Optional<APFloat> apVal =
+        buildHexadecimalFloatLiteral(this, floatType, *val);
+    return apVal ? FloatAttr::get(floatType, *apVal) : Attribute();
   }
 
-  if (!type.isIntOrIndex())
+  if (!type.isa<IntegerType>() && !type.isa<IndexType>())
     return emitError(loc, "integer literal not valid for specified type"),
            nullptr;
+
+  if (isNegative && type.isUnsignedInteger()) {
+    emitError(loc,
+              "negative integer literal not valid for unsigned integer type");
+    return nullptr;
+  }
 
   // Parse the integer literal.
   int width = type.isIndex() ? 64 : type.getIntOrFloatBitWidth();
@@ -1807,6 +1822,24 @@ Attribute Parser::parseDecOrHexAttr(Type type, bool isNegative) {
            nullptr;
 
   return builder.getIntegerAttr(type, isNegative ? -apInt : apInt);
+}
+
+/// Parse elements values stored within a hex etring. On success, the values are
+/// stored into 'result'.
+static ParseResult parseElementAttrHexValues(Parser &parser, Token tok,
+                                             std::string &result) {
+  std::string val = tok.getStringValue();
+  if (val.size() < 2 || val[0] != '0' || val[1] != 'x')
+    return parser.emitError(tok.getLoc(),
+                            "elements hex string should start with '0x'");
+
+  StringRef hexValues = StringRef(val).drop_front(2);
+  if (!llvm::all_of(hexValues, llvm::isHexDigit))
+    return parser.emitError(tok.getLoc(),
+                            "elements hex string only contains hex digits");
+
+  result = llvm::fromHex(hexValues);
+  return success();
 }
 
 /// Parse an opaque elements attribute.
@@ -1826,31 +1859,23 @@ Attribute Parser::parseOpaqueElementsAttr(Type attrType) {
   if (!dialect)
     return (emitError("no registered dialect with namespace '" + name + "'"),
             nullptr);
-
   consumeToken(Token::string);
+
   if (parseToken(Token::comma, "expected ','"))
     return nullptr;
 
-  if (getToken().getKind() != Token::string)
-    return (emitError("opaque string should start with '0x'"), nullptr);
-
-  auto val = getToken().getStringValue();
-  if (val.size() < 2 || val[0] != '0' || val[1] != 'x')
-    return (emitError("opaque string should start with '0x'"), nullptr);
-
-  val = val.substr(2);
-  if (!llvm::all_of(val, llvm::isHexDigit))
-    return (emitError("opaque string only contains hex digits"), nullptr);
-
-  consumeToken(Token::string);
-  if (parseToken(Token::greater, "expected '>'"))
+  Token hexTok = getToken();
+  if (parseToken(Token::string, "elements hex string should start with '0x'") ||
+      parseToken(Token::greater, "expected '>'"))
     return nullptr;
-
   auto type = parseElementsLiteralType(attrType);
   if (!type)
     return nullptr;
 
-  return OpaqueElementsAttr::get(dialect, type, llvm::fromHex(val));
+  std::string data;
+  if (parseElementAttrHexValues(*this, hexTok, data))
+    return nullptr;
+  return OpaqueElementsAttr::get(dialect, type, data);
 }
 
 namespace {
@@ -1858,11 +1883,9 @@ class TensorLiteralParser {
 public:
   TensorLiteralParser(Parser &p) : p(p) {}
 
-  ParseResult parse() {
-    if (p.getToken().is(Token::l_square))
-      return parseList(shape);
-    return parseElement();
-  }
+  /// Parse the elements of a tensor literal. If 'allowHex' is true, the parser
+  /// may also parse a tensor literal that is store as a hex string.
+  ParseResult parse(bool allowHex);
 
   /// Build a dense attribute instance with the parsed elements and the given
   /// shaped type.
@@ -1894,6 +1917,9 @@ private:
   DenseElementsAttr getFloatAttr(llvm::SMLoc loc, ShapedType type,
                                  FloatType eltTy);
 
+  /// Build a Dense attribute with hex data for the given type.
+  DenseElementsAttr getHexAttr(llvm::SMLoc loc, ShapedType type);
+
   /// Parse a single element, returning failure if it isn't a valid element
   /// literal. For example:
   /// parseElement(1) -> Success, 1
@@ -1908,6 +1934,9 @@ private:
   ///   parseList([[1, [2, 3]], [4, [5]]]) -> Failure
   ParseResult parseList(SmallVectorImpl<int64_t> &dims);
 
+  /// Parse a literal that was printed as a hex string.
+  ParseResult parseHexElements();
+
   Parser &p;
 
   /// The shape inferred from the parsed elements.
@@ -1918,13 +1947,35 @@ private:
 
   /// A flag that indicates the type of elements that have been parsed.
   Optional<ElementKind> knownEltKind;
+
+  /// Storage used when parsing elements that were stored as hex values.
+  Optional<Token> hexStorage;
 };
 } // namespace
+
+/// Parse the elements of a tensor literal. If 'allowHex' is true, the parser
+/// may also parse a tensor literal that is store as a hex string.
+ParseResult TensorLiteralParser::parse(bool allowHex) {
+  // If hex is allowed, check for a string literal.
+  if (allowHex && p.getToken().is(Token::string)) {
+    hexStorage = p.getToken();
+    p.consumeToken(Token::string);
+    return success();
+  }
+  // Otherwise, parse a list or an individual element.
+  if (p.getToken().is(Token::l_square))
+    return parseList(shape);
+  return parseElement();
+}
 
 /// Build a dense attribute instance with the parsed elements and the given
 /// shaped type.
 DenseElementsAttr TensorLiteralParser::getAttr(llvm::SMLoc loc,
                                                ShapedType type) {
+  // Check to see if we parsed the literal from a hex string.
+  if (hexStorage.hasValue())
+    return getHexAttr(loc, type);
+
   // Check that the parsed storage size has the same number of elements to the
   // type, or is a known splat.
   if (!shape.empty() && getShape() != type.getShape()) {
@@ -1954,13 +2005,22 @@ DenseElementsAttr TensorLiteralParser::getIntAttr(llvm::SMLoc loc,
                                                   IntegerType eltTy) {
   std::vector<APInt> intElements;
   intElements.reserve(storage.size());
+  auto isUintType = type.getElementType().isUnsignedInteger();
   for (const auto &signAndToken : storage) {
     bool isNegative = signAndToken.first;
     const Token &token = signAndToken.second;
+    auto tokenLoc = token.getLoc();
+
+    if (isNegative && isUintType) {
+      p.emitError(tokenLoc)
+          << "expected unsigned integer elements, but parsed negative value";
+      return nullptr;
+    }
 
     // Check to see if floating point values were parsed.
     if (token.is(Token::floatliteral)) {
-      p.emitError() << "expected integer elements, but parsed floating-point";
+      p.emitError(tokenLoc)
+          << "expected integer elements, but parsed floating-point";
       return nullptr;
     }
 
@@ -1968,7 +2028,8 @@ DenseElementsAttr TensorLiteralParser::getIntAttr(llvm::SMLoc loc,
            "unexpected token type");
     if (token.isAny(Token::kw_true, Token::kw_false)) {
       if (!eltTy.isInteger(1))
-        p.emitError() << "expected i1 type for 'true' or 'false' values";
+        p.emitError(tokenLoc)
+            << "expected i1 type for 'true' or 'false' values";
       APInt apInt(eltTy.getWidth(), token.is(Token::kw_true),
                   /*isSigned=*/false);
       intElements.push_back(apInt);
@@ -1979,13 +2040,13 @@ DenseElementsAttr TensorLiteralParser::getIntAttr(llvm::SMLoc loc,
     auto val = token.getUInt64IntegerValue();
     if (!val.hasValue() || (isNegative ? (int64_t)-val.getValue() >= 0
                                        : (int64_t)val.getValue() < 0)) {
-      p.emitError(token.getLoc(),
-                  "integer constant out of range for attribute");
+      p.emitError(tokenLoc, "integer constant out of range for attribute");
       return nullptr;
     }
     APInt apInt(eltTy.getWidth(), val.getValue(), isNegative);
     if (apInt != val.getValue())
-      return (p.emitError("integer constant out of range for type"), nullptr);
+      return (p.emitError(tokenLoc, "integer constant out of range for type"),
+              nullptr);
     intElements.push_back(isNegative ? -apInt : apInt);
   }
 
@@ -1996,7 +2057,7 @@ DenseElementsAttr TensorLiteralParser::getIntAttr(llvm::SMLoc loc,
 DenseElementsAttr TensorLiteralParser::getFloatAttr(llvm::SMLoc loc,
                                                     ShapedType type,
                                                     FloatType eltTy) {
-  std::vector<Attribute> floatValues;
+  std::vector<APFloat> floatValues;
   floatValues.reserve(storage.size());
   for (const auto &signAndToken : storage) {
     bool isNegative = signAndToken.first;
@@ -2014,10 +2075,10 @@ DenseElementsAttr TensorLiteralParser::getFloatAttr(llvm::SMLoc loc,
         p.emitError("hexadecimal float constant out of range for attribute");
         return nullptr;
       }
-      FloatAttr attr = buildHexadecimalFloatLiteral(&p, eltTy, *val);
-      if (!attr)
+      Optional<APFloat> apVal = buildHexadecimalFloatLiteral(&p, eltTy, *val);
+      if (!apVal)
         return nullptr;
-      floatValues.push_back(attr);
+      floatValues.push_back(*apVal);
       continue;
     }
 
@@ -2033,10 +2094,48 @@ DenseElementsAttr TensorLiteralParser::getFloatAttr(llvm::SMLoc loc,
       p.emitError("floating point value too large for attribute");
       return nullptr;
     }
-    floatValues.push_back(FloatAttr::get(eltTy, isNegative ? -*val : *val));
+    // Treat BF16 as double because it is not supported in LLVM's APFloat.
+    APFloat apVal(isNegative ? -*val : *val);
+    if (!eltTy.isBF16() && !eltTy.isF64()) {
+      bool unused;
+      apVal.convert(eltTy.getFloatSemantics(), APFloat::rmNearestTiesToEven,
+                    &unused);
+    }
+    floatValues.push_back(apVal);
   }
 
   return DenseElementsAttr::get(type, floatValues);
+}
+
+/// Build a Dense attribute with hex data for the given type.
+DenseElementsAttr TensorLiteralParser::getHexAttr(llvm::SMLoc loc,
+                                                  ShapedType type) {
+  Type elementType = type.getElementType();
+  if (!elementType.isa<FloatType>() && !elementType.isa<IntegerType>()) {
+    p.emitError(loc) << "expected floating-point or integer element type, got "
+                     << elementType;
+    return nullptr;
+  }
+
+  std::string data;
+  if (parseElementAttrHexValues(p, hexStorage.getValue(), data))
+    return nullptr;
+
+  // Check that the size of the hex data correpsonds to the size of the type, or
+  // a splat of the type.
+  // TODO: bf16 is currently stored as a double, this should be removed when
+  // APFloat properly supports it.
+  int64_t elementWidth =
+      elementType.isBF16() ? 64 : elementType.getIntOrFloatBitWidth();
+  if (static_cast<int64_t>(data.size() * CHAR_BIT) !=
+      (type.getNumElements() * elementWidth)) {
+    p.emitError(loc) << "elements hex data size is invalid for provided type: "
+                     << type;
+    return nullptr;
+  }
+
+  return DenseElementsAttr::getFromRawBuffer(
+      type, ArrayRef<char>(data.data(), data.size()), /*isSplatBuffer=*/false);
 }
 
 ParseResult TensorLiteralParser::parseElement() {
@@ -2119,7 +2218,7 @@ Attribute Parser::parseDenseElementsAttr(Type attrType) {
 
   // Parse the literal data.
   TensorLiteralParser literalParser(*this);
-  if (literalParser.parse())
+  if (literalParser.parse(/*allowHex=*/true))
     return nullptr;
 
   if (parseToken(Token::greater, "expected '>'"))
@@ -2164,19 +2263,20 @@ Attribute Parser::parseSparseElementsAttr(Type attrType) {
   if (parseToken(Token::less, "Expected '<' after 'sparse'"))
     return nullptr;
 
-  /// Parse indices
+  /// Parse the indices. We don't allow hex values here as we may need to use
+  /// the inferred shape.
   auto indicesLoc = getToken().getLoc();
   TensorLiteralParser indiceParser(*this);
-  if (indiceParser.parse())
+  if (indiceParser.parse(/*allowHex=*/false))
     return nullptr;
 
   if (parseToken(Token::comma, "expected ','"))
     return nullptr;
 
-  /// Parse values.
+  /// Parse the values.
   auto valuesLoc = getToken().getLoc();
   TensorLiteralParser valuesParser(*this);
-  if (valuesParser.parse())
+  if (valuesParser.parse(/*allowHex=*/true))
     return nullptr;
 
   if (parseToken(Token::greater, "expected '>'"))
@@ -2972,14 +3072,16 @@ AffineParser::parseAffineMapOfSSAIds(AffineMap &map,
   };
 
   // Parse a multi-dimensional affine expression (a comma-separated list of
-  // 1-d affine expressions); the list cannot be empty. Grammar:
-  // multi-dim-affine-expr ::= `(` affine-expr (`,` affine-expr)* `)
+  // 1-d affine expressions); the list can be empty. Grammar:
+  // multi-dim-affine-expr ::= `(` `)`
+  //                         | `(` affine-expr (`,` affine-expr)* `)`
   if (parseCommaSeparatedListUntil(rightToken, parseElt,
                                    /*allowEmptyList=*/true))
     return failure();
   // Parsed a valid affine map.
   if (exprs.empty())
-    map = AffineMap::get(getContext());
+    map = AffineMap::get(numDimOperands, dimsAndSymbols.size() - numDimOperands,
+                         getContext());
   else
     map = AffineMap::get(numDimOperands, dimsAndSymbols.size() - numDimOperands,
                          exprs);
@@ -3005,13 +3107,14 @@ AffineMap AffineParser::parseAffineMapRange(unsigned numDims,
   };
 
   // Parse a multi-dimensional affine expression (a comma-separated list of
-  // 1-d affine expressions); the list cannot be empty. Grammar:
-  // multi-dim-affine-expr ::= `(` affine-expr (`,` affine-expr)* `)
+  // 1-d affine expressions). Grammar:
+  // multi-dim-affine-expr ::= `(` `)`
+  //                         | `(` affine-expr (`,` affine-expr)* `)`
   if (parseCommaSeparatedListUntil(Token::r_paren, parseElt, true))
     return AffineMap();
 
   if (exprs.empty())
-    return AffineMap::get(getContext());
+    return AffineMap::get(numDims, numSymbols, getContext());
 
   // Parsed a valid affine map.
   return AffineMap::get(numDims, numSymbols, exprs);
@@ -3205,13 +3308,11 @@ public:
   /// Parse an operation instance.
   ParseResult parseOperation();
 
-  /// Parse a single operation successor and its operand list.
-  ParseResult parseSuccessorAndUseList(Block *&dest,
-                                       SmallVectorImpl<Value> &operands);
+  /// Parse a single operation successor.
+  ParseResult parseSuccessor(Block *&dest);
 
   /// Parse a comma-separated list of operation successors in brackets.
-  ParseResult parseSuccessors(SmallVectorImpl<Block *> &destinations,
-                              SmallVectorImpl<SmallVector<Value, 4>> &operands);
+  ParseResult parseSuccessors(SmallVectorImpl<Block *> &destinations);
 
   /// Parse an operation instance that is in the generic form.
   Operation *parseGenericOperation();
@@ -3221,8 +3322,13 @@ public:
   Operation *parseGenericOperation(Block *insertBlock,
                                    Block::iterator insertPt);
 
+  /// This is the structure of a result specifier in the assembly syntax,
+  /// including the name, number of results, and location.
+  typedef std::tuple<StringRef, unsigned, SMLoc> ResultRecord;
+
   /// Parse an operation instance that is in the op-defined custom form.
-  Operation *parseCustomOperation();
+  /// resultInfo specifies information about the "%name =" specifiers.
+  Operation *parseCustomOperation(ArrayRef<ResultRecord> resultInfo);
 
   //===--------------------------------------------------------------------===//
   // Region Parsing
@@ -3627,7 +3733,7 @@ Value OperationParser::createForwardRefPlaceholder(SMLoc loc, Type type) {
 ///
 ParseResult OperationParser::parseOperation() {
   auto loc = getToken().getLoc();
-  SmallVector<std::tuple<StringRef, unsigned, SMLoc>, 1> resultIDs;
+  SmallVector<ResultRecord, 1> resultIDs;
   size_t numExpectedResults = 0;
   if (getToken().is(Token::percent_identifier)) {
     // Parse the group of result ids.
@@ -3668,7 +3774,7 @@ ParseResult OperationParser::parseOperation() {
 
   Operation *op;
   if (getToken().is(Token::bare_identifier) || getToken().isKeyword())
-    op = parseCustomOperation();
+    op = parseCustomOperation(resultIDs);
   else if (getToken().is(Token::string))
     op = parseGenericOperation();
   else
@@ -3689,7 +3795,7 @@ ParseResult OperationParser::parseOperation() {
 
     // Add definitions for each of the result groups.
     unsigned opResI = 0;
-    for (std::tuple<StringRef, unsigned, SMLoc> &resIt : resultIDs) {
+    for (ResultRecord &resIt : resultIDs) {
       for (unsigned subRes : llvm::seq<unsigned>(0, std::get<1>(resIt))) {
         if (addDefinition({std::get<0>(resIt), subRes, std::get<2>(resIt)},
                           op->getResult(opResI++)))
@@ -3701,27 +3807,16 @@ ParseResult OperationParser::parseOperation() {
   return success();
 }
 
-/// Parse a single operation successor and its operand list.
+/// Parse a single operation successor.
 ///
-///   successor ::= block-id branch-use-list?
-///   branch-use-list ::= `(` ssa-use-list ':' type-list-no-parens `)`
+///   successor ::= block-id
 ///
-ParseResult
-OperationParser::parseSuccessorAndUseList(Block *&dest,
-                                          SmallVectorImpl<Value> &operands) {
+ParseResult OperationParser::parseSuccessor(Block *&dest) {
   // Verify branch is identifier and get the matching block.
   if (!getToken().is(Token::caret_identifier))
     return emitError("expected block name");
   dest = getBlockNamed(getTokenSpelling(), getToken().getLoc());
   consumeToken();
-
-  // Handle optional arguments.
-  if (consumeIf(Token::l_paren) &&
-      (parseOptionalSSAUseAndTypeList(operands) ||
-       parseToken(Token::r_paren, "expected ')' to close argument list"))) {
-    return failure();
-  }
-
   return success();
 }
 
@@ -3729,18 +3824,15 @@ OperationParser::parseSuccessorAndUseList(Block *&dest,
 ///
 ///   successor-list ::= `[` successor (`,` successor )* `]`
 ///
-ParseResult OperationParser::parseSuccessors(
-    SmallVectorImpl<Block *> &destinations,
-    SmallVectorImpl<SmallVector<Value, 4>> &operands) {
+ParseResult
+OperationParser::parseSuccessors(SmallVectorImpl<Block *> &destinations) {
   if (parseToken(Token::l_square, "expected '['"))
     return failure();
 
-  auto parseElt = [this, &destinations, &operands]() {
+  auto parseElt = [this, &destinations] {
     Block *dest;
-    SmallVector<Value, 4> destOperands;
-    auto res = parseSuccessorAndUseList(dest, destOperands);
+    ParseResult res = parseSuccessor(dest);
     destinations.push_back(dest);
-    operands.push_back(destOperands);
     return res;
   };
   return parseCommaSeparatedListUntil(Token::r_square, parseElt,
@@ -3784,24 +3876,23 @@ Operation *OperationParser::parseGenericOperation() {
 
   // Parse the operand list.
   SmallVector<SSAUseInfo, 8> operandInfos;
-
   if (parseToken(Token::l_paren, "expected '(' to start operand list") ||
       parseOptionalSSAUseList(operandInfos) ||
       parseToken(Token::r_paren, "expected ')' to end operand list")) {
     return nullptr;
   }
 
-  // Parse the successor list but don't add successors to the result yet to
-  // avoid messing up with the argument order.
-  SmallVector<Block *, 2> successors;
-  SmallVector<SmallVector<Value, 4>, 2> successorOperands;
+  // Parse the successor list.
   if (getToken().is(Token::l_square)) {
     // Check if the operation is a known terminator.
     const AbstractOperation *abstractOp = result.name.getAbstractOperation();
     if (abstractOp && !abstractOp->hasProperty(OperationProperty::Terminator))
       return emitError("successors in non-terminator"), nullptr;
-    if (parseSuccessors(successors, successorOperands))
+
+    SmallVector<Block *, 2> successors;
+    if (parseSuccessors(successors))
       return nullptr;
+    result.addSuccessors(successors);
   }
 
   // Parse the region list.
@@ -3852,13 +3943,6 @@ Operation *OperationParser::parseGenericOperation() {
       return nullptr;
   }
 
-  // Add the successors, and their operands after the proper operands.
-  for (auto succ : llvm::zip(successors, successorOperands)) {
-    Block *successor = std::get<0>(succ);
-    const SmallVector<Value, 4> &operands = std::get<1>(succ);
-    result.addSuccessor(successor, operands);
-  }
-
   // Parse a location if one is present.
   if (parseOptionalTrailingLocation(result.location))
     return nullptr;
@@ -3876,9 +3960,12 @@ Operation *OperationParser::parseGenericOperation(Block *insertBlock,
 namespace {
 class CustomOpAsmParser : public OpAsmParser {
 public:
-  CustomOpAsmParser(SMLoc nameLoc, const AbstractOperation *opDefinition,
+  CustomOpAsmParser(SMLoc nameLoc,
+                    ArrayRef<OperationParser::ResultRecord> resultIDs,
+                    const AbstractOperation *opDefinition,
                     OperationParser &parser)
-      : nameLoc(nameLoc), opDefinition(opDefinition), parser(parser) {}
+      : nameLoc(nameLoc), resultIDs(resultIDs), opDefinition(opDefinition),
+        parser(parser) {}
 
   /// Parse an instance of the operation described by 'opDefinition' into the
   /// provided operation state.
@@ -3912,6 +3999,41 @@ public:
   }
 
   Builder &getBuilder() const override { return parser.builder; }
+
+  /// Return the name of the specified result in the specified syntax, as well
+  /// as the subelement in the name.  For example, in this operation:
+  ///
+  ///  %x, %y:2, %z = foo.op
+  ///
+  ///    getResultName(0) == {"x", 0 }
+  ///    getResultName(1) == {"y", 0 }
+  ///    getResultName(2) == {"y", 1 }
+  ///    getResultName(3) == {"z", 0 }
+  std::pair<StringRef, unsigned>
+  getResultName(unsigned resultNo) const override {
+    // Scan for the resultID that contains this result number.
+    for (unsigned nameID = 0, e = resultIDs.size(); nameID != e; ++nameID) {
+      const auto &entry = resultIDs[nameID];
+      if (resultNo < std::get<1>(entry)) {
+        // Don't pass on the leading %.
+        StringRef name = std::get<0>(entry).drop_front();
+        return {name, resultNo};
+      }
+      resultNo -= std::get<1>(entry);
+    }
+
+    // Invalid result number.
+    return {"", ~0U};
+  }
+
+  /// Return the number of declared SSA results.  This returns 4 for the foo.op
+  /// example in the comment for getResultName.
+  size_t getNumResults() const override {
+    size_t count = 0;
+    for (auto &entry : resultIDs)
+      count += std::get<1>(entry);
+    return count;
+  }
 
   llvm::SMLoc getNameLoc() const override { return nameLoc; }
 
@@ -4325,11 +4447,31 @@ public:
   // Successor Parsing
   //===--------------------------------------------------------------------===//
 
+  /// Parse a single operation successor.
+  ParseResult parseSuccessor(Block *&dest) override {
+    return parser.parseSuccessor(dest);
+  }
+
+  /// Parse an optional operation successor and its operand list.
+  OptionalParseResult parseOptionalSuccessor(Block *&dest) override {
+    if (parser.getToken().isNot(Token::caret_identifier))
+      return llvm::None;
+    return parseSuccessor(dest);
+  }
+
   /// Parse a single operation successor and its operand list.
   ParseResult
   parseSuccessorAndUseList(Block *&dest,
                            SmallVectorImpl<Value> &operands) override {
-    return parser.parseSuccessorAndUseList(dest, operands);
+    if (parseSuccessor(dest))
+      return failure();
+
+    // Handle optional arguments.
+    if (succeeded(parseOptionalLParen()) &&
+        (parser.parseOptionalSSAUseAndTypeList(operands) || parseRParen())) {
+      return failure();
+    }
+    return success();
   }
 
   //===--------------------------------------------------------------------===//
@@ -4339,6 +4481,13 @@ public:
   /// Parse a type.
   ParseResult parseType(Type &result) override {
     return failure(!(result = parser.parseType()));
+  }
+
+  /// Parse an arrow followed by a type list.
+  ParseResult parseArrowTypeList(SmallVectorImpl<Type> &result) override {
+    if (parseArrow() || parser.parseFunctionResultTypes(result))
+      return failure();
+    return success();
   }
 
   /// Parse an optional arrow followed by a type list.
@@ -4371,9 +4520,31 @@ public:
     return parser.parseTypeListNoParens(result);
   }
 
+  /// Parse a list of assignments of the form
+  /// (%x1 = %y1 : type1, %x2 = %y2 : type2, ...).
+  /// The list must contain at least one entry
+  ParseResult parseAssignmentList(SmallVectorImpl<OperandType> &lhs,
+                                  SmallVectorImpl<OperandType> &rhs) override {
+    auto parseElt = [&]() -> ParseResult {
+      OperandType regionArg, operand;
+      if (parseRegionArgument(regionArg) || parseEqual() ||
+          parseOperand(operand))
+        return failure();
+      lhs.push_back(regionArg);
+      rhs.push_back(operand);
+      return success();
+    };
+    if (parseLParen())
+      return failure();
+    return parser.parseCommaSeparatedListUntil(Token::r_paren, parseElt);
+  }
+
 private:
   /// The source location of the operation name.
   SMLoc nameLoc;
+
+  /// Information about the result name specifiers.
+  ArrayRef<OperationParser::ResultRecord> resultIDs;
 
   /// The abstract information of the operation.
   const AbstractOperation *opDefinition;
@@ -4386,7 +4557,8 @@ private:
 };
 } // end anonymous namespace.
 
-Operation *OperationParser::parseCustomOperation() {
+Operation *
+OperationParser::parseCustomOperation(ArrayRef<ResultRecord> resultIDs) {
   auto opLoc = getToken().getLoc();
   auto opName = getTokenSpelling();
 
@@ -4419,7 +4591,7 @@ Operation *OperationParser::parseCustomOperation() {
   // Have the op implementation take a crack and parsing this.
   OperationState opState(srcLocation, opDefinition->name);
   CleanupOpStateRegions guard{opState};
-  CustomOpAsmParser opAsmParser(opLoc, opDefinition, *this);
+  CustomOpAsmParser opAsmParser(opLoc, resultIDs, opDefinition, *this);
   if (opAsmParser.parseOperation(opState))
     return nullptr;
 

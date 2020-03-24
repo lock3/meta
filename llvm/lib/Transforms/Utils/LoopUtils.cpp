@@ -46,6 +46,11 @@
 using namespace llvm;
 using namespace llvm::PatternMatch;
 
+static cl::opt<bool> ForceReductionIntrinsic(
+    "force-reduction-intrinsics", cl::Hidden,
+    cl::desc("Force creating reduction intrinsics for testing."),
+    cl::init(false));
+
 #define DEBUG_TYPE "loop-utils"
 
 static const char *LLVMLoopDisableNonforced = "llvm.loop.disable_nonforced";
@@ -824,7 +829,7 @@ bool llvm::hasIterationCountInvariantInParent(Loop *InnerLoop,
   return true;
 }
 
-Value *llvm::createMinMaxOp(IRBuilder<> &Builder,
+Value *llvm::createMinMaxOp(IRBuilderBase &Builder,
                             RecurrenceDescriptor::MinMaxRecurrenceKind RK,
                             Value *Left, Value *Right) {
   CmpInst::Predicate P = CmpInst::ICMP_NE;
@@ -853,7 +858,7 @@ Value *llvm::createMinMaxOp(IRBuilder<> &Builder,
 
   // We only match FP sequences that are 'fast', so we can unconditionally
   // set it on any generated instructions.
-  IRBuilder<>::FastMathFlagGuard FMFG(Builder);
+  IRBuilderBase::FastMathFlagGuard FMFG(Builder);
   FastMathFlags FMF;
   FMF.setFast();
   Builder.setFastMathFlags(FMF);
@@ -871,7 +876,7 @@ Value *llvm::createMinMaxOp(IRBuilder<> &Builder,
 
 // Helper to generate an ordered reduction.
 Value *
-llvm::getOrderedReduction(IRBuilder<> &Builder, Value *Acc, Value *Src,
+llvm::getOrderedReduction(IRBuilderBase &Builder, Value *Acc, Value *Src,
                           unsigned Op,
                           RecurrenceDescriptor::MinMaxRecurrenceKind MinMaxKind,
                           ArrayRef<Value *> RedOps) {
@@ -902,7 +907,7 @@ llvm::getOrderedReduction(IRBuilder<> &Builder, Value *Acc, Value *Src,
 
 // Helper to generate a log2 shuffle reduction.
 Value *
-llvm::getShuffleReduction(IRBuilder<> &Builder, Value *Src, unsigned Op,
+llvm::getShuffleReduction(IRBuilderBase &Builder, Value *Src, unsigned Op,
                           RecurrenceDescriptor::MinMaxRecurrenceKind MinMaxKind,
                           ArrayRef<Value *> RedOps) {
   unsigned VF = Src->getType()->getVectorNumElements();
@@ -950,7 +955,7 @@ llvm::getShuffleReduction(IRBuilder<> &Builder, Value *Src, unsigned Op,
 /// Create a simple vector reduction specified by an opcode and some
 /// flags (if generating min/max reductions).
 Value *llvm::createSimpleTargetReduction(
-    IRBuilder<> &Builder, const TargetTransformInfo *TTI, unsigned Opcode,
+    IRBuilderBase &Builder, const TargetTransformInfo *TTI, unsigned Opcode,
     Value *Src, TargetTransformInfo::ReductionFlags Flags,
     ArrayRef<Value *> RedOps) {
   assert(isa<VectorType>(Src->getType()) && "Type must be a vector");
@@ -1015,13 +1020,14 @@ Value *llvm::createSimpleTargetReduction(
     llvm_unreachable("Unhandled opcode");
     break;
   }
-  if (TTI->useReductionIntrinsic(Opcode, Src->getType(), Flags))
+  if (ForceReductionIntrinsic ||
+      TTI->useReductionIntrinsic(Opcode, Src->getType(), Flags))
     return BuildFunc();
   return getShuffleReduction(Builder, Src, Opcode, MinMaxKind, RedOps);
 }
 
 /// Create a vector reduction using a given recurrence descriptor.
-Value *llvm::createTargetReduction(IRBuilder<> &B,
+Value *llvm::createTargetReduction(IRBuilderBase &B,
                                    const TargetTransformInfo *TTI,
                                    RecurrenceDescriptor &Desc, Value *Src,
                                    bool NoNaN) {
@@ -1033,7 +1039,7 @@ Value *llvm::createTargetReduction(IRBuilder<> &B,
 
   // All ops in the reduction inherit fast-math-flags from the recurrence
   // descriptor.
-  IRBuilder<>::FastMathFlagGuard FMFGuard(B);
+  IRBuilderBase::FastMathFlagGuard FMFGuard(B);
   B.setFastMathFlags(Desc.getFastMathFlags());
 
   switch (RecKind) {
@@ -1267,10 +1273,12 @@ static bool canLoopBeDeleted(Loop *L, SmallVector<RewritePhi, 8> &RewritePhiSet)
   return true;
 }
 
-int llvm::rewriteLoopExitValues(Loop *L, LoopInfo *LI,
-    TargetLibraryInfo *TLI, ScalarEvolution *SE, SCEVExpander &Rewriter,
-    DominatorTree *DT, ReplaceExitVal ReplaceExitValue,
-    SmallVector<WeakTrackingVH, 16> &DeadInsts) {
+int llvm::rewriteLoopExitValues(Loop *L, LoopInfo *LI, TargetLibraryInfo *TLI,
+                                ScalarEvolution *SE,
+                                const TargetTransformInfo *TTI,
+                                SCEVExpander &Rewriter, DominatorTree *DT,
+                                ReplaceExitVal ReplaceExitValue,
+                                SmallVector<WeakTrackingVH, 16> &DeadInsts) {
   // Check a pre-condition.
   assert(L->isRecursivelyLCSSAForm(*DT, *LI) &&
          "Indvars did not preserve LCSSA!");
@@ -1351,15 +1359,16 @@ int llvm::rewriteLoopExitValues(Loop *L, LoopInfo *LI,
 
         // Computing the value outside of the loop brings no benefit if it is
         // definitely used inside the loop in a way which can not be optimized
-        // away. Avoid doing so unless we know we have a value which computes
-        // the ExitValue already. TODO: This should be merged into SCEV
-        // expander to leverage its knowledge of existing expressions.
-        if (ReplaceExitValue != AlwaysRepl &&
-            !isa<SCEVConstant>(ExitValue) && !isa<SCEVUnknown>(ExitValue) &&
+        // away. Avoid doing so unless either we know we have a value
+        // which computes the ExitValue already, or it is cheap to do so.
+        // TODO: This should be merged into SCEV expander to leverage
+        // its knowledge of existing expressions.
+        bool HighCost = Rewriter.isHighCostExpansion(
+            ExitValue, L, SCEVCheapExpansionBudget, TTI, Inst);
+        if (ReplaceExitValue != AlwaysRepl && HighCost &&
             hasHardUserWithinLoop(L, Inst))
           continue;
 
-        bool HighCost = Rewriter.isHighCostExpansion(ExitValue, L, Inst);
         Value *ExitVal = Rewriter.expandCodeFor(ExitValue, PN->getType(), Inst);
 
         LLVM_DEBUG(dbgs() << "rewriteLoopExitValues: AfterLoopVal = "
@@ -1495,4 +1504,28 @@ llvm::appendLoopsToWorklist<Loop &>(Loop &L,
 void llvm::appendLoopsToWorklist(LoopInfo &LI,
                                  SmallPriorityWorklist<Loop *, 4> &Worklist) {
   appendReversedLoopsToWorklist(LI, Worklist);
+}
+
+Loop *llvm::cloneLoop(Loop *L, Loop *PL, ValueToValueMapTy &VM,
+                      LoopInfo *LI, LPPassManager *LPM) {
+  Loop &New = *LI->AllocateLoop();
+  if (PL)
+    PL->addChildLoop(&New);
+  else
+    LI->addTopLevelLoop(&New);
+
+  if (LPM)
+    LPM->addLoop(New);
+
+  // Add all of the blocks in L to the new loop.
+  for (Loop::block_iterator I = L->block_begin(), E = L->block_end();
+       I != E; ++I)
+    if (LI->getLoopFor(*I) == L)
+      New.addBasicBlockToLoop(cast<BasicBlock>(VM[*I]), *LI);
+
+  // Add all of the subloops to the new loop.
+  for (Loop *I : *L)
+    cloneLoop(I, &New, VM, LI, LPM);
+
+  return &New;
 }

@@ -1687,7 +1687,7 @@ void X86_32ABIInfo::runVectorCallFirstPass(CGFunctionInfo &FI, CCState &State) c
         isHomogeneousAggregate(Ty, Base, NumElts)) {
       if (State.FreeSSERegs >= NumElts) {
         State.FreeSSERegs -= NumElts;
-        Args[I].info = ABIArgInfo::getDirect();
+        Args[I].info = ABIArgInfo::getDirectInReg();
         State.IsPreassigned.set(I);
       }
     }
@@ -8091,6 +8091,10 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
   if ((IsOpenCLKernel || IsHIPKernel) &&
       (M.getTriple().getOS() == llvm::Triple::AMDHSA))
     F->addFnAttr("amdgpu-implicitarg-num-bytes", "56");
+
+  if (IsHIPKernel)
+    F->addFnAttr("uniform-work-group-size", "true");
+
 
   const auto *FlatWGS = FD->getAttr<AMDGPUFlatWorkGroupSizeAttr>();
   if (ReqdWGS || FlatWGS) {

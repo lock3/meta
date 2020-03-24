@@ -486,6 +486,18 @@ func @fpext(%arg0 : f16, %arg1 : f32) {
 }
 
 // Checking conversion of integer types to floating point.
+// CHECK-LABEL: @fpext
+func @fpext_vector(%arg0 : vector<2xf16>, %arg1 : vector<2xf32>) {
+// CHECK-NEXT: = llvm.fpext {{.*}} : !llvm<"<2 x half>"> to !llvm<"<2 x float>">
+  %0 = fpext %arg0: vector<2xf16> to vector<2xf32>
+// CHECK-NEXT: = llvm.fpext {{.*}} : !llvm<"<2 x half>"> to !llvm<"<2 x double>">
+  %1 = fpext %arg0: vector<2xf16> to vector<2xf64>
+// CHECK-NEXT: = llvm.fpext {{.*}} : !llvm<"<2 x float>"> to !llvm<"<2 x double>">
+  %2 = fpext %arg1: vector<2xf32> to vector<2xf64>
+  return
+}
+
+// Checking conversion of integer types to floating point.
 // CHECK-LABEL: @fptrunc
 func @fptrunc(%arg0 : f32, %arg1 : f64) {
 // CHECK-NEXT: = llvm.fptrunc {{.*}} : !llvm.float to !llvm.half
@@ -494,6 +506,18 @@ func @fptrunc(%arg0 : f32, %arg1 : f64) {
   %1 = fptrunc %arg1: f64 to f16
 // CHECK-NEXT: = llvm.fptrunc {{.*}} : !llvm.double to !llvm.float
   %2 = fptrunc %arg1: f64 to f32
+  return
+}
+
+// Checking conversion of integer types to floating point.
+// CHECK-LABEL: @fptrunc
+func @fptrunc_vector(%arg0 : vector<2xf32>, %arg1 : vector<2xf64>) {
+// CHECK-NEXT: = llvm.fptrunc {{.*}} : !llvm<"<2 x float>"> to !llvm<"<2 x half>">
+  %0 = fptrunc %arg0: vector<2xf32> to vector<2xf16>
+// CHECK-NEXT: = llvm.fptrunc {{.*}} : !llvm<"<2 x double>"> to !llvm<"<2 x half>">
+  %1 = fptrunc %arg1: vector<2xf64> to vector<2xf16>
+// CHECK-NEXT: = llvm.fptrunc {{.*}} : !llvm<"<2 x double>"> to !llvm<"<2 x float>">
+  %2 = fptrunc %arg1: vector<2xf64> to vector<2xf32>
   return
 }
 
@@ -529,19 +553,6 @@ func @dfs_block_order(%arg0: i32) -> (i32) {
 ^bb2:
 // CHECK-NEXT:  llvm.br ^bb1
   br ^bb1
-}
-// CHECK-LABEL: func @cond_br_same_target(%arg0: !llvm.i1, %arg1: !llvm.i32, %arg2: !llvm.i32)
-func @cond_br_same_target(%arg0: i1, %arg1: i32, %arg2 : i32) -> (i32) {
-// CHECK-NEXT:  llvm.cond_br %arg0, ^[[origBlock:bb[0-9]+]](%arg1 : !llvm.i32), ^[[dummyBlock:bb[0-9]+]]
-  cond_br %arg0, ^bb1(%arg1 : i32), ^bb1(%arg2 : i32)
-
-// CHECK:      ^[[origBlock]](%0: !llvm.i32):
-// CHECK-NEXT:  llvm.return %0 : !llvm.i32
-^bb1(%0 : i32):
-  return %0 : i32
-
-// CHECK:      ^[[dummyBlock]]:
-// CHECK-NEXT:  llvm.br ^[[origBlock]](%arg2 : !llvm.i32)
 }
 
 // CHECK-LABEL: func @fcmp(%arg0: !llvm.float, %arg1: !llvm.float) {
@@ -854,4 +865,95 @@ module {
 // CHECK: llvm.func @tanh(!llvm.double) -> !llvm.double
 // CHECK: llvm.func @tanhf(!llvm.float) -> !llvm.float
 // CHECK-LABEL: func @check_tanh_func_added_only_once_to_symbol_table
+}
+
+// -----
+
+// CHECK-LABEL: func @atomic_rmw
+func @atomic_rmw(%I : memref<10xi32>, %ival : i32, %F : memref<10xf32>, %fval : f32, %i : index) {
+  atomic_rmw "assign" %fval, %F[%i] : (f32, memref<10xf32>) -> f32
+  // CHECK: llvm.atomicrmw xchg %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "addi" %ival, %I[%i] : (i32, memref<10xi32>) -> i32
+  // CHECK: llvm.atomicrmw add %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "maxs" %ival, %I[%i] : (i32, memref<10xi32>) -> i32
+  // CHECK: llvm.atomicrmw max %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "mins" %ival, %I[%i] : (i32, memref<10xi32>) -> i32
+  // CHECK: llvm.atomicrmw min %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "maxu" %ival, %I[%i] : (i32, memref<10xi32>) -> i32
+  // CHECK: llvm.atomicrmw umax %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "minu" %ival, %I[%i] : (i32, memref<10xi32>) -> i32
+  // CHECK: llvm.atomicrmw umin %{{.*}}, %{{.*}} acq_rel
+  atomic_rmw "addf" %fval, %F[%i] : (f32, memref<10xf32>) -> f32
+  // CHECK: llvm.atomicrmw fadd %{{.*}}, %{{.*}} acq_rel
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @cmpxchg
+func @cmpxchg(%F : memref<10xf32>, %fval : f32, %i : index) -> f32 {
+  %x = atomic_rmw "maxf" %fval, %F[%i] : (f32, memref<10xf32>) -> f32
+  // CHECK: %[[init:.*]] = llvm.load %{{.*}} : !llvm<"float*">
+  // CHECK-NEXT: llvm.br ^bb1(%[[init]] : !llvm.float)
+  // CHECK-NEXT: ^bb1(%[[loaded:.*]]: !llvm.float):
+  // CHECK-NEXT: %[[cmp:.*]] = llvm.fcmp "ogt" %[[loaded]], %{{.*}} : !llvm.float
+  // CHECK-NEXT: %[[max:.*]] = llvm.select %[[cmp]], %[[loaded]], %{{.*}} : !llvm.i1, !llvm.float
+  // CHECK-NEXT: %[[pair:.*]] = llvm.cmpxchg %{{.*}}, %[[loaded]], %[[max]] acq_rel monotonic : !llvm.float
+  // CHECK-NEXT: %[[new:.*]] = llvm.extractvalue %[[pair]][0] : !llvm<"{ float, i1 }">
+  // CHECK-NEXT: %[[ok:.*]] = llvm.extractvalue %[[pair]][1] : !llvm<"{ float, i1 }">
+  // CHECK-NEXT: llvm.cond_br %[[ok]], ^bb2, ^bb1(%[[new]] : !llvm.float)
+  // CHECK-NEXT: ^bb2:
+  return %x : f32
+  // CHECK-NEXT: llvm.return %[[new]]
+}
+
+// -----
+
+// CHECK-LABEL: func @assume_alignment
+func @assume_alignment(%0 : memref<4x4xf16>) {
+  // CHECK: %[[PTR:.*]] = llvm.extractvalue %[[MEMREF:.*]][1] : !llvm<"{ half*, half*, i64, [2 x i64], [2 x i64] }">
+  // CHECK-NEXT: %[[ZERO:.*]] = llvm.mlir.constant(0 : index) : !llvm.i64
+  // CHECK-NEXT: %[[MASK:.*]] = llvm.mlir.constant(15 : index) : !llvm.i64
+  // CHECK-NEXT: %[[INT:.*]] = llvm.ptrtoint %[[PTR]] : !llvm<"half*"> to !llvm.i64
+  // CHECK-NEXT: %[[MASKED_PTR:.*]] = llvm.and %[[INT]], %[[MASK:.*]] : !llvm.i64
+  // CHECK-NEXT: %[[CONDITION:.*]] = llvm.icmp "eq" %[[MASKED_PTR]], %[[ZERO]] : !llvm.i64
+  // CHECK-NEXT: "llvm.intr.assume"(%[[CONDITION]]) : (!llvm.i1) -> ()
+  assume_alignment %0, 16 : memref<4x4xf16>
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @mlir_cast_to_llvm
+// CHECK-SAME: %[[ARG:.*]]:
+func @mlir_cast_to_llvm(%0 : vector<2xf16>) -> !llvm<"<2 x half>"> {
+  %1 = llvm.mlir.cast %0 : vector<2xf16> to !llvm<"<2 x half>">
+  // CHECK-NEXT: llvm.return %[[ARG]]
+  return %1 : !llvm<"<2 x half>">
+}
+
+// CHECK-LABEL: func @mlir_cast_from_llvm
+// CHECK-SAME: %[[ARG:.*]]:
+func @mlir_cast_from_llvm(%0 : !llvm<"<2 x half>">) -> vector<2xf16> {
+  %1 = llvm.mlir.cast %0 : !llvm<"<2 x half>"> to vector<2xf16>
+  // CHECK-NEXT: llvm.return %[[ARG]]
+  return %1 : vector<2xf16>
+}
+
+// -----
+
+// CHECK-LABEL: func @mlir_cast_to_llvm
+// CHECK-SAME: %[[ARG:.*]]:
+func @mlir_cast_to_llvm(%0 : f16) -> !llvm.half {
+  %1 = llvm.mlir.cast %0 : f16 to !llvm.half
+  // CHECK-NEXT: llvm.return %[[ARG]]
+  return %1 : !llvm.half
+}
+
+// CHECK-LABEL: func @mlir_cast_from_llvm
+// CHECK-SAME: %[[ARG:.*]]:
+func @mlir_cast_from_llvm(%0 : !llvm.half) -> f16 {
+  %1 = llvm.mlir.cast %0 : !llvm.half to f16
+  // CHECK-NEXT: llvm.return %[[ARG]]
+  return %1 : f16
 }

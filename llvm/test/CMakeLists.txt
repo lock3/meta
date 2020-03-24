@@ -1,12 +1,12 @@
 llvm_canonicalize_cmake_booleans(
   BUILD_SHARED_LIBS
   HAVE_LIBXAR
+  HAVE_LIBZ
   HAVE_OCAMLOPT
   HAVE_OCAML_OUNIT
   LLVM_ENABLE_DIA_SDK
   LLVM_ENABLE_FFI
   LLVM_ENABLE_THREADS
-  LLVM_ENABLE_ZLIB
   LLVM_INCLUDE_GO_TESTS
   LLVM_LIBXML2_ENABLED
   LLVM_LINK_LLVM_DYLIB
@@ -64,6 +64,7 @@ set(LLVM_TEST_DEPENDS
           llvm-elfabi
           llvm-exegesis
           llvm-extract
+          llvm-gsymutil
           llvm-isel-fuzzer
           llvm-ifs
           llvm-install-name-tool
@@ -120,6 +121,10 @@ endif( LLVM_USE_INTEL_JITEVENTS )
 
 if(TARGET LLVMgold)
   set(LLVM_TEST_DEPENDS ${LLVM_TEST_DEPENDS} LLVMgold)
+endif()
+
+if(TARGET llvm-go)
+  set(LLVM_TEST_DEPENDS ${LLVM_TEST_DEPENDS} llvm-go)
 endif()
 
 if(TARGET LTO)
