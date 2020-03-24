@@ -4509,6 +4509,9 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   Result.Diag = &Notes;
   Result.InjectionEffects = &Effects;
 
+  EnterExpressionEvaluationContext ConstantEvaluated(
+      Sema, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
   Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
   bool Folded = Call->EvaluateAsRValue(Result, EvalCtx);
   if (!Folded) {
