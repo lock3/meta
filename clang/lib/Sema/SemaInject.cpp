@@ -3174,11 +3174,6 @@ CXXFragmentDecl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment,
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                       SmallVectorImpl<Expr *> &Captures) {
-  if (!isConstantEvaluated()) {
-    Diag(Loc, diag::err_requires_manifest_constevaluation) << 1;
-    return ExprError();
-  }
-
   return BuildCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
@@ -3204,9 +3199,6 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
                                         CXXFragmentDecl *FD,
                                         CXXReflectExpr *Reflection,
                                         SmallVectorImpl<Expr *> &Captures) {
-  assert(S.isConstantEvaluated() &&
-         "Fragments should only appear in constant evaluated contexts");
-
   ASTContext &Context = S.Context;
   DeclContext *CurContext = S.CurContext;
 
@@ -3456,7 +3448,7 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *Operand) {
   if (!isConstantEvaluated()) {
-    Diag(Loc, diag::err_requires_manifest_constevaluation) << 2;
+    Diag(Loc, diag::err_requires_manifest_constevaluation) << 1;
     return StmtError();
   }
 

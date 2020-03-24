@@ -10490,7 +10490,7 @@ def note_await_ready_no_bool_conversion : Note<
 
 let CategoryName = "Injection Issue" in {
 def err_requires_manifest_constevaluation : Error<
-  "%select{meta type variables|fragments|injection statements}0 may only appear in manifestly constant evaluated contexts">;
+  "%select{meta type variables|injection statements}0 may only appear in manifestly constant evaluated contexts">;
 def err_invalid_injection_operand : Error<
   "invalid operand of type %0; expected a reflection or fragment">;
 def err_invalid_injection : Error<
