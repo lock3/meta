@@ -128,8 +128,8 @@ public:
   void VisitConstantExpr(ConstantExpr *E) {
     if (E->hasAPValueResult()) {
       // Create a temporary for the value and store the constant.
-      llvm::Constant *Const = CGF.EmitConstantValue(
-          E->getAPValueResult(), E->getType());
+      llvm::Constant *Const = ConstantEmitter(CGF).emitAbstract(
+          E->getLocation(), E->getAPValueResult(), E->getType());
       Address Addr = CGF.CreateMemTemp(E->getType());
       CGF.InitTempAlloca(Addr, Const);
       RValue RV = RValue::getAggregate(Addr);

@@ -1299,7 +1299,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
 
     if (CE->hasAPValueResult()) {
       QualType T = getContext().getPointerType(CE->getType());
-      llvm::Constant *C = EmitConstantValue(CE->getAPValueResult(), T);
+      llvm::Constant *C = ConstantEmitter(*this).emitAbstract(
+          CE->getLocation(), CE->getAPValueResult(), T);
       ConstantAddress Addr(C, getContext().getTypeAlignInChars(T));
       LValueBaseInfo BI;
       return LValue::MakeAddr(Addr, T, getContext(), BI, TBAAAccessInfo());

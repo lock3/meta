@@ -1044,6 +1044,9 @@ public:
   static ResultStorageKind getStorageKind(const Type *T,
                                           const ASTContext &Context);
 
+  SourceLocation getLocation() const {
+    return getBeginLoc();
+  }
   SourceLocation getBeginLoc() const LLVM_READONLY {
     return SubExpr->getBeginLoc();
   }
