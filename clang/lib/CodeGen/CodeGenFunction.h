@@ -2289,8 +2289,6 @@ public:
                             TBAAAccessInfo *TBAAInfo = nullptr);
   LValue EmitLoadOfPointerLValue(Address Ptr, const PointerType *PtrTy);
 
-  llvm::Constant *EmitConstantValue(const APValue &Value, QualType DestType);
-
   /// CreateTempAlloca - This creates an alloca and inserts it into the entry
   /// block if \p ArraySize is nullptr, otherwise inserts it at the current
   /// insertion point of the builder. The caller is responsible for setting an

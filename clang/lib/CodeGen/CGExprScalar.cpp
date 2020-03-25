@@ -435,7 +435,8 @@ public:
   Value *VisitConstantExpr(ConstantExpr *E) {
     if (E->hasAPValueResult()) {
       assert(!E->getType()->isVoidType());
-      return CGF.EmitConstantValue(E->getAPValueResult(), E->getType());
+      return ConstantEmitter(CGF).emitAbstract(
+          E->getLocation(), E->getAPValueResult(), E->getType());
     } else {
       return Visit(E->getSubExpr());
     }

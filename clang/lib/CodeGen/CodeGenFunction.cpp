@@ -2531,8 +2531,3 @@ llvm::DebugLoc CodeGenFunction::SourceLocToDebugLoc(SourceLocation Location) {
 
   return llvm::DebugLoc();
 }
-
-llvm::Constant *CodeGenFunction::EmitConstantValue(const APValue& Value,
-                                                   QualType DestType) {
-  return CGM.EmitConstantValue(Value, DestType, this);
-}
