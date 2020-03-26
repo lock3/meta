@@ -10506,7 +10506,7 @@ def err_modify_constexpr_field : Error<
   "cannot make a non-static data member constexpr">;
 def err_invalid_type_transformer_operand : Error<
   "invalid operand of type %0; expected a reflection">;
-} // end of reflection issue category
+} // end of injection issue category
 
 let CategoryName = "Documentation Issue" in {
 def warn_not_a_doxygen_trailing_member_comment : Warning<
