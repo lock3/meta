@@ -10508,6 +10508,14 @@ def err_invalid_type_transformer_operand : Error<
   "invalid operand of type %0; expected a reflection">;
 } // end of injection issue category
 
+let CategoryName = "Non-Standard Warning" in {
+def warn_skipping_consteval : Warning<
+ "The standard madates immediate functions be evaluated, even when part of an unevaluated operand. "
+ "This evaluation has failed. However, we are ignoring the result of this evaluation. "
+ "If you have a motivating use case, that's triggering this warning, please contact us.">,
+ InGroup<FutureCompat>;
+} // end of non-standard warning category
+
 let CategoryName = "Documentation Issue" in {
 def warn_not_a_doxygen_trailing_member_comment : Warning<
   "not a Doxygen trailing comment">, InGroup<Documentation>, DefaultIgnore;
