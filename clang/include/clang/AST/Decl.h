@@ -939,9 +939,6 @@ protected:
     /// Whether this parameter is an ObjC method parameter or not.
     unsigned IsObjCMethodParam : 1;
 
-    /// The parameter passing mode.
-    unsigned ParmPassing : 3;
-
     /// If IsObjCMethodParam, a Decl::ObjCDeclQualifier.
     /// Otherwise, the number of function parameter scopes enclosing
     /// the function parameter scope in which this parameter was
@@ -1657,14 +1654,6 @@ public:
 
   bool isObjCMethodParameter() const {
     return ParmVarDeclBits.IsObjCMethodParam;
-  }
-
-  ParameterPassingKind getParameterPassing() const {
-    return (ParameterPassingKind)ParmVarDeclBits.ParmPassing;
-  }
-
-  void setParameterPassing(ParameterPassingKind PPK) {
-    ParmVarDeclBits.ParmPassing = PPK;
   }
 
   unsigned getFunctionScopeDepth() const {

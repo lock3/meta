@@ -13449,31 +13449,34 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
 }
 
 static QualType AdjustTypeForInParameter(Sema &SemaRef, QualType T) {
-  if (T->isScalarType()) {
-    // Scalars are always copied in registers.
-    return SemaRef.Context.getConstType(T);
-  } 
+  // if (T->isScalarType()) {
+  //   // Scalars are always copied in registers.
+  //   return SemaRef.Context.getConstType(T);
+  // } 
 
-  if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
-    // Classes may be passed in registers.
-    T = SemaRef.Context.getConstType(T);
-    if (!Class->canPassInRegisters())
-      T = SemaRef.Context.getLValueReferenceType(T);
-    return T;
-  }
+  // if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
+  //   // Classes may be passed in registers.
+  //   T = SemaRef.Context.getConstType(T);
+  //   if (!Class->canPassInRegisters())
+  //     T = SemaRef.Context.getLValueReferenceType(T);
+  //   return T;
+  // }
 
-  // FIXME: Array types?
-  llvm_unreachable("Unhandled type");
+  // // FIXME: Array types?
+  // llvm_unreachable("Unhandled type");
+  return T;
 }
 
 static QualType AdjustTypeForOutParameter(Sema &SemaRef, QualType T) {
   // Transform the type to T&.
-  return SemaRef.Context.getLValueReferenceType(T);
+  // return SemaRef.Context.getLValueReferenceType(T);
+  return T;
 }
 
 static QualType AdjustTypeForInoutParameter(Sema &SemaRef, QualType T) {
   // Transform the type to T&.
   return SemaRef.Context.getLValueReferenceType(T);
+  return T;
 }
 
 static QualType AdjustTypeForForwardParameter(Sema &SemaRef, QualType T) {
@@ -13582,7 +13585,6 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   ParmVarDecl *New =
       CheckParameter(Context.getTranslationUnitDecl(), D.getBeginLoc(),
                      DNI, ParmType, TInfo, SC);
-  New->setParameterPassing(PPK);
 
   if (D.isInvalidType())
     New->setInvalidDecl();

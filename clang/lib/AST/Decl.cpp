@@ -2705,7 +2705,6 @@ ParmVarDecl::ParmVarDecl(ASTContext &C, DeclContext *DC,
   assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
   assert(ParmVarDeclBits.IsKNRPromoted == false);
   assert(ParmVarDeclBits.IsObjCMethodParam == false);
-  assert(getParameterPassing() == PPK_unspecified);
   setDefaultArg(DefArg);
 }
 

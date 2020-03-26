@@ -646,16 +646,6 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
     return ExprError();
   }
 
-  // Reading from an ouptput parameter is not allowed.
-  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
-    if (ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(DRE->getDecl())) {
-      if (Parm->getParameterPassing() == PPK_out) {
-        // Diagnose the error, but continue as if it didn't apply.
-        Diag(E->getExprLoc(), diag::err_read_from_out_parameter);
-      }
-    }
-  }
-
   CheckForNullPointerDereference(*this, E);
   if (const ObjCIsaExpr *OISA = dyn_cast<ObjCIsaExpr>(E->IgnoreParenCasts())) {
     NamedDecl *ObjectGetClass = LookupSingleName(TUScope,
