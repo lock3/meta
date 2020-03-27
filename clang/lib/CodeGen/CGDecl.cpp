@@ -140,6 +140,13 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
     const VarDecl &VD = cast<VarDecl>(D);
     assert(VD.isLocalVarDecl() &&
            "Should not see file-scope variables inside a function!");
+
+    // Meta types have no runtime meaning.
+    if (VD.getType()->isMetaType()) {
+      assert(VD.isConstexpr());
+      return;
+    }
+
     EmitVarDecl(VD);
     if (auto *DD = dyn_cast<DecompositionDecl>(&VD))
       for (auto *B : DD->bindings())
