@@ -1783,6 +1783,15 @@ static QualType adjustFunctionTypeForInstantiation(ASTContext &Context,
                                  NewFunc->getParamTypes(), NewEPI);
 }
 
+static ConstexprSpecKind getNewConstexprSpecKind(
+    FunctionDecl *D, const MultiLevelTemplateArgumentList &TemplateArgs) {
+  ConstexprSpecKind OldKind = D->getConstexprKind();
+  if (OldKind != CSK_constexpr)
+    return OldKind;
+
+  return TemplateArgs.isConstexprPromoting() ? CSK_consteval : CSK_constexpr;
+}
+
 /// Normal class members are of more specific types and therefore
 /// don't make it here.  This function serves three purposes:
 ///   1) instantiating function templates
@@ -1907,7 +1916,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
     Function = FunctionDecl::Create(
         SemaRef.Context, DC, D->getInnerLocStart(), NameInfo, T, TInfo,
         D->getCanonicalDecl()->getStorageClass(), D->isInlineSpecified(),
-        D->hasWrittenPrototype(), D->getConstexprKind(),
+        D->hasWrittenPrototype(), getNewConstexprSpecKind(D, TemplateArgs),
         TrailingRequiresClause);
     Function->setRangeEnd(D->getSourceRange().getEnd());
   }

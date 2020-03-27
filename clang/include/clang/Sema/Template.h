@@ -164,6 +164,19 @@ class VarDecl;
     const ArgList &getInnermost() const {
       return TemplateArgumentLists.front();
     }
+
+    /// Returns true if this template argument list should promote
+    /// constexpr to consteval.
+    bool isConstexprPromoting() const {
+      for (const ArgList &SubList : TemplateArgumentLists) {
+        for (const TemplateArgument &Arg :SubList) {
+          if (Arg.isConstexprPromoting())
+            return true;
+        }
+      }
+
+      return false;
+    }
   };
 
   /// The context in which partial ordering of function templates occurs.

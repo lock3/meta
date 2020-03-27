@@ -60,53 +60,51 @@ int get(std::tuple<TupleValType...>& t) {
 }
 
 namespace meta {
-  struct iterator
-  {
-    constexpr iterator()
+  struct iterator {
+    consteval iterator()
       : m_info()
     { }
 
-    constexpr iterator(meta::info x)
+    consteval iterator(meta::info x)
       : m_info(__reflect(query_get_begin, x))
     { }
 
-    constexpr meta::info operator*() const {
+    consteval meta::info operator*() const {
       return m_info;
     }
 
-    constexpr iterator operator++() {
+    consteval iterator operator++() {
       m_info = __reflect(query_get_next, m_info);
       return *this;
     }
 
-    constexpr iterator operator++(int) {
+    consteval iterator operator++(int) {
       iterator tmp = *this;
       operator++();
       return tmp;
     }
 
-    constexpr friend bool operator==(iterator a, iterator b) {
+    consteval friend bool operator==(iterator a, iterator b) {
       return a.m_info == b.m_info;
     }
 
-    constexpr friend bool operator!=(iterator a, iterator b) {
+    consteval friend bool operator!=(iterator a, iterator b) {
       return a.m_info != b.m_info;
     }
 
     meta::info m_info;
   };
 
-  struct range
-  {
-    constexpr range() { }
+  struct range {
+    consteval range() { }
 
-    constexpr range(meta::info cxt)
+    consteval range(meta::info cxt)
       : m_first(cxt), m_last()
     { }
 
-    constexpr iterator begin() const { return m_first; }
+    consteval iterator begin() const { return m_first; }
 
-    constexpr iterator end() const { return m_last; }
+    consteval iterator end() const { return m_last; }
 
     iterator m_first;
     iterator m_last;
