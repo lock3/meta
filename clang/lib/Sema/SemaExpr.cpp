@@ -15462,9 +15462,26 @@ void Sema::CheckUnusedVolatileAssignment(Expr *E) {
 
 // Check to see if this expression is part of a decltype specifier.
 // We're not interested in evaluating this expression, immediately or otherwise.
-static bool isInDeclType(Sema &SemaRef) {
-  return SemaRef.ExprEvalContexts.back().ExprContext ==
-    Sema::ExpressionEvaluationContextRecord::EK_Decltype;
+static bool isInUnevaluatedContext(Sema &SemaRef, Expr *E) {
+  if (SemaRef.isUnevaluatedContext()) {
+    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+    Expr::EvalResult Eval;
+    Eval.Diag = &Notes;
+    Expr::EvalContext EvalCtx(SemaRef.getASTContext(),
+                              SemaRef.GetReflectionCallbackObj());
+    bool Result = E->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen,
+                                            EvalCtx, true);
+    if (!Result || !Notes.empty()) {
+      SemaRef.Diag(E->getBeginLoc(), diag::warn_skipping_consteval);
+
+      for (auto &Note : Notes)
+        SemaRef.Diag(Note.first, Note.second);
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 ExprResult Sema::CheckForImmediateInvocation(ExprResult E, FunctionDecl *Decl) {
@@ -15472,8 +15489,8 @@ ExprResult Sema::CheckForImmediateInvocation(ExprResult E, FunctionDecl *Decl) {
   // It seems like this should fall out of the implementation. i.e. this is
   // likely an issue with expansion statements.
   if (!E.isUsable() || !Decl || !Decl->isConsteval() || isConstantEvaluated() ||
-      isInDeclType(*this) || E.get()->isValueDependent() ||
-      RebuildingImmediateInvocation)
+      E.get()->isValueDependent() || RebuildingImmediateInvocation ||
+      isInUnevaluatedContext(*this, E.get()))
     return E;
 
   /// Opportunistically remove the callee from ReferencesToConsteval if we can.

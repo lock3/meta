@@ -60,8 +60,7 @@ int get(std::tuple<TupleValType...>& t) {
 }
 
 namespace meta {
-  struct iterator
-  {
+  struct iterator {
     consteval iterator()
       : m_info()
     { }
@@ -96,8 +95,7 @@ namespace meta {
     meta::info m_info;
   };
 
-  struct range
-  {
+  struct range {
     consteval range() { }
 
     consteval range(meta::info cxt)

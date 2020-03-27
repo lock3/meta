@@ -341,15 +341,18 @@ consteval info invalid_reflection(string_type error_message) {
 
 namespace detail
 {
-template<info (*F)(info), info (*N)(info), typename P = always_true_fn>
+template<typename F, typename N, typename P = always_true_fn>
 class iterator
 {
+  static constexpr F m_front = { };
+  static constexpr N m_next = { };
+
   info m_info;
   P m_pred;
 
-  constexpr void advance() {
+  consteval void advance() {
     while (!is_invalid(m_info) && !m_pred(m_info))
-      m_info = N(m_info);
+      m_info = m_next(m_info);
   }
 
 public:
@@ -360,41 +363,41 @@ public:
   using iterator_category = std::forward_iterator_tag;
   using filter_type = P;
 
-  constexpr iterator(P pred = {})
+  consteval iterator(P pred = {})
     : m_info(), m_pred(pred)
   { }
 
-  constexpr iterator(meta::info reflection, P pred = {})
-    : m_info(F(reflection)), m_pred(pred)
+  consteval iterator(meta::info reflection, P pred = {})
+    : m_info(m_front(reflection)), m_pred(pred)
   {
     advance();
   }
 
-  constexpr info operator*() const {
+  consteval info operator*() const {
     return m_info;
   }
 
-  constexpr iterator operator++() {
-    m_info = N(m_info);
+  consteval iterator operator++() {
+    m_info = m_next(m_info);
     advance();
     return *this;
   }
 
-  constexpr iterator operator++(int) {
+  consteval iterator operator++(int) {
     iterator tmp = *this;
     operator++();
     return tmp;
   }
 
-  constexpr P filter() const {
+  consteval P filter() const {
     return m_pred;
   }
 
-  constexpr friend bool operator==(iterator a, iterator b) {
+  consteval friend bool operator==(iterator a, iterator b) {
     return a.m_info == b.m_info;
   }
 
-  constexpr friend bool operator!=(iterator a, iterator b) {
+  consteval friend bool operator!=(iterator a, iterator b) {
     return a.m_info != b.m_info;
   }
 };
@@ -409,26 +412,26 @@ public:
   using iterator = I;
   using filter_type = typename I::filter_type;
 
-  constexpr range(filter_type pred = {})
+  consteval range(filter_type pred = {})
     : m_first(pred), m_last(pred)
   { }
 
-  constexpr range(info reflection, filter_type pred = {})
+  consteval range(info reflection, filter_type pred = {})
     : m_first(reflection, pred), m_last(pred)
   { }
 
-  constexpr iterator begin() const
+  consteval iterator begin() const
   {
     return m_first;
   }
 
-  constexpr iterator end() const
+  consteval iterator end() const
   {
     return m_last;
   }
 };
 
-template<info (*F)(info), info (*N)(info), typename P>
+template<typename F, typename N, typename P>
 constexpr std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> last)
 {
   std::ptrdiff_t n = 0;
@@ -3038,58 +3041,88 @@ consteval bool is_value(info reflection) {
 // Returns the first child of declaration context. This can be used with
 // next() to traverse contexts as template arguments (iterators don't work
 // as template arguments).
-constexpr info front(info reflection) {
-  return __reflect(detail::query_get_begin, reflection);
-}
+constexpr struct front_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin, reflection);
+  }
+} front;
 
 // Returns the next info in the sequence.
-constexpr info next(info reflection) {
-  return __reflect(detail::query_get_next, reflection);
-}
+constexpr struct next_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next, reflection);
+  }
+} next;
 
 // Returns the first member of the reflected entity.
-constexpr info front_member(info reflection) {
-  return __reflect(detail::query_get_begin_member, reflection);
-}
+constexpr struct front_member_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin_member, reflection);
+  }
+} front_member;
 
 // Returns the next member in the sequence of declarations
 // of which the reflected entity is a member of.
-constexpr info next_member(info reflection) {
-  return __reflect(detail::query_get_next_member, reflection);
-}
+constexpr struct next_member_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next_member, reflection);
+  }
+} next_member;
 
 // Returns the first function parameter of the reflected entity.
-constexpr info front_param(info reflection) {
-  return __reflect(detail::query_get_begin_param, reflection);
-}
+constexpr struct front_param_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin_param, reflection);
+  }
+} front_param;
 
 // Returns the next function parameter in the sequence of function
 // parameters of which the reflected entity is a member of.
-constexpr info next_param(info reflection) {
-  return __reflect(detail::query_get_next_param, reflection);
-}
+constexpr struct next_param_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next_param, reflection);
+  }
+} next_param;
 
 // Returns the first template parameter of the reflected entity.
-constexpr info front_template_param(info reflection) {
-  return __reflect(detail::query_get_begin_template_param, reflection);
-}
+constexpr struct front_template_param_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin_template_param, reflection);
+  }
+} front_template_param;
 
 // Returns the next template parameter in the sequence of template
 // parameters of which the reflected entity is a member of.
-constexpr info next_template_param(info reflection) {
-  return __reflect(detail::query_get_next_template_param, reflection);
-}
+constexpr struct next_template_param_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next_template_param, reflection);
+  }
+} next_template_param;
 
 // Returns the first base specifier of the reflected entity.
-constexpr info front_base_spec(info reflection) {
-  return __reflect(detail::query_get_begin_base_spec, reflection);
-}
+constexpr struct front_base_spec_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin_base_spec, reflection);
+  }
+} front_base_spec;
 
 // Returns the next base specifier in the sequence of base
 // specifiers of which the reflected entity is a member of.
-constexpr info next_base_spec(info reflection) {
-  return __reflect(detail::query_get_next_base_spec, reflection);
-}
+constexpr struct next_base_spec_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next_base_spec, reflection);
+  }
+} next_base_spec;
 
 // Deprecated in favor of more specific iterator classes.
 class [[deprecated]] iterator {
@@ -3102,34 +3135,34 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
-  constexpr iterator()
+  consteval iterator()
     : m_info()
   { }
 
-  constexpr iterator(meta::info reflection)
+  consteval iterator(meta::info reflection)
     : m_info(front(reflection))
   { }
 
-  constexpr meta::info operator*() const {
+  consteval meta::info operator*() const {
     return m_info;
   }
 
-  constexpr iterator operator++() {
+  consteval iterator operator++() {
     m_info = next(m_info);
     return *this;
   }
 
-  constexpr iterator operator++(int) {
+  consteval iterator operator++(int) {
     iterator tmp = *this;
     operator++();
     return tmp;
   }
 
-  constexpr friend bool operator==(iterator a, iterator b) {
+  consteval friend bool operator==(iterator a, iterator b) {
     return a.m_info == b.m_info;
   }
 
-  constexpr friend bool operator!=(iterator a, iterator b) {
+  consteval friend bool operator!=(iterator a, iterator b) {
     return a.m_info != b.m_info;
   }
 };
@@ -3139,47 +3172,47 @@ class [[deprecated]] range {
   iterator m_last;
 
 public:
-  constexpr range() { }
+  consteval range() { }
 
-  constexpr range(info cxt)
+  consteval range(info cxt)
     : m_first(cxt), m_last()
   { }
 
-  constexpr iterator begin() const { return m_first; }
+  consteval iterator begin() const { return m_first; }
 
-  constexpr iterator end() const { return m_last; }
+  consteval iterator end() const { return m_last; }
 };
 
-using member_iterator = detail::iterator<front_member, next_member>;
+using member_iterator = detail::iterator<front_member_fn, next_member_fn>;
 using member_range = detail::range<member_iterator>;
 
-using member_fn_iterator = detail::iterator<front_member, next_member, is_member_function_fn>;
+using member_fn_iterator = detail::iterator<front_member_fn, next_member_fn, is_member_function_fn>;
 using member_fn_range = detail::range<member_fn_iterator>;
 
-using data_member_iterator = detail::iterator<front_member, next_member, is_data_member_fn>;
+using data_member_iterator = detail::iterator<front_member_fn, next_member_fn, is_data_member_fn>;
 using data_member_range = detail::range<data_member_iterator>;
 
-using param_iterator = detail::iterator<front_param, next_param>;
+using param_iterator = detail::iterator<front_param_fn, next_param_fn>;
 using param_range = detail::range<param_iterator>;
 
-using template_param_iterator = detail::iterator<front_template_param, next_template_param>;
+using template_param_iterator = detail::iterator<front_template_param_fn, next_template_param_fn>;
 using template_param_range = detail::range<template_param_iterator>;
 
-using base_spec_iterator = detail::iterator<front_base_spec, next_base_spec>;
+using base_spec_iterator = detail::iterator<front_base_spec_fn, next_base_spec_fn>;
 using base_spec_range = detail::range<base_spec_iterator>;
 
 // Ranges
 
 template<typename P>
-constexpr auto members_of(info reflection, P pred)
+consteval auto members_of(info reflection, P pred)
 {
-  using iterator = detail::iterator<front_member, next_member, P>;
+  using iterator = detail::iterator<front_member_fn, next_member_fn, P>;
   using range = detail::range<iterator>;
   return range(reflection, pred);
 }
 
 template<typename... Ps>
-constexpr auto members_of(info reflection, Ps... preds)
+consteval auto members_of(info reflection, Ps... preds)
 {
   return members_of(reflection, [&](info reflection) {
     return (preds(reflection) && ...);
@@ -3187,11 +3220,11 @@ constexpr auto members_of(info reflection, Ps... preds)
 }
 
 template<typename P>
-constexpr auto members_of(info reflection) {
+consteval auto members_of(info reflection) {
   return members_of(reflection, detail::always_true);
 }
 
-constexpr auto parameters_of(info reflection)
+consteval auto parameters_of(info reflection)
 {
   return param_range(reflection);
 }
@@ -3200,7 +3233,7 @@ constexpr auto parameters_of(info reflection)
 // as forward iterators.
 //
 // Deprecated without replacement.
-[[deprecated]] constexpr iterator begin(info reflection) {
+[[deprecated]] consteval iterator begin(info reflection) {
   return __reflect(detail::query_get_begin, reflection);
 }
 
@@ -3208,7 +3241,7 @@ constexpr auto parameters_of(info reflection)
 // the end of a sequence.
 //
 // Deprecated without replacement.
-[[deprecated]] constexpr iterator end(info reflection) {
+[[deprecated]] consteval iterator end(info reflection) {
   return iterator();
 }
 
