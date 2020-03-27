@@ -1077,6 +1077,15 @@ DEF_TRAVERSE_TYPE(ExtIntType, {})
 DEF_TRAVERSE_TYPE(DependentExtIntType,
                   { TRY_TO(TraverseStmt(T->getNumBitsExpr())); })
 
+DEF_TRAVERSE_TYPE(InParameterType,
+                  { TRY_TO(TraverseType(T->getParameterType())); })
+DEF_TRAVERSE_TYPE(OutParameterType,
+                  { TRY_TO(TraverseType(T->getParameterType())); })
+DEF_TRAVERSE_TYPE(InOutParameterType,
+                  { TRY_TO(TraverseType(T->getParameterType())); })
+DEF_TRAVERSE_TYPE(MoveParameterType,
+                  { TRY_TO(TraverseType(T->getParameterType())); })
+
 #undef DEF_TRAVERSE_TYPE
 
 // ----------------- TypeLoc traversal -----------------
@@ -1377,6 +1386,15 @@ DEF_TRAVERSE_TYPELOC(ExtIntType, {})
 DEF_TRAVERSE_TYPELOC(DependentExtIntType, {
   TRY_TO(TraverseStmt(TL.getTypePtr()->getNumBitsExpr()));
 })
+
+DEF_TRAVERSE_TYPELOC(InParameterType,
+                     { TRY_TO(TraverseTypeLoc(TL.getParameterTypeLoc())); })
+DEF_TRAVERSE_TYPELOC(OutParameterType,
+                     { TRY_TO(TraverseTypeLoc(TL.getParameterTypeLoc())); })
+DEF_TRAVERSE_TYPELOC(InOutParameterType,
+                     { TRY_TO(TraverseTypeLoc(TL.getParameterTypeLoc())); })
+DEF_TRAVERSE_TYPELOC(MoveParameterType,
+                     { TRY_TO(TraverseTypeLoc(TL.getParameterTypeLoc())); })
 
 #undef DEF_TRAVERSE_TYPELOC
 

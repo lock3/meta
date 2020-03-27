@@ -1783,6 +1783,15 @@ protected:
     unsigned NumTemplateArgs;
   };
 
+  class ParameterTypeBitfields {
+    friend class ParameterType;
+
+    unsigned : NumTypeBits;
+
+    /// The parameter passing mode of the type.
+    unsigned PassingMode : 1;
+  };
+
   class CXXDependentVariadicReifierTypeBitfields {
     friend class CXXDependentVariadicReifierType;
 
@@ -1808,6 +1817,7 @@ protected:
       DependentTemplateSpecializationTypeBits;
     PackExpansionTypeBitfields PackExpansionTypeBits;
     DependentIdentifierSpliceTypeBitfields DependentIdentifierSpliceTypeBits;
+    ParameterTypeBitfields ParameterTypeBits;
 
     static_assert(sizeof(TypeBitfields) <= 8,
                   "TypeBitfields is larger than 8 bytes!");
@@ -1844,6 +1854,8 @@ protected:
                   "PackExpansionTypeBitfields is larger than 8 bytes");
     static_assert(sizeof(DependentIdentifierSpliceTypeBitfields) <= 8,
                   "DependentIdentifierSpliceTypeBitfields is larger than 8 bytes");
+    static_assert(sizeof(ParameterTypeBitfields) <= 8,
+                  "ParameterTypeBitfields is larger than 8 bytes");
   };
 
 private:
@@ -6537,6 +6549,119 @@ public:
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == DependentExtInt;
+  }
+};
+
+/// Base for LValueReferenceType and RValueReferenceType
+class ParameterType : public Type, public llvm::FoldingSetNode {
+  QualType ParmType;
+  ParameterPassingKind PassingMode;
+
+protected:
+  ParameterType(TypeClass tc, QualType Parm, QualType CanonicalParm,
+                ParameterPassingKind PPK)
+      : Type(tc, CanonicalParm, Parm->getDependence(), false),
+        ParmType(Parm), PassingMode(PPK) {
+    ParameterTypeBits.PassingMode = PPK;
+  }
+
+public:
+  ParameterPassingKind getParameterPassingMode() const { return PassingMode; }
+  bool isInParameter() const { return PassingMode == PPK_in; }
+  bool isOutParameter() const { return PassingMode == PPK_out; }
+  bool isInOutParameter() const { return PassingMode == PPK_inout; }
+  bool isMoveParameter() const { return PassingMode == PPK_move; }
+
+  QualType getParameterType() const { return ParmType; }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, ParmType, PassingMode);
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      QualType Parm,
+                      ParameterPassingKind PPK) {
+    ID.AddPointer(Parm.getAsOpaquePtr());
+    ID.AddInteger(PPK);
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InParameter ||
+           T->getTypeClass() == OutParameter ||
+           T->getTypeClass() == InOutParameter ||
+           T->getTypeClass() == MoveParameter;
+  }
+};
+
+/// An input parameter type.
+class InParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  InParameterType(QualType Parm, QualType CanonicalParm)
+    : ParameterType(InParameter, Parm, CanonicalParm, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_in;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InParameter;
+  }
+};
+
+/// An output parameter type.
+class OutParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  OutParameterType(QualType Parm, QualType CanonicalParm)
+    : ParameterType(OutParameter, Parm, CanonicalParm, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_out;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == OutParameter;
+  }
+};
+
+/// An input parameter type.
+class InOutParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  InOutParameterType(QualType Parm, QualType CanonicalParm)
+    : ParameterType(InOutParameter, Parm, CanonicalParm, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_inout;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InOutParameter;
+  }
+};
+
+/// An input parameter type.
+class MoveParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  MoveParameterType(QualType Parm, QualType CanonicalParm)
+    : ParameterType(MoveParameter, Parm, CanonicalParm, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_move;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == MoveParameter;
   }
 };
 

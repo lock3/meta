@@ -3346,6 +3346,97 @@ QualType ASTContext::getRValueReferenceType(QualType T) const {
   return QualType(New, 0);
 }
 
+template<typename ConcreteType>
+QualType ASTContext::getParameterType(llvm::FoldingSet<ConcreteType> &Set,
+                                      QualType ParmType) {
+  // Search for a previously created value of the type.
+  llvm::FoldingSetNodeID ID;
+  ConcreteType::Profile(ID, ParmType, PPK_in);
+  void *InsertPos = nullptr;
+  if (ConcreteType *ParmTy = Set.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(ParmTy, 0);
+
+  // Find the canonical type of the parameter if it isn't already so.
+  QualType Canonical;
+  if (!ParmType.isCanonical()) {
+    Canonical = getParameterType(Set, getCanonicalType(ParmType));
+
+    // Update the insert position for the non-canonical type being added.
+    auto *NewIP = Set.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+  }
+
+  // Build and register the type.
+  auto *NewTy = new (*this, TypeAlignment) ConcreteType(ParmType, Canonical);
+  Types.push_back(NewTy);
+  Set.InsertNode(NewTy, InsertPos);
+  return QualType(NewTy, 0);
+}
+
+QualType ASTContext::getInParameterType(QualType T) const {
+  // Search for a previously created value of the type.
+  llvm::FoldingSetNodeID ID;
+  InParameterType::Profile(ID, T, PPK_in);
+  void *InsertPos = nullptr;
+  if (InParameterType *ParmTy =
+        InParameterTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(ParmTy, 0);
+
+  // Find the canonical type of the parameter if it isn't already so.
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getInParameterType(getCanonicalType(T));
+
+    // Update the insert position for the non-canonical type being added.
+    auto *NewIP = InParameterTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+  }
+
+  // Build and register the type.
+  auto *NewTy = new (*this, TypeAlignment) InParameterType(T, Canonical);
+  Types.push_back(NewTy);
+  InParameterTypes.InsertNode(NewTy, InsertPos);
+  return QualType(NewTy, 0);
+}
+
+QualType ASTContext::getOutParameterType(QualType T) const {
+  // Search for a previously created value of the type.
+  llvm::FoldingSetNodeID ID;
+  InParameterType::Profile(ID, T, PPK_in);
+  void *InsertPos = nullptr;
+  if (InParameterType *ParmTy =
+        InParameterTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(ParmTy, 0);
+
+  // Find the canonical type of the parameter if it isn't already so.
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getInParameterType(getCanonicalType(T));
+
+    // Update the insert position for the non-canonical type being added.
+    auto *NewIP = InParameterTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+  }
+
+  // Build and register the type.
+  auto *NewTy = new (*this, TypeAlignment) InParameterType(T, Canonical);
+  Types.push_back(NewTy);
+  InParameterTypes.InsertNode(NewTy, InsertPos);
+  return QualType(NewTy, 0);
+}
+
+QualType ASTContext::getInOutParameterType(QualType T) const {
+  return {};
+  // ASTContext& Ctx = const_cast<ASTContext&>(*this);
+  // return getParameterType<InOutParameterType>(Ctx, InOutParameterTypes, T);
+}
+
+QualType ASTContext::getMoveParameterType(QualType T) const {
+  return {};
+  // ASTContext& Ctx = const_cast<ASTContext&>(*this);
+  // return getParameterType<MoveParameterType>(Ctx, MoveParameterTypes, T);
+}
+
 /// getMemberPointerType - Return the uniqued reference to the type for a
 /// member pointer to the specified type, in the specified class.
 QualType ASTContext::getMemberPointerType(QualType T, const Type *Cls) const {

@@ -13494,6 +13494,10 @@ static QualType CheckParameterPassingMode(Sema &SemaRef, ParameterPassingKind PP
   SourceRange Range = TSI->getTypeLoc().getSourceRange();
   QualType T = TSI->getType();
 
+  // Don't adjust the type if there's no mode.
+  if (PPK == PPK_unspecified)
+    return T;
+
   // Don't allow cv- or ref-qualifications on passed types. Diagnose the
   // error and then remove the offending qualification.
   if (T.isConstQualified() || T.isVolatileQualified()) {

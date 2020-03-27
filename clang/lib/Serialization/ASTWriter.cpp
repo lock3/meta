@@ -521,9 +521,26 @@ void TypeLocWriter::VisitPipeTypeLoc(PipeTypeLoc TL) {
 void TypeLocWriter::VisitExtIntTypeLoc(clang::ExtIntTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
+
 void TypeLocWriter::VisitDependentExtIntTypeLoc(
     clang::DependentExtIntTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
+}
+
+void TypeLocWriter::VisitInParameterTypeLoc(InParameterTypeLoc TL) {
+  Record.AddSourceLocation(TL.getModeLoc());
+}
+
+void TypeLocWriter::VisitOutParameterTypeLoc(OutParameterTypeLoc TL) {
+  Record.AddSourceLocation(TL.getModeLoc());
+}
+
+void TypeLocWriter::VisitInOutParameterTypeLoc(InOutParameterTypeLoc TL) {
+  Record.AddSourceLocation(TL.getModeLoc());
+}
+
+void TypeLocWriter::VisitMoveParameterTypeLoc(MoveParameterTypeLoc TL) {
+  Record.AddSourceLocation(TL.getModeLoc());
 }
 
 void ASTWriter::WriteTypeAbbrevs() {

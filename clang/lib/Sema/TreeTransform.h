@@ -6629,6 +6629,31 @@ QualType TreeTransform<Derived>::TransformDependentExtIntType(
   return Result;
 }
 
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformInParameterType(TypeLocBuilder &TLB,
+                                                        InParameterTypeLoc TL) {
+  llvm_unreachable("Instantation on in parameters not implemented");
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformOutParameterType(TypeLocBuilder &TLB,
+                                                       OutParameterTypeLoc TL) {
+  llvm_unreachable("Instantation on move parameters not implemented");
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformInOutParameterType(
+                                                            TypeLocBuilder &TLB,
+                                                     InOutParameterTypeLoc TL) {
+  llvm_unreachable("Instantation on inout parameters not implemented");
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformMoveParameterType(TypeLocBuilder &TLB,
+                                                      MoveParameterTypeLoc TL) {
+  llvm_unreachable("Instantation on move parameters not implemented");
+}
+
   /// Simple iterator that traverses the template arguments in a
   /// container that provides a \c getArgLoc() member function.
   ///

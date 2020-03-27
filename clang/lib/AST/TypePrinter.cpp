@@ -267,6 +267,10 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::SubstTemplateTypeParm:
     case Type::MacroQualified:
     case Type::CXXDependentVariadicReifier:
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
       CanPrefixQualifiers = false;
       break;
 
@@ -1208,6 +1212,40 @@ void TypePrinter::printDependentExtIntBefore(const DependentExtIntType *T,
 
 void TypePrinter::printDependentExtIntAfter(const DependentExtIntType *T,
                                             raw_ostream &OS) {}
+
+void TypePrinter::printInParameterBefore(const InParameterType *T,
+                                         raw_ostream &OS) {
+  OS << "in ";
+}
+
+void TypePrinter::printInParameterAfter(const InParameterType *T,
+                                        raw_ostream &OS) {}
+
+void TypePrinter::printOutParameterBefore(const OutParameterType *T,
+                                          raw_ostream &OS) {
+  OS << "out ";
+}
+
+void TypePrinter::printOutParameterAfter(const OutParameterType *T,
+                                         raw_ostream &OS) {}
+
+
+void TypePrinter::printInOutParameterBefore(const InOutParameterType *T,
+                                            raw_ostream &OS) {
+  OS << "inout ";
+}
+
+void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
+                                           raw_ostream &OS) {}
+
+
+void TypePrinter::printMoveParameterBefore(const MoveParameterType *T,
+                                           raw_ostream &OS) {
+  OS << "move ";
+}
+
+void TypePrinter::printMoveParameterAfter(const MoveParameterType *T,
+                                          raw_ostream &OS) {}
 
 /// Appends the given scope to the end of a string.
 void TypePrinter::AppendScope(DeclContext *DC, raw_ostream &OS) {
