@@ -13192,9 +13192,9 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
   // FIXME: Sema's lambda-building mechanism expects us to push an expression
   // evaluation context even if we're not transforming the function body.
   getSema().PushExpressionEvaluationContext(
-      E->getCallOperator()->getConstexprKind() ?
-      Sema::ExpressionEvaluationContext::ConstantEvaluated :
-      Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
+      E->getCallOperator()->getConstexprKind() == CSK_consteval
+          ? Sema::ExpressionEvaluationContext::ConstantEvaluated
+          : Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
   // Instantiate the body of the lambda expression.
   StmtResult Body =

@@ -215,6 +215,13 @@ bool TemplateArgument::isVariadicReifier() const {
   llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
+bool TemplateArgument::isConstexprPromoting() const {
+  if (getKind() != Type)
+    return false;
+
+  return getAsType()->isMetaType();
+}
+
 bool TemplateArgument::containsUnexpandedParameterPack() const {
   return getDependence() & TemplateArgumentDependence::UnexpandedPack;
 }

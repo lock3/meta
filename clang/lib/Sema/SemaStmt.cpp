@@ -2405,10 +2405,6 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
     return false;
   }
 
-  // Note the constant evaluation of the expression.
-  EnterExpressionEvaluationContext EvalContext(SemaRef,
-    Sema::ExpressionEvaluationContext::ConstantEvaluated);
-
   // Build an expression that accesses the member and evaluate it.
   ExprResult Ref =
       SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
@@ -3093,8 +3089,13 @@ ExpansionStatementBuilder::Build()
     return StmtError();
   FinishRangeVar();
 
-  EnterExpressionEvaluationContext Ctx(
-      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+  // FIXME: Is this right?
+  // Expansion statements are kind of a hybrid between a
+  // constant evaluation, and normal code.
+  //
+  // This seems to just build the constant evaluated portions.
+  EnterExpressionEvaluationContext EvalContext(SemaRef,
+    Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   // The order in which we determine the expansion style must follow
   // the order in which structured bindings proceeds. That is:
@@ -3691,10 +3692,6 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     CountCallFailure = true;
     return StmtError();
   }
-
-  // Note the constant evaluation of the expression.
-  EnterExpressionEvaluationContext EvalContext(SemaRef,
-      Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalResult Result;
   Expr::EvalContext EvalCtx(

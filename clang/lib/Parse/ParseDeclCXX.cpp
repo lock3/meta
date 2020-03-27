@@ -3199,8 +3199,10 @@ ExprResult Parser::ParseCXXMemberInitializer(Decl *D, bool IsFunction,
     IsConstexpr = VD->isConstexpr();
 
   EnterExpressionEvaluationContext Context(
-      Actions, getLangOpts().CPlusPlus2a && IsConstexpr ?
-      EEC::ConstantEvaluated : EEC::PotentiallyEvaluated, D);
+      Actions,
+      getLangOpts().CPlusPlus2a && IsConstexpr ? EEC::ConstantEvaluated
+                                               : EEC::PotentiallyEvaluated,
+      D);
   if (TryConsumeToken(tok::equal, EqualLoc)) {
     if (Tok.is(tok::kw_delete)) {
       // In principle, an initializer of '= delete p;' is legal, but it will
