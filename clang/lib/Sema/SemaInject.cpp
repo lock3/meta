@@ -2046,6 +2046,9 @@ static void PushDeclStmtDecl(InjectionContext &Ctx, Decl *NewDecl) {
   // as this should have been handled by the injection of the decl.
   Scope *FunctionScope =
     SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
+  if (!FunctionScope)
+    return;
+
   SemaRef.PushOnScopeChains(cast<NamedDecl>(NewDecl), FunctionScope,
                             /*AddToContext=*/false);
 }
