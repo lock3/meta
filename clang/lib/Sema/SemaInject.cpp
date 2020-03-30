@@ -506,6 +506,19 @@ public:
       // decl context as the declaration we're currently cloning.
       if (D->getDeclContext() == getInjectionDeclContext())
         return nullptr;
+    } else {
+      if (hasTemplateArgs() && isa<CXXRecordDecl>(D)) {
+        auto *Record = cast<CXXRecordDecl>(D);
+        if (!Record->isDependentContext())
+          return D;
+
+        for (const auto &TemplateArgs : getTemplateArgs()) {
+          Record = cast<CXXRecordDecl>(SemaRef.FindInstantiatedDecl(
+              Loc, Record, TemplateArgs));
+        }
+
+        return Record;
+      }
     }
 
     return D;
