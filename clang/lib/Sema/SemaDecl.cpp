@@ -13448,49 +13448,11 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
   return DNI;
 }
 
-static QualType AdjustTypeForInParameter(Sema &SemaRef, QualType T) {
-  // if (T->isScalarType()) {
-  //   // Scalars are always copied in registers.
-  //   return SemaRef.Context.getConstType(T);
-  // } 
-
-  // if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
-  //   // Classes may be passed in registers.
-  //   T = SemaRef.Context.getConstType(T);
-  //   if (!Class->canPassInRegisters())
-  //     T = SemaRef.Context.getLValueReferenceType(T);
-  //   return T;
-  // }
-
-  // // FIXME: Array types?
-  // llvm_unreachable("Unhandled type");
-  return T;
-}
-
-static QualType AdjustTypeForOutParameter(Sema &SemaRef, QualType T) {
-  // Transform the type to T&.
-  // return SemaRef.Context.getLValueReferenceType(T);
-  return T;
-}
-
-static QualType AdjustTypeForInoutParameter(Sema &SemaRef, QualType T) {
-  // Transform the type to T&.
-  return SemaRef.Context.getLValueReferenceType(T);
-  return T;
-}
-
-static QualType AdjustTypeForForwardParameter(Sema &SemaRef, QualType T) {
-  // TODO: Rewrite the type as std::same_as<T> auto&&.
-  return T;
-}
-
-static QualType AdjustTypeForMoveParameter(Sema &SemaRef, QualType T) {
-  // TODO: Rewrite the type as std::same_as<T> auto&&.
-  return T;
-}
-
-static QualType CheckParameterPassingMode(Sema &SemaRef, ParameterPassingKind PPK,
-                                      TypeSourceInfo *TSI) {
+// Check for errors in the declaration of a parameter declared with a
+// parameter passing mode.
+static QualType CheckParameterPassingMode(Sema &SemaRef,
+                                          ParameterPassingKind PPK, 
+                                          TypeSourceInfo *TSI) {
   SourceRange Range = TSI->getTypeLoc().getSourceRange();
   QualType T = TSI->getType();
 
@@ -13498,39 +13460,34 @@ static QualType CheckParameterPassingMode(Sema &SemaRef, ParameterPassingKind PP
   if (PPK == PPK_unspecified)
     return T;
 
-  // Don't allow cv- or ref-qualifications on passed types. Diagnose the
-  // error and then remove the offending qualification.
-  if (T.isConstQualified() || T.isVolatileQualified()) {
-    SemaRef.Diag(Range.getBegin(), diag::err_cv_qualified_parameter_passing)
-      << ((unsigned)PPK - 1) << Range;
-    T = T.getUnqualifiedType();
-  }
+  // Parameter types cannot be cv- or ref-qualified. Diagnose the error
+  // and remove the type qualifier, so we can continue analyzing the program.
+  //
+  // TODO: Move add a fixit to remove the qualification.
   if (T->isReferenceType()) {
     SemaRef.Diag(Range.getBegin(), diag::err_ref_qualified_parameter_passing)
       << ((unsigned)PPK - 1) << Range;
     T = T.getNonReferenceType().getUnqualifiedType();
   }
-
-  // Defer until instantiation.
-  if (T->isDependentType())
-    return T;
-
-  switch (PPK) {
-  case PPK_in:
-    return AdjustTypeForInParameter(SemaRef, T);
-  case PPK_out:
-    return AdjustTypeForOutParameter(SemaRef, T);
-  case PPK_inout:
-    return AdjustTypeForInoutParameter(SemaRef, T);
-  case PPK_move:
-    return AdjustTypeForMoveParameter(SemaRef, T);
-  case PPK_forward:
-    return AdjustTypeForForwardParameter(SemaRef, T);
-  default:
-    break;
+  else if (T.isConstQualified() || T.isVolatileQualified()) {
+    SemaRef.Diag(Range.getBegin(), diag::err_cv_qualified_parameter_passing)
+      << ((unsigned)PPK - 1) << Range;
+    T = T.getUnqualifiedType();
   }
 
-  llvm_unreachable("Unhandled passing mode");
+  // Adjust the type of the parameter.
+  switch (PPK) {
+  case PPK_in:
+    return SemaRef.Context.getInParameterType(T);
+  case PPK_out:
+    return SemaRef.Context.getOutParameterType(T);
+  case PPK_inout:
+    return SemaRef.Context.getInOutParameterType(T);
+  case PPK_move:
+    return SemaRef.Context.getMoveParameterType(T);
+  default:
+    llvm_unreachable("invalid parameter passing mode");
+  }
 }
 
 /// ActOnParamDeclarator - Called from Parser::ParseFunctionDeclarator()

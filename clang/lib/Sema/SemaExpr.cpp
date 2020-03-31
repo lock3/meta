@@ -3189,6 +3189,7 @@ ExprResult Sema::BuildDeclarationNameExpr(
     }
     ExprValueKind valueKind = getValueKindForDeclReference(
         type, cast<ValueDecl>(D), Loc);
+
     return BuildDeclRefExpr(VD, type, valueKind, NameInfo, &SS, FoundD,
                             /*FIXME: TemplateKWLoc*/ SourceLocation(),
                             TemplateArgs);
@@ -3285,6 +3286,28 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
       QualType CapturedType = getCapturedDeclRefType(cast<VarDecl>(VD), Loc);
       if (!CapturedType.isNull())
         type = CapturedType;
+    }
+
+    // Adjust parameter types.
+    switch (type->getTypeClass()) {
+    case Type::InParameter: {
+      // The type is adjusted to T const.
+      QualType ParmTy = cast<ParameterType>(type)->getParameterType();
+      type = Context.getConstType(ParmTy);
+      break;
+    }
+
+    case Type::OutParameter:
+      // TODO: I think this is a no-op.
+    case Type::InOutParameter:
+      // TODO: I think this is a no-op.
+    case Type::MoveParameter:
+      // TODO: I think this becomes an xvlaue.
+      llvm_unreachable("not implemented");
+      break;
+
+    default:
+      break;
     }
 
     break;
@@ -4413,6 +4436,12 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
       break;
     case Type::Atomic:
       T = cast<AtomicType>(Ty)->getValueType();
+      break;
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
+      T = cast<ParameterType>(Ty)->getParameterType();
       break;
     }
   } while (!T.isNull() && T->isVariablyModifiedType());

@@ -1213,9 +1213,19 @@ void TypePrinter::printDependentExtIntBefore(const DependentExtIntType *T,
 void TypePrinter::printDependentExtIntAfter(const DependentExtIntType *T,
                                             raw_ostream &OS) {}
 
+namespace
+{
+  void printParameterType(TypePrinter &TP, const char *Mode,
+                          const ParameterType *T, raw_ostream &OS) {
+
+    OS << Mode << ' ';
+    TP.print(T->getParameterType(), OS, StringRef());
+  }
+}
+
 void TypePrinter::printInParameterBefore(const InParameterType *T,
                                          raw_ostream &OS) {
-  OS << "in ";
+  printParameterType(*this, "in", T, OS);
 }
 
 void TypePrinter::printInParameterAfter(const InParameterType *T,
@@ -1223,7 +1233,7 @@ void TypePrinter::printInParameterAfter(const InParameterType *T,
 
 void TypePrinter::printOutParameterBefore(const OutParameterType *T,
                                           raw_ostream &OS) {
-  OS << "out ";
+  printParameterType(*this, "in", T, OS);
 }
 
 void TypePrinter::printOutParameterAfter(const OutParameterType *T,
@@ -1232,7 +1242,7 @@ void TypePrinter::printOutParameterAfter(const OutParameterType *T,
 
 void TypePrinter::printInOutParameterBefore(const InOutParameterType *T,
                                             raw_ostream &OS) {
-  OS << "inout ";
+  printParameterType(*this, "in", T, OS);
 }
 
 void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
@@ -1241,7 +1251,7 @@ void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
 
 void TypePrinter::printMoveParameterBefore(const MoveParameterType *T,
                                            raw_ostream &OS) {
-  OS << "move ";
+  printParameterType(*this, "in", T, OS);
 }
 
 void TypePrinter::printMoveParameterAfter(const MoveParameterType *T,

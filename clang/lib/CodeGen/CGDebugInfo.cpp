@@ -3268,6 +3268,10 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::Decltype:
   case Type::Reflected:
   case Type::UnaryTransform:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     break;
   }
 

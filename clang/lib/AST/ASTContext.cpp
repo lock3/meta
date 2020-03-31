@@ -2371,6 +2371,13 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
     Width = Target->getPointerWidth(getTargetAddressSpace(LangAS::opencl_global));
     Align = Target->getPointerAlign(getTargetAddressSpace(LangAS::opencl_global));
     break;
+
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    return getTypeInfo(cast<ParameterType>(T)->getParameterType().getTypePtr());
   }
 
   assert(llvm::isPowerOf2_32(Align) && "Alignment must be power of 2");
@@ -3574,6 +3581,10 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::DependentExtInt:
   case Type::CXXDependentVariadicReifier:
   case Type::DependentIdentifierSplice:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -7673,6 +7684,10 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string &S,
 
   case Type::Pipe:
   case Type::ExtInt:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
 #define ABSTRACT_TYPE(KIND, BASE)
 #define TYPE(KIND, BASE)
 #define DEPENDENT_TYPE(KIND, BASE) \
@@ -9580,6 +9595,10 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::MemberPointer:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     llvm_unreachable("C++ should never be in mergeTypes");
 
   case Type::ObjCInterface:
