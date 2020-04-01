@@ -2,9 +2,19 @@
 
 class ArrayDestructure {
   consteval {
+    auto lambda = [](auto a_ptr) // expected-error {{invalid deduced capture; 'int *' cannot be captured by a fragment}}
+      consteval {
+      -> __fragment struct {
+        constexpr auto val_a_ptr() {
+          return a_ptr;
+        }
+      };
+    };
+
     int a = 0;
     int &a_ref = a; // expected-note {{'a_ref' declared here}}
     int *a_ptr = &a; // expected-note {{'a_ptr' declared here}}
+
     -> __fragment struct {
       constexpr auto val_a() {
         return a;
@@ -18,6 +28,7 @@ class ArrayDestructure {
         return a_ptr; // expected-error {{reference to local variable 'a_ptr' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
       }
     };
+    lambda(a_ptr); // expected-note {{in instantiation of function template specialization}}
   }
 };
 

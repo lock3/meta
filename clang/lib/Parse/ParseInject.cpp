@@ -228,6 +228,8 @@ Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
   Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(),
                                                  Tok.getLocation(),
                                                  Captures);
+  if (!Fragment)
+    return nullptr;
 
   switch (Tok.getKind()) {
     case tok::kw_namespace:
@@ -268,9 +270,8 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 
   SmallVector<Expr *, 8> Captures;
   Decl *Fragment = ParseCXXFragment(Captures);
-  if (!Fragment) {
+  if (!Fragment)
     return ExprError();
-  }
 
   return Actions.ActOnCXXFragmentExpr(Loc, Fragment, Captures);
 }
