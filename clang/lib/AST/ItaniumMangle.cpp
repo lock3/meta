@@ -3668,23 +3668,25 @@ void CXXNameMangler::mangleType(const DependentExtIntType *T) {
 }
 
 // <type> ::= ???
+
 void CXXNameMangler::mangleType(const InParameterType *T) {
-  llvm_unreachable("cannot mangle in parameter types yet");
+  Out << "U1i";
+  return mangleType(T->getParameterType());
 }
 
-// <type> ::= ???
 void CXXNameMangler::mangleType(const OutParameterType *T) {
-  llvm_unreachable("cannot mangle out parameter types yet");
+  Out << "U1o";
+  return mangleType(T->getParameterType());
 }
 
-// <type> ::= ???
 void CXXNameMangler::mangleType(const InOutParameterType *T) {
-  llvm_unreachable("cannot mangle inout parameter types yet");
+  Out << "U2io";
+  return mangleType(T->getParameterType());
 }
 
-// <type> ::= ???
 void CXXNameMangler::mangleType(const MoveParameterType *T) {
-  llvm_unreachable("cannot mangle move parameter types yet");
+  Out << "U1m";
+  return mangleType(T->getParameterType());
 }
 
 void CXXNameMangler::mangleIntegerLiteral(QualType T,

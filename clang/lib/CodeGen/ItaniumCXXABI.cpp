@@ -3309,6 +3309,12 @@ void ItaniumRTTIBuilder::BuildVTablePointer(const Type *Ty) {
   case Type::Pipe:
     llvm_unreachable("Pipe types shouldn't get here");
 
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    llvm_unreachable("Parameter types shouldn't get here");
+
   case Type::Builtin:
   case Type::ExtInt:
   // GCC treats vector and complex types as fundamental types.
@@ -3585,6 +3591,12 @@ llvm::Constant *ItaniumRTTIBuilder::BuildTypeInfo(
 
   case Type::ExtInt:
     break;
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    llvm_unreachable("Parameter types shouldn't get here");
 
   case Type::ConstantArray:
   case Type::IncompleteArray:
