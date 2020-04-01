@@ -1644,6 +1644,11 @@ void NamedDecl::printNestedNameSpecifier(raw_ostream &OS,
       if (FD->hasWrittenPrototype())
         FT = dyn_cast<FunctionProtoType>(FD->getType()->castAs<FunctionType>());
 
+      if (!FD->getIdentifier() && FD->isMetaprogram()) {
+        OS << "(consteval block)";
+        continue;
+      }
+
       OS << *FD << '(';
       if (FT) {
         unsigned NumParams = FD->getNumParams();

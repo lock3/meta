@@ -4432,14 +4432,13 @@ ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
 
   MetaType *MD;
 
-  // Build the function
+  // Build the anonymous function
   //
-  //  constexpr void __constexpr_decl() compound-statement
+  //  constexpr void () compound-statement
   //
   // where compound-statement is the as-of-yet parsed body of the
   // constexpr-declaration.
-  IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
-  DeclarationName Name(II);
+  DeclarationName Name(static_cast<IdentifierInfo *>(nullptr));
   DeclarationNameInfo NameInfo(Name, ConstevalLoc);
 
   FunctionProtoType::ExtProtoInfo EPI(

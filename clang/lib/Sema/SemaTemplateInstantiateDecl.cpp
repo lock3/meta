@@ -2050,6 +2050,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
     Function->setRangeEnd(D->getSourceRange().getEnd());
   }
 
+  if (D->isMetaprogram())
+    Function->setMetaprogram();
+
   if (D->isInlined())
     Function->setImplicitlyInline();
 

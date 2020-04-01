@@ -21,11 +21,11 @@ class ArrayDestructure {
       }
 
       constexpr auto val_a_ref() {
-        return a_ref; // expected-error {{reference to local variable 'a_ref' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
+        return a_ref; // expected-error {{reference to local variable 'a_ref' declared in enclosing function 'ArrayDestructure::(consteval block)'}}
       }
 
       constexpr auto val_a_ptr() {
-        return a_ptr; // expected-error {{reference to local variable 'a_ptr' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
+        return a_ptr; // expected-error {{reference to local variable 'a_ptr' declared in enclosing function 'ArrayDestructure::(consteval block)'}}
       }
     };
     lambda(a_ptr); // expected-note {{in instantiation of function template specialization}}
@@ -37,7 +37,7 @@ class ClassWithArr {
 };
 
 class BadCaptureClass {
-  consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
+  consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '(consteval block)'}}
     ClassWithArr a_arr_class; // expected-note {{subobject of type 'int' is not initialized}} expected-note {{in call to 'ClassWithArr(a_arr_class)'}}
     -> __fragment struct {
       constexpr auto val_a_arr_class() {
