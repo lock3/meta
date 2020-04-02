@@ -433,12 +433,16 @@ public:
   Value *VisitExpr(Expr *S);
 
   Value *VisitConstantExpr(ConstantExpr *E) {
+    bool IsNonVoidType = !E->getType()->isVoidType();
+
     if (E->hasAPValueResult()) {
-      assert(!E->getType()->isVoidType());
+      assert(IsNonVoidType);
       return ConstantEmitter(CGF).emitAbstract(
           E->getLocation(), E->getAPValueResult(), E->getType());
-    } else {
+    } else if (IsNonVoidType) {
       return Visit(E->getSubExpr());
+    } else {
+      return nullptr;
     }
   }
   Value *VisitParenExpr(ParenExpr *PE) {
