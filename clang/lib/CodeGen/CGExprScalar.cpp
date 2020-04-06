@@ -2362,6 +2362,10 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
   case CK_IntToOCLSampler:
     return CGF.CGM.createOpenCLIntToSamplerConversion(E, CGF);
 
+  case CK_ParameterQualification:
+    // See through the conversion.
+    return Visit(E);
+
   } // end of switch
 
   llvm_unreachable("unknown scalar cast");

@@ -6370,11 +6370,21 @@ void Sema::AddOverloadCandidate(
       // (13.3.3.1) that converts that argument to the corresponding
       // parameter of F.
       QualType ParamType = Proto->getParamType(ArgIdx);
+
+      // If we're converting to a mode type, convert to the adjusted type
+      // of the parameter. We're going to re-add an extra conversion later.
+      if (isa<ParameterType>(ParamType))
+        ParamType = cast<ParameterType>(ParamType)->getAdjustedType(Context);
+
       Candidate.Conversions[ConvIdx] = TryCopyInitialization(
           *this, Args[ArgIdx], ParamType, SuppressUserConversions,
           /*InOverloadResolution=*/true,
           /*AllowObjCWritebackConversion=*/
           getLangOpts().ObjCAutoRefCount, AllowExplicitConversions);
+
+          // FIXME: Remove this!
+          Candidate.Conversions[ConvIdx].dump();
+
       if (Candidate.Conversions[ConvIdx].isBad()) {
         Candidate.Viable = false;
         Candidate.FailureKind = ovl_fail_bad_conversion;

@@ -2180,6 +2180,8 @@ public:
   bool isExtIntType() const;                    // Extended Int Type
   bool isOpenCLSpecificType() const;            // Any OpenCL specific type
 
+  bool isParameterType() const;                 // In, out, etc.
+
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
   /// than implicitly __strong.
@@ -6574,6 +6576,8 @@ public:
 
   QualType getParameterType() const { return ParmType; }
 
+  QualType getAdjustedType(ASTContext &Cxt) const;
+
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, ParmType, PassingMode);
   }
@@ -7194,6 +7198,10 @@ inline bool Type::isPipeType() const {
 
 inline bool Type::isExtIntType() const {
   return isa<ExtIntType>(CanonicalType);
+}
+
+inline bool Type::isParameterType() const {
+  return isa<ParameterType>(CanonicalType);
 }
 
 #define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \

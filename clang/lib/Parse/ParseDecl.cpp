@@ -4044,8 +4044,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 ///
 /// TODO: We could add constexpr to the list and just implement constexpr
 /// parameter passing.
-///
-/// TODO: The 
 void Parser::ParseParameterPassingSpecifier(DeclSpec &DS) {
   // TODO: If users have types with these names, we'll get some weird
   // errors. Note that users can fully qualify their user-defiened types

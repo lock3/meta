@@ -4527,3 +4527,29 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
   for (const TemplateArgument &Arg : Arguments)
     Arg.Profile(ID, Context);
 }
+
+QualType ParameterType::getAdjustedType(ASTContext &Ctx) const
+{
+  QualType P = getParameterType();
+  switch (getTypeClass()) {
+  case Type::InParameter: {
+    if (CXXRecordDecl *Class = P->getAsCXXRecordDecl())
+      if (!Class->canPassInRegisters())
+        return Ctx.getLValueReferenceType(P);
+    return P;
+  }
+
+  case Type::OutParameter:
+    return Ctx.getLValueReferenceType(P);
+
+  case Type::InOutParameter:
+    return Ctx.getLValueReferenceType(P);
+
+  case Type::MoveParameter:
+    return Ctx.getRValueReferenceType(P);
+
+  default:
+    break;
+  }
+  llvm_unreachable("Not a parameter type");
+}

@@ -1786,6 +1786,7 @@ bool CastExpr::CastConsistency() const {
   case CK_UserDefinedConversion:    // operator bool()
   case CK_BuiltinFnToFnPtr:
   case CK_FixedPointToBoolean:
+  case CK_ParameterQualification:
   CheckNoBasePath:
     assert(path_empty() && "Cast kind should not have a base path!");
     break;

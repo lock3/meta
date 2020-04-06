@@ -4693,6 +4693,10 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   }
   case CK_ZeroToOCLOpaqueType:
     llvm_unreachable("NULL to OpenCL opaque type lvalue cast is not valid");
+
+  case CK_ParameterQualification:
+    // This is a no-op. See through the qualification.
+    return EmitLValue(E->getSubExpr());
   }
 
   llvm_unreachable("Unhandled lvalue cast kind?");

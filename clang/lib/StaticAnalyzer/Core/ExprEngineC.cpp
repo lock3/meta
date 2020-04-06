@@ -543,6 +543,9 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
         state = handleLVectorSplat(state, LCtx, CastE, Bldr, Pred);
         continue;
       }
+
+      case CK_ParameterQualification:
+        llvm_unreachable("Not implemented");
     }
   }
 }

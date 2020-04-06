@@ -3462,6 +3462,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_StdInitializerListConstructorCall:
   case SK_OCLSamplerInit:
   case SK_OCLZeroOpaqueType:
+  case SK_ParameterModeInit:
     break;
 
   case SK_ConversionSequence:
@@ -3759,6 +3760,14 @@ void InitializationSequence::RewrapReferenceInitList(QualType T,
   S.Kind = SK_RewrapInitList;
   S.Type = T;
   S.WrappingSyntacticList = Syntactic;
+  Steps.push_back(S);
+}
+
+void InitializationSequence::AddParameterModeInit(QualType T)
+{
+  Step S;
+  S.Kind = SK_ParameterModeInit;
+  S.Type = T;
   Steps.push_back(S);
 }
 
@@ -5614,6 +5623,29 @@ static bool canPerformArrayCopy(const InitializedEntity &Entity) {
   return false;
 }
 
+// TODO: This belongs in LLVM.
+template<typename F>
+struct FinalAction
+{
+  FinalAction(F Fn)
+    : Fn(std::move(Fn))
+  { }
+
+  ~FinalAction()
+  {
+    Fn();
+  }
+
+  F Fn;
+};
+
+// TODO: This belongs in LLVM.
+template<typename F>
+FinalAction<F> Finally(F fn)
+{
+  return FinalAction<F>(std::move(fn));
+}
+
 void InitializationSequence::InitializeFrom(Sema &S,
                                             const InitializedEntity &Entity,
                                             const InitializationKind &Kind,
@@ -5654,6 +5686,19 @@ void InitializationSequence::InitializeFrom(Sema &S,
 
   // Almost everything is a normal sequence.
   setSequenceKind(NormalSequence);
+
+  // If the destination is a parameter with a passing mode, then initialization
+  // is performed as if initializing a parameter whose type is determined by
+  // the passing mode.
+  //
+  // Basically, we're going to pretend to initialize a different object and
+  // then force the the types to agree later.
+  auto ParmAdjustment = Finally([&, this, OrigType = DestType]() {
+    if (DestType->isParameterType())
+      AddParameterModeInit(OrigType);
+  });
+  if (DestType->isParameterType())
+    DestType = cast<ParameterType>(DestType)->getParameterType();
 
   QualType SourceType;
   Expr *Initializer = nullptr;
@@ -5923,7 +5968,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //      conversions (Clause 4) will be used, if necessary, to convert the
   //      initializer expression to the cv-unqualified version of the
   //      destination type; no user-defined conversions are considered.
-
   ImplicitConversionSequence ICS
     = S.TryImplicitConversion(Initializer, DestType,
                               /*SuppressUserConversions*/true,
@@ -7965,7 +8009,8 @@ ExprResult InitializationSequence::Perform(Sema &S,
   case SK_ProduceObjCObject:
   case SK_StdInitializerList:
   case SK_OCLSamplerInit:
-  case SK_OCLZeroOpaqueType: {
+  case SK_OCLZeroOpaqueType: 
+  case SK_ParameterModeInit: {
     assert(Args.size() == 1);
     CurInit = Args[0];
     if (!CurInit.get()) return ExprError();
@@ -8641,6 +8686,19 @@ ExprResult InitializationSequence::Perform(Sema &S,
       CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type,
                                     CK_ZeroToOCLOpaqueType,
                                     CurInit.get()->getValueKind());
+      break;
+    }
+
+    case SK_ParameterModeInit: {
+      // Build a conversion back to the original parameter type; that will
+      // essentially be a no-op.
+      //
+      // We can't hack around this and just update ResultType, since there's
+      // no guarantee it's actually provided.
+      CurInit = ImplicitCastExpr::Create(S.Context, Step->Type,
+                                         CK_ParameterQualification,
+                                         CurInit.get(), nullptr,
+                                         CurInit.get()->getValueKind());
       break;
     }
     }
@@ -9569,6 +9627,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_OCLZeroOpaqueType:
       OS << "OpenCL opaque type from zero";
+      break;
+
+    case SK_ParameterModeInit:
+      OS << "initialize parameter";
       break;
     }
 
