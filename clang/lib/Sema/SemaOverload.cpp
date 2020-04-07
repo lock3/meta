@@ -6381,10 +6381,6 @@ void Sema::AddOverloadCandidate(
           /*InOverloadResolution=*/true,
           /*AllowObjCWritebackConversion=*/
           getLangOpts().ObjCAutoRefCount, AllowExplicitConversions);
-
-          // FIXME: Remove this!
-          Candidate.Conversions[ConvIdx].dump();
-
       if (Candidate.Conversions[ConvIdx].isBad()) {
         Candidate.Viable = false;
         Candidate.FailureKind = ovl_fail_bad_conversion;

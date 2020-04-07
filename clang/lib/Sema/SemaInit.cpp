@@ -5694,7 +5694,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
   // Basically, we're going to pretend to initialize a different object and
   // then force the the types to agree later.
   auto ParmAdjustment = Finally([&, this, OrigType = DestType]() {
-    if (DestType->isParameterType())
+    if (OrigType->isParameterType())
       AddParameterModeInit(OrigType);
   });
   if (DestType->isParameterType())

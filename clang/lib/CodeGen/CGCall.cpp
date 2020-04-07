@@ -3943,6 +3943,13 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
 
   bool HasAggregateEvalKind = hasAggregateEvaluationKind(type);
 
+  // Get the underlying parameter type as needed.
+  //
+  // TODO: Should we perform this adjustment earlier? Or should we be using
+  // the "as-if" adjusted type. This seems to work, however.
+  if (type->isParameterType())
+    type = cast<ParameterType>(type)->getParameterType();
+
   // In the Microsoft C++ ABI, aggregate arguments are destructed by the callee.
   // However, we still have to push an EH-only cleanup in case we unwind before
   // we make it to the call.
