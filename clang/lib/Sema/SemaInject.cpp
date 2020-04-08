@@ -174,12 +174,17 @@ public:
   class RebuildOnlyContextRAII {
     InjectionContext &IC;
     DeclContext *OriginalRebuildOnlyContext;
+    bool OriginalInstantiateTemplates;
   public:
-    RebuildOnlyContextRAII(InjectionContext &IC)
-      : IC(IC), OriginalRebuildOnlyContext(IC.RebuildOnlyContext) {
+    RebuildOnlyContextRAII(
+        InjectionContext &IC, bool InstantiateTemplates = false)
+      : IC(IC), OriginalRebuildOnlyContext(IC.RebuildOnlyContext),
+        OriginalInstantiateTemplates(IC.InstantiateTemplates) {
       IC.RebuildOnlyContext = IC.getSema().CurContext;
+      IC.InstantiateTemplates &= InstantiateTemplates;
     }
     ~RebuildOnlyContextRAII() {
+      IC.InstantiateTemplates = OriginalInstantiateTemplates;
       IC.RebuildOnlyContext = OriginalRebuildOnlyContext;
     }
   };
@@ -226,6 +231,16 @@ public:
     }
 
     CurInjection = PreviousInjection;
+  }
+
+  int getLevelsSubstituted() {
+    int Depth = 0;
+    if (hasTemplateArgs()) {
+      for (const auto &TemplateArgs : getTemplateArgs()) {
+        Depth += TemplateArgs.getNumSubstitutedLevels();
+      }
+    }
+    return Depth;
   }
 
   llvm::DenseMap<Decl *, Decl *> &GetDeclTransformMap() {
@@ -414,13 +429,6 @@ public:
     return RebuildOnlyContext;
   }
 
-  /// Returns true if we're rebuilding a fragment, and the given
-  /// template param should have been provided by an external
-  /// instantiation. i.e. is related to TemplateArgs
-  bool shouldAttemptInstantiation(Decl *D) {
-    return FragmentLocalTemplateParams.count(D) == 0;
-  }
-
   /// Sets the declaration modifiers.
   void SetModifiers(const ReflectionModifiers &Modifiers) {
     this->CurInjection->Modifiers = Modifiers;
@@ -506,8 +514,8 @@ public:
       // decl context as the declaration we're currently cloning.
       if (D->getDeclContext() == getInjectionDeclContext())
         return nullptr;
-    } else {
-      if (hasTemplateArgs() && isa<CXXRecordDecl>(D)) {
+    } else if (hasTemplateArgs() && InstantiateTemplates) {
+      if (isa<CXXRecordDecl>(D)) {
         auto *Record = cast<CXXRecordDecl>(D);
         if (!Record->isDependentContext())
           return D;
@@ -535,7 +543,7 @@ public:
       return R;
 
     if (isa<NonTypeTemplateParmDecl>(E->getDecl())) {
-      if (shouldAttemptInstantiation(E->getDecl())) {
+      if (hasTemplateArgs() && InstantiateTemplates) {
         ExprResult Result = E;
         for (const auto &TemplateArgs : getTemplateArgs()) {
           if (Result.isInvalid())
@@ -550,10 +558,21 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
+  QualType MaybeIncreaseDepth(QualType QT) {
+    // If we're not correcting template depth, or if our TemplateTypeParm was
+    // successfully substituted, return the existing QualType.
+    if (!IncreaseTemplateDepth || !isa<TemplateTypeParmType>(QT.getTypePtr()))
+      return QT;
+
+    const auto *T = cast<TemplateTypeParmType>(QT.getTypePtr());
+    return getSema().Context.getTemplateTypeParmType(
+        T->getDepth() + IncreaseTemplateDepth, T->getIndex(),
+        T->isParameterPack(), T->getDecl());
+  }
+
   QualType TransformTemplateTypeParmType(TypeLocBuilder &TLB,
                                          TemplateTypeParmTypeLoc TL) {
-    TemplateTypeParmDecl *OldTTPDecl = TL.getDecl();
-    if (shouldAttemptInstantiation(OldTTPDecl)) {
+    if (hasTemplateArgs() && InstantiateTemplates) {
       // FIXME: Provide better source info
       TypeSourceInfo *TSI = getSema().SubstType(
           TL, *getTemplateArgs().begin(), SourceLocation(), DeclarationName());
@@ -569,7 +588,7 @@ public:
             TSI, TemplateArgs, SourceLocation(), DeclarationName());
       }
 
-      QualType ResType = TSI->getType();
+      QualType ResType = MaybeIncreaseDepth(TSI->getType());
       TLB.pushTypeSpec(ResType).setNameLoc(TL.getNameLoc());
       return ResType;
     }
@@ -582,9 +601,8 @@ public:
       QualType ObjectType = QualType(),
       NamedDecl *FirstQualifierInScope = nullptr,
       bool AllowInjectedClassName = false) {
-    if (auto *TTPDecl =
-        dyn_cast_or_null<TemplateTemplateParmDecl>(Name.getAsTemplateDecl())) {
-      if (shouldAttemptInstantiation(TTPDecl)) {
+    if (dyn_cast_or_null<TemplateTemplateParmDecl>(Name.getAsTemplateDecl())) {
+      if (hasTemplateArgs() && InstantiateTemplates) {
         NestedNameSpecifierLoc &&SpecLoc = SS.getWithLocInContext(
                                                      getSema().getASTContext());
 
@@ -775,6 +793,10 @@ public:
   /// the rebuilding of declarations via injection.
   DeclContext *RebuildOnlyContext = nullptr;
 
+  bool InstantiateTemplates = true;
+
+  int IncreaseTemplateDepth = 0;
+
   /// The context into which the fragment is injected
   Decl *Injectee;
 
@@ -805,10 +827,6 @@ public:
   ///
   /// As a FIXME, we should look for a more unified approach.
   llvm::SmallVector<Decl *, 32> InjectedDecls;
-
-  /// Template parameter decls that we should not be attempting to
-  /// substitute.
-  llvm::SetVector<Decl *> FragmentLocalTemplateParams;
 };
 
 bool InjectionContext::isInInjection(Decl *D) {
@@ -2153,7 +2171,6 @@ InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
   SmallVector<NamedDecl *, 8> NewParms;
   NewParms.reserve(OldParms->size());
   for (auto &P : *OldParms) {
-    FragmentLocalTemplateParams.insert(P);
     NamedDecl *D = cast_or_null<NamedDecl>(InjectDecl(P));
     NewParms.push_back(D);
     if (!D || D->isInvalidDecl())
@@ -2272,7 +2289,7 @@ Decl *InjectionContext::InjectClassTemplateSpecializationDecl(
 // };
 //
 Decl *InjectionContext::CreatePartiallySubstPattern(FunctionTemplateDecl *D) {
-  RebuildOnlyContextRAII RebuildCtx(*this);
+  RebuildOnlyContextRAII RebuildCtx(*this, /*InstantiateTemplates=*/true);
 
   FunctionDecl *Function = D->getTemplatedDecl();
   return InjectCXXMethodDecl(cast<CXXMethodDecl>(Function), [&](CXXMethodDecl *Method) {
@@ -2337,7 +2354,7 @@ Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
 Decl *InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   TemplateTypeParmDecl *Parm = TemplateTypeParmDecl::Create(
       getSema().Context, getSema().CurContext, D->getBeginLoc(), D->getLocation(),
-      D->getDepth(), D->getIndex(), D->getIdentifier(),
+      D->getDepth() - getLevelsSubstituted(), D->getIndex(), D->getIdentifier(),
       D->wasDeclaredWithTypename(), D->isParameterPack());
   AddDeclSubstitution(D, Parm);
 
@@ -2367,8 +2384,8 @@ Decl *InjectionContext::InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D
 
   NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
       getSema().Context, getSema().CurContext, D->getInnerLocStart(),
-      D->getLocation(), D->getDepth(), D->getPosition(), D->getIdentifier(),
-      T, D->isParameterPack(), DI);
+      D->getLocation(), D->getDepth() - getLevelsSubstituted(),
+      D->getPosition(), D->getIdentifier(), T, D->isParameterPack(), DI);
   AddDeclSubstitution(D, Parm);
 
   if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
@@ -2394,8 +2411,9 @@ Decl *InjectionContext::InjectTemplateTemplateParmDecl(
                                                     D->getTemplateParameters());
 
   TemplateTemplateParmDecl *Parm = TemplateTemplateParmDecl::Create(
-      getSema().Context, getSema().CurContext, D->getLocation(), D->getDepth(),
-      D->getPosition(), D->isParameterPack(), D->getIdentifier(), Params);
+      getSema().Context, getSema().CurContext, D->getLocation(),
+      D->getDepth() - getLevelsSubstituted(), D->getPosition(),
+      D->isParameterPack(), D->getIdentifier(), Params);
   AddDeclSubstitution(D, Parm);
 
   if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
@@ -2917,7 +2935,7 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
 
   DeclaratorDecl *NewDD = D->getRequiredDeclarator();
   // FIXME: This is _DEFINITELY_ wrong.
-  if (hasTemplateArgs()) {
+  if (hasTemplateArgs() && InstantiateTemplates) {
     // FIXME: Do this eventually
     // SubstQualifier(getSema(), D, NewD, TemplateArgs);
     SemaRef.AnalyzingRequiredDeclarator = true;
@@ -4301,6 +4319,23 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   }
 }
 
+static int calculateTemplateDepthAdjustment(CXXMethodDecl *D) {
+  int DepthAdjustment = 0;
+
+  DeclContext *DC = D->getDeclContext();
+  while (!DC->isFileContext()) {
+    ClassTemplateSpecializationDecl *Spec
+          = dyn_cast<ClassTemplateSpecializationDecl>(DC);
+    if (Spec && !Spec->isClassScopeExplicitSpecialization()) {
+      ++DepthAdjustment;
+    }
+
+    DC = DC->getParent();
+  }
+
+  return DepthAdjustment;
+}
+
 static void InjectPendingDefinition(InjectionContext *Ctx,
                                     FunctionTemplateDecl *D,
                                     CXXMethodDecl *NewMethod) {
@@ -4340,7 +4375,10 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   if (NewBody.isInvalid()) {
     NewMethod->setInvalidDecl();
   } else {
+    assert(Ctx->IncreaseTemplateDepth == 0);
+    Ctx->IncreaseTemplateDepth = calculateTemplateDepthAdjustment(NewMethod);
     NewBody = Ctx->TransformStmt(NewBody.get());
+    Ctx->IncreaseTemplateDepth = 0;
     if (NewBody.isInvalid()) {
       NewMethod->setInvalidDecl();
     }
