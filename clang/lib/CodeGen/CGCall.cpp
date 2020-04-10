@@ -145,11 +145,21 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
                                  SmallVectorImpl<CanQualType> &prefix,
               SmallVectorImpl<FunctionProtoType::ExtParameterInfo> &paramInfos,
                                  CanQual<FunctionProtoType> FPT) {
+  ASTContext &Ctx = CGT.getContext();
+
   // Fast path: don't touch param info if we don't need to.
   if (!FPT->hasExtParameterInfos()) {
     assert(paramInfos.empty() &&
            "We have paramInfos, but the prototype doesn't?");
-    prefix.append(FPT->param_type_begin(), FPT->param_type_end());
+    // Copy out parameters, performing adjustments as needed.
+    for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
+      auto PT = FPT->getParamType(I);
+      if (auto const *Parm = cast<ParameterType>(PT)) {
+        QualType Adjusted = cast<ParameterType>(Parm)->getAdjustedType(Ctx);
+        PT = Ctx.getCanonicalType(Adjusted);
+      }
+      prefix.push_back(PT);
+    }
     return;
   }
 
@@ -162,9 +172,15 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
   auto ExtInfos = FPT->getExtParameterInfos();
   assert(ExtInfos.size() == FPT->getNumParams());
   for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
-    prefix.push_back(FPT->getParamType(I));
+    // Adjust the parameter type as needed.
+    auto PT =  FPT->getParamType(I);
+    if (auto const *Parm = cast<ParameterType>(PT)) {
+      QualType Adjusted = cast<ParameterType>(Parm)->getAdjustedType(Ctx);
+      PT = Ctx.getCanonicalType(Adjusted);
+    }
+    prefix.push_back(PT);
     if (ExtInfos[I].hasPassObjectSize())
-      prefix.push_back(CGT.getContext().getSizeType());
+      prefix.push_back(Ctx.getSizeType());
   }
 
   addExtParameterInfosForCall(paramInfos, FPT.getTypePtr(), PrefixSize,

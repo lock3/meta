@@ -812,22 +812,14 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     ResultType = llvm::Type::getIntNTy(getLLVMContext(), EIT->getNumBits());
     break;
   }
+
   case Type::InParameter:
-    // Convert this to the underlying type and rely on the ABI to determine
-    // whether arguments are passed in a register or not.
-    ResultType = ConvertType(cast<InParameterType>(Ty)->getParameterType());
-    break;
-
   case Type::OutParameter:
-    llvm_unreachable("out pararameters not converted");
-    break;
-
   case Type::InOutParameter:
-    llvm_unreachable("inout pararameters not converted");
-    break;
-
   case Type::MoveParameter:
-    llvm_unreachable("move pararameters not converted");
+    // Convert the parameter type to its as-if type.
+    ResultType = ConvertType(
+                        cast<ParameterType>(Ty)->getAdjustedType(getContext()));
     break;
   }
 

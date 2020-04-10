@@ -2565,6 +2565,10 @@ private:
   isCXXDeclarationSpecifier(TPResult BracedCastResult = TPResult::False,
                             bool *InvalidAsDeclSpec = nullptr);
 
+  /// Returns true if the next term is a parameter passing specifier
+  /// and false if it is not.
+  bool isParameterPassingSpecifier();
+
   /// Given that isCXXDeclarationSpecifier returns \c TPResult::True or
   /// \c TPResult::Ambiguous, determine whether the decl-specifier would be
   /// a type-specifier other than a cv-qualifier.

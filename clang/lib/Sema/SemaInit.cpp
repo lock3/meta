@@ -4680,6 +4680,8 @@ static void TryReferenceInitialization(Sema &S,
                                        Expr *Initializer,
                                        InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+  if (DestType->isParameterType())
+    DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4721,6 +4723,8 @@ static void TryReferenceInitializationCore(Sema &S,
                                            Qualifiers T2Quals,
                                            InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+  if (DestType->isParameterType())
+    DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
   // Compute some basic properties of the types and the initializer.
@@ -5698,7 +5702,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
       AddParameterModeInit(OrigType);
   });
   if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getParameterType();
+    DestType = cast<ParameterType>(DestType)->getAdjustedType(Context);
 
   QualType SourceType;
   Expr *Initializer = nullptr;

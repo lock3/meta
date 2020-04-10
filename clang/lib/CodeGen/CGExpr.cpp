@@ -2729,7 +2729,6 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
     }
   }
 
-
   // FIXME: We should be able to assert this for FunctionDecls as well!
   // FIXME: We should be able to assert this for all DeclRefExprs, not just
   // those with a valid source location.
@@ -2782,9 +2781,14 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
       addr = emitBlockByrefAddress(addr, VD);
     }
 
+    // Get the variable type, adjusting as needed for parameter passing types.
+    QualType VarType = VD->getType();
+    if (VarType->isParameterType())
+      VarType = cast<ParameterType>(VarType)->getAdjustedType(getContext());
+
     // Drill into reference types.
-    LValue LV = VD->getType()->isReferenceType() ?
-        EmitLoadOfReferenceLValue(addr, VD->getType(), AlignmentSource::Decl) :
+    LValue LV = VarType->isReferenceType() ?
+        EmitLoadOfReferenceLValue(addr, VarType, AlignmentSource::Decl) :
         MakeAddrLValue(addr, T, AlignmentSource::Decl);
 
     bool isLocalStorage = VD->hasLocalStorage();
@@ -4904,7 +4908,9 @@ LValue CodeGenFunction::EmitBinaryOperatorLValue(const BinaryOperator *E) {
     }
 
     RValue RV = EmitAnyExpr(E->getRHS());
+
     LValue LV = EmitCheckedLValue(E->getLHS(), TCK_Store);
+
     if (RV.isScalar())
       EmitNullabilityCheck(LV, RV.getScalarVal(), E->getExprLoc());
     EmitStoreThroughLValue(RV, LV);

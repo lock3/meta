@@ -3298,9 +3298,15 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
     }
 
     case Type::OutParameter:
-      // TODO: I think this is a no-op.
+      // The type is adjusted to T. It's already an lvalue.
+      type = cast<ParameterType>(type)->getParameterType();
+      break;
+
     case Type::InOutParameter:
-      // TODO: I think this is a no-op.
+      // The type is adjusted to T. It's already an lvalue.
+      type = cast<ParameterType>(type)->getParameterType();
+      break;
+
     case Type::MoveParameter:
       // TODO: I think this becomes an xvlaue.
       llvm_unreachable("not implemented");

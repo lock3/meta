@@ -1913,6 +1913,10 @@ Parser::TryParseParameterDeclarationClause(bool *InvalidAsDeclaration,
     ParsedAttributes attrs(AttrFactory);
     MaybeParseMicrosoftAttributes(attrs);
 
+    // A parameter passing specifier inidcates a function declarator.
+    if (isParameterPassingSpecifier())
+      return TPResult::True;
+
     // decl-specifier-seq
     // A parameter-declaration's initializer must be preceded by an '=', so
     // decl-specifier-seq '{' is not a parameter in C++11.

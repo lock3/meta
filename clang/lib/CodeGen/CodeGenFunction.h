@@ -4586,7 +4586,10 @@ public:
                          .getCanonicalType((*Arg)->getType())
                          .getTypePtr())) &&
                "type mismatch in call argument!");
-        ArgTypes.push_back(*I);
+        QualType PT = *I;
+        if (const auto *Parm = cast<ParameterType>(PT))
+          PT = Parm->getAdjustedType(getContext());
+        ArgTypes.push_back(PT);
       }
     }
 

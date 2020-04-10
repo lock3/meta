@@ -4037,39 +4037,41 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
   }
 }
 
+static void SetParmSpec(DeclSpec &DS, ParameterPassingKind K,
+                        SourceLocation Loc) {
+  DS.SetParameterPassingSpecifier(K, Loc);
+}
+
+bool Parser::isParameterPassingSpecifier() {
+  if (Tok.getKind() == tok::identifier) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+    return II->isStr("in")
+        || II->isStr("out")
+        || II->isStr("inout")
+        || II->isStr("move");
+  }
+  return false;
+}
+
 /// Parse an optional parameter passing specifier.
 ///
 ///   parameter-passing-specifier: one of
 ///     in out inout move forward
 ///
-/// TODO: We could add constexpr to the list and just implement constexpr
-/// parameter passing.
 void Parser::ParseParameterPassingSpecifier(DeclSpec &DS) {
   // TODO: If users have types with these names, we'll get some weird
   // errors. Note that users can fully qualify their user-defiened types
   // in order to be compatible with parameter passing specifers.
-  if (Tok.is(tok::identifier)) {
-    IdentifierInfo *Id = Tok.getIdentifierInfo();
-    if (Id->isStr("in")) {
-      SourceLocation Loc = ConsumeToken();
-      DS.SetParameterPassingSpecifier(PPK_in, Loc);
-    }
-    else if (Id->isStr("out")) {
-      SourceLocation Loc = ConsumeToken();
-      DS.SetParameterPassingSpecifier(PPK_out, Loc);
-    }
-    else if (Id->isStr("inout")) {
-      SourceLocation Loc = ConsumeToken();
-      DS.SetParameterPassingSpecifier(PPK_inout, Loc);
-    }
-    else if (Id->isStr("move")) {
-      SourceLocation Loc = ConsumeToken();
-      DS.SetParameterPassingSpecifier(PPK_move, Loc);
-    }
-    else if (Id->isStr("forward")) {
-      SourceLocation Loc = ConsumeToken();
-      DS.SetParameterPassingSpecifier(PPK_forward, Loc);
-    }
+  if (Tok.getKind() == tok::identifier) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+    if (II->isStr("in"))
+      return SetParmSpec(DS, PPK_in, ConsumeToken());
+    if (II->isStr("out"))
+      return SetParmSpec(DS, PPK_out, ConsumeToken());
+    if (II->isStr("inout"))
+      return SetParmSpec(DS, PPK_inout, ConsumeToken());
+    if (II->isStr("move"))
+      return SetParmSpec(DS, PPK_move, ConsumeToken());
   }
 }
 

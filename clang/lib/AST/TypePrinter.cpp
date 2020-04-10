@@ -1233,7 +1233,7 @@ void TypePrinter::printInParameterAfter(const InParameterType *T,
 
 void TypePrinter::printOutParameterBefore(const OutParameterType *T,
                                           raw_ostream &OS) {
-  printParameterType(*this, "in", T, OS);
+  printParameterType(*this, "out", T, OS);
 }
 
 void TypePrinter::printOutParameterAfter(const OutParameterType *T,
@@ -1242,7 +1242,7 @@ void TypePrinter::printOutParameterAfter(const OutParameterType *T,
 
 void TypePrinter::printInOutParameterBefore(const InOutParameterType *T,
                                             raw_ostream &OS) {
-  printParameterType(*this, "in", T, OS);
+  printParameterType(*this, "inout", T, OS);
 }
 
 void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
@@ -1251,7 +1251,7 @@ void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
 
 void TypePrinter::printMoveParameterBefore(const MoveParameterType *T,
                                            raw_ostream &OS) {
-  printParameterType(*this, "in", T, OS);
+  printParameterType(*this, "move", T, OS);
 }
 
 void TypePrinter::printMoveParameterAfter(const MoveParameterType *T,

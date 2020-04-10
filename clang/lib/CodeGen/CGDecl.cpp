@@ -2378,14 +2378,8 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
   QualType Ty = D.getType();
 
   // If the the parameter has a passing mode, get the underlying type.
-  switch (Ty->getTypeClass()) {
-  case Type::InParameter:
-  case Type::OutParameter:
-  case Type::InOutParameter:
-  case Type::MoveParameter:
-    Ty = cast<ParameterType>(Ty)->getParameterType();
-  default:
-    break;
+  if (Ty->isParameterType()) {
+    Ty = cast<ParameterType>(Ty)->getAdjustedType(getContext());
   }
 
   // Use better IR generation for certain implicit parameters.
