@@ -10560,6 +10560,11 @@ TreeTransform<Derived>::TransformOMPOrderClause(OMPOrderClause *C) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformConstantExpr(ConstantExpr *E) {
+  // If the constant expression already has an APValue, and is not dependent,
+  // there's no reason to drop the constant expression, and rebuild.
+  if (!E->getDependence() && E->hasAPValueResult())
+    return E;
+
   return TransformExpr(E->getSubExpr());
 }
 

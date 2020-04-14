@@ -680,8 +680,7 @@ public:
     ParamInjectionCleanups.push_back(Params);
 
     for (ParmVarDecl *Parm : SourceParams) {
-      const CXXInjectedParmsInfo *InjectedInfo = Parm->InjectedParmsInfo;
-      if (InjectedInfo && !isRebuildOnly()) {
+      if (const CXXInjectedParmsInfo *InjectedInfo = Parm->InjectedParmsInfo) {
         SmallVector<ParmVarDecl *, 4> ExpandedParms;
         if (ExpandInjectedParameter(*InjectedInfo, ExpandedParms))
           return true;
