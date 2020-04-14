@@ -5657,30 +5657,57 @@ public:
 
   bool IsAddressOfOperand() const { return AddressOfOperand; }
 
+  /// Return the optional template keyword and arguments info.
   ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() {
-    if (!HasTemplateKWAndArgsInfo)
+    if (!hasTemplateKWAndArgsInfo())
       return nullptr;
 
     return getTrailingObjects<ASTTemplateKWAndArgsInfo>();
   }
 
+  const ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() const {
+    return const_cast<CXXReflectedIdExpr *>(this)
+        ->getTrailingASTTemplateKWAndArgsInfo();
+  }
+
+  /// Return the optional template arguments.
   TemplateArgumentLoc *getTrailingTemplateArgumentLoc() {
     return getTrailingObjects<TemplateArgumentLoc>();
+  }
+  const TemplateArgumentLoc *getTrailingTemplateArgumentLoc() const {
+    return const_cast<CXXReflectedIdExpr *>(this)
+        ->getTrailingTemplateArgumentLoc();
+  }
+
+  bool hasTemplateKWAndArgsInfo() const {
+    return HasTemplateKWAndArgsInfo;
+  }
+
+  /// Retrieve the location of the template keyword preceding
+  /// this name, if any.
+  SourceLocation getTemplateKeywordLoc() const {
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingASTTemplateKWAndArgsInfo()->TemplateKWLoc;
   }
 
   /// Retrieve the location of the left angle bracket starting the
   /// explicit template argument list following the member name, if any.
   SourceLocation getLAngleLoc() const {
-    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingASTTemplateKWAndArgsInfo()->LAngleLoc;
   }
 
   /// Retrieve the location of the right angle bracket ending the
   /// explicit template argument list following the member name, if any.
   SourceLocation getRAngleLoc() const {
     if (!HasTemplateKWAndArgsInfo) return SourceLocation();
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+    return getTrailingASTTemplateKWAndArgsInfo()->RAngleLoc;
   }
+
+  /// Determines whether the name was preceded by the template keyword.
+  bool hasTemplateKeyword() const { return getTemplateKeywordLoc().isValid(); }
 
   /// Determines whether this member expression actually had a C++
   /// template argument list explicitly specified, e.g., x.f<int>.
@@ -5692,7 +5719,7 @@ public:
     if (!hasExplicitTemplateArgs())
       return nullptr;
 
-    return getTrailingObjects<TemplateArgumentLoc>();
+    return getTrailingTemplateArgumentLoc();
   }
 
   /// Retrieve the number of template arguments provided as part of this
@@ -5701,7 +5728,7 @@ public:
     if (!hasExplicitTemplateArgs())
       return 0;
 
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
+    return getTrailingASTTemplateKWAndArgsInfo()->NumTemplateArgs;
   }
 
   SourceRange getSourceRange() const {

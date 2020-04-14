@@ -8151,10 +8151,8 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
   CXXScopeSpec NewSS;
   NewSS.Adopt(QualifierLoc);
 
+  SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
   TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
-
-  SourceLocation TemplateKWLoc = SourceLocation();
-
   if (E->hasExplicitTemplateArgs()) {
     TemplateArgs.setLAngleLoc(E->getLAngleLoc());
     TemplateArgs.setRAngleLoc(E->getRAngleLoc());
