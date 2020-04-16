@@ -174,12 +174,17 @@ public:
   class RebuildOnlyContextRAII {
     InjectionContext &IC;
     DeclContext *OriginalRebuildOnlyContext;
+    bool OriginalInstantiateTemplates;
   public:
-    RebuildOnlyContextRAII(InjectionContext &IC)
-      : IC(IC), OriginalRebuildOnlyContext(IC.RebuildOnlyContext) {
+    RebuildOnlyContextRAII(
+        InjectionContext &IC, bool InstantiateTemplates = false)
+      : IC(IC), OriginalRebuildOnlyContext(IC.RebuildOnlyContext),
+        OriginalInstantiateTemplates(IC.InstantiateTemplates) {
       IC.RebuildOnlyContext = IC.getSema().CurContext;
+      IC.InstantiateTemplates &= InstantiateTemplates;
     }
     ~RebuildOnlyContextRAII() {
+      IC.InstantiateTemplates = OriginalInstantiateTemplates;
       IC.RebuildOnlyContext = OriginalRebuildOnlyContext;
     }
   };
@@ -226,6 +231,16 @@ public:
     }
 
     CurInjection = PreviousInjection;
+  }
+
+  int getLevelsSubstituted() {
+    int Depth = 0;
+    if (hasTemplateArgs()) {
+      for (const auto &TemplateArgs : getTemplateArgs()) {
+        Depth += TemplateArgs.getNumSubstitutedLevels();
+      }
+    }
+    return Depth;
   }
 
   llvm::DenseMap<Decl *, Decl *> &GetDeclTransformMap() {
@@ -414,13 +429,6 @@ public:
     return RebuildOnlyContext;
   }
 
-  /// Returns true if we're rebuilding a fragment, and the given
-  /// template param should have been provided by an external
-  /// instantiation. i.e. is related to TemplateArgs
-  bool shouldAttemptInstantiation(Decl *D) {
-    return FragmentLocalTemplateParams.count(D) == 0;
-  }
-
   /// Sets the declaration modifiers.
   void SetModifiers(const ReflectionModifiers &Modifiers) {
     this->CurInjection->Modifiers = Modifiers;
@@ -506,6 +514,19 @@ public:
       // decl context as the declaration we're currently cloning.
       if (D->getDeclContext() == getInjectionDeclContext())
         return nullptr;
+    } else if (hasTemplateArgs() && InstantiateTemplates) {
+      if (isa<CXXRecordDecl>(D)) {
+        auto *Record = cast<CXXRecordDecl>(D);
+        if (!Record->isDependentContext())
+          return D;
+
+        for (const auto &TemplateArgs : getTemplateArgs()) {
+          Record = cast<CXXRecordDecl>(SemaRef.FindInstantiatedDecl(
+              Loc, Record, TemplateArgs));
+        }
+
+        return Record;
+      }
     }
 
     return D;
@@ -522,7 +543,7 @@ public:
       return R;
 
     if (isa<NonTypeTemplateParmDecl>(E->getDecl())) {
-      if (shouldAttemptInstantiation(E->getDecl())) {
+      if (hasTemplateArgs() && InstantiateTemplates) {
         ExprResult Result = E;
         for (const auto &TemplateArgs : getTemplateArgs()) {
           if (Result.isInvalid())
@@ -537,10 +558,21 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
+  QualType MaybeIncreaseDepth(QualType QT) {
+    // If we're not correcting template depth, or if our TemplateTypeParm was
+    // successfully substituted, return the existing QualType.
+    if (!IncreaseTemplateDepth || !isa<TemplateTypeParmType>(QT.getTypePtr()))
+      return QT;
+
+    const auto *T = cast<TemplateTypeParmType>(QT.getTypePtr());
+    return getSema().Context.getTemplateTypeParmType(
+        T->getDepth() + IncreaseTemplateDepth, T->getIndex(),
+        T->isParameterPack(), T->getDecl());
+  }
+
   QualType TransformTemplateTypeParmType(TypeLocBuilder &TLB,
                                          TemplateTypeParmTypeLoc TL) {
-    TemplateTypeParmDecl *OldTTPDecl = TL.getDecl();
-    if (shouldAttemptInstantiation(OldTTPDecl)) {
+    if (hasTemplateArgs() && InstantiateTemplates) {
       // FIXME: Provide better source info
       TypeSourceInfo *TSI = getSema().SubstType(
           TL, *getTemplateArgs().begin(), SourceLocation(), DeclarationName());
@@ -556,7 +588,7 @@ public:
             TSI, TemplateArgs, SourceLocation(), DeclarationName());
       }
 
-      QualType ResType = TSI->getType();
+      QualType ResType = MaybeIncreaseDepth(TSI->getType());
       TLB.pushTypeSpec(ResType).setNameLoc(TL.getNameLoc());
       return ResType;
     }
@@ -569,9 +601,8 @@ public:
       QualType ObjectType = QualType(),
       NamedDecl *FirstQualifierInScope = nullptr,
       bool AllowInjectedClassName = false) {
-    if (auto *TTPDecl =
-        dyn_cast_or_null<TemplateTemplateParmDecl>(Name.getAsTemplateDecl())) {
-      if (shouldAttemptInstantiation(TTPDecl)) {
+    if (dyn_cast_or_null<TemplateTemplateParmDecl>(Name.getAsTemplateDecl())) {
+      if (hasTemplateArgs() && InstantiateTemplates) {
         NestedNameSpecifierLoc &&SpecLoc = SS.getWithLocInContext(
                                                      getSema().getASTContext());
 
@@ -649,8 +680,7 @@ public:
     ParamInjectionCleanups.push_back(Params);
 
     for (ParmVarDecl *Parm : SourceParams) {
-      const CXXInjectedParmsInfo *InjectedInfo = Parm->InjectedParmsInfo;
-      if (InjectedInfo && !isRebuildOnly()) {
+      if (const CXXInjectedParmsInfo *InjectedInfo = Parm->InjectedParmsInfo) {
         SmallVector<ParmVarDecl *, 4> ExpandedParms;
         if (ExpandInjectedParameter(*InjectedInfo, ExpandedParms))
           return true;
@@ -762,6 +792,10 @@ public:
   /// the rebuilding of declarations via injection.
   DeclContext *RebuildOnlyContext = nullptr;
 
+  bool InstantiateTemplates = true;
+
+  int IncreaseTemplateDepth = 0;
+
   /// The context into which the fragment is injected
   Decl *Injectee;
 
@@ -792,10 +826,6 @@ public:
   ///
   /// As a FIXME, we should look for a more unified approach.
   llvm::SmallVector<Decl *, 32> InjectedDecls;
-
-  /// Template parameter decls that we should not be attempting to
-  /// substitute.
-  llvm::SetVector<Decl *> FragmentLocalTemplateParams;
 };
 
 bool InjectionContext::isInInjection(Decl *D) {
@@ -2046,6 +2076,9 @@ static void PushDeclStmtDecl(InjectionContext &Ctx, Decl *NewDecl) {
   // as this should have been handled by the injection of the decl.
   Scope *FunctionScope =
     SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
+  if (!FunctionScope)
+    return;
+
   SemaRef.PushOnScopeChains(cast<NamedDecl>(NewDecl), FunctionScope,
                             /*AddToContext=*/false);
 }
@@ -2137,7 +2170,6 @@ InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
   SmallVector<NamedDecl *, 8> NewParms;
   NewParms.reserve(OldParms->size());
   for (auto &P : *OldParms) {
-    FragmentLocalTemplateParams.insert(P);
     NamedDecl *D = cast_or_null<NamedDecl>(InjectDecl(P));
     NewParms.push_back(D);
     if (!D || D->isInvalidDecl())
@@ -2256,7 +2288,7 @@ Decl *InjectionContext::InjectClassTemplateSpecializationDecl(
 // };
 //
 Decl *InjectionContext::CreatePartiallySubstPattern(FunctionTemplateDecl *D) {
-  RebuildOnlyContextRAII RebuildCtx(*this);
+  RebuildOnlyContextRAII RebuildCtx(*this, /*InstantiateTemplates=*/true);
 
   FunctionDecl *Function = D->getTemplatedDecl();
   return InjectCXXMethodDecl(cast<CXXMethodDecl>(Function), [&](CXXMethodDecl *Method) {
@@ -2321,7 +2353,7 @@ Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
 Decl *InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   TemplateTypeParmDecl *Parm = TemplateTypeParmDecl::Create(
       getSema().Context, getSema().CurContext, D->getBeginLoc(), D->getLocation(),
-      D->getDepth(), D->getIndex(), D->getIdentifier(),
+      D->getDepth() - getLevelsSubstituted(), D->getIndex(), D->getIdentifier(),
       D->wasDeclaredWithTypename(), D->isParameterPack());
   AddDeclSubstitution(D, Parm);
 
@@ -2351,8 +2383,8 @@ Decl *InjectionContext::InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D
 
   NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
       getSema().Context, getSema().CurContext, D->getInnerLocStart(),
-      D->getLocation(), D->getDepth(), D->getPosition(), D->getIdentifier(),
-      T, D->isParameterPack(), DI);
+      D->getLocation(), D->getDepth() - getLevelsSubstituted(),
+      D->getPosition(), D->getIdentifier(), T, D->isParameterPack(), DI);
   AddDeclSubstitution(D, Parm);
 
   if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
@@ -2378,8 +2410,9 @@ Decl *InjectionContext::InjectTemplateTemplateParmDecl(
                                                     D->getTemplateParameters());
 
   TemplateTemplateParmDecl *Parm = TemplateTemplateParmDecl::Create(
-      getSema().Context, getSema().CurContext, D->getLocation(), D->getDepth(),
-      D->getPosition(), D->isParameterPack(), D->getIdentifier(), Params);
+      getSema().Context, getSema().CurContext, D->getLocation(),
+      D->getDepth() - getLevelsSubstituted(), D->getPosition(),
+      D->isParameterPack(), D->getIdentifier(), Params);
   AddDeclSubstitution(D, Parm);
 
   if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
@@ -2901,7 +2934,7 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
 
   DeclaratorDecl *NewDD = D->getRequiredDeclarator();
   // FIXME: This is _DEFINITELY_ wrong.
-  if (hasTemplateArgs()) {
+  if (hasTemplateArgs() && InstantiateTemplates) {
     // FIXME: Do this eventually
     // SubstQualifier(getSema(), D, NewD, TemplateArgs);
     SemaRef.AnalyzingRequiredDeclarator = true;
@@ -2939,42 +2972,26 @@ static Decl *GetRootDeclaration(Expr *E) {
   llvm_unreachable("failed to find declaration");
 }
 
-template<typename T, typename F>
-static void FilteredCaptureCB(T *Entity, F CaptureCB) {
+template<typename T>
+static bool isCapturableEntity(T *Entity) {
   QualType EntityTy = Entity->getType();
 
   if (EntityTy->isPointerType())
-    return;
+    return false;
 
   if (EntityTy->canDecayToPointerType())
-    return;
+    return false;
 
   if (EntityTy->isReferenceType())
-    return;
+    return false;
 
-  CaptureCB(Entity);
+  return true;
 }
 
-template<typename F>
-static void ExtractDecomposedDeclInits(Sema &S, DecompositionDecl *D,
-                                       F CapturedExprCB) {
-  for (BindingDecl *BD : D->bindings()) {
-    ExprResult LValueConverted = S.DefaultFunctionArrayLvalueConversion(BD->getBinding());
-    FilteredCaptureCB(LValueConverted.get(), CapturedExprCB);
-  }
-}
-
-/// Calls the passed lambda on any init exprs conatined in Expr E.
-template<typename F>
-static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB) {
-  Decl *D = GetRootDeclaration(E);
-
-  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
-    ExtractDecomposedDeclInits(S, DD, CapturedExprCB);
-    return;
-  }
-
-  FilteredCaptureCB(E, CapturedExprCB);
+template<typename T, typename F>
+static void FilteredCaptureCB(T *Entity, F CaptureCB) {
+  if (isCapturableEntity(Entity))
+    CaptureCB(Entity);
 }
 
 template<typename F>
@@ -2985,18 +3002,22 @@ static void ExtractDecomposedDecls(Sema &S, DecompositionDecl *D,
   }
 }
 
-/// Calls the passed lambda on any variable declarations
-/// conatined in Expr E.
-template<typename F>
-static void ExtractCapturedVariables(Sema &S, Expr *E, F CapturedDeclCB) {
-  Decl *D = GetRootDeclaration(E);
+// Where E is an expression that's been created by the capture system,
+// set VD to the ValueDecl referred to by E.
+//
+// If this cannot be completed, return true, and diagnose.
+static bool getCapturedVariable(Sema &SemaRef, Expr *E, ValueDecl *&VD) {
+  VD = cast<ValueDecl>(GetRootDeclaration(E));
 
-  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
-    ExtractDecomposedDecls(S, DD, CapturedDeclCB);
-    return;
-  }
+  assert(!isa<DecompositionDecl>(VD) &&
+      "decomposition decl should already be deconstructed.");
 
-  FilteredCaptureCB(cast<ValueDecl>(D), CapturedDeclCB);
+  if (isCapturableEntity(VD))
+    return false;
+
+  SemaRef.Diag(E->getExprLoc(), diag::err_invalid_fragment_capture)
+      << VD->getType();
+  return true;
 }
 
 // Find variables to capture in the given scope.
@@ -3064,30 +3085,40 @@ static void ReferenceCaptures(Sema &SemaRef,
 //    constexpr auto v = <opaque>;
 //
 // These are replaced by their values during injection.
-static void CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
-  ExtractCapturedVariables(SemaRef, E, [&] (ValueDecl *Var) {
-    SourceLocation NameLoc = Var->getLocation();
-    DeclarationName Name = Var->getDeclName();
-    QualType T = SemaRef.Context.DependentTy;
-    TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
-    VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, NameLoc, NameLoc,
-                                           Name, T, TSI, SC_Static);
-    Placeholder->setConstexpr(true);
-    Placeholder->setImplicit(true);
-    Placeholder->setInitStyle(VarDecl::CInit);
-    Placeholder->setInit(
-        new (SemaRef.Context) OpaqueValueExpr(NameLoc, T, VK_RValue));
-    Placeholder->setReferenced(true);
-    Placeholder->markUsed(SemaRef.Context);
-    Frag->addDecl(Placeholder);
-  });
+static bool CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
+  ValueDecl *Var;
+  if (getCapturedVariable(SemaRef, E, Var))
+    return true;
+
+  SourceLocation NameLoc = Var->getLocation();
+  DeclarationName Name = Var->getDeclName();
+  QualType T = SemaRef.Context.DependentTy;
+  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, NameLoc, NameLoc,
+                                         Name, T, TSI, SC_Static);
+  Placeholder->setConstexpr(false);
+  Placeholder->setImplicit(true);
+  Placeholder->setInitStyle(VarDecl::CInit);
+  Placeholder->setInit(
+      new (SemaRef.Context) OpaqueValueExpr(NameLoc, T, VK_RValue));
+  Placeholder->setReferenced(true);
+  Placeholder->markUsed(SemaRef.Context);
+
+  Frag->addDecl(Placeholder);
+
+  return false;
 }
 
-static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
+static bool CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
                                SmallVectorImpl<Expr *> &Captures) {
-  std::for_each(Captures.begin(), Captures.end(), [&](Expr *E) {
-    CreatePlaceholder(SemaRef, Frag, E);
-  });
+  bool Invalid = false;
+
+  for (Expr *E : Captures) {
+    if (CreatePlaceholder(SemaRef, Frag, E))
+      Invalid = true;
+  }
+
+  return Invalid;
 }
 
 /// Called at the start of a source code fragment to establish the list of
@@ -3145,7 +3176,8 @@ Decl *Sema::ActOnFinishCXXStmtFragment(Scope *S, Decl *StmtFragment,
 CXXFragmentDecl *Sema::ActOnStartCXXFragment(Scope *S, SourceLocation Loc,
                                              SmallVectorImpl<Expr *> &Captures) {
   CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
-  CreatePlaceholders(*this, Fragment, Captures);
+  if (CreatePlaceholders(*this, Fragment, Captures))
+    return nullptr;
 
   if (S)
     PushDeclContext(S, Fragment);
@@ -3194,11 +3226,11 @@ ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
 ///   };
 ///
 static
-CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
-                                        SourceLocation Loc,
-                                        CXXFragmentDecl *FD,
-                                        CXXReflectExpr *Reflection,
-                                        SmallVectorImpl<Expr *> &Captures) {
+ExprResult SynthesizeFragmentExpr(Sema &S,
+                                  SourceLocation Loc,
+                                  CXXFragmentDecl *FD,
+                                  CXXReflectExpr *Reflection,
+                                  SmallVectorImpl<Expr *> &Captures) {
   ASTContext &Context = S.Context;
   DeclContext *CurContext = S.CurContext;
 
@@ -3239,24 +3271,26 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
 
   // Build the capture fields.
   for (Expr *E : Captures) {
-    ExtractCapturedVariables(S, E, [&] (ValueDecl *Var)  {
-      std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
-      IdentifierInfo *Id = &Context.Idents.get(Name);
+    ValueDecl *Var;
+    if (getCapturedVariable(S, E, Var))
+      return ExprError();
 
-      // We need to get the non-reference type, we're capturing by value.
-      QualType Type = Var->getType().getNonReferenceType();
+    std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo *Id = &Context.Idents.get(Name);
 
-      TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Type);
-      FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc, Id,
-                                           Type, TypeInfo,
-                                           nullptr, false,
-                                           ICIS_NoInit);
-      Field->setAccess(AS_public);
-      Field->setImplicit(true);
+    // We need to get the non-reference type, we're capturing by value.
+    QualType Type = Var->getType().getNonReferenceType();
 
-      Fields.push_back(Field);
-      Class->addDecl(Field);
-    });
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Type);
+    FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc, Id,
+                                         Type, TypeInfo,
+                                         nullptr, false,
+                                         ICIS_NoInit);
+    Field->setAccess(AS_public);
+    Field->setImplicit(true);
+
+    Fields.push_back(Field);
+    Class->addDecl(Field);
   }
 
   // Build a new constructor for our fragment type.
@@ -3281,9 +3315,7 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   SmallVector<QualType, 4> ArgTypes;
   ArgTypes.push_back(ReflectionType);
   for (Expr *E : Captures) {
-    ExtractCapturedVariableInits(S, E, [&] (Expr *EE) {
-      ArgTypes.push_back(EE->getType());
-    });
+    ArgTypes.push_back(E->getType());
   }
 
   QualType CtorTy = Context.getFunctionType(Context.VoidTy, ArgTypes, EPI);
@@ -3307,21 +3339,23 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   // Build the constructor capture params.
   int DestExpansion = 0;
   for (Expr *E : Captures) {
-    ExtractCapturedVariables(S, E, [&] (ValueDecl *Var) {
-      std::string Name = "__param_" + Var->getIdentifier()->getName().str();
-      IdentifierInfo *Id = &Context.Idents.get(Name);
+    ValueDecl *Var;
+    if (getCapturedVariable(S, E, Var))
+      return ExprError();
 
-      // We need to get the non-reference type, we're capturing by value.
-      QualType ParmTy = Var->getType().getNonReferenceType();
+    std::string Name = "__param_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo *Id = &Context.Idents.get(Name);
 
-      TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
-      ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
-                                              Id, ParmTy, TypeInfo,
-                                              SC_None, nullptr);
-      Parm->setScopeInfo(0, ++DestExpansion);
-      Parm->setImplicit(true);
-      Parms.push_back(Parm);
-    });
+    // We need to get the non-reference type, we're capturing by value.
+    QualType ParmTy = Var->getType().getNonReferenceType();
+
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
+    ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
+                                            Id, ParmTy, TypeInfo,
+                                            SC_None, nullptr);
+    Parm->setScopeInfo(0, ++DestExpansion);
+    Parm->setImplicit(true);
+    Parms.push_back(Parm);
   }
 
   Ctor->setParams(Parms);
@@ -3354,9 +3388,7 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   SmallVector<Expr *, 8> CtorArgs;
   CtorArgs.push_back(dyn_cast<Expr>(Reflection));
   for (Expr *E : Captures) {
-    ExtractCapturedVariableInits(S, E, [&] (Expr *EE) {
-      CtorArgs.push_back(EE);
-    });
+    CtorArgs.push_back(E);
   }
 
   // Build an expression that that initializes the fragment object.
@@ -4286,6 +4318,23 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   }
 }
 
+static int calculateTemplateDepthAdjustment(CXXMethodDecl *D) {
+  int DepthAdjustment = 0;
+
+  DeclContext *DC = D->getDeclContext();
+  while (!DC->isFileContext()) {
+    ClassTemplateSpecializationDecl *Spec
+          = dyn_cast<ClassTemplateSpecializationDecl>(DC);
+    if (Spec && !Spec->isClassScopeExplicitSpecialization()) {
+      ++DepthAdjustment;
+    }
+
+    DC = DC->getParent();
+  }
+
+  return DepthAdjustment;
+}
+
 static void InjectPendingDefinition(InjectionContext *Ctx,
                                     FunctionTemplateDecl *D,
                                     CXXMethodDecl *NewMethod) {
@@ -4325,7 +4374,10 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   if (NewBody.isInvalid()) {
     NewMethod->setInvalidDecl();
   } else {
+    assert(Ctx->IncreaseTemplateDepth == 0);
+    Ctx->IncreaseTemplateDepth = calculateTemplateDepthAdjustment(NewMethod);
     NewBody = Ctx->TransformStmt(NewBody.get());
+    Ctx->IncreaseTemplateDepth = 0;
     if (NewBody.isInvalid()) {
       NewMethod->setInvalidDecl();
     }

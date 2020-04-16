@@ -20,6 +20,10 @@ inline namespace v1 {
       (void) __reflect_print(message);
     }
 
+    consteval void dump(info type_reflection) const {
+      (void) __reflect_dump(definition_of(type_reflection));
+    }
+
     consteval void error(const char* message) const {
       __compiler_error(message);
     }

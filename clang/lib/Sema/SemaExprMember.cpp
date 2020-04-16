@@ -70,6 +70,10 @@ enum IMAKind {
   // unevaluated.
   IMA_Field_Uneval_Context,
 
+  // We have no idea where this really refers to,
+  // because we've yet to inject it.
+  IMA_PendingInjection,
+
   /// All possible referrents are instance members and the current
   /// context is not an instance method.
   IMA_Error_StaticContext,
@@ -89,6 +93,9 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
                                             const LookupResult &R) {
   assert(!R.empty() && (*R.begin())->isCXXClassMember());
   DeclContext *DC = SemaRef.getFunctionLevelDeclContext();
+
+  if (isa<CXXStmtFragmentDecl>(DC))
+    return IMA_PendingInjection;
 
   bool isStaticContext = SemaRef.CXXThisTypeOverride.isNull() &&
     (!isa<CXXMethodDecl>(DC) || cast<CXXMethodDecl>(DC)->isStatic());
@@ -250,6 +257,7 @@ Sema::BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
   case IMA_Abstract:
   case IMA_Mixed_StaticContext:
   case IMA_Unresolved_StaticContext:
+  case IMA_PendingInjection:
     if (TemplateArgs || TemplateKWLoc.isValid())
       return BuildTemplateIdExpr(SS, TemplateKWLoc, R, false, TemplateArgs);
     return BuildDeclarationNameExpr(SS, R, false);

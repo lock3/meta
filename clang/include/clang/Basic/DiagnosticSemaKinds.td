@@ -10558,6 +10558,8 @@ def err_modify_constexpr_field : Error<
   "cannot make a non-static data member constexpr">;
 def err_invalid_type_transformer_operand : Error<
   "invalid operand of type %0; expected a reflection">;
+def err_invalid_fragment_capture : Error<
+  "invalid deduced capture; %0 cannot be captured by a fragment">;
 } // end of injection issue category
 
 let CategoryName = "Non-Standard Warning" in {
