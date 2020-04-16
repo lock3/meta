@@ -1906,12 +1906,28 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
   setDependence(computeDependence(this));
 }
 
-CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
-                                 QualType T, CXXFragmentDecl *Frag,
-                                 ArrayRef<Expr *> Caps, Expr *E)
+CXXFragmentExpr::CXXFragmentExpr(QualType T, SourceLocation IntroLoc,
+                                 CXXFragmentDecl *Frag, ArrayRef<Expr *> Caps)
   : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary),
-    IntroLoc(IntroLoc), NumCaptures(Caps.size()),
-    Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
-  std::copy(Caps.begin(), Caps.end(), Captures);
-  setDependence(computeDependence(this));
+    NumCaptures(Caps.size()), Fragment(Frag) {
+  FragmentExprBits.IntroLoc = IntroLoc;
+}
+
+CXXFragmentExpr *CXXFragmentExpr::Create(
+    const ASTContext &C, SourceLocation IntroLoc,
+    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures) {
+  // Allocate buffered CXXFragmentExpr with space for trailing captures.
+  void *Buffer = C.Allocate(totalSizeToAlloc<Expr *>(Captures.size()));
+  auto *E = new (Buffer) CXXFragmentExpr(C.MetaInfoTy, IntroLoc, Fragment, Captures);
+
+  // Add captures and compute dependence.
+  std::copy(Captures.begin(), Captures.end(), E->getTrailingObjects<Expr *>());
+  E->setDependence(computeDependence(E));
+
+  return E;
+}
+
+CXXFragmentExpr *CXXFragmentExpr::CreateEmpty(
+    const ASTContext &C, EmptyShell Empty) {
+  return new (C) CXXFragmentExpr(Empty);
 }

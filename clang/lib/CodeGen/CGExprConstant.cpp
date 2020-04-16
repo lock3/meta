@@ -2012,6 +2012,7 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
     return llvm::ConstantInt::get(CGM.getLLVMContext(),
                                   Value.getFixedPoint().getValue());
   case APValue::Reflection:
+  case APValue::Fragment:
     // FIXME: Could this branch be reached?
     llvm_unreachable("Reflections should not be codegened.");
   case APValue::ComplexInt: {

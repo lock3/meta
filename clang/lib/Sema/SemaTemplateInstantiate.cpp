@@ -1630,19 +1630,16 @@ ExprResult TemplateInstantiator::TransformCXXFragmentExpr(
   // If the fragment is dependent, we should store those template
   // arguments in a separate table, which will be used to construct
   // the final table.
-  if (Expr *FragmentInitializer = E->getInitializer()) {
-    CXXRecordDecl *FragmentClosureDecl =
-      FragmentInitializer->getType()->getAsCXXRecordDecl();
-
+  if (!E->getDependence()) {
     // Create and retrieve vector for our complete template argument
     // list(s).
     //
     // This should only happen once per closure.
     auto &FragmentTemplArgs = getSema().FragmentInstantiationArgs;
-    assert(FragmentTemplArgs.count(FragmentClosureDecl) == 0);
-    FragmentTemplArgs.insert({FragmentClosureDecl, {}});
+    assert(FragmentTemplArgs.count(E) == 0);
+    FragmentTemplArgs.insert({E, {}});
 
-    auto Iter = FragmentTemplArgs.find(FragmentClosureDecl);
+    auto Iter = FragmentTemplArgs.find(E);
     assert(Iter != FragmentTemplArgs.end());
 
     // If we have template arguments that need applied before

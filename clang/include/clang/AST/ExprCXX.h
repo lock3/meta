@@ -67,9 +67,6 @@ class TemplateParameterList;
 /// This is a set containing type and evaluated value information,
 /// which shall be used in the injection process.
 struct InjectionEffect {
-  /// The type of the expression evaluated to produce this effect.
-  const QualType ExprType;
-
   /// The evaluated value of the expression evaluated to produce this effect.
   const APValue ExprValue;
 
@@ -77,15 +74,14 @@ struct InjectionEffect {
   /// effect should be injected into.
   const CXXInjectionContextSpecifier ContextSpecifier;
 
-  InjectionEffect(QualType ExprType, APValue ExprValue,
+  InjectionEffect(APValue ExprValue,
                   const CXXInjectionContextSpecifier &ContextSpecifier)
-    : ExprType(ExprType), ExprValue(ExprValue),
+    : ExprValue(ExprValue),
       ContextSpecifier(ContextSpecifier) { }
 
   InjectionEffect(const InjectionEffect &Effect,
                   const CXXInjectionContextSpecifier &ContextOverride)
-    : ExprType(Effect.ExprType), ExprValue(Effect.ExprValue),
-      ContextSpecifier(ContextOverride) { }
+    : ExprValue(Effect.ExprValue), ContextSpecifier(ContextOverride) { }
 };
 
 //===--------------------------------------------------------------------===//
@@ -5862,48 +5858,59 @@ public:
 /// FIXME: The destination context might actually be a block statement. As in:
 /// inject a statement at the end of this block. We don't currently support
 /// that.
-class CXXFragmentExpr : public Expr {
-  /// \brief The location of the introducer token.
-  SourceLocation IntroLoc;
-
-  /// \brief The number of captured declarations.
+class CXXFragmentExpr final
+    : public Expr,
+      public llvm::TrailingObjects<CXXFragmentExpr, Expr *> {
+  /// The number of captured declarations.
   std::size_t NumCaptures;
-
-  /// \brief The reference expressions to local variables. These are all
-  /// DeclRefExprs. We store these instead of their underlying declarations
-  /// to facilitate their evaluation during injection.
-  ///
-  /// TODO: These are implicitly stored as operands to the initializer.
-  /// Do we need to store them twice?
-  Expr **Captures;
 
   /// The fragment introduced by the expression.
   CXXFragmentDecl *Fragment;
 
-  /// The expression that constructs the reflection value for the fragment.
-  Stmt *Init;
+  /// Returns a pointer to the start of the trailing captures.
+  ///
+  /// The reference expressions to local variables. These are all
+  /// DeclRefExprs. We store these instead of their underlying declarations
+  /// to facilitate their evaluation during injection.
+  Expr **getTrailingCaptures() {
+    return getTrailingObjects<Expr *>();
+  }
+  Expr *const *getTrailingCaptures() const {
+    return const_cast<CXXFragmentExpr *>(this)->getTrailingCaptures();
+  }
 
-  public:
-  CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
-                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
-                  Expr *Init);
+  CXXFragmentExpr(QualType Ty, SourceLocation IntroLoc,
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
 
-  explicit CXXFragmentExpr(EmptyShell Empty)
-    : Expr(CXXFragmentExprClass, Empty), IntroLoc(), NumCaptures(),
-      Captures(), Init() {}
+  CXXFragmentExpr(EmptyShell Empty) : Expr(CXXFragmentExprClass, Empty) {}
+public:
+  static CXXFragmentExpr *Create(
+      const ASTContext &C, SourceLocation IntroLoc,
+      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
+
+  static CXXFragmentExpr *CreateEmpty(const ASTContext &C,
+                                      EmptyShell Empty);
 
   /// \brief The number of captured declarations.
   std::size_t getNumCaptures() const { return NumCaptures; }
 
   /// \brief The Ith capture of the injection statement.
-  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
-  Expr *getCapture(std::size_t I) { return Captures[I]; }
+  Expr *getCapture(std::size_t I) {
+    return cast<Expr>(getTrailingCaptures()[I]);
+  }
+  const Expr *getCapture(std::size_t I) const {
+    return const_cast<CXXFragmentExpr *>(this)->getCapture(I);
+  }
 
-  using capture_iterator = Expr**;
+  using capture_iterator = Expr *const *;
   using capture_range = llvm::iterator_range<capture_iterator>;
 
-  capture_iterator begin_captures() const { return Captures; }
-  capture_iterator end_captures() const { return Captures + NumCaptures; }
+  capture_iterator begin_captures() const {
+    return (Expr *const *) getTrailingCaptures();
+  }
+  capture_iterator end_captures() const {
+    return begin_captures() + NumCaptures;
+  }
 
   capture_range captures() const {
     return capture_range(begin_captures(), end_captures());
@@ -5912,26 +5919,28 @@ class CXXFragmentExpr : public Expr {
   /// \brief The introduced fragment.
   CXXFragmentDecl *getFragment() const { return Fragment; }
 
-  /// \brief The expression that value initializes an object of this type.
-  Expr *getInitializer() const { return reinterpret_cast<Expr *>(Init); }
-
   child_range children() {
-    return child_range(&Init, &Init + 1);
+    return child_range(
+        (Stmt**) getTrailingCaptures(),
+        (Stmt**) (getTrailingCaptures() + NumCaptures));
   }
 
   const_child_range children() const {
-    return const_child_range(&Init, &Init + 1);
+    auto Children = const_cast<CXXFragmentExpr *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
   }
 
   /// \brief The location of the introducer token.
-  SourceLocation getIntroLoc() const { return IntroLoc; }
+  SourceLocation getIntroLoc() const { return FragmentExprBits.IntroLoc; }
 
-  SourceLocation getBeginLoc() const { return IntroLoc; }
-  SourceLocation getEndLoc() const { return IntroLoc; }
+  SourceLocation getBeginLoc() const { return getIntroLoc(); }
+  SourceLocation getEndLoc() const { return getIntroLoc(); }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXFragmentExprClass;
   }
+
+  friend TrailingObjects;
 };
 
 } // namespace clang

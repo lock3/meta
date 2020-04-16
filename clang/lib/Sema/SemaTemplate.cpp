@@ -6829,6 +6829,10 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Converted = TemplateArgument(ReflExpr.get(), TemplateArgument::Expression);
       break;
     }
+    case APValue::Fragment:
+      // Not yet supported, returning an error will drop this candidate from the overload
+      // set, rather than causing a hard crash via an unreachable.
+      return ExprError();
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
 

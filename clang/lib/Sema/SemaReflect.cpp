@@ -149,7 +149,7 @@ ExprResult Sema::BuildInvalidCXXReflectExpr(SourceLocation Loc,
 }
 
 ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
-  assert(Reflection.isReflection());
+  assert(Reflection.isReflectionVariant());
 
   switch (Reflection.getReflectionKind()) {
   case RK_invalid: {
@@ -182,6 +182,8 @@ ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
     return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
                                /*RP=*/SourceLocation());
   }
+  case RK_fragment:
+    llvm_unreachable("unsupported operation");
   }
 
   llvm_unreachable("invalid reflection kind");
@@ -1300,6 +1302,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   }
 
   case RK_base_specifier:
+  case RK_fragment:
     break;
   }
 
@@ -1553,6 +1556,7 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   }
 
   case RK_base_specifier:
+  case RK_fragment:
     break;
   }
 

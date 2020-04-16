@@ -8368,7 +8368,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
-  // Transform captures first.
+  // Transform captures.
   SmallVector<Expr *, 8> Captures;
   for (Expr *Old : E->captures()) {
     ExprResult New = getDerived().TransformExpr(Old);
@@ -8378,19 +8378,9 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     Captures.push_back(New.get());
   }
 
-  // Create a new fragment closure, using the existing fragment
-  // content.
-  SourceLocation Loc = E->getExprLoc();
-  CXXFragmentDecl *IncompleteNewFragment = getSema().ActOnStartCXXFragment(
-                                                        nullptr, Loc, Captures);
-  Decl *OldFragmentContent = E->getFragment()->getContent();
-  CXXFragmentDecl *NewFragment = getSema().ActOnFinishCXXFragment(nullptr,
-                                     IncompleteNewFragment, OldFragmentContent);
-  if (!NewFragment)
-    return ExprError();
-
-  // Rebuild the expression with the new FragmentDecl, and updated captures.
-  return getDerived().RebuildCXXFragmentExpr(Loc, NewFragment, Captures);
+  // Rebuild the expression.
+  return getDerived().RebuildCXXFragmentExpr(
+      E->getIntroLoc(), E->getFragment(), Captures);
 }
 
 // Objective-C Statements.

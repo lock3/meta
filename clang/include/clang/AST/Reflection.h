@@ -414,7 +414,7 @@ public:
   /// reflected value.
   Reflection(ASTContext &C, const APValue &R)
     : Ctx(&C), Ref(R), Query(), Diag() {
-    assert(Ref.isReflection() && "not a reflection");
+    assert(Ref.isReflectionVariant() && "not a reflection");
   }
 
   /// Construct a reflection that will be used to evaluate a query.

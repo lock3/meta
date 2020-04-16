@@ -59,6 +59,9 @@ enum ReflectionKind {
   /// \brief A base class specifier. Corresponds to an object of type
   /// CXXBaseSpecifier*.
   RK_base_specifier = 4,
+
+  /// \brief An evaluated fragment value.
+  RK_fragment
 };
 
 /// Symbolic representation of typeid(T) for some type T.
@@ -161,7 +164,8 @@ public:
     Union,
     MemberPointer,
     AddrLabelDiff,
-    Reflection
+    Reflection,
+    Fragment
   };
 
   class LValueBase {
@@ -301,8 +305,12 @@ private:
     const AddrLabelExpr* RHSExpr;
   };
   struct MemberPointerData;
-  struct ReflectionData {
+  struct ReflectionBase {
     const ReflectionKind ReflKind;
+
+    ReflectionBase(ReflectionKind ReflKind);
+  };
+  struct ReflectionData : ReflectionBase {
     const void *ReflEntity;
     const ReflectionModifiers *ReflModifiers;
     unsigned Offset;
@@ -312,6 +320,13 @@ private:
                    const ReflectionModifiers &ReflModifiers,
                    unsigned Offset, const APValue *Parent);
     ~ReflectionData();
+  };
+  struct FragmentData : ReflectionBase {
+    const Expr *Parent;
+    APValue *Captures;
+
+    FragmentData(const Expr *Parent, const ArrayRef<APValue> Captures);
+    ~FragmentData();
   };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
@@ -378,6 +393,7 @@ public:
           const ReflectionModifiers &ReflModifiers);
   APValue(ReflectionKind ReflKind, const void *ReflEntity,
           unsigned Offset, const APValue &Parent);
+  APValue(const Expr *Parent, const ArrayRef<APValue> Captures);
 
   static APValue IndeterminateValue() {
     APValue Result;
@@ -419,6 +435,8 @@ public:
   bool isMemberPointer() const { return Kind == MemberPointer; }
   bool isAddrLabelDiff() const { return Kind == AddrLabelDiff; }
   bool isReflection() const { return Kind == Reflection; }
+  bool isFragment() const { return Kind == Fragment; }
+  bool isReflectionVariant() const { return isReflection() || isFragment(); }
 
   void dump() const;
   void dump(raw_ostream &OS) const;
@@ -591,8 +609,8 @@ public:
 
   // Returns the kind of reflected value.
   ReflectionKind getReflectionKind() const {
-    assert(isReflection() && "Invalid accessor");
-    return ((const ReflectionData*)(const char*)Data.buffer)->ReflKind;
+    assert(isReflectionVariant() && "Invalid accessor");
+    return ((const ReflectionBase*)(const char*)Data.buffer)->ReflKind;
   }
 
   // Returns the opaque reflection pointer.
@@ -640,6 +658,19 @@ public:
     assert(isReflection() && "Invalid accessor");
     assert(hasParentReflection() && "No parent reflection");
     return *((const ReflectionData*)(const char*)Data.buffer)->Parent;
+  }
+
+  // Returns the expression that was evaluated to produce this
+  // fragment APValue.
+  const Expr *getFragmentExpr() const {
+    assert(isFragment() && "Invalid accessor");
+    return ((const FragmentData*)(const char*)Data.buffer)->Parent;
+  }
+
+  // Returns the evaluated fragment captured APValues.
+  const APValue *getFragmentCaptures() const {
+    assert(isFragment() && "Invalid accessor");
+    return ((const FragmentData*)(const char*)Data.buffer)->Captures;
   }
 
   void setInt(APSInt I) {
@@ -764,6 +795,12 @@ private:
                                                    ReflModifiers,
                                                    Offset, Parent);
     Kind = Reflection;
+  }
+  void MakeFragment(const Expr *Parent, ArrayRef<APValue> Captures) {
+    assert(isAbsent() && "Bad state change");
+
+    new ((void*)(char*)Data.buffer) FragmentData(Parent, Captures);
+    Kind = Fragment;
   }
 };
 

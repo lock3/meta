@@ -782,7 +782,7 @@ public:
     FragmentDependentInstantiationArgs;
 
   using FragInstantiationArgTy = SmallVector<CompleteTemplateArgumentList, 1>;
-  llvm::DenseMap<CXXRecordDecl *, FragInstantiationArgTy>
+  llvm::DenseMap<CXXFragmentExpr *, FragInstantiationArgTy>
     FragmentInstantiationArgs;
 
 private:
