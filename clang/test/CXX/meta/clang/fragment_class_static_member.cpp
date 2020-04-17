@@ -1,18 +1,18 @@
 // RUN: %clang_cc1 -freflection -verify -std=c++2a %s
 
 class foo {
-  consteval -> __fragment struct {
+  consteval -> fragment struct {
     constexpr static int anon_x = 10;
   };
-  consteval -> __fragment struct foo {
+  consteval -> fragment struct foo {
     constexpr static int named_x = 10;
   };
 
   class {
-    consteval -> __fragment struct {
+    consteval -> fragment struct {
       constexpr static int anon_x = 10; // expected-error {{static data member 'anon_x' not allowed in anonymous struct}}
     };
-    consteval -> __fragment struct foo {
+    consteval -> fragment struct foo {
       constexpr static int named_x = 10; // expected-error {{static data member 'named_x' not allowed in anonymous struct}}
     };
   } x;

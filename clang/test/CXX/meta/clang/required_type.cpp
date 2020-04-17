@@ -6,7 +6,7 @@ namespace shape {
   struct square {
     unsigned width, height;
 
-    consteval -> namespace(area) __fragment namespace {
+    consteval -> namespace(area) fragment namespace {
       requires typename square;
 
       constexpr unsigned calculate(const square& s) {

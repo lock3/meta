@@ -1591,8 +1591,21 @@ public:
 
   /// Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
-                                    SmallVectorImpl<Expr *> &Captures) {
-    return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
+                                    SmallVectorImpl<Expr *> &Captures,
+                                    bool IsLegacy) {
+    if (IsLegacy) {
+      return getSema().BuildCXXLegacyFragmentExpr(Loc, Fragment, Captures);
+    } else {
+      return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
+    }
+  }
+
+  /// Build a new fragment capture expression.
+  ExprResult RebuildCXXFragmentCaptureExpr(
+      SourceLocation BeginLoc, const Expr *FragmentExpr, unsigned Offset,
+      SourceLocation EndLoc) {
+    return getSema().BuildCXXFragmentCaptureExpr(
+        BeginLoc, FragmentExpr, Offset, EndLoc);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -8380,7 +8393,21 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
 
   // Rebuild the expression.
   return getDerived().RebuildCXXFragmentExpr(
-      E->getIntroLoc(), E->getFragment(), Captures);
+      E->getIntroLoc(), E->getFragment(), Captures, E->isLegacy());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXFragmentCaptureExpr(
+    CXXFragmentCaptureExpr *E) {
+  ExprResult FragmentExpr = getDerived().TransformExpr(
+      const_cast<CXXFragmentExpr *>(E->getFragment()));
+  if (FragmentExpr.isInvalid())
+    return ExprError();
+
+  return getDerived().RebuildCXXFragmentCaptureExpr(
+      E->getBeginLoc(), FragmentExpr.get(),
+      E->getOffset(), E->getEndLoc());
 }
 
 // Objective-C Statements.

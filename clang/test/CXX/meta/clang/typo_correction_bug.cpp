@@ -9,9 +9,9 @@ void dummy(Args...) {}
 
 consteval void impl(meta::info source) {
   int a = 1;
-  -> __fragment struct S {
+  -> fragment struct S {
     void foo() {
-      dummy(unqualid("foo_", a)); // expected-error {{use of undeclared identifier 'foo_1'}}
+      dummy(unqualid("foo_", %{a})); // expected-error {{use of undeclared identifier 'foo_1'}}
     }
   };
 }

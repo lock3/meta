@@ -62,6 +62,7 @@ class Parser : public CodeCompletionHandler {
   friend class ObjCDeclContextSwitch;
   friend class ParenBraceBracketBalancer;
   friend class BalancedDelimiterTracker;
+  friend class CXXFragmentParseRAII;
 
   Preprocessor &PP;
 
@@ -522,7 +523,7 @@ private:
   }
   /// isTokenBrace - Return true if the cur token is '{' or '}'.
   bool isTokenBrace() const {
-    return Tok.isOneOf(tok::l_brace, tok::r_brace);
+    return Tok.isOneOf(tok::l_brace, tok::percentl_brace, tok::r_brace);
   }
   /// isTokenStringLiteral - True if this token is a string-literal.
   bool isTokenStringLiteral() const {
@@ -590,7 +591,7 @@ private:
   ///
   SourceLocation ConsumeBrace() {
     assert(isTokenBrace() && "wrong consume method");
-    if (Tok.getKind() == tok::l_brace)
+    if (Tok.getKind() == tok::l_brace || Tok.getKind() == tok::percentl_brace)
       ++BraceCount;
     else if (BraceCount) {
       AngleBrackets.clear(*this);
@@ -3009,6 +3010,10 @@ public:
   ExprResult ParseCXXSelectMemberExpr();
 
   // C++ Code Fragments
+private:
+  SmallVector<CachedTokens, 2> PendingUnquotes;
+
+public:
   Decl *ParseCXXNamespaceFragment(Decl *Fragment);
   Decl *ParseCXXClassFragment(Decl *Fragment);
   Decl *ParseCXXEnumFragment(Decl *Fragment);
@@ -3017,8 +3022,13 @@ private:
 public:
   Decl *ParseCXXBlockFragment(Decl *Fragment);
   Decl *ParseCXXMemberBlockFragment(Decl *Fragment);
-  Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
+  Decl *ParseCXXFragment();
+  ExprResult ParseCXXUnquoteOperator();
+  bool ParseCXXFragmentCaptures(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
+
+  Decl *ParseCXXLegacyFragment(SmallVectorImpl<Expr *> &Captures);
+  ExprResult ParseCXXLegacyFragmentExpression();
 
   Decl *MaybeParseCXXInjectorDeclaration();
   Decl *ParseCXXMetaprogramDeclaration();

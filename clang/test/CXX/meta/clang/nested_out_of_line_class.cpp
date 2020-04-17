@@ -5,7 +5,7 @@ namespace meta {
 }
 
 consteval auto generate_func() {
-  return __fragment struct S {
+  return fragment struct S {
     int int_val = 12;
 
     constexpr S() = default;

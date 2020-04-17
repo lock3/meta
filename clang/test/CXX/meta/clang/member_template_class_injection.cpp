@@ -5,7 +5,7 @@ namespace meta {
 }
 
 consteval void test_metaclass(meta::info source) {
-  -> __fragment class {
+  -> fragment class {
   public:
     template<typename T = char>
     class member_template {

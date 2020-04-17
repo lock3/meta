@@ -2,7 +2,7 @@
 
 constexpr int f() {
   consteval {
-    -> __fragment {
+    -> fragment {
       auto foo = [](int x) {
         ++x;
       };

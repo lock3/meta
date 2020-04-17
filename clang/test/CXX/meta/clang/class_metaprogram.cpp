@@ -2,7 +2,7 @@
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-int global_int = 42;
+const int global_int = 42;
 
 struct InternalFragClass {
   static int instance_count;
@@ -18,7 +18,7 @@ struct InternalFragClass {
 
 int InternalFragClass::instance_count = 0;
 
-constexpr auto inner_fragment = __fragment struct S {
+constexpr auto inner_frag = fragment struct S {
   int* c0 = new int(5);
   int* c1;
 
@@ -37,12 +37,12 @@ constexpr auto inner_fragment = __fragment struct S {
   }
 
   int referenced_global() {
-    return global_int;
+    return %{global_int};
   }
 };
 
-constexpr auto fragment = __fragment struct X {
-  consteval -> inner_fragment;
+constexpr auto frag = fragment struct X {
+  consteval -> %{inner_frag};
 
   InternalFragClass FragClass;
   int x = 1;
@@ -61,7 +61,7 @@ constexpr auto fragment = __fragment struct X {
     return this->y;
   }
 
-  typedef int fragment_int;
+  typedef int frag_int;
 
   struct Nested {
     int bar;
@@ -89,16 +89,16 @@ class Foo {
   int y = 55;
 
   consteval {
-    -> fragment;
+    -> frag;
   }
 
   consteval {
     int captured_int_val = 7;
-    -> __fragment struct K {
-      int captured_int = captured_int_val;
+    -> fragment struct K {
+      int captured_int = %{captured_int_val};
 
-      static constexpr int static_captured_int = captured_int_val;
-      static_assert(static_captured_int == captured_int_val);
+      static constexpr int static_captured_int = %{captured_int_val};
+      static_assert(static_captured_int == %{captured_int_val});
     };
   }
 
@@ -125,7 +125,7 @@ int main() {
     assert(f.get_z(f) == 55);
     assert(f.captured_int == 7);
 
-    Foo::fragment_int int_of_injected_type = 1;
+    Foo::frag_int int_of_injected_type = 1;
     assert(static_cast<int>(int_of_injected_type) == 1);
 
     assert(InternalFragClass::instance_count == 1);

@@ -5,7 +5,7 @@ namespace meta {
 }
 
 consteval auto generate_func() {
-  return __fragment struct S {
+  return fragment struct S {
     int int_val = 12;
 
     constexpr S() = default;
@@ -17,7 +17,7 @@ consteval auto generate_func() {
 }
 
 consteval void test_metaclass(meta::info source) {
-  -> __fragment struct {
+  -> fragment struct {
     template<typename T> struct MemberClassTemplate {
       T t_val;
     };
@@ -42,7 +42,7 @@ consteval void test_metaclass(meta::info source) {
     };
   };
 
-  -> __fragment struct {
+  -> fragment struct {
     int x = 0;
   };
 }

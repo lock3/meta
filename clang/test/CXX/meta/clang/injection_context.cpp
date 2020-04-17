@@ -1,10 +1,10 @@
 // RUN: %clang_cc1 -verify -freflection -std=c++2a %s
 
-constexpr auto namespace_frag = __fragment namespace { };
-constexpr auto class_frag = __fragment class { };
-constexpr auto member_block_frag = __fragment this { };
-constexpr auto enum_frag = __fragment enum { };
-constexpr auto block_frag = __fragment { };
+constexpr auto namespace_frag = fragment namespace { };
+constexpr auto class_frag = fragment class { };
+constexpr auto member_block_frag = fragment this { };
+constexpr auto enum_frag = fragment enum { };
+constexpr auto block_frag = fragment { };
 
 namespace ns {
   consteval -> namespace_frag;

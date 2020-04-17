@@ -194,6 +194,7 @@ PUNCTUATOR(slash,               "/")
 PUNCTUATOR(slashequal,          "/=")
 PUNCTUATOR(percent,             "%")
 PUNCTUATOR(percentequal,        "%=")
+PUNCTUATOR(percentl_brace,      "%{")
 PUNCTUATOR(less,                "<")
 PUNCTUATOR(lessless,            "<<")
 PUNCTUATOR(lessequal,           "<=")
@@ -537,7 +538,8 @@ TYPE_TRAIT_1(__is_signed, IsSigned, KEYCXX)
 TYPE_TRAIT_1(__is_unsigned, IsUnsigned, KEYCXX)
 
 // Placeholders for future syntax
-KEYWORD(__fragment , KEYALL)
+KEYWORD(fragment   , KEYREFLECT)
+KEYWORD(__fragment , KEYREFLECT)
 
 // Embarcadero Binary Type Traits
 TYPE_TRAIT_2(__is_same, IsSame, KEYCXX)

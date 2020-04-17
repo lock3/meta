@@ -5880,16 +5880,20 @@ class CXXFragmentExpr final
   }
 
   CXXFragmentExpr(QualType Ty, SourceLocation IntroLoc,
-                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
+                  bool IsLegacy);
 
   CXXFragmentExpr(EmptyShell Empty) : Expr(CXXFragmentExprClass, Empty) {}
 public:
   static CXXFragmentExpr *Create(
       const ASTContext &C, SourceLocation IntroLoc,
-      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
+      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
+      bool IsLegacy = false);
 
   static CXXFragmentExpr *CreateEmpty(const ASTContext &C,
                                       EmptyShell Empty);
+
+  bool isLegacy() const { return FragmentExprBits.IsLegacy; }
 
   /// \brief The number of captured declarations.
   std::size_t getNumCaptures() const { return NumCaptures; }
@@ -5941,6 +5945,69 @@ public:
   }
 
   friend TrailingObjects;
+};
+
+class CXXFragmentCaptureExpr final : public Expr {
+  /// The fragment this capture belongs to.
+  const Expr *FragmentExpr;
+
+  /// The offset of the initializing expression for this
+  /// capture in its fragment's captures list.
+  unsigned Offset;
+
+  SourceLocation BeginLoc;
+  SourceLocation EndLoc;
+
+  CXXFragmentCaptureExpr(
+      QualType Ty, const Expr *FragmentExpr, unsigned Offset,
+      SourceLocation BeginLoc, SourceLocation EndLoc);
+
+  CXXFragmentCaptureExpr(EmptyShell Empty) :
+      Expr(CXXFragmentCaptureExprClass, Empty) {}
+public:
+  static CXXFragmentCaptureExpr *Create(
+      const ASTContext &C, const Expr *FragmentExpr, unsigned Offset,
+      SourceLocation BeginLoc, SourceLocation EndLoc);
+
+  static CXXFragmentCaptureExpr *CreateEmpty(const ASTContext &C,
+                                             EmptyShell Empty);
+
+  const CXXFragmentExpr *getFragment() const {
+    if (FragmentExpr)
+      return cast<CXXFragmentExpr>(FragmentExpr);
+    return nullptr;
+  }
+
+  void setFragment(CXXFragmentExpr *E) {
+    assert(!FragmentExpr);
+    FragmentExpr = E;
+  }
+
+  unsigned getOffset() const {
+    return Offset;
+  }
+
+  const Expr *getInitializer() const {
+    if (const CXXFragmentExpr *Init = getFragment())
+      return Init->getCapture(Offset);
+
+    return nullptr;
+  }
+
+  SourceLocation getBeginLoc() const { return BeginLoc; }
+  SourceLocation getEndLoc() const { return EndLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXFragmentCaptureExprClass;
+  }
 };
 
 } // namespace clang

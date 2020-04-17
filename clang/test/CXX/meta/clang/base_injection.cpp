@@ -37,7 +37,7 @@ class TemplateChild : public ParentB {
   consteval {
     __inject_base(public T);
 
-    -> __fragment struct {
+    -> fragment struct {
       int do_thing() const override {
         return 1;
       }

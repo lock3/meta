@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++2a %s
 
 namespace class_default_tests {
-  constexpr auto frag = __fragment class {
+  constexpr auto frag = fragment class {
     int i = 0; // expected-note {{implicitly declared private here}}
 
     void bar() { // expected-note {{implicitly declared private here}}
@@ -22,7 +22,7 @@ namespace class_default_tests {
 }
 
 namespace struct_default_tests {
-  constexpr auto frag = __fragment struct {
+  constexpr auto frag = fragment struct {
     int i = 0;
 
     void bar() {
@@ -43,7 +43,7 @@ namespace struct_default_tests {
 }
 
 namespace class_modified_tests {
-  constexpr auto frag = __fragment class {
+  constexpr auto frag = fragment class {
   public:
     int i = 0;
 
@@ -65,7 +65,7 @@ namespace class_modified_tests {
 }
 
 namespace struct_modified_tests {
-  constexpr auto frag = __fragment struct {
+  constexpr auto frag = fragment struct {
   private:
     int i = 0; // expected-note {{implicitly declared private here}}
 

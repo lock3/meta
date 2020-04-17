@@ -1,5 +1,5 @@
 union S {
-  consteval -> __fragment union {
+  consteval -> fragment union {
     unsigned ac : 4;
     unsigned : 4;
     unsigned clock : 1;
@@ -9,7 +9,7 @@ union S {
 };
 
 struct X {
-  consteval -> __fragment class {
+  consteval -> fragment class {
     unsigned light : 1;
     unsigned toaster : 1;
     int count;

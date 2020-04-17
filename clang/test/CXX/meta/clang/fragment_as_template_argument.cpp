@@ -7,7 +7,7 @@ constexpr auto test() { // expected-note {{candidate template ignored: invalid e
 
 consteval auto get_frag() {
   int captured_value = 10;
-  return __fragment {
+  return fragment {
     return captured_value;
   };
 }

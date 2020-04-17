@@ -4,7 +4,7 @@
 
 template<int val>
 consteval auto thing() {
-  return __fragment namespace {
+  return fragment namespace {
     requires typename R;
 
     R build_r() {

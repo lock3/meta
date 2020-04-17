@@ -10,7 +10,7 @@
 // class TupleDestructure {
 //   consteval {
 //     auto [a, b] = tuple_destructure();
-//     -> __fragment struct {
+//     -> fragment struct {
 //       constexpr auto val_a() {
 //         return a;
 //       }
@@ -34,13 +34,13 @@ consteval DestructureableClass class_destructure() {
 class ClassDestructure {
   consteval {
     auto [a, b] = class_destructure();
-    -> __fragment struct {
+    -> fragment struct {
       constexpr auto val_a() {
-        return a;
+        return %{a};
       }
 
       constexpr auto val_b() {
-        return b;
+        return %{b};
       }
     };
   }
@@ -50,13 +50,13 @@ class ArrayDestructure {
   consteval {
     constexpr bool array_destructure [2] = { true, false };
     auto [a, b] = array_destructure;
-    -> __fragment struct {
+    -> fragment struct {
       constexpr auto val_a() {
-        return a;
+        return %{a};
       }
 
       constexpr auto val_b() {
-        return b;
+        return %{b};
       }
     };
   }

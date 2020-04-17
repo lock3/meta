@@ -2,7 +2,7 @@
 
 consteval int f1() {
   consteval {
-    -> __fragment {
+    -> fragment {
       return 42;
     };
   };
@@ -10,7 +10,7 @@ consteval int f1() {
 
 consteval int f2() { // expected-error {{no return statement in consteval function}}
   consteval {
-    -> __fragment {
+    -> fragment {
       int x = 10;
     };
   };
@@ -18,7 +18,7 @@ consteval int f2() { // expected-error {{no return statement in consteval functi
 
 constexpr int f3() {
   consteval {
-    -> __fragment {
+    -> fragment {
       constexpr int x = 10;
       if constexpr (x == 10)
         return x;
@@ -31,7 +31,7 @@ constexpr int f3() {
 template<int Y>
 constexpr int f4() {
   consteval {
-    -> __fragment {
+    -> fragment {
       return Y;
     };
   }

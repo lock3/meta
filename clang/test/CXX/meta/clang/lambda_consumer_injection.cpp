@@ -11,9 +11,9 @@ template<template<type> class E>
 class foo {
   consteval {
     lambda_consumer([](auto val) consteval {
-      -> __fragment struct {
+      -> fragment struct {
         int get(E<type::a> arg) {
-          return val;
+          return %{val};
         }
       };
     });

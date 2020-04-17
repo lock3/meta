@@ -4,31 +4,31 @@
 
 // test injection in a non-constexpr function
 int f() {
-  consteval -> __fragment {
+  consteval -> fragment {
     return 9;
   };
 }
 
 int g() {
-  constexpr auto frag1 = __fragment {
+  constexpr auto frag1 = fragment {
     return 9;
   };
 
   consteval -> frag1;
 }
 
-constexpr auto frag = __fragment {
+constexpr auto frag = fragment {
 };
 
 template<typename T>
 T h() {
-  consteval -> __fragment {
+  consteval -> fragment {
     return T();
   };
 }
 
 template<int x>
-constexpr auto templ_frag = __fragment {
+constexpr auto templ_frag = fragment {
   return x;
 };
 

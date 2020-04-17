@@ -95,7 +95,7 @@ consteval void interface(info source) {
     -> mem;
   }
 
-  -> __fragment struct X { virtual ~X() noexcept {} };
+  -> fragment struct X { virtual ~X() noexcept {} };
 };
 
 

@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -fsyntax-only -freflection -std=c++2a -verify %s
 
 namespace mismatch_constexpr {
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires constexpr int f1(); // expected-error {{constexpr declaration of 'f1' follows non-constexpr declaration}}
   requires int f2(); // expected-error {{non-constexpr declaration of 'f2' follows constexpr declaration}}
 };
@@ -10,24 +10,24 @@ int f1() { return 0; } // expected-note {{previous declaration is here}}
 constexpr int f2() { return 0; } // expected-note {{previous declaration is here}}
 
 void test() {
-  consteval -> fragment;
+  consteval -> frag;
 }
 }; // namespace mismatch-constexpr
 
 namespace ovl {
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires int f1(); // expected-error {{use of undeclared required declarator.}} // expected-error {{no matching function for call to 'f1'}}
   requires int f1(int a);
 };
 int f1(int a) { return a; } // expected-note {{candidate function not viable: requires single argument 'a', but no arguments were provided}}
 
 void test() {
-  consteval -> fragment;
+  consteval -> frag;
 }
 }; // namespace ovl
 
 namespace ambiguous {
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires int f(); // expected-error {{call to 'f' is ambiguous}} // expected-error {{use of undeclared required declarator.}}
 };
 
@@ -35,12 +35,12 @@ int f() { return 0; } // expected-note {{candidate function}}
 int f(int a = 42) { return 42; } // expected-note {{candidate function}}
 
 void test() {
-  consteval -> fragment;
+  consteval -> frag;
 }
 }; // namespace ambiguous
 
 namespace default_args {
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires int f();
   requires int f(int a);
   requires int f(int a, int b);
@@ -54,7 +54,7 @@ constexpr auto fragment = __fragment {
 int f() { return 0; }
 int f(int a, int b = 42) { return b; }
 
-  void test() { consteval -> fragment; }
+  void test() { consteval -> frag; }
 }; // namespace default_args
 
 int main() {

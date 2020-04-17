@@ -1,10 +1,10 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 
-constexpr auto modify_bar = __fragment this {
+constexpr auto modify_bar = fragment this {
   int modification = 5;
   this->bar += modification;
 };
-constexpr auto return_bar = __fragment this {
+constexpr auto return_bar = fragment this {
   return this->bar;
 };
 

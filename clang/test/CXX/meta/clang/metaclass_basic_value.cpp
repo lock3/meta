@@ -99,27 +99,27 @@ consteval void BasicValue(info source) {
   }
 
   if (needs_default_ctor)
-    -> __fragment struct BasicValueDefaults {
+    -> fragment struct BasicValueDefaults {
       BasicValueDefaults() = default;
     };
 
   if (needs_copy_ctor)
-    -> __fragment struct BasicValueDefaults {
+    -> fragment struct BasicValueDefaults {
       BasicValueDefaults(const BasicValueDefaults& that) = default;
     };
 
   if (needs_move_ctor)
-    -> __fragment struct BasicValueDefaults {
+    -> fragment struct BasicValueDefaults {
       BasicValueDefaults(BasicValueDefaults&& that) = default;
     };
 
   if (needs_copy_assign_op)
-    -> __fragment struct BasicValueDefaults {
+    -> fragment struct BasicValueDefaults {
       BasicValueDefaults& operator=(const BasicValueDefaults& that) = default;
     };
 
   if (needs_move_assign_op)
-    -> __fragment struct BasicValueDefaults {
+    -> fragment struct BasicValueDefaults {
       BasicValueDefaults& operator=(BasicValueDefaults&& that) = default;
     };
 

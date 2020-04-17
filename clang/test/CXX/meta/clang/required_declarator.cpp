@@ -4,21 +4,21 @@ namespace bad {
 template<typename T, typename U>
 void mismatched_types() {
   T req;
-  consteval -> __fragment {
+  consteval -> fragment {
     requires U req; // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('char' to 'int')}}
   };
 }
 
 template<typename T>
 void reference(T &req) {
-  consteval -> __fragment {
+  consteval -> fragment {
     requires T req; // expected-error {{Required conflicting types ('int' vs 'int &')}}
   };
 }
 
 template<typename T>
 void reference_2(T req) {
-  consteval -> __fragment {
+  consteval -> fragment {
     requires T &req; // expected-error {{Required conflicting types ('int &' vs 'int')}}
   };
 }
@@ -27,18 +27,18 @@ template<typename T>
 void constexpr_mismatch() {
   constexpr T a = T(); // expected-note {{previous declaration is here}}
   T b = T(); // expected-note {{previous declaration is here}}
-  consteval -> __fragment {
+  consteval -> fragment {
     requires T a; // expected-error {{non-constexpr declaration of 'a' follows constexpr declaration}}
     requires constexpr T b; // expected-error {{constexpr declaration of 'b' follows non-constexpr declaration}}
   };
 }
 
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires int a; // expected-error {{Required declarator not found.}}
 };
 
 void future_inj() {
-  consteval -> fragment;
+  consteval -> frag;
 }
 }; // namespace bad
 
@@ -58,21 +58,21 @@ namespace good {
 template<typename T>
 void matched_types() {
   T a = 0;
-  consteval -> __fragment {
+  consteval -> fragment {
     requires T a;
     a = 42;
   };
   assert(a == 42);
 }
 
-constexpr auto fragment = __fragment {
+constexpr auto frag = fragment {
   requires int a;
   ++a;
 };
 
 void future_inj() {
   int a = 0;
-  consteval -> fragment;
+  consteval -> frag;
   assert(a == 1);
 }
 }; // namespace good

@@ -11835,20 +11835,53 @@ public:
   ConditionResult ActOnConditionVariable(Decl *ConditionVar,
                                          SourceLocation StmtLoc,
                                          ConditionKind CK);
+private:
+  bool FragmentScope = false;
+  SmallVector<CXXFragmentCaptureExpr *, 10> DetachedCaptures;
 
-  void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
-  Decl *ActOnStartCXXStmtFragment(Scope *S, SourceLocation Loc,
-                                  bool HasThisPtr);
+  void attachCaptures(CXXFragmentExpr *E);
+public:
+  /// RAII object used to enable the unquote operator for fragments.
+  class CXXFragmentScopeRAII {
+    Sema &S;
+    bool PreviouslyInFragment;
+
+  public:
+    CXXFragmentScopeRAII(Sema &S)
+        : S(S), PreviouslyInFragment(S.FragmentScope) {
+      S.FragmentScope = true;
+    }
+
+    ~CXXFragmentScopeRAII() {
+      S.FragmentScope = PreviouslyInFragment;
+      assert(S.DetachedCaptures.empty() && "captures left unattached");
+    }
+  };
+
+  Decl *ActOnStartCXXStmtFragment(
+      Scope *S, SourceLocation Loc, bool HasThisPtr);
   void ActOnCXXStmtFragmentError(Scope *S);
   Decl *ActOnFinishCXXStmtFragment(Scope *S, Decl *StmtFragment, Stmt *Body);
-  CXXFragmentDecl *ActOnStartCXXFragment(Scope *S, SourceLocation Loc,
-                                         SmallVectorImpl<Expr *> &Captures);
-  CXXFragmentDecl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment,
-                                          Decl *Content);
-  ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
-                                  SmallVectorImpl<Expr *> &Captures);
-  ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
-                                  SmallVectorImpl<Expr *> &Captures);
+  CXXFragmentDecl *ActOnStartCXXFragment(Scope *S, SourceLocation Loc);
+  CXXFragmentDecl *ActOnFinishCXXFragment(
+      Scope *S, Decl *Fragment, Decl *Content);
+  ExprResult ActOnCXXFragmentCaptureExpr(
+      SourceLocation BeginLoc, unsigned Offset, SourceLocation EndLoc);
+  ExprResult BuildCXXFragmentCaptureExpr(
+      SourceLocation BeginLoc, const Expr *FragmentExpr, unsigned Offset,
+      SourceLocation EndLoc);
+  ExprResult ActOnCXXFragmentExpr(
+      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
+  ExprResult BuildCXXFragmentExpr(
+      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
+
+  void ActOnCXXLegacyFragmentCapture(SmallVectorImpl<Expr *> &Captures);
+  CXXFragmentDecl *ActOnStartCXXLegacyFragment(
+      Scope *S, SourceLocation Loc, SmallVectorImpl<Expr *> &Captures);
+  ExprResult ActOnCXXLegacyFragmentExpr(
+      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
+  ExprResult BuildCXXLegacyFragmentExpr(
+      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
 
   bool ActOnCXXSpecifiedNamespaceInjectionContext(SourceLocation BeginLoc,
                                                   Decl *NamespaceDecl,

@@ -749,6 +749,7 @@ bool Parser::ConsumeAndStoreUntil(tok::TokenKind T1, tok::TokenKind T2,
       ConsumeAndStoreUntil(tok::r_square, Toks, /*StopAtSemi=*/false);
       break;
     case tok::l_brace:
+    case tok::percentl_brace:
       // Recursively consume properly-nested braces.
       Toks.push_back(Tok);
       ConsumeBrace();
@@ -1246,6 +1247,7 @@ bool Parser::ConsumeAndStoreInitializer(CachedTokens &Toks,
       ConsumeAndStoreUntil(tok::r_square, Toks, /*StopAtSemi=*/false);
       break;
     case tok::l_brace:
+    case tok::percentl_brace:
       // Recursively consume properly-nested braces.
       Toks.push_back(Tok);
       ConsumeBrace();

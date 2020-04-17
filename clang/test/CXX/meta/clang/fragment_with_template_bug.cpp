@@ -4,9 +4,9 @@ template<typename T, int TV>
 struct struct_s {
   consteval {
     int a = 1;
-    -> __fragment struct {
+    -> fragment struct {
       template<typename Q, int QV>
-      int unqualid("foo_", a)() {
+      int unqualid("foo_", %{a})() {
         T t = TV;
         Q q = QV;
         return t + q;

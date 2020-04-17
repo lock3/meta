@@ -1,8 +1,8 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 
-constexpr auto frag_d_e = __fragment enum { D, E };
-constexpr auto frag_f = __fragment enum { F = 42 };
-constexpr auto frag_h = __fragment enum { H };
+constexpr auto frag_d_e = fragment enum { D, E };
+constexpr auto frag_f = fragment enum { F = 42 };
+constexpr auto frag_h = fragment enum { H };
 
 struct NonTemplated {
   enum Foo {
@@ -11,7 +11,7 @@ struct NonTemplated {
       -> frag_d_e;
       -> frag_f;
     },
-    consteval -> __fragment enum { G },
+    consteval -> fragment enum { G },
     consteval -> frag_h
   };
 };
@@ -24,7 +24,7 @@ struct Templated {
       -> frag_d_e;
       -> frag_f;
     },
-    consteval -> __fragment enum { G },
+    consteval -> fragment enum { G },
     consteval -> frag_h
   };
 };
@@ -33,8 +33,8 @@ struct NonTemplatedGen {
   enum Foo {
     consteval {
       for (int i = 0; i < 3; ++i) {
-        -> __fragment enum {
-          unqualid("VAL_", i) = i * 5
+        -> fragment enum {
+          unqualid("VAL_", %{i}) = %{i * 5}
         };
       }
     }
@@ -46,8 +46,8 @@ struct TemplatedGen {
   enum Foo {
     consteval {
       for (int i = 0; i < 3; ++i) {
-        -> __fragment enum {
-          unqualid("VAL_", i + K) = i * 5
+        -> fragment enum {
+          unqualid("VAL_", %{i + K}) = %{i * 5}
         };
       }
     }

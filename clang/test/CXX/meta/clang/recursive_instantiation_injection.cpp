@@ -3,7 +3,7 @@
 template<typename T>
 class recursively_instantiated {
   consteval {
-    -> __fragment struct {
+    -> fragment struct {
       T get_t() {
         return { };
       }
@@ -14,7 +14,7 @@ class recursively_instantiated {
 template<typename T>
 class caller {
   consteval {
-    -> __fragment struct {
+    -> fragment struct {
       T get_t() {
         return recursively_instantiated<T>().get_t();
       }

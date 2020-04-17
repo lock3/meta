@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-constexpr auto frag = __fragment {
+constexpr auto frag = fragment {
   requires int i;
   i += 10;
 };

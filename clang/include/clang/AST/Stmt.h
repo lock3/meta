@@ -935,6 +935,8 @@ protected:
 
     unsigned : NumExprBits;
 
+    unsigned IsLegacy : 1;
+
     /// The location of the introducer token.
     SourceLocation IntroLoc;
   };

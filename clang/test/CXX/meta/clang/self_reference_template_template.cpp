@@ -8,7 +8,7 @@ struct templated_holder {
 template<typename Q, template<typename> typename R>
 struct test {
   consteval {
-    -> __fragment struct {
+    -> fragment struct {
       R<Q> value_proxy;
 
       test<Q, R> make() {

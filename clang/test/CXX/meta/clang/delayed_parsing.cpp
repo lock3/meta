@@ -5,7 +5,7 @@ namespace meta {
 }
 
 consteval void virtual_destructor(meta::info source) {
-  -> __fragment struct X {
+  -> fragment struct X {
     virtual ~X() noexcept { }
   };
 };

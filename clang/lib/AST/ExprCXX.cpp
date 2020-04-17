@@ -1906,19 +1906,22 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
   setDependence(computeDependence(this));
 }
 
-CXXFragmentExpr::CXXFragmentExpr(QualType T, SourceLocation IntroLoc,
-                                 CXXFragmentDecl *Frag, ArrayRef<Expr *> Caps)
+CXXFragmentExpr::CXXFragmentExpr(
+    QualType T, SourceLocation IntroLoc, CXXFragmentDecl *Frag,
+    ArrayRef<Expr *> Caps, bool IsLegacy)
   : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary),
     NumCaptures(Caps.size()), Fragment(Frag) {
+  FragmentExprBits.IsLegacy = IsLegacy;
   FragmentExprBits.IntroLoc = IntroLoc;
 }
 
 CXXFragmentExpr *CXXFragmentExpr::Create(
     const ASTContext &C, SourceLocation IntroLoc,
-    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures) {
+    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures, bool IsLegacy) {
   // Allocate buffered CXXFragmentExpr with space for trailing captures.
   void *Buffer = C.Allocate(totalSizeToAlloc<Expr *>(Captures.size()));
-  auto *E = new (Buffer) CXXFragmentExpr(C.MetaInfoTy, IntroLoc, Fragment, Captures);
+  auto *E = new (Buffer) CXXFragmentExpr(
+      C.MetaInfoTy, IntroLoc, Fragment, Captures, IsLegacy);
 
   // Add captures and compute dependence.
   std::copy(Captures.begin(), Captures.end(), E->getTrailingObjects<Expr *>());
@@ -1930,4 +1933,29 @@ CXXFragmentExpr *CXXFragmentExpr::Create(
 CXXFragmentExpr *CXXFragmentExpr::CreateEmpty(
     const ASTContext &C, EmptyShell Empty) {
   return new (C) CXXFragmentExpr(Empty);
+}
+
+CXXFragmentCaptureExpr::CXXFragmentCaptureExpr(
+    QualType T, const Expr *FragmentExpr, unsigned Offset,
+    SourceLocation BeginLoc, SourceLocation EndLoc)
+  : Expr(CXXFragmentCaptureExprClass, T, VK_RValue, OK_Ordinary),
+    FragmentExpr(FragmentExpr), Offset(Offset),
+    BeginLoc(BeginLoc), EndLoc(EndLoc) {
+  setDependence(computeDependence(this));
+}
+
+CXXFragmentCaptureExpr *CXXFragmentCaptureExpr::Create(
+    const ASTContext &C, const Expr *FragmentExpr, unsigned Offset,
+    SourceLocation BeginLoc, SourceLocation EndLoc) {
+  QualType T = C.DependentTy;
+  if (FragmentExpr)
+    T = cast<CXXFragmentExpr>(FragmentExpr)->getCapture(Offset)->getType();
+
+  return new (C) CXXFragmentCaptureExpr(
+      T, FragmentExpr, Offset, BeginLoc, EndLoc);
+}
+
+CXXFragmentCaptureExpr *CXXFragmentCaptureExpr::CreateEmpty(
+    const ASTContext &C, EmptyShell Empty) {
+  return new (C) CXXFragmentCaptureExpr(Empty);
 }

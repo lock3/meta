@@ -15,9 +15,9 @@ class base_test_class {
 
 consteval void do_thing() {
   for (auto field : meta::range(reflexpr(base_test_class))) {
-    -> __fragment class {
+    -> fragment class {
         public:
-        constexpr int unqualid("fn_", field)() { return 10; }
+        constexpr int unqualid("fn_", %{field})() { return 10; }
     };
   }
 }
