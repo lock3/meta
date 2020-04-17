@@ -359,7 +359,6 @@ bool APValue::needsCleanup() const {
   case None:
   case Indeterminate:
   case AddrLabelDiff:
-  case Reflection:
     return false;
   case Struct:
   case Union:
@@ -389,6 +388,8 @@ bool APValue::needsCleanup() const {
   case MemberPointer:
     return reinterpret_cast<const MemberPointerData *>(Data.buffer)
         ->hasPathPtr();
+  case Reflection:
+    return reinterpret_cast<const ReflectionData *>(Data.buffer)->Parent;
   }
   llvm_unreachable("Unknown APValue kind!");
 }
