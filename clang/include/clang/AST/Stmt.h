@@ -928,6 +928,17 @@ protected:
     SourceLocation RequiresKWLoc;
   };
 
+  class CXXFragmentExprBitfields {
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+    friend class CXXFragmentExpr;
+
+    unsigned : NumExprBits;
+
+    /// The location of the introducer token.
+    SourceLocation IntroLoc;
+  };
+
   //===--- C++ Coroutines TS bitfields classes ---===//
 
   class CoawaitExprBitfields {
@@ -1030,6 +1041,7 @@ protected:
     CXXNoexceptExprBitfields CXXNoexceptExprBits;
     SubstNonTypeTemplateParmExprBitfields SubstNonTypeTemplateParmExprBits;
     RequiresExprBitfields RequiresExprBits;
+    CXXFragmentExprBitfields FragmentExprBits;
 
     // C++ Coroutines TS expressions
     CoawaitExprBitfields CoawaitBits;

@@ -2367,6 +2367,7 @@ static bool HandleConversionToBool(const APValue &Val, bool &Result) {
     Result = Val.getMemberPointerDecl();
     return true;
   case APValue::Reflection:
+  case APValue::Fragment:
     Result = !Val.isInvalidReflection();
     return true;
   case APValue::Vector:
@@ -4971,8 +4972,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
     // If we are injecting a reflection, as apposed to a fragment.
     // We need to verify that it's actually a reflection of a declaration.
-    QualType OperandType = Operand->getType();
-    if (OperandType->isReflectionType()) {
+    if (OperandValue.isReflection()) {
       Reflection R(Info.Ctx.ASTCtx, OperandValue);
       if (R.isInvalid()) {
         return ESR_Failed;
@@ -4987,8 +4987,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     CXXInjectionContextSpecifier &&ContextSpecifier = IS->getContextSpecifier();
 
     // Queue the injection as a side effect.
-    Info.EvalStatus.InjectionEffects->emplace_back(OperandType,
-                                                   OperandValue,
+    Info.EvalStatus.InjectionEffects->emplace_back(OperandValue,
                                                    ContextSpecifier);
     return ESR_Succeeded;
   }
@@ -5006,12 +5005,11 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     // Compute the value of the injected reflection and its modifications.
     const CXXBaseInjectionStmt *IS = cast<CXXBaseInjectionStmt>(S);
     for (CXXBaseSpecifier *BS : IS->getBaseSpecifiers()) {
-      QualType OperandType = Info.Ctx.ASTCtx.MetaInfoTy;
       APValue OperandValue = APValue(RK_base_specifier, BS);
       CXXInjectionContextSpecifier ContextSpecifier;
 
-      Info.EvalStatus.InjectionEffects->emplace_back(OperandType, OperandValue,
-                                                     ContextSpecifier);
+      Info.EvalStatus.InjectionEffects->emplace_back(
+          OperandValue, ContextSpecifier);
     }
 
     return ESR_Succeeded;
@@ -6446,6 +6444,7 @@ class APValueToBufferConverter {
       // FIXME: We should support these.
 
     case APValue::Reflection:
+    case APValue::Fragment:
     case APValue::Union:
     case APValue::MemberPointer:
     case APValue::AddrLabelDiff: {
@@ -7497,13 +7496,15 @@ public:
     if (Info.checkingPotentialConstantExpression())
       return false;
 
-    // Just evaluate the initializer to produce an object of fragment type.
-    // This will also evaluate the captured variables since they are
-    // arguments to the constructor call.
-    APValue Result;
-    if (!Evaluate(Result, Info, E->getInitializer()))
-      return false;
-    return DerivedSuccess(Result, E);
+    unsigned NumCaptures = E->getNumCaptures();
+
+    SmallVector<APValue, 10> Captures(NumCaptures);
+    for (unsigned I = 0; I < NumCaptures; ++I) {
+      if (!::EvaluateAsRValue(Info, E->getCapture(I), Captures[I]))
+        return false;
+    }
+
+    return DerivedSuccess(APValue(E, Captures), E);
   }
 
   /// Visit a value which is evaluated, but whose value is ignored.

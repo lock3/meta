@@ -5,6 +5,6 @@ constexpr auto frag = __fragment {
 };
 
 int main() {
-  consteval -> frag(); // expected-error-re {{type 'const (fragment at {{.*}}fragment_injection_call_bug.cpp:{{[0-9]+}}:{{[0-9]+}})' does not provide a call operator}}
+  consteval -> frag(); // expected-error {{called object type 'meta::info' is not a function or function pointer}}
   return 0;
 }

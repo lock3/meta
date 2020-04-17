@@ -352,6 +352,7 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
         }
         case RK_invalid:
         case RK_expression:
+        case RK_fragment:
         case RK_base_specifier: {
           LV.merge(LinkageInfo::internal());
           continue;

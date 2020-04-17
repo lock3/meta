@@ -5110,6 +5110,7 @@ void ASTRecordWriter::AddAPValue(const APValue &Value) {
   case APValue::MemberPointer:
   case APValue::AddrLabelDiff:
   case APValue::Reflection:
+  case APValue::Fragment:
     // TODO : Handle all these APValue::ValueKind.
     return;
   }

@@ -38,7 +38,7 @@ class ClassWithArr {
 
 class BadCaptureClass {
   consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
-    ClassWithArr a_arr_class; // expected-note {{subobject of type 'int' is not initialized}} expected-note {{in call to 'ClassWithArr(a_arr_class)'}}
+    ClassWithArr a_arr_class; // expected-note {{subobject of type 'int' is not initialized}}
     -> __fragment struct {
       constexpr auto val_a_arr_class() {
         return a_arr_class;
