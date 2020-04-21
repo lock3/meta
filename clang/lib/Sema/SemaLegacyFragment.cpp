@@ -212,6 +212,7 @@ void Sema::ActOnCXXLegacyFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXLegacyFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                             SmallVectorImpl<Expr *> &Captures) {
+  Diag(Loc, diag::warn_deprecated_fragment);
   return BuildCXXLegacyFragmentExpr(Loc, Fragment, Captures);
 }
 

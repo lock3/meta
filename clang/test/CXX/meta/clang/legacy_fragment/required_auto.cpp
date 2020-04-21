@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -freflection -std=c++2a -verify %s
+// RUN: %clang_cc1 -fsyntax-only -freflection -Wno-deprecated-fragment -std=c++2a -verify %s
 
 namespace bad {
 template<typename T>

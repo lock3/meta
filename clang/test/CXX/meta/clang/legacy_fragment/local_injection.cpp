@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s -Wmissing-noreturn
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -std=c++2a -fsyntax-only -verify %s -Wmissing-noreturn
 
 consteval int f1() {
   consteval {

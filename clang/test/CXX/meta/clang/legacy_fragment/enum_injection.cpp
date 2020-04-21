@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++2a %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 constexpr auto frag_d_e = __fragment enum { D, E };
 constexpr auto frag_f = __fragment enum { F = 42 };

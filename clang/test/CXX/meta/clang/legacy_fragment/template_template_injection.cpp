@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++2a %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 enum class enum_a { val_1, val_2 };
 enum class enum_b { val_1, val_2 };

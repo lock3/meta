@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++2a %s
+// RUN: %clang_cc1 -fsyntax-only -verify -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 class ArrayDestructure {
   consteval {

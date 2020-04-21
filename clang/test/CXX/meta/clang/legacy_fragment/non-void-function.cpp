@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -fsyntax-only -freflection -std=c++2a %s
+// RUN: %clang_cc1 -verify -fsyntax-only -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 consteval -> __fragment namespace {
   int reset_foo() {

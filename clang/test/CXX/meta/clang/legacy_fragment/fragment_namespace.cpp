@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -std=c++2a -freflection %s
+// RUN: %clang_cc1 -fsyntax-only -verify -std=c++2a -freflection -Wno-deprecated-fragment %s
 
 namespace foo {
 

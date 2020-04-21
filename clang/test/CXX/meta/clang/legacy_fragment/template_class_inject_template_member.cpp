@@ -1,4 +1,4 @@
-// RUN: %clang -freflection -std=c++2a %s
+// RUN: %clang -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 class bar {
 };

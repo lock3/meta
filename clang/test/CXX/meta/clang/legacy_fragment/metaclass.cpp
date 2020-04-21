@@ -1,5 +1,5 @@
 // Run via frontend, to verify linker finds get_inline_value.
-// RUN: %clang -freflection -std=c++2a %s
+// RUN: %clang -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 #include "../reflection_iterator.h"
 

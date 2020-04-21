@@ -10510,6 +10510,9 @@ def err_invalid_unquote_operator : Error<
   "the unquote operator can only appear inside of a fragment">;
 def err_invalid_fragment_capture : Error<
   "invalid deduced capture; %0 cannot be captured by a fragment">;
+def warn_deprecated_fragment : Warning<
+  "the implicit capture '__fragment' is deprecated please move "
+  "to explicit capture 'fragment'">, InGroup<DeprecatedFragment>;
 } // end of injection issue category
 
 let CategoryName = "Non-Standard Warning" in {

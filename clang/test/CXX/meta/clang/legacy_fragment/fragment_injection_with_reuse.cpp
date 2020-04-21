@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++2a -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection -Wno-deprecated-fragment %s
 
 #include "../reflection_iterator.h"
 

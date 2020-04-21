@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -fsyntax-only -freflection -std=c++2a %s
+// RUN: %clang_cc1 -verify -fsyntax-only -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 class C {
   void foo() { } // expected-note {{previous definition is here}}

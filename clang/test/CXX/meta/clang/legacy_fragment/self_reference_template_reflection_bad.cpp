@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -std=c++2a -fsyntax-only -verify %s
 
 struct test {
 // expected-note@-1 {{candidate constructor (the implicit copy constructor) not viable: requires 1 argument, but 0 were provided}}

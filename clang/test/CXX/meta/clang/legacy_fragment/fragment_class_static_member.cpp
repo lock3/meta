@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -verify -std=c++2a %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -verify -std=c++2a %s
 
 class foo {
   consteval -> __fragment struct {
