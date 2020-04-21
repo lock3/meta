@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -fdelayed-template-parsing -std=c++2a %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -fdelayed-template-parsing -std=c++2a %s
 
 namespace meta {
   using info = decltype(reflexpr(void));

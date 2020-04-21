@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++2a %s
+// RUN: %clang_cc1 -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 // FIXME: How do we test this in the test suite?
 // #include <tuple>

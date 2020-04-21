@@ -17,7 +17,7 @@ struct X {
   };
 };
 
-// RUN: c-index-test -test-print-bitwidth -freflection -std=c++2a %s | FileCheck %s
+// RUN: c-index-test -test-print-bitwidth -freflection -Wno-deprecated-fragment -std=c++2a %s | FileCheck %s
 // CHECK: FieldDecl=ac:3:14 (Definition) bitwidth=4
 // CHECK: FieldDecl=:4:14 (Definition) bitwidth=4
 // CHECK: FieldDecl=clock:5:14 (Definition) bitwidth=1

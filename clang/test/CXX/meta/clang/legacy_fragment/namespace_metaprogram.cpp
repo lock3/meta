@@ -1,4 +1,4 @@
-// RUN: %clangxx -std=c++2a -freflection %s
+// RUN: %clangxx -std=c++2a -freflection -Wno-deprecated-fragment %s
 
 #define assert(E) if (!(E)) __builtin_abort();
 

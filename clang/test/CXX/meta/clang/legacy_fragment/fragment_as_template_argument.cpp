@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++2a -freflection -fsyntax-only -verify %s
+// RUN: %clang_cc1 -std=c++2a -freflection -Wno-deprecated-fragment -fsyntax-only -verify %s
 
 template<auto F>
 constexpr auto test() { // expected-note {{candidate template ignored: invalid explicitly-specified argument for template parameter 'F'}}

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -freflection -std=c++2a %s
+// RUN: %clang_cc1 -verify -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 constexpr auto namespace_frag = __fragment namespace { };
 constexpr auto class_frag = __fragment class { };
