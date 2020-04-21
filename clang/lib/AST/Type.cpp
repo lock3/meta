@@ -3347,8 +3347,8 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
 }
 
 ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
-  : Type(Reflected, Can, E->isInstantiationDependent(),
-         E->isInstantiationDependent(),
+  : Type(Reflected, Can, E->getDependence(),
+         E->getDependence(),
          T->isMetaType(),
          E->getType()->isVariablyModifiedType(),
          E->containsUnexpandedParameterPack()),
