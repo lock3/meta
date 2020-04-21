@@ -1311,6 +1311,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
     case Stmt::CapturedStmtClass:
     case Stmt::CXXFragmentExprClass:
+    case Stmt::CXXFragmentCaptureExprClass:
     case Stmt::CXXInjectionStmtClass:
     case Stmt::CXXBaseInjectionStmtClass:
     {

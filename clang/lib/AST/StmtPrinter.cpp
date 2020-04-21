@@ -2579,8 +2579,18 @@ void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
 }
 
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
- OS << "__fragment ";
- Node->getFragment()->getContent()->print(OS, Policy);
+  OS << (Node->isLegacy() ? "__fragment " : "fragment ");
+  Node->getFragment()->getContent()->print(OS, Policy);
+}
+
+void StmtPrinter::VisitCXXFragmentCaptureExpr(CXXFragmentCaptureExpr *Node) {
+ OS << "%{";
+ if (const Expr *Init = Node->getInitializer()) {
+   Visit(const_cast<Expr *>(Init));
+ } else {
+   OS << "detached capture";
+ }
+ OS << "}";
 }
 
 // Obj-C

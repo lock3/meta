@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s
 
-constexpr auto frag = __fragment {
+constexpr auto frag = fragment {
   return 0;
 };
 

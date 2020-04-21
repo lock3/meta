@@ -5,7 +5,7 @@ class Bar;
 class Foo {
   int x = 10;
 
-  consteval -> __fragment class Z {
+  consteval -> fragment class Z {
     friend class Bar;
 
     friend int do_thing(const Z& f);

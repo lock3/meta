@@ -215,19 +215,15 @@ Decl *Parser::ParseCXXMemberBlockFragment(Decl *Fragment) {
 ///        enum-specifier
 ///        compound-statement
 ///
-Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
-  // Implicitly capture automatic variables as captured constants.
-  Actions.ActOnCXXFragmentCapture(Captures);
-
+Decl *Parser::ParseCXXFragment() {
   // A name declared in the the fragment is not leaked into the enclosing
   // scope. That is, fragments names are only accessible from within.
   ParseScope FragmentScope(this, Scope::DeclScope | Scope::FragmentScope);
 
   // Start the fragment. The fragment is finished in one of the
   // ParseCXX*Fragment functions.
-  Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(),
-                                                 Tok.getLocation(),
-                                                 Captures);
+  Decl *Fragment = Actions.ActOnStartCXXFragment(
+      getCurScope(), Tok.getLocation());
   if (!Fragment)
     return nullptr;
 
@@ -259,18 +255,71 @@ Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
   return nullptr;
 }
 
+ExprResult Parser::ParseCXXUnquoteOperator() {
+  assert(Tok.is(tok::percentl_brace) && "Expected '%{'");
+
+  unsigned Offset = PendingUnquotes.size();
+  CachedTokens &Toks = PendingUnquotes.emplace_back();
+
+  SourceLocation BeginLoc = ConsumeBrace();
+  ConsumeAndStoreUntil(tok::r_brace, Toks,
+      /*StopAtSemi=*/false, /*ConsumeFinalToken=*/false);
+  SourceLocation EndLoc = ConsumeBrace();
+
+  return Actions.ActOnCXXFragmentCaptureExpr(BeginLoc, Offset, EndLoc);
+}
+
+bool Parser::ParseCXXFragmentCaptures(SmallVectorImpl<Expr *> &Captures) {
+  Token CurrentToken = Tok;
+
+  // FIXME: Is there a better way to replay these tokens?
+  for (CachedTokens Tokens : PendingUnquotes) {
+    // Enqueue the token that was the "current token" prior to
+    // entering ParseCXXFragmentCaptures so that it's the token we end
+    // with.
+    Tokens.push_back(CurrentToken);
+
+    // Re-enter the stored parenthesized tokens into the token stream, so we may
+    // parse them now.
+    PP.EnterTokenStream(Tokens, /*DisableMacroExpansion*/ true,
+                        /*IsReinject*/ true);
+
+    // Drop the current token and bring the first cached one. It's the same token
+    // as when we entered this function.
+    ConsumeAnyToken();
+
+    ExprResult Result = ParseConstantExpression();
+    if (Result.isInvalid()) {
+      PendingUnquotes.clear();
+      return true;
+    }
+
+    Captures.push_back(Result.get());
+  }
+
+  PendingUnquotes.clear();
+  return false;
+}
+
 /// ParseCXXFragmentExpression
 ///
 ///       fragment-expression:
-///         '<<' fragment
+///         'fragment' fragment
 ///
 ExprResult Parser::ParseCXXFragmentExpression() {
-  assert(Tok.is(tok::kw___fragment) && "expected '<<' token");
+  assert(Tok.is(tok::kw_fragment) && "expected 'fragment' token");
   SourceLocation Loc = ConsumeToken();
 
-  SmallVector<Expr *, 8> Captures;
-  Decl *Fragment = ParseCXXFragment(Captures);
+  // Enter a new fragment parse context.
+  CXXFragmentParseRAII ParseStateRAII(*this);
+
+  Decl *Fragment = ParseCXXFragment();
   if (!Fragment)
+    return ExprError();
+
+  // Parse the capture stack.
+  SmallVector<Expr *, 10> Captures;
+  if (ParseCXXFragmentCaptures(Captures))
     return ExprError();
 
   return Actions.ActOnCXXFragmentExpr(Loc, Fragment, Captures);

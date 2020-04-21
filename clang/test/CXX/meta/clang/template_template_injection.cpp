@@ -11,7 +11,7 @@ public:
 
 template<template<enum_a, enum_b> typename C>
 class foo {
-  consteval -> __fragment struct {
+  consteval -> fragment struct {
     int x = C<enum_a::val_1, enum_b::val_1>();
 
     void k(C<enum_a::val_1, enum_b::val_1> c) { }

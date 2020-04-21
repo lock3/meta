@@ -164,6 +164,7 @@ def MaterializeTemporaryExpr : StmtNode<Expr>;
 def LambdaExpr : StmtNode<Expr>;
 def CXXFoldExpr : StmtNode<Expr>;
 def CXXFragmentExpr : StmtNode<Expr>;
+def CXXFragmentCaptureExpr : StmtNode<Expr>;
 
 // C++ Coroutines TS expressions
 def CoroutineSuspendExpr : StmtNode<Expr, 1>;

@@ -4,9 +4,9 @@
 
 consteval void test_metaclass(meta::info source) {
   for (auto method : meta::range(source)) {
-    -> __fragment class {
+    -> fragment class {
     public:
-      constexpr int unqualid(method)() { return 10; }
+      constexpr int unqualid(%{method})() { return 10; }
     };
   }
 }

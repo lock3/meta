@@ -5,7 +5,7 @@ template<typename T>
 void pointers() {
   T *ptr;
   T **ptrptr;
-  consteval -> __fragment {
+  consteval -> fragment {
     requires T ptr; // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('int' to 'int *')}}
     requires T *ptrptr; // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('int *' to 'int **')}}
   };
@@ -13,7 +13,7 @@ void pointers() {
 
 template<typename T>
 void references(T &ref) {
-  consteval -> __fragment {
+  consteval -> fragment {
     requires auto ref; // expected-error {{Required conflicting types ('int' vs 'int &')}}
   };
 }
@@ -31,7 +31,7 @@ namespace good {
 template<typename T>
 void addition(T a, T b)
 {
-  consteval -> __fragment {
+  consteval -> fragment {
     requires auto a;
     requires auto b;
 
@@ -41,7 +41,7 @@ void addition(T a, T b)
 
 template<typename T>
 void reference(T &ref) {
-  consteval -> __fragment {
+  consteval -> fragment {
     requires auto &ref;
     ref = 10;
   };

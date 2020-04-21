@@ -926,10 +926,14 @@ void Preprocessor::Lex(Token &Result) {
   if (getLangOpts().CPlusPlusModules && LexLevel == 1 &&
       !Result.getFlag(Token::IsReinjected)) {
     switch (Result.getKind()) {
-    case tok::l_paren: case tok::l_square: case tok::l_brace:
+    case tok::l_paren:
+    case tok::l_square:
+    case tok::l_brace:
+    case tok::percentl_brace:
       ImportSeqState.handleOpenBracket();
       break;
-    case tok::r_paren: case tok::r_square:
+    case tok::r_paren:
+    case tok::r_square:
       ImportSeqState.handleCloseBracket();
       break;
     case tok::r_brace:

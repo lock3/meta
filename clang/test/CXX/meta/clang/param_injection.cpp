@@ -19,9 +19,9 @@ class foo {
       meta::info fn_refl = reflexpr(bar::do_thing);
       meta::range params(fn_refl);
 
-      -> __fragment struct {
-        constexpr int new_do_thing(-> params) const {
-          return add(unqualid(... params));
+      -> fragment struct {
+        constexpr int new_do_thing(-> %{params}) const {
+          return add(unqualid(... %{params}));
         }
       };
     }
@@ -29,9 +29,9 @@ class foo {
       meta::info fn_refl = reflexpr(bar::undefined_do_thing);
       meta::range params(fn_refl);
 
-      -> __fragment struct {
-        constexpr int new_undefined_do_thing(-> params) const {
-          return add(unqualid(... params));
+      -> fragment struct {
+        constexpr int new_undefined_do_thing(-> %{params}) const {
+          return add(unqualid(... %{params}));
         }
       };
     }
@@ -45,9 +45,9 @@ class foo_two {
       meta::info fn_refl = reflexpr(bar::do_thing);
       meta::range params(fn_refl);
 
-      -> __fragment struct {
-        constexpr int new_do_thing(-> params) const {
-          return add(unqualid(... params));
+      -> fragment struct {
+        constexpr int new_do_thing(-> %{params}) const {
+          return add(unqualid(... %{params}));
         }
       };
     }
@@ -55,9 +55,9 @@ class foo_two {
       meta::info fn_refl = reflexpr(bar::undefined_do_thing);
       meta::range params(fn_refl);
 
-      -> __fragment struct {
-        constexpr int new_undefined_do_thing(-> params) const {
-          return add(unqualid(... params));
+      -> fragment struct {
+        constexpr int new_undefined_do_thing(-> %{params}) const {
+          return add(unqualid(... %{params}));
         }
       };
     }

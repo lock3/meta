@@ -65,9 +65,9 @@ consteval void gen_impl(info proto) {
 
 consteval void gen_void_fn(info fn) {
   meta::range params(fn);
-  -> __fragment struct {
-    virtual HRESULT unqualid(name_of(fn))(-> params) {
-      this->m_impl.unqualid(name_of(fn))(unqualid(... params));
+  -> fragment struct {
+    virtual HRESULT unqualid(name_of(%{fn}))(-> %{params}) {
+      this->m_impl.unqualid(name_of(%{fn}))(unqualid(... %{params}));
       return HRESULT();
     }
   };
@@ -76,9 +76,9 @@ consteval void gen_void_fn(info fn) {
 consteval void gen_non_void_fn(info fn) {
   info ret_type = return_type_of(fn);
   meta::range params(fn);
-  -> __fragment struct {
-    virtual HRESULT unqualid(name_of(fn))(-> params, typename(ret_type)* retval) {
-      *retval = this->m_impl.unqualid(name_of(fn))(unqualid(... params));
+  -> fragment struct {
+    virtual HRESULT unqualid(name_of(%{fn}))(-> %{params}, typename(%{ret_type})* retval) {
+      *retval = this->m_impl.unqualid(name_of(%{fn}))(unqualid(... %{params}));
       return HRESULT();
     }
   };
@@ -86,14 +86,14 @@ consteval void gen_non_void_fn(info fn) {
 
 consteval void rt_class(info proto) {
   // Create the implementation class.
-  -> __fragment class {
+  -> fragment class {
     class impl_type {
-      consteval { gen_impl(proto); }
+      consteval { gen_impl(%{proto}); }
     };
   };
 
   // Generate a member of the type.
-  -> __fragment class C {
+  -> fragment class C {
     typename C::impl_type m_impl;
   };
 

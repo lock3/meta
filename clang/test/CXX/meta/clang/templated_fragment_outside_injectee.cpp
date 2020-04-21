@@ -2,7 +2,7 @@
 
 template<int x>
 consteval void inject() {
-  -> __fragment struct {
+  -> fragment struct {
     int get() {
       return x;
     }
@@ -19,9 +19,9 @@ class nested_foo {
 class foo {
   consteval {
     int i = 0;
-    -> __fragment struct {
-      int unqualid("get_value_", i)() {
-        return nested_foo<i> { }.get();
+    -> fragment struct {
+      int unqualid("get_value_", %{i})() {
+        return nested_foo<%{i}> { }.get();
       }
     };
   };

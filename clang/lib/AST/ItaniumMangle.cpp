@@ -3797,6 +3797,7 @@ recurse:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
   case Expr::CXXFragmentExprClass:
+  case Expr::CXXFragmentCaptureExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

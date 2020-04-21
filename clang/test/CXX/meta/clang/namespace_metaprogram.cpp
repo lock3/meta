@@ -2,7 +2,7 @@
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-constexpr auto fragment = __fragment namespace {
+constexpr auto frag = fragment namespace {
   int v_one = 1;
   int v_two = 2;
 
@@ -40,7 +40,7 @@ constexpr auto fragment = __fragment namespace {
 
 namespace foo {
   consteval {
-    -> fragment;
+    -> frag;
   }
 };
 

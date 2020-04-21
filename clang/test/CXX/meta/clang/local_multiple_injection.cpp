@@ -5,7 +5,7 @@ constexpr int count_to_five() {
 
   consteval {
     for (int i = 1; i <= 5; ++i) {
-      -> __fragment {
+      -> fragment {
         requires int k;
 
         ++k;

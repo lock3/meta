@@ -443,6 +443,13 @@ ExprDependence clang::computeDependence(CXXFragmentExpr *E) {
   return D & ~ExprDependence::UnexpandedPack;
 }
 
+ExprDependence clang::computeDependence(CXXFragmentCaptureExpr *E) {
+  if (const Expr *Initializer = E->getInitializer())
+    return Initializer->getDependence();
+
+  return ExprDependence::TypeValue;
+}
+
 ExprDependence clang::computeDependence(ObjCBoxedExpr *E) {
   return E->getSubExpr()->getDependence();
 }

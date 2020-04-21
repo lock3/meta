@@ -3,7 +3,7 @@
 template<typename Q>
 struct test {
   consteval {
-    -> __fragment struct {
+    -> fragment struct {
       test<Q> make() {
         return { };
       }

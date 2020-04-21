@@ -1,34 +1,39 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++2a %s
 
 class ArrayDestructure {
-  consteval {
-    auto lambda = [](auto a_ptr) // expected-error {{invalid deduced capture; 'int *' cannot be captured by a fragment}}
+  consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
+    int a = 0; // expected-note {{declared here}}
+    int &a_ref = a;
+    int *a_ptr = &a;
+
+    -> fragment struct {
+      constexpr auto val_a() {
+        return %{a};
+      }
+
+      constexpr auto val_a_ref() {
+        return %{a_ref};
+      }
+
+      constexpr auto val_a_ptr() {
+        return %{a_ptr}; // expected-note {{pointer to 'a' is not a constant expression}}
+      }
+    };
+  }
+
+  consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
+    auto lambda = [](auto a_ptr)
       consteval {
-      -> __fragment struct {
+      -> fragment struct {
         constexpr auto val_a_ptr() {
-          return a_ptr;
+          return %{a_ptr}; // expected-note {{pointer to 'a' is not a constant expression}}
         }
       };
     };
 
-    int a = 0;
-    int &a_ref = a; // expected-note {{'a_ref' declared here}}
-    int *a_ptr = &a; // expected-note {{'a_ptr' declared here}}
-
-    -> __fragment struct {
-      constexpr auto val_a() {
-        return a;
-      }
-
-      constexpr auto val_a_ref() {
-        return a_ref; // expected-error {{reference to local variable 'a_ref' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
-      }
-
-      constexpr auto val_a_ptr() {
-        return a_ptr; // expected-error {{reference to local variable 'a_ptr' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
-      }
-    };
-    lambda(a_ptr); // expected-note {{in instantiation of function template specialization}}
+    int a = 0; // expected-note {{declared here}}
+    int *a_ptr = &a;
+    lambda(a_ptr); // expected-note {{in call to '&lambda->operator()(&a)'}}
   }
 };
 
@@ -38,10 +43,10 @@ class ClassWithArr {
 
 class BadCaptureClass {
   consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
-    ClassWithArr a_arr_class; // expected-note {{subobject of type 'int' is not initialized}}
-    -> __fragment struct {
+    ClassWithArr a_arr_class;
+    -> fragment struct {
       constexpr auto val_a_arr_class() {
-        return a_arr_class;
+        return %{a_arr_class}; // expected-note {{subobject of type 'int' is not initialized}}
       }
     };
   }

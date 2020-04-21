@@ -2,7 +2,7 @@
 
 template<typename T>
 consteval void property(T source) {
-  -> __fragment struct X {
+  -> fragment struct X {
     int inner = 1;
     constexpr X() = default;
   };

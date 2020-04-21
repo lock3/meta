@@ -2108,6 +2108,10 @@ void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXFragmentCaptureExpr(const CXXFragmentCaptureExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }

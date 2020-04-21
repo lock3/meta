@@ -12,21 +12,21 @@ constexpr meta::range params(fn_refl);
 
 class foo {
   consteval {
-    -> __fragment struct {
+    -> fragment struct {
       template<typename T>
       static typename(ret_type_refl) templ_foo(int ignored, -> params) {
         return { };
       }
     };
 
-    -> __fragment struct {
+    -> fragment struct {
       typename(ret_type_refl) (*templ_foo_ptr)(int, -> params);
     };
   }
 
   foo() {
     consteval {
-      -> __fragment this {
+      -> fragment this {
         templ_foo_ptr = &typename(reflexpr(foo))::template templ_foo<typename(ret_type_refl)>;
       };
     }
