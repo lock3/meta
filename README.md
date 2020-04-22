@@ -10,7 +10,7 @@ by choosing the clang version `experimental -Wlifetime`.
 * `-Wdangling-gsl`: Statement-local analysis (enabled by default)
 * `-Wreturn-stack-address`: Statement-local analysis (enabled by default)
 * `-Wlifetime`: Main flow-sensitive analysis
-* `-Wlifetime-filter`: Reduce the number of false-postives on unannotated code.
+* `-Wlifetime-filter`: Reduce the number of false-postives at the cost of additional false negatives.
 * `-Wno-lifetime-null`: Disable flow-sensitive warnings about nullness of Pointers 
 * `-Wlifetime-global`: Flow-sensitive analysis that requires global variables of Pointer type to always point to variables with static lifetime
 * `-Wlifetime-disabled`: Get warnings when the flow-sensitive analysis is disabled on a function due to forbidden constructs (`reinterpret_cast` or pointer arithmetic)
