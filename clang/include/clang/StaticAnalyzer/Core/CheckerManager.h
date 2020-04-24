@@ -18,7 +18,6 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
-#include "clang/StaticAnalyzer/Frontend/CheckerRegistry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -42,6 +41,7 @@ class BugReporter;
 class CallEvent;
 class CheckerBase;
 class CheckerContext;
+class CheckerRegistry;
 class ExplodedGraph;
 class ExplodedNode;
 class ExplodedNodeSet;
@@ -122,42 +122,38 @@ enum class ObjCMessageVisitKind {
 };
 
 class CheckerManager {
-  ASTContext *Context;
+  ASTContext *Context = nullptr;
   const LangOptions LangOpts;
-  AnalyzerOptions &AOptions;
+  const AnalyzerOptions &AOptions;
+  const Preprocessor *PP = nullptr;
   CheckerNameRef CurrentCheckerName;
   DiagnosticsEngine &Diags;
-  CheckerRegistry Registry;
+  std::unique_ptr<CheckerRegistry> Registry;
 
 public:
+  // These constructors are defined in the Frontend library, because
+  // CheckerRegistry, a crucial component of the initialization is in there.
+  // CheckerRegistry cannot be moved to the Core library, because the checker
+  // registration functions are defined in the Checkers library, and the library
+  // dependencies look like this: Core -> Checkers -> Frontend.
+
   CheckerManager(
-      ASTContext &Context, AnalyzerOptions &AOptions,
+      ASTContext &Context, AnalyzerOptions &AOptions, const Preprocessor &PP,
       ArrayRef<std::string> plugins,
-      ArrayRef<std::function<void(CheckerRegistry &)>> checkerRegistrationFns)
-      : Context(&Context), LangOpts(Context.getLangOpts()), AOptions(AOptions),
-        Diags(Context.getDiagnostics()),
-        Registry(plugins, Context.getDiagnostics(), AOptions,
-                 checkerRegistrationFns) {
-    Registry.initializeRegistry(*this);
-    Registry.initializeManager(*this);
-    finishedCheckerRegistration();
-  }
+      ArrayRef<std::function<void(CheckerRegistry &)>> checkerRegistrationFns);
 
   /// Constructs a CheckerManager that ignores all non TblGen-generated
   /// checkers. Useful for unit testing, unless the checker infrastructure
   /// itself is tested.
-  CheckerManager(ASTContext &Context, AnalyzerOptions &AOptions)
-      : CheckerManager(Context, AOptions, {}, {}) {}
+  CheckerManager(ASTContext &Context, AnalyzerOptions &AOptions,
+                 const Preprocessor &PP)
+      : CheckerManager(Context, AOptions, PP, {}, {}) {}
 
   /// Constructs a CheckerManager without requiring an AST. No checker
   /// registration will take place. Only useful for retrieving the
   /// CheckerRegistry and print for help flags where the AST is unavalaible.
   CheckerManager(AnalyzerOptions &AOptions, const LangOptions &LangOpts,
-                 DiagnosticsEngine &Diags, ArrayRef<std::string> plugins)
-      : LangOpts(LangOpts), AOptions(AOptions), Diags(Diags),
-        Registry(plugins, Diags, AOptions) {
-    Registry.initializeRegistry(*this);
-  }
+                 DiagnosticsEngine &Diags, ArrayRef<std::string> plugins);
 
   ~CheckerManager();
 
@@ -169,8 +165,12 @@ public:
   void finishedCheckerRegistration();
 
   const LangOptions &getLangOpts() const { return LangOpts; }
-  AnalyzerOptions &getAnalyzerOptions() const { return AOptions; }
-  const CheckerRegistry &getCheckerRegistry() const { return Registry; }
+  const AnalyzerOptions &getAnalyzerOptions() const { return AOptions; }
+  const Preprocessor &getPreprocessor() const {
+    assert(PP);
+    return *PP;
+  }
+  const CheckerRegistry &getCheckerRegistry() const { return *Registry; }
   DiagnosticsEngine &getDiagnostics() const { return Diags; }
   ASTContext &getASTContext() const {
     assert(Context);

@@ -107,7 +107,7 @@ static std::string ReadPCHRecord(StringRef type) {
       .Case("IdentifierInfo *", "Record.readIdentifier()")
       .Case("StringRef", "Record.readString()")
       .Case("ParamIdx", "ParamIdx::deserialize(Record.readInt())")
-      .Case("OMPTraitInfo", "Record.readOMPTraitInfo()")
+      .Case("OMPTraitInfo *", "Record.readOMPTraitInfo()")
       .Default("Record.readInt()");
 }
 
@@ -131,7 +131,7 @@ static std::string WritePCHRecord(StringRef type, StringRef name) {
              .Case("StringRef", "AddString(" + std::string(name) + ");\n")
              .Case("ParamIdx",
                    "push_back(" + std::string(name) + ".serialize());\n")
-             .Case("OMPTraitInfo",
+             .Case("OMPTraitInfo *",
                    "writeOMPTraitInfo(" + std::string(name) + ");\n")
              .Default("push_back(" + std::string(name) + ");\n");
 }
@@ -339,7 +339,7 @@ namespace {
     }
 
     void writeDump(raw_ostream &OS) const override {
-      if (type == "FunctionDecl *" || type == "NamedDecl *") {
+      if (StringRef(type).endswith("Decl *")) {
         OS << "    OS << \" \";\n";
         OS << "    dumpBareDeclRef(SA->get" << getUpperName() << "());\n";
       } else if (type == "IdentifierInfo *") {
@@ -363,7 +363,7 @@ namespace {
           OS << "    if (SA->get" << getUpperName() << "().isValid())\n  ";
         OS << "    OS << \" \" << SA->get" << getUpperName()
            << "().getSourceIndex();\n";
-      } else if (type == "OMPTraitInfo") {
+      } else if (type == "OMPTraitInfo *") {
         OS << "    OS << \" \" << SA->get" << getUpperName() << "();\n";
       } else {
         llvm_unreachable("Unknown SimpleArgument type!");
@@ -481,6 +481,7 @@ namespace {
 
     void writeAccessors(raw_ostream &OS) const override {
       OS << "  bool is" << getUpperName() << "Dependent() const;\n";
+      OS << "  bool is" << getUpperName() << "ErrorDependent() const;\n";
 
       OS << "  unsigned get" << getUpperName() << "(ASTContext &Ctx) const;\n";
 
@@ -509,6 +510,15 @@ namespace {
       OS << "  else\n";
       OS << "    return " << getLowerName()
          << "Type->getType()->isDependentType();\n";
+      OS << "}\n";
+
+      OS << "bool " << getAttrName() << "Attr::is" << getUpperName()
+         << "ErrorDependent() const {\n";
+      OS << "  if (is" << getLowerName() << "Expr)\n";
+      OS << "    return " << getLowerName() << "Expr && " << getLowerName()
+         << "Expr->containsErrors();\n";
+      OS << "  return " << getLowerName()
+         << "Type->getType()->containsErrors();\n";
       OS << "}\n";
 
       // FIXME: Do not do the calculation here
@@ -1291,10 +1301,9 @@ createArgument(const Record &Arg, StringRef Attr,
     Ptr = std::make_unique<EnumArgument>(Arg, Attr);
   else if (ArgName == "ExprArgument")
     Ptr = std::make_unique<ExprArgument>(Arg, Attr);
-  else if (ArgName == "FunctionArgument")
-    Ptr = std::make_unique<SimpleArgument>(Arg, Attr, "FunctionDecl *");
-  else if (ArgName == "NamedArgument")
-    Ptr = std::make_unique<SimpleArgument>(Arg, Attr, "NamedDecl *");
+  else if (ArgName == "DeclArgument")
+    Ptr = std::make_unique<SimpleArgument>(
+        Arg, Attr, (Arg.getValueAsDef("Kind")->getName() + "Decl *").str());
   else if (ArgName == "IdentifierArgument")
     Ptr = std::make_unique<SimpleArgument>(Arg, Attr, "IdentifierInfo *");
   else if (ArgName == "DefaultBoolArgument")
@@ -1332,7 +1341,7 @@ createArgument(const Record &Arg, StringRef Attr,
   else if (ArgName == "VersionArgument")
     Ptr = std::make_unique<VersionArgument>(Arg, Attr);
   else if (ArgName == "OMPTraitInfoArgument")
-    Ptr = std::make_unique<SimpleArgument>(Arg, Attr, "OMPTraitInfo");
+    Ptr = std::make_unique<SimpleArgument>(Arg, Attr, "OMPTraitInfo *");
 
   if (!Ptr) {
     // Search in reverse order so that the most-derived type is handled first.
@@ -2912,6 +2921,7 @@ void EmitClangAttrPCHRead(RecordKeeper &Records, raw_ostream &OS) {
     if (R.isSubClassOf(InhClass))
       OS << "    bool isInherited = Record.readInt();\n";
     OS << "    bool isImplicit = Record.readInt();\n";
+    OS << "    bool isPackExpansion = Record.readInt();\n";
     ArgRecords = R.getValueAsListOfDefs("Args");
     Args.clear();
     for (const auto *Arg : ArgRecords) {
@@ -2927,6 +2937,7 @@ void EmitClangAttrPCHRead(RecordKeeper &Records, raw_ostream &OS) {
     if (R.isSubClassOf(InhClass))
       OS << "    cast<InheritableAttr>(New)->setInherited(isInherited);\n";
     OS << "    New->setImplicit(isImplicit);\n";
+    OS << "    New->setPackExpansion(isPackExpansion);\n";
     OS << "    break;\n";
     OS << "  }\n";
   }
@@ -2953,6 +2964,7 @@ void EmitClangAttrPCHWrite(RecordKeeper &Records, raw_ostream &OS) {
     if (R.isSubClassOf(InhClass))
       OS << "    Record.push_back(SA->isInherited());\n";
     OS << "    Record.push_back(A->isImplicit());\n";
+    OS << "    Record.push_back(A->isPackExpansion());\n";
 
     for (const auto *Arg : Args)
       createArgument(*Arg, R.getName())->writePCHWrite(OS);
@@ -3720,7 +3732,26 @@ void EmitClangAttrParsedAttrImpl(RecordKeeper &Records, raw_ostream &OS) {
     // ParsedAttr.cpp.
     const std::string &AttrName = I->first;
     const Record &Attr = *I->second;
-    OS << "struct ParsedAttrInfo" << I->first << " : public ParsedAttrInfo {\n";
+    auto Spellings = GetFlattenedSpellings(Attr);
+    if (!Spellings.empty()) {
+      OS << "static constexpr ParsedAttrInfo::Spelling " << I->first
+         << "Spellings[] = {\n";
+      for (const auto &S : Spellings) {
+        const std::string &RawSpelling = S.name();
+        std::string Spelling;
+        if (!S.nameSpace().empty())
+          Spelling += S.nameSpace() + "::";
+        if (S.variety() == "GNU")
+          Spelling += NormalizeGNUAttrSpelling(RawSpelling);
+        else
+          Spelling += RawSpelling;
+        OS << "  {AttributeCommonInfo::AS_" << S.variety();
+        OS << ", \"" << Spelling << "\"},\n";
+      }
+      OS << "};\n";
+    }
+    OS << "struct ParsedAttrInfo" << I->first
+       << " final : public ParsedAttrInfo {\n";
     OS << "  ParsedAttrInfo" << I->first << "() {\n";
     OS << "    AttrKind = ParsedAttr::AT_" << AttrName << ";\n";
     emitArgInfo(Attr, OS);
@@ -3737,20 +3768,8 @@ void EmitClangAttrParsedAttrImpl(RecordKeeper &Records, raw_ostream &OS) {
     OS << IsKnownToGCC(Attr) << ";\n";
     OS << "    IsSupportedByPragmaAttribute = ";
     OS << PragmaAttributeSupport.isAttributedSupported(*I->second) << ";\n";
-    for (const auto &S : GetFlattenedSpellings(Attr)) {
-      const std::string &RawSpelling = S.name();
-      std::string Spelling;
-      if (S.variety() == "CXX11" || S.variety() == "C2x") {
-        Spelling += S.nameSpace();
-        Spelling += "::";
-      }
-      if (S.variety() == "GNU")
-        Spelling += NormalizeGNUAttrSpelling(RawSpelling);
-      else
-        Spelling += RawSpelling;
-      OS << "    Spellings.push_back({AttributeCommonInfo::AS_" << S.variety();
-      OS << ",\"" << Spelling << "\"});\n";
-    }
+    if (!Spellings.empty())
+      OS << "    Spellings = " << I->first << "Spellings;\n";
     OS << "  }\n";
     GenerateAppertainsTo(Attr, OS);
     GenerateLangOptRequirements(Attr, OS);
@@ -3816,12 +3835,12 @@ void EmitClangAttrParsedAttrKinds(RecordKeeper &Records, raw_ostream &OS) {
         const std::string &Variety = S.variety();
         if (Variety == "CXX11") {
           Matches = &CXX11;
-          Spelling += S.nameSpace();
-          Spelling += "::";
+          if (!S.nameSpace().empty())
+            Spelling += S.nameSpace() + "::";
         } else if (Variety == "C2x") {
           Matches = &C2x;
-          Spelling += S.nameSpace();
-          Spelling += "::";
+          if (!S.nameSpace().empty())
+            Spelling += S.nameSpace() + "::";
         } else if (Variety == "GNU")
           Matches = &GNU;
         else if (Variety == "Declspec")

@@ -729,7 +729,7 @@ def NOOP_SDNodeXForm : SDNodeXForm<imm, [{}]>;
 /// PatFrags - Represents a set of pattern fragments.  Each single fragment
 /// can match something on the DAG, from a single node to multiple nested other
 /// fragments.   The whole set of fragments matches if any of the single
-/// fragemnts match.  This allows e.g. matching and "add with overflow" and
+/// fragments match.  This allows e.g. matching and "add with overflow" and
 /// a regular "add" with the same fragment set.
 ///
 class PatFrags<dag ops, list<dag> frags, code pred = [{}],
@@ -947,6 +947,10 @@ def extloadi32 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
   let IsLoad = 1;
   let MemoryVT = i32;
 }
+def extloadf16 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
+  let IsLoad = 1;
+  let MemoryVT = f16;
+}
 def extloadf32 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
   let IsLoad = 1;
   let MemoryVT = f32;
@@ -1081,6 +1085,11 @@ def truncstorei32 : PatFrag<(ops node:$val, node:$ptr),
                             (truncstore node:$val, node:$ptr)> {
   let IsStore = 1;
   let MemoryVT = i32;
+}
+def truncstoref16 : PatFrag<(ops node:$val, node:$ptr),
+                            (truncstore node:$val, node:$ptr)> {
+  let IsStore = 1;
+  let MemoryVT = f16;
 }
 def truncstoref32 : PatFrag<(ops node:$val, node:$ptr),
                             (truncstore node:$val, node:$ptr)> {

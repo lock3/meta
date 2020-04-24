@@ -246,6 +246,12 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
   case BuiltinType::OMPArraySection:
     ID = PREDEF_TYPE_OMP_ARRAY_SECTION;
     break;
+  case BuiltinType::OMPArrayShaping:
+    ID = PREDEF_TYPE_OMP_ARRAY_SHAPING;
+    break;
+  case BuiltinType::OMPIterator:
+    ID = PREDEF_TYPE_OMP_ITERATOR;
+    break;
   }
 
   return TypeIdx(ID);
@@ -368,6 +374,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::IndirectField:
   case Decl::Field:
   case Decl::MSProperty:
+  case Decl::MSGuid:
   case Decl::ObjCIvar:
   case Decl::ObjCAtDefsField:
   case Decl::NonTypeTemplateParm:

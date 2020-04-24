@@ -74,6 +74,9 @@ public:
   /// precision, ignoring the unused bits).
   LegalizeResult widenScalar(MachineInstr &MI, unsigned TypeIdx, LLT WideTy);
 
+  /// Legalize an instruction by replacing the value type
+  LegalizeResult bitcast(MachineInstr &MI, unsigned TypeIdx, LLT Ty);
+
   /// Legalize an instruction by splitting it into simpler parts, hopefully
   /// understood by the target.
   LegalizeResult lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty);
@@ -127,6 +130,14 @@ public:
   /// Use by producing a vector with undefined high elements, extracting the
   /// original vector type, and replacing the vreg of the operand in place.
   void moreElementsVectorSrc(MachineInstr &MI, LLT MoreTy, unsigned OpIdx);
+
+  /// Legalize a single operand \p OpIdx of the machine instruction \p MI as a
+  /// use by inserting a G_BITCAST to \p CastTy
+  void bitcastSrc(MachineInstr &MI, LLT CastTy, unsigned OpIdx);
+
+  /// Legalize a single operand \p OpIdx of the machine instruction \p MI as a
+  /// def by inserting a G_BITCAST from \p CastTy
+  void bitcastDst(MachineInstr &MI, LLT CastTy, unsigned OpIdx);
 
 private:
   LegalizeResult
@@ -204,11 +215,6 @@ public:
   LegalizeResult fewerElementsVectorImplicitDef(MachineInstr &MI,
                                                 unsigned TypeIdx, LLT NarrowTy);
 
-  /// Legalize a simple vector instruction where all operands are the same type
-  /// by splitting into multiple components.
-  LegalizeResult fewerElementsVectorBasic(MachineInstr &MI, unsigned TypeIdx,
-                                          LLT NarrowTy);
-
   /// Legalize a instruction with a vector type where each operand may have a
   /// different element type. All type indexes must have the same number of
   /// elements.
@@ -239,6 +245,16 @@ public:
 
   LegalizeResult
   reduceLoadStoreWidth(MachineInstr &MI, unsigned TypeIdx, LLT NarrowTy);
+
+  /// Legalize an instruction by reducing the operation width, either by
+  /// narrowing the type of the operation or by reducing the number of elements
+  /// of a vector.
+  /// The used strategy (narrow vs. fewerElements) is decided by \p NarrowTy.
+  /// Narrow is used if the scalar type of \p NarrowTy and \p DstTy differ,
+  /// fewerElements is used when the scalar type is the same but the number of
+  /// elements between \p NarrowTy and \p DstTy differ.
+  LegalizeResult reduceOperationWidth(MachineInstr &MI, unsigned TypeIdx,
+                                      LLT NarrowTy);
 
   LegalizeResult fewerElementsVectorSextInReg(MachineInstr &MI, unsigned TypeIdx,
                                               LLT NarrowTy);
@@ -292,6 +308,13 @@ private:
   /// To keep track of changes made by the LegalizerHelper.
   GISelChangeObserver &Observer;
 };
+
+/// Helper function that creates a libcall to the given \p Name using the given
+/// calling convention \p CC.
+LegalizerHelper::LegalizeResult
+createLibcall(MachineIRBuilder &MIRBuilder, const char *Name,
+              const CallLowering::ArgInfo &Result,
+              ArrayRef<CallLowering::ArgInfo> Args, CallingConv::ID CC);
 
 /// Helper function that creates the given libcall.
 LegalizerHelper::LegalizeResult

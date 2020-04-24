@@ -400,7 +400,8 @@ static void instantiateOMPDeclareVariantAttr(
 
   // Copy the template version of the OMPTraitInfo and run substitute on all
   // score and condition expressiosn.
-  OMPTraitInfo TI = Attr.getTraitInfos();
+  OMPTraitInfo &TI = S.getASTContext().getNewOMPTraitInfo();
+  TI = *Attr.getTraitInfos();
 
   // Try to substitute template parameters in score and condition expressions.
   auto SubstScoreOrConditionExpr = [&S, Subst](Expr *&E, bool) {
@@ -697,6 +698,10 @@ Decl *TemplateDeclInstantiator::VisitPragmaDetectMismatchDecl(
 Decl *
 TemplateDeclInstantiator::VisitExternCContextDecl(ExternCContextDecl *D) {
   llvm_unreachable("extern \"C\" context cannot be instantiated");
+}
+
+Decl *TemplateDeclInstantiator::VisitMSGuidDecl(MSGuidDecl *D) {
+  llvm_unreachable("GUID declaration cannot be instantiated");
 }
 
 Decl *
@@ -4386,7 +4391,7 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
         EPI.ExceptionSpec.Type != EST_None &&
         EPI.ExceptionSpec.Type != EST_DynamicNone &&
         EPI.ExceptionSpec.Type != EST_BasicNoexcept &&
-        !Tmpl->isLexicallyWithinFunctionOrMethod()) {
+        !Tmpl->isInLocalScope()) {
       FunctionDecl *ExceptionSpecTemplate = Tmpl;
       if (EPI.ExceptionSpec.Type == EST_Uninstantiated)
         ExceptionSpecTemplate = EPI.ExceptionSpec.SourceTemplate;
@@ -4984,7 +4989,7 @@ void Sema::InstantiateVariableInitializer(
     bool IsConstexpr = OldVar->isConstexpr() || isConstantEvaluated();
     EnterExpressionEvaluationContext Evaluated(
         *this,
-        getLangOpts().CPlusPlus2a && IsConstexpr
+        getLangOpts().CPlusPlus20 && IsConstexpr
             ? Sema::ExpressionEvaluationContext::ConstantEvaluated
             : Sema::ExpressionEvaluationContext::PotentiallyEvaluated,
         Var);

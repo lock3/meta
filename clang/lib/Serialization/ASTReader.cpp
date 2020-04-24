@@ -89,6 +89,7 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -139,6 +140,7 @@ using namespace clang;
 using namespace clang::serialization;
 using namespace clang::serialization::reader;
 using llvm::BitstreamCursor;
+using llvm::RoundingMode;
 
 //===----------------------------------------------------------------------===//
 // ChainedASTReaderListener implementation
@@ -1470,6 +1472,7 @@ bool ASTReader::ReadSLocEntry(int ID) {
 
   ModuleFile *F = GlobalSLocEntryMap.find(-ID)->second;
   if (llvm::Error Err = F->SLocEntryCursor.JumpToBit(
+          F->SLocEntryOffsetsBase +
           F->SLocEntryOffsets[ID - F->SLocEntryBaseID])) {
     Error(std::move(Err));
     return true;
@@ -1932,9 +1935,8 @@ HeaderFileInfoTrait::ReadData(internal_key_ref key, const unsigned char *d,
   return HFI;
 }
 
-void ASTReader::addPendingMacro(IdentifierInfo *II,
-                                ModuleFile *M,
-                                uint64_t MacroDirectivesOffset) {
+void ASTReader::addPendingMacro(IdentifierInfo *II, ModuleFile *M,
+                                uint32_t MacroDirectivesOffset) {
   assert(NumCurrentElementsDeserializing > 0 &&"Missing deserialization guard");
   PendingMacroIDs[II].push_back(PendingMacroInfo(M, MacroDirectivesOffset));
 }
@@ -2099,7 +2101,8 @@ void ASTReader::resolvePendingMacro(IdentifierInfo *II,
 
   BitstreamCursor &Cursor = M.MacroCursor;
   SavedStreamPosition SavedPosition(Cursor);
-  if (llvm::Error Err = Cursor.JumpToBit(PMInfo.MacroDirectivesOffset)) {
+  if (llvm::Error Err =
+          Cursor.JumpToBit(M.MacroOffsetsBase + PMInfo.MacroDirectivesOffset)) {
     Error(std::move(Err));
     return;
   }
@@ -3098,7 +3101,7 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         Error("duplicate TYPE_OFFSET record in AST file");
         return Failure;
       }
-      F.TypeOffsets = (const uint32_t *)Blob.data();
+      F.TypeOffsets = reinterpret_cast<const UnderalignedInt64 *>(Blob.data());
       F.LocalNumTypes = Record[0];
       unsigned LocalBaseTypeIndex = Record[1];
       F.BaseTypeIndex = getTotalNumTypes();
@@ -3376,6 +3379,7 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       F.SLocEntryOffsets = (const uint32_t *)Blob.data();
       F.LocalNumSLocEntries = Record[0];
       unsigned SLocSpaceSize = Record[1];
+      F.SLocEntryOffsetsBase = Record[2];
       std::tie(F.SLocEntryBaseID, F.SLocEntryBaseOffset) =
           SourceMgr.AllocateLoadedSLocEntries(F.LocalNumSLocEntries,
                                               SLocSpaceSize);
@@ -3694,6 +3698,7 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       F.MacroOffsets = (const uint32_t *)Blob.data();
       F.LocalNumMacros = Record[0];
       unsigned LocalBaseMacroID = Record[1];
+      F.MacroOffsetsBase = Record[2];
       F.BaseMacroID = getTotalNumMacros();
 
       if (F.LocalNumMacros > 0) {
@@ -4030,8 +4035,8 @@ void ASTReader::makeModuleVisible(Module *Mod,
       continue;
     }
 
-    if (!Mod->isAvailable()) {
-      // Modules that aren't available cannot be made visible.
+    if (Mod->isUnimportable()) {
+      // Modules that aren't importable cannot be made visible.
       continue;
     }
 
@@ -5536,9 +5541,9 @@ ASTReader::ReadSubmoduleBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       // imported module file.
       CurrentModule->Requirements.clear();
       CurrentModule->MissingHeaders.clear();
-      CurrentModule->IsMissingRequirement =
-          ParentModule && ParentModule->IsMissingRequirement;
-      CurrentModule->IsAvailable = !CurrentModule->IsMissingRequirement;
+      CurrentModule->IsUnimportable =
+          ParentModule && ParentModule->IsUnimportable;
+      CurrentModule->IsAvailable = !CurrentModule->IsUnimportable;
       break;
     }
 
@@ -5907,8 +5912,8 @@ PreprocessedEntity *ASTReader::ReadPreprocessedEntity(unsigned Index) {
   }
 
   SavedStreamPosition SavedPosition(M.PreprocessorDetailCursor);
-  if (llvm::Error Err =
-          M.PreprocessorDetailCursor.JumpToBit(PPOffs.BitOffset)) {
+  if (llvm::Error Err = M.PreprocessorDetailCursor.JumpToBit(
+          M.MacroOffsetsBase + PPOffs.BitOffset)) {
     Error(std::move(Err));
     return nullptr;
   }
@@ -6321,7 +6326,8 @@ ASTReader::RecordLocation ASTReader::TypeCursorForIndex(unsigned Index) {
   GlobalTypeMapType::iterator I = GlobalTypeMap.find(Index);
   assert(I != GlobalTypeMap.end() && "Corrupted global type map");
   ModuleFile *M = I->second;
-  return RecordLocation(M, M->TypeOffsets[Index - M->BaseTypeIndex]);
+  return RecordLocation(
+      M, M->TypeOffsets[Index - M->BaseTypeIndex].getBitOffset());
 }
 
 static llvm::Optional<Type::TypeClass> getTypeClassForCode(TypeCode code) {
@@ -6724,6 +6730,15 @@ void TypeLocReader::VisitPipeTypeLoc(PipeTypeLoc TL) {
   TL.setKWLoc(readSourceLocation());
 }
 
+void TypeLocReader::VisitExtIntTypeLoc(clang::ExtIntTypeLoc TL) {
+  TL.setNameLoc(readSourceLocation());
+}
+void TypeLocReader::VisitDependentExtIntTypeLoc(
+    clang::DependentExtIntTypeLoc TL) {
+  TL.setNameLoc(readSourceLocation());
+}
+
+
 void ASTRecordReader::readTypeLoc(TypeLoc TL) {
   TypeLocReader TLR(*this);
   for (; !TL.isNull(); TL = TL.getNextTypeLoc())
@@ -6970,6 +6985,12 @@ QualType ASTReader::GetType(TypeID ID) {
       break;
     case PREDEF_TYPE_OMP_ARRAY_SECTION:
       T = Context.OMPArraySectionTy;
+      break;
+    case PREDEF_TYPE_OMP_ARRAY_SHAPING:
+      T = Context.OMPArraySectionTy;
+      break;
+    case PREDEF_TYPE_OMP_ITERATOR:
+      T = Context.OMPIteratorTy;
       break;
 #define SVE_TYPE(Name, Id, SingletonId) \
     case PREDEF_TYPE_##Id##_ID: \
@@ -7293,6 +7314,9 @@ static Decl *getPredefinedDecl(ASTContext &Context, PredefinedDeclIDs ID) {
 
   case PREDEF_DECL_BUILTIN_MS_VA_LIST_ID:
     return Context.getBuiltinMSVaListDecl();
+
+  case PREDEF_DECL_BUILTIN_MS_GUID_ID:
+    return Context.getMSGuidTagDecl();
 
   case PREDEF_DECL_EXTERN_C_CONTEXT_ID:
     return Context.getExternCContextDecl();
@@ -7774,7 +7798,7 @@ void ASTReader::InitializeSema(Sema &S) {
   // FIXME: What happens if these are changed by a module import?
   if (!FPPragmaOptions.empty()) {
     assert(FPPragmaOptions.size() == 1 && "Wrong number of FP_PRAGMA_OPTIONS");
-    SemaObj->FPFeatures = FPOptions(FPPragmaOptions[0]);
+    SemaObj->CurFPFeatures = FPOptions(FPPragmaOptions[0]);
   }
 
   SemaObj->OpenCLFeatures.copy(OpenCLExtensions);
@@ -8431,7 +8455,8 @@ MacroInfo *ASTReader::getMacro(MacroID ID) {
     assert(I != GlobalMacroMap.end() && "Corrupted global macro map");
     ModuleFile *M = I->second;
     unsigned Index = ID - M->BaseMacroID;
-    MacrosLoaded[ID] = ReadMacroRecord(*M, M->MacroOffsets[Index]);
+    MacrosLoaded[ID] =
+        ReadMacroRecord(*M, M->MacroOffsetsBase + M->MacroOffsets[Index]);
 
     if (DeserializationListener)
       DeserializationListener->MacroRead(ID + NUM_PREDEF_MACRO_IDS,
@@ -8526,7 +8551,7 @@ unsigned ASTReader::getModuleFileID(ModuleFile *F) {
 
 llvm::Optional<ASTSourceDescriptor>
 ASTReader::getSourceDescriptor(unsigned ID) {
-  if (const Module *M = getSubmodule(ID))
+  if (Module *M = getSubmodule(ID))
     return ASTSourceDescriptor(*M);
 
   // If there is only a single PCH, return it instead.
@@ -11635,8 +11660,8 @@ public:
   OMPClauseReader(ASTRecordReader &Record)
       : Record(Record), Context(Record.getContext()) {}
 
-#define OPENMP_CLAUSE(Name, Class) void Visit##Class(Class *C);
-#include "clang/Basic/OpenMPKinds.def"
+#define OMP_CLAUSE_CLASS(Enum, Str, Class) void Visit##Class(Class *C);
+#include "llvm/Frontend/OpenMP/OMPKinds.def"
   OMPClause *readClause();
   void VisitOMPClauseWithPreInit(OMPClauseWithPreInit *C);
   void VisitOMPClauseWithPostUpdate(OMPClauseWithPostUpdate *C);
@@ -11650,149 +11675,149 @@ OMPClause *ASTRecordReader::readOMPClause() {
 
 OMPClause *OMPClauseReader::readClause() {
   OMPClause *C = nullptr;
-  switch (Record.readInt()) {
-  case OMPC_if:
+  switch (llvm::omp::Clause(Record.readInt())) {
+  case llvm::omp::OMPC_if:
     C = new (Context) OMPIfClause();
     break;
-  case OMPC_final:
+  case llvm::omp::OMPC_final:
     C = new (Context) OMPFinalClause();
     break;
-  case OMPC_num_threads:
+  case llvm::omp::OMPC_num_threads:
     C = new (Context) OMPNumThreadsClause();
     break;
-  case OMPC_safelen:
+  case llvm::omp::OMPC_safelen:
     C = new (Context) OMPSafelenClause();
     break;
-  case OMPC_simdlen:
+  case llvm::omp::OMPC_simdlen:
     C = new (Context) OMPSimdlenClause();
     break;
-  case OMPC_allocator:
+  case llvm::omp::OMPC_allocator:
     C = new (Context) OMPAllocatorClause();
     break;
-  case OMPC_collapse:
+  case llvm::omp::OMPC_collapse:
     C = new (Context) OMPCollapseClause();
     break;
-  case OMPC_default:
+  case llvm::omp::OMPC_default:
     C = new (Context) OMPDefaultClause();
     break;
-  case OMPC_proc_bind:
+  case llvm::omp::OMPC_proc_bind:
     C = new (Context) OMPProcBindClause();
     break;
-  case OMPC_schedule:
+  case llvm::omp::OMPC_schedule:
     C = new (Context) OMPScheduleClause();
     break;
-  case OMPC_ordered:
+  case llvm::omp::OMPC_ordered:
     C = OMPOrderedClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_nowait:
+  case llvm::omp::OMPC_nowait:
     C = new (Context) OMPNowaitClause();
     break;
-  case OMPC_untied:
+  case llvm::omp::OMPC_untied:
     C = new (Context) OMPUntiedClause();
     break;
-  case OMPC_mergeable:
+  case llvm::omp::OMPC_mergeable:
     C = new (Context) OMPMergeableClause();
     break;
-  case OMPC_read:
+  case llvm::omp::OMPC_read:
     C = new (Context) OMPReadClause();
     break;
-  case OMPC_write:
+  case llvm::omp::OMPC_write:
     C = new (Context) OMPWriteClause();
     break;
-  case OMPC_update:
+  case llvm::omp::OMPC_update:
     C = OMPUpdateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_capture:
+  case llvm::omp::OMPC_capture:
     C = new (Context) OMPCaptureClause();
     break;
-  case OMPC_seq_cst:
+  case llvm::omp::OMPC_seq_cst:
     C = new (Context) OMPSeqCstClause();
     break;
-  case OMPC_acq_rel:
+  case llvm::omp::OMPC_acq_rel:
     C = new (Context) OMPAcqRelClause();
     break;
-  case OMPC_acquire:
+  case llvm::omp::OMPC_acquire:
     C = new (Context) OMPAcquireClause();
     break;
-  case OMPC_release:
+  case llvm::omp::OMPC_release:
     C = new (Context) OMPReleaseClause();
     break;
-  case OMPC_relaxed:
+  case llvm::omp::OMPC_relaxed:
     C = new (Context) OMPRelaxedClause();
     break;
-  case OMPC_threads:
+  case llvm::omp::OMPC_threads:
     C = new (Context) OMPThreadsClause();
     break;
-  case OMPC_simd:
+  case llvm::omp::OMPC_simd:
     C = new (Context) OMPSIMDClause();
     break;
-  case OMPC_nogroup:
+  case llvm::omp::OMPC_nogroup:
     C = new (Context) OMPNogroupClause();
     break;
-  case OMPC_unified_address:
+  case llvm::omp::OMPC_unified_address:
     C = new (Context) OMPUnifiedAddressClause();
     break;
-  case OMPC_unified_shared_memory:
+  case llvm::omp::OMPC_unified_shared_memory:
     C = new (Context) OMPUnifiedSharedMemoryClause();
     break;
-  case OMPC_reverse_offload:
+  case llvm::omp::OMPC_reverse_offload:
     C = new (Context) OMPReverseOffloadClause();
     break;
-  case OMPC_dynamic_allocators:
+  case llvm::omp::OMPC_dynamic_allocators:
     C = new (Context) OMPDynamicAllocatorsClause();
     break;
-  case OMPC_atomic_default_mem_order:
+  case llvm::omp::OMPC_atomic_default_mem_order:
     C = new (Context) OMPAtomicDefaultMemOrderClause();
     break;
- case OMPC_private:
+ case llvm::omp::OMPC_private:
     C = OMPPrivateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_firstprivate:
+  case llvm::omp::OMPC_firstprivate:
     C = OMPFirstprivateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_lastprivate:
+  case llvm::omp::OMPC_lastprivate:
     C = OMPLastprivateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_shared:
+  case llvm::omp::OMPC_shared:
     C = OMPSharedClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_reduction:
+  case llvm::omp::OMPC_reduction:
     C = OMPReductionClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_task_reduction:
+  case llvm::omp::OMPC_task_reduction:
     C = OMPTaskReductionClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_in_reduction:
+  case llvm::omp::OMPC_in_reduction:
     C = OMPInReductionClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_linear:
+  case llvm::omp::OMPC_linear:
     C = OMPLinearClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_aligned:
+  case llvm::omp::OMPC_aligned:
     C = OMPAlignedClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_copyin:
+  case llvm::omp::OMPC_copyin:
     C = OMPCopyinClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_copyprivate:
+  case llvm::omp::OMPC_copyprivate:
     C = OMPCopyprivateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_flush:
+  case llvm::omp::OMPC_flush:
     C = OMPFlushClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_depobj:
+  case llvm::omp::OMPC_depobj:
     C = OMPDepobjClause::CreateEmpty(Context);
     break;
-  case OMPC_depend: {
+  case llvm::omp::OMPC_depend: {
     unsigned NumVars = Record.readInt();
     unsigned NumLoops = Record.readInt();
     C = OMPDependClause::CreateEmpty(Context, NumVars, NumLoops);
     break;
   }
-  case OMPC_device:
+  case llvm::omp::OMPC_device:
     C = new (Context) OMPDeviceClause();
     break;
-  case OMPC_map: {
+  case llvm::omp::OMPC_map: {
     OMPMappableExprListSizeTy Sizes;
     Sizes.NumVars = Record.readInt();
     Sizes.NumUniqueDeclarations = Record.readInt();
@@ -11801,31 +11826,31 @@ OMPClause *OMPClauseReader::readClause() {
     C = OMPMapClause::CreateEmpty(Context, Sizes);
     break;
   }
-  case OMPC_num_teams:
+  case llvm::omp::OMPC_num_teams:
     C = new (Context) OMPNumTeamsClause();
     break;
-  case OMPC_thread_limit:
+  case llvm::omp::OMPC_thread_limit:
     C = new (Context) OMPThreadLimitClause();
     break;
-  case OMPC_priority:
+  case llvm::omp::OMPC_priority:
     C = new (Context) OMPPriorityClause();
     break;
-  case OMPC_grainsize:
+  case llvm::omp::OMPC_grainsize:
     C = new (Context) OMPGrainsizeClause();
     break;
-  case OMPC_num_tasks:
+  case llvm::omp::OMPC_num_tasks:
     C = new (Context) OMPNumTasksClause();
     break;
-  case OMPC_hint:
+  case llvm::omp::OMPC_hint:
     C = new (Context) OMPHintClause();
     break;
-  case OMPC_dist_schedule:
+  case llvm::omp::OMPC_dist_schedule:
     C = new (Context) OMPDistScheduleClause();
     break;
-  case OMPC_defaultmap:
+  case llvm::omp::OMPC_defaultmap:
     C = new (Context) OMPDefaultmapClause();
     break;
-  case OMPC_to: {
+  case llvm::omp::OMPC_to: {
     OMPMappableExprListSizeTy Sizes;
     Sizes.NumVars = Record.readInt();
     Sizes.NumUniqueDeclarations = Record.readInt();
@@ -11834,7 +11859,7 @@ OMPClause *OMPClauseReader::readClause() {
     C = OMPToClause::CreateEmpty(Context, Sizes);
     break;
   }
-  case OMPC_from: {
+  case llvm::omp::OMPC_from: {
     OMPMappableExprListSizeTy Sizes;
     Sizes.NumVars = Record.readInt();
     Sizes.NumUniqueDeclarations = Record.readInt();
@@ -11843,7 +11868,7 @@ OMPClause *OMPClauseReader::readClause() {
     C = OMPFromClause::CreateEmpty(Context, Sizes);
     break;
   }
-  case OMPC_use_device_ptr: {
+  case llvm::omp::OMPC_use_device_ptr: {
     OMPMappableExprListSizeTy Sizes;
     Sizes.NumVars = Record.readInt();
     Sizes.NumUniqueDeclarations = Record.readInt();
@@ -11852,7 +11877,7 @@ OMPClause *OMPClauseReader::readClause() {
     C = OMPUseDevicePtrClause::CreateEmpty(Context, Sizes);
     break;
   }
-  case OMPC_is_device_ptr: {
+  case llvm::omp::OMPC_is_device_ptr: {
     OMPMappableExprListSizeTy Sizes;
     Sizes.NumVars = Record.readInt();
     Sizes.NumUniqueDeclarations = Record.readInt();
@@ -11861,27 +11886,31 @@ OMPClause *OMPClauseReader::readClause() {
     C = OMPIsDevicePtrClause::CreateEmpty(Context, Sizes);
     break;
   }
-  case OMPC_allocate:
+  case llvm::omp::OMPC_allocate:
     C = OMPAllocateClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_nontemporal:
+  case llvm::omp::OMPC_nontemporal:
     C = OMPNontemporalClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_inclusive:
+  case llvm::omp::OMPC_inclusive:
     C = OMPInclusiveClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_exclusive:
+  case llvm::omp::OMPC_exclusive:
     C = OMPExclusiveClause::CreateEmpty(Context, Record.readInt());
     break;
-  case OMPC_order:
+  case llvm::omp::OMPC_order:
     C = new (Context) OMPOrderClause();
     break;
-  case OMPC_destroy:
+  case llvm::omp::OMPC_destroy:
     C = new (Context) OMPDestroyClause();
     break;
-  case OMPC_detach:
+  case llvm::omp::OMPC_detach:
     C = new (Context) OMPDetachClause();
     break;
+#define OMP_CLAUSE_NO_CLASS(Enum, Str)                                         \
+  case llvm::omp::Enum:                                                        \
+    break;
+#include "llvm/Frontend/OpenMP/OMPKinds.def"
   }
   assert(C && "Unknown OMPClause type");
 
@@ -12118,7 +12147,9 @@ void OMPClauseReader::VisitOMPSharedClause(OMPSharedClause *C) {
 void OMPClauseReader::VisitOMPReductionClause(OMPReductionClause *C) {
   VisitOMPClauseWithPostUpdate(C);
   C->setLParenLoc(Record.readSourceLocation());
+  C->setModifierLoc(Record.readSourceLocation());
   C->setColonLoc(Record.readSourceLocation());
+  C->setModifier(Record.readEnum<OpenMPReductionClauseModifier>());
   NestedNameSpecifierLoc NNSL = Record.readNestedNameSpecifierLoc();
   DeclarationNameInfo DNI = Record.readDeclarationNameInfo();
   C->setQualifierLoc(NNSL);
@@ -12327,6 +12358,7 @@ void OMPClauseReader::VisitOMPDepobjClause(OMPDepobjClause *C) {
 
 void OMPClauseReader::VisitOMPDependClause(OMPDependClause *C) {
   C->setLParenLoc(Record.readSourceLocation());
+  C->setModifier(Record.readSubExpr());
   C->setDependencyKind(
       static_cast<OpenMPDependClauseKind>(Record.readInt()));
   C->setDependencyLoc(Record.readSourceLocation());
@@ -12351,7 +12383,7 @@ void OMPClauseReader::VisitOMPDeviceClause(OMPDeviceClause *C) {
 
 void OMPClauseReader::VisitOMPMapClause(OMPMapClause *C) {
   C->setLParenLoc(Record.readSourceLocation());
-  for (unsigned I = 0; I < OMPMapClause::NumberOfModifiers; ++I) {
+  for (unsigned I = 0; I < NumberOfOMPMapClauseModifiers; ++I) {
     C->setMapTypeModifier(
         I, static_cast<OpenMPMapModifierKind>(Record.readInt()));
     C->setMapTypeModifierLoc(I, Record.readSourceLocation());
@@ -12709,8 +12741,8 @@ void OMPClauseReader::VisitOMPOrderClause(OMPOrderClause *C) {
   C->setKindKwLoc(Record.readSourceLocation());
 }
 
-OMPTraitInfo ASTRecordReader::readOMPTraitInfo() {
-  OMPTraitInfo TI;
+OMPTraitInfo *ASTRecordReader::readOMPTraitInfo() {
+  OMPTraitInfo &TI = getContext().getNewOMPTraitInfo();
   TI.Sets.resize(readUInt32());
   for (auto &Set : TI.Sets) {
     Set.Kind = readEnum<llvm::omp::TraitSet>();
@@ -12725,5 +12757,5 @@ OMPTraitInfo ASTRecordReader::readOMPTraitInfo() {
         Property.Kind = readEnum<llvm::omp::TraitProperty>();
     }
   }
-  return TI;
+  return &TI;
 }

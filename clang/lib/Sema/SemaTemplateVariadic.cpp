@@ -854,6 +854,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
 
   case TST_typeofExpr:
   case TST_decltype:
+  case TST_extint:
     if (DS.getRepAsExpr() &&
         DS.getRepAsExpr()->containsUnexpandedParameterPack())
       return true;

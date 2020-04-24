@@ -11,6 +11,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ExprOpenMP.h"
 #include "clang/Serialization/ASTRecordWriter.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/AST/ASTContext.h"
@@ -681,8 +682,9 @@ void ASTStmtWriter::VisitIntegerLiteral(IntegerLiteral *E) {
 void ASTStmtWriter::VisitFixedPointLiteral(FixedPointLiteral *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getLocation());
+  Record.push_back(E->getScale());
   Record.AddAPInt(E->getValue());
-  Code = serialization::EXPR_INTEGER_LITERAL;
+  Code = serialization::EXPR_FIXEDPOINT_LITERAL;
 }
 
 void ASTStmtWriter::VisitFloatingLiteral(FloatingLiteral *E) {
@@ -827,6 +829,45 @@ void ASTStmtWriter::VisitOMPArraySectionExpr(OMPArraySectionExpr *E) {
   Code = serialization::EXPR_OMP_ARRAY_SECTION;
 }
 
+void ASTStmtWriter::VisitOMPArrayShapingExpr(OMPArrayShapingExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getDimensions().size());
+  Record.AddStmt(E->getBase());
+  for (Expr *Dim : E->getDimensions())
+    Record.AddStmt(Dim);
+  for (SourceRange SR : E->getBracketsRanges())
+    Record.AddSourceRange(SR);
+  Record.AddSourceLocation(E->getLParenLoc());
+  Record.AddSourceLocation(E->getRParenLoc());
+  Code = serialization::EXPR_OMP_ARRAY_SHAPING;
+}
+
+void ASTStmtWriter::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->numOfIterators());
+  Record.AddSourceLocation(E->getIteratorKwLoc());
+  Record.AddSourceLocation(E->getLParenLoc());
+  Record.AddSourceLocation(E->getRParenLoc());
+  for (unsigned I = 0, End = E->numOfIterators(); I < End; ++I) {
+    Record.AddDeclRef(E->getIteratorDecl(I));
+    Record.AddSourceLocation(E->getAssignLoc(I));
+    OMPIteratorExpr::IteratorRange Range = E->getIteratorRange(I);
+    Record.AddStmt(Range.Begin);
+    Record.AddStmt(Range.End);
+    Record.AddStmt(Range.Step);
+    Record.AddSourceLocation(E->getColonLoc(I));
+    if (Range.Step)
+      Record.AddSourceLocation(E->getSecondColonLoc(I));
+    // Serialize helpers
+    OMPIteratorHelperData &HD = E->getHelper(I);
+    Record.AddDeclRef(HD.CounterVD);
+    Record.AddStmt(HD.Upper);
+    Record.AddStmt(HD.Update);
+    Record.AddStmt(HD.CounterUpdate);
+  }
+  Code = serialization::EXPR_OMP_ITERATOR;
+}
+
 void ASTStmtWriter::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
   // FIXME: Implement me.
   assert(false);
@@ -850,6 +891,16 @@ void ASTStmtWriter::VisitCallExpr(CallExpr *E) {
     Record.AddStmt(*Arg);
   Record.push_back(static_cast<unsigned>(E->getADLCallKind()));
   Code = serialization::EXPR_CALL;
+}
+
+void ASTStmtWriter::VisitRecoveryExpr(RecoveryExpr *E) {
+  VisitExpr(E);
+  Record.push_back(std::distance(E->children().begin(), E->children().end()));
+  Record.AddSourceLocation(E->getBeginLoc());
+  Record.AddSourceLocation(E->getEndLoc());
+  for (Stmt *Child : E->children())
+    Record.AddStmt(Child);
+  Code = serialization::EXPR_RECOVERY;
 }
 
 void ASTStmtWriter::VisitMemberExpr(MemberExpr *E) {
@@ -934,11 +985,16 @@ void ASTStmtWriter::VisitCastExpr(CastExpr *E) {
 
 void ASTStmtWriter::VisitBinaryOperator(BinaryOperator *E) {
   VisitExpr(E);
+  bool HasFPFeatures = E->hasStoredFPFeatures();
+  // Write this first for easy access when deserializing, as they affect the
+  // size of the UnaryOperator.
+  Record.push_back(HasFPFeatures);
+  Record.push_back(E->getOpcode()); // FIXME: stable encoding
   Record.AddStmt(E->getLHS());
   Record.AddStmt(E->getRHS());
-  Record.push_back(E->getOpcode()); // FIXME: stable encoding
   Record.AddSourceLocation(E->getOperatorLoc());
-  Record.push_back(E->getFPFeatures().getInt());
+  if (HasFPFeatures)
+    Record.push_back(E->getStoredFPFeatures().getAsOpaqueInt());
   Code = serialization::EXPR_BINARY_OPERATOR;
 }
 
@@ -1542,7 +1598,7 @@ void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
 void ASTStmtWriter::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
   VisitCallExpr(E);
   Record.push_back(E->getOperator());
-  Record.push_back(E->getFPFeatures().getInt());
+  Record.push_back(E->getFPFeatures().getAsOpaqueInt());
   Record.AddSourceRange(E->Range);
   Code = serialization::EXPR_CXX_OPERATOR_CALL;
 }
@@ -2098,7 +2154,7 @@ void ASTStmtWriter::VisitMSPropertySubscriptExpr(MSPropertySubscriptExpr *E) {
 void ASTStmtWriter::VisitCXXUuidofExpr(CXXUuidofExpr *E) {
   VisitExpr(E);
   Record.AddSourceRange(E->getSourceRange());
-  Record.AddString(E->getUuidStr());
+  Record.AddDeclRef(E->getGuidDecl());
   if (E->isTypeOperand()) {
     Record.AddTypeSourceInfo(E->getTypeOperandSourceInfo());
     Code = serialization::EXPR_CXX_UUIDOF_TYPE;

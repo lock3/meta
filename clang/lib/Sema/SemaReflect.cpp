@@ -1482,8 +1482,8 @@ bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
           TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
           Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
           /*OpaqueTemplateName=*/Template, /*TemplateKind=*/TNK,
-          /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc, TemplateArgsPtr,
-          CleanupList);
+          /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc,
+          /*TemplateArgs=*/TemplateArgsPtr, /*ArgsInvalid=*/false, CleanupList);
 
     Result.setTemplateId(TemplateIdAnnotation);
   }

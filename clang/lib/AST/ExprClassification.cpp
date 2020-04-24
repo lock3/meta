@@ -124,11 +124,13 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::ObjCPropertyRefExprClass:
     // C++ [expr.typeid]p1: The result of a typeid expression is an lvalue of...
   case Expr::CXXTypeidExprClass:
+  case Expr::CXXUuidofExprClass:
     // Unresolved lookups and uncorrected typos get classified as lvalues.
     // FIXME: Is this wise? Should they get their own kind?
   case Expr::UnresolvedLookupExprClass:
   case Expr::UnresolvedMemberExprClass:
   case Expr::TypoExprClass:
+  case Expr::RecoveryExprClass:
   case Expr::DependentCoawaitExprClass:
   case Expr::CXXDependentScopeMemberExprClass:
   case Expr::DependentScopeDeclRefExprClass:
@@ -139,6 +141,8 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::MSPropertyRefExprClass:
   case Expr::MSPropertySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::OMPArrayShapingExprClass:
+  case Expr::OMPIteratorExprClass:
   case Expr::CXXSelectMemberExprClass:
   case Expr::CXXSelectPackExprClass:
     return Cl::CL_LValue;
@@ -416,9 +420,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
     return Cl::CL_PRValue;
   }
 
-  case Expr::CXXUuidofExprClass:
-    return Cl::CL_LValue;
-
   case Expr::PackExpansionExprClass:
     return ClassifyInternal(Ctx, cast<PackExpansionExpr>(E)->getPattern());
 
@@ -466,6 +467,7 @@ static Cl::Kinds ClassifyDecl(ASTContext &Ctx, const Decl *D) {
     islvalue = isa<VarDecl>(D) || isa<FieldDecl>(D) ||
                isa<IndirectFieldDecl>(D) ||
                isa<BindingDecl>(D) ||
+               isa<MSGuidDecl>(D) ||
                (Ctx.getLangOpts().CPlusPlus &&
                 (isa<FunctionDecl>(D) || isa<MSPropertyDecl>(D) ||
                  isa<FunctionTemplateDecl>(D)));

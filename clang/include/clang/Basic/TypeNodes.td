@@ -108,4 +108,5 @@ def ObjCInterfaceType : TypeNode<ObjCObjectType>, LeafType;
 def ObjCObjectPointerType : TypeNode<Type>;
 def PipeType : TypeNode<Type>;
 def AtomicType : TypeNode<Type>;
-
+def ExtIntType : TypeNode<Type>;
+def DependentExtIntType : TypeNode<Type>, AlwaysDependent;

@@ -275,6 +275,7 @@ public:
   void VisitObjCSubscriptRefExpr(const ObjCSubscriptRefExpr *Node);
   void VisitObjCIvarRefExpr(const ObjCIvarRefExpr *Node);
   void VisitObjCBoolLiteralExpr(const ObjCBoolLiteralExpr *Node);
+  void VisitOMPIteratorExpr(const OMPIteratorExpr *Node);
 
   void VisitRValueReferenceType(const ReferenceType *T);
   void VisitArrayType(const ArrayType *T);

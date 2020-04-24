@@ -337,6 +337,11 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
     }
   } else if (const PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E)) {
     const Expr *Source = POE->getSyntacticForm();
+    // Handle the actually selected call of an OpenMP specialized call.
+    if (LangOpts.OpenMP && isa<CallExpr>(Source) &&
+        POE->getNumSemanticExprs() == 1 &&
+        isa<CallExpr>(POE->getSemanticExpr(0)))
+      return DiagnoseUnusedExprResult(POE->getSemanticExpr(0));
     if (isa<ObjCSubscriptRefExpr>(Source))
       DiagID = diag::warn_unused_container_subscript_expr;
     else
@@ -733,11 +738,11 @@ StmtResult Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc,
 
   if (CondExpr && !CondExpr->isTypeDependent()) {
     // We have already converted the expression to an integral or enumeration
-    // type, when we parsed the switch condition. If we don't have an
-    // appropriate type now, enter the switch scope but remember that it's
-    // invalid.
-    assert(CondExpr->getType()->isIntegralOrEnumerationType() &&
-           "invalid condition type");
+    // type, when we parsed the switch condition. There are cases where we don't
+    // have an appropriate type, e.g. a typo-expr Cond was corrected to an
+    // inappropriate-type expr, we just return an error.
+    if (!CondExpr->getType()->isIntegralOrEnumerationType())
+      return StmtError();
     if (CondExpr->isKnownToHaveBooleanValue()) {
       // switch(bool_expr) {...} is often a programmer error, e.g.
       //   switch(n && mask) { ... }  // Doh - should be "n & mask".
@@ -2748,7 +2753,8 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
     // trying to determine whether this would be a valid range.
     if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
       AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
-      if (LoopVar->isInvalidDecl())
+      if (LoopVar->isInvalidDecl() ||
+          (LoopVar->getInit() && LoopVar->getInit()->containsErrors()))
         NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
     }
   }

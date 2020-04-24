@@ -127,8 +127,9 @@ class ItaniumMangleContextImpl : public ItaniumMangleContext {
 
 public:
   explicit ItaniumMangleContextImpl(ASTContext &Context,
-                                    DiagnosticsEngine &Diags)
-      : ItaniumMangleContext(Context, Diags) {}
+                                    DiagnosticsEngine &Diags,
+                                    bool IsUniqueNameMangler)
+      : ItaniumMangleContext(Context, Diags, IsUniqueNameMangler) {}
 
   /// @name Mangler Entry Points
   /// @{
@@ -653,8 +654,12 @@ void CXXNameMangler::mangle(GlobalDecl GD) {
   else if (const IndirectFieldDecl *IFD =
                dyn_cast<IndirectFieldDecl>(GD.getDecl()))
     mangleName(IFD->getAnonField());
+  else if (const FieldDecl *FD = dyn_cast<FieldDecl>(GD.getDecl()))
+    mangleName(FD);
+  else if (const MSGuidDecl *GuidD = dyn_cast<MSGuidDecl>(GD.getDecl()))
+    mangleName(GuidD);
   else
-    mangleName(cast<FieldDecl>(GD.getDecl()));
+    llvm_unreachable("unexpected kind of global decl");
 }
 
 void CXXNameMangler::mangleFunctionEncoding(GlobalDecl GD) {
@@ -1290,6 +1295,16 @@ void CXXNameMangler::mangleUnqualifiedName(GlobalDecl GD,
       break;
     }
 
+    if (auto *GD = dyn_cast<MSGuidDecl>(ND)) {
+      // We follow MSVC in mangling GUID declarations as if they were variables
+      // with a particular reserved name. Continue the pretense here.
+      SmallString<sizeof("_GUID_12345678_1234_1234_1234_1234567890ab")> GUID;
+      llvm::raw_svector_ostream GUIDOS(GUID);
+      Context.mangleMSGuidDecl(GD, GUIDOS);
+      Out << GUID.size() << GUID;
+      break;
+    }
+
     if (II) {
       // Match GCC's naming convention for internal linkage symbols, for
       // symbols that are not actually visible outside of this TU. GCC
@@ -1397,7 +1412,8 @@ void CXXNameMangler::mangleUnqualifiedName(GlobalDecl GD,
     // <lambda-sig> ::= <template-param-decl>* <parameter-type>+
     //     # Parameter types or 'v' for 'void'.
     if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(TD)) {
-      if (Record->isLambda() && Record->getLambdaManglingNumber()) {
+      if (Record->isLambda() && (Record->getLambdaManglingNumber() ||
+                                 Context.isUniqueNameMangler())) {
         assert(!AdditionalAbiTags &&
                "Lambda type cannot have additional abi tags");
         mangleLambda(Record);
@@ -1775,6 +1791,37 @@ void CXXNameMangler::mangleTemplateParamDecl(const NamedDecl *Decl) {
   }
 }
 
+// Handles the __builtin_unique_stable_name feature for lambdas.  Instead of the
+// ordinal of the lambda in its mangling, this does line/column to uniquely and
+// reliably identify the lambda.  Additionally, macro expansions are expressed
+// as well to prevent macros causing duplicates.
+static void mangleUniqueNameLambda(CXXNameMangler &Mangler, SourceManager &SM,
+                                   raw_ostream &Out,
+                                   const CXXRecordDecl *Lambda) {
+  SourceLocation Loc = Lambda->getLocation();
+
+  PresumedLoc PLoc = SM.getPresumedLoc(Loc);
+  Mangler.mangleNumber(PLoc.getLine());
+  Out << "_";
+  Mangler.mangleNumber(PLoc.getColumn());
+
+  while(Loc.isMacroID()) {
+    SourceLocation SLToPrint = Loc;
+    if (SM.isMacroArgExpansion(Loc))
+      SLToPrint = SM.getImmediateExpansionRange(Loc).getBegin();
+
+    PLoc = SM.getPresumedLoc(SM.getSpellingLoc(SLToPrint));
+    Out << "m";
+    Mangler.mangleNumber(PLoc.getLine());
+    Out << "_";
+    Mangler.mangleNumber(PLoc.getColumn());
+
+    Loc = SM.getImmediateMacroCallerLoc(Loc);
+    if (Loc.isFileID())
+      Loc = SM.getImmediateMacroCallerLoc(SLToPrint);
+  }
+}
+
 void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
   // If the context of a closure type is an initializer for a class member
   // (static or nonstatic), it is encoded in a qualified name with a final
@@ -1804,6 +1851,12 @@ void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
   Out << "Ul";
   mangleLambdaSig(Lambda);
   Out << "E";
+
+  if (Context.isUniqueNameMangler()) {
+    mangleUniqueNameLambda(
+        *this, Context.getASTContext().getSourceManager(), Out, Lambda);
+    return;
+  }
 
   // The number is omitted for the first closure type with a given
   // <lambda-sig> in a given context; it is n-2 for the nth closure type
@@ -2048,6 +2101,8 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::Atomic:
   case Type::Pipe:
   case Type::MacroQualified:
+  case Type::ExtInt:
+  case Type::DependentExtInt:
     llvm_unreachable("type is illegal as a nested name specifier");
 
   case Type::SubstTemplateTypeParmPack:
@@ -3523,6 +3578,28 @@ void CXXNameMangler::mangleType(const PipeType *T) {
   Out << "8ocl_pipe";
 }
 
+void CXXNameMangler::mangleType(const ExtIntType *T) {
+  Out << "U7_ExtInt";
+  llvm::APSInt BW(32, true);
+  BW = T->getNumBits();
+  TemplateArgument TA(Context.getASTContext(), BW, getASTContext().IntTy);
+  mangleTemplateArgs(&TA, 1);
+  if (T->isUnsigned())
+    Out << "j";
+  else
+    Out << "i";
+}
+
+void CXXNameMangler::mangleType(const DependentExtIntType *T) {
+  Out << "U7_ExtInt";
+  TemplateArgument TA(T->getNumBitsExpr(), TemplateArgument::Expression);
+  mangleTemplateArgs(&TA, 1);
+  if (T->isUnsigned())
+    Out << "j";
+  else
+    Out << "i";
+}
+
 void CXXNameMangler::mangleIntegerLiteral(QualType T,
                                           const llvm::APSInt &Value) {
   //  <expr-primary> ::= L <type> <value number> E # integer literal
@@ -3734,8 +3811,11 @@ recurse:
   case Expr::LambdaExprClass:
   case Expr::MSPropertyRefExprClass:
   case Expr::MSPropertySubscriptExprClass:
-  case Expr::TypoExprClass:  // This should no longer exist in the AST by now.
+  case Expr::TypoExprClass: // This should no longer exist in the AST by now.
+  case Expr::RecoveryExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::OMPArrayShapingExprClass:
+  case Expr::OMPIteratorExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXReflectedIdExprClass:
@@ -5300,7 +5380,8 @@ void ItaniumMangleContextImpl::mangleLambdaSig(const CXXRecordDecl *Lambda,
   Mangler.mangleLambdaSig(Lambda);
 }
 
-ItaniumMangleContext *
-ItaniumMangleContext::create(ASTContext &Context, DiagnosticsEngine &Diags) {
-  return new ItaniumMangleContextImpl(Context, Diags);
+ItaniumMangleContext *ItaniumMangleContext::create(ASTContext &Context,
+                                                   DiagnosticsEngine &Diags,
+                                                   bool IsUniqueNameMangler) {
+  return new ItaniumMangleContextImpl(Context, Diags, IsUniqueNameMangler);
 }

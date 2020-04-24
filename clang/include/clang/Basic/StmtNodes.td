@@ -73,6 +73,7 @@ def OffsetOfExpr : StmtNode<Expr>;
 def UnaryExprOrTypeTraitExpr : StmtNode<Expr>;
 def ArraySubscriptExpr : StmtNode<Expr>;
 def OMPArraySectionExpr : StmtNode<Expr>;
+def OMPIteratorExpr : StmtNode<Expr>;
 def CallExpr : StmtNode<Expr>;
 def MemberExpr : StmtNode<Expr>;
 def CastExpr : StmtNode<Expr, 1>;
@@ -84,6 +85,7 @@ def BinaryConditionalOperator : StmtNode<AbstractConditionalOperator>;
 def ImplicitCastExpr : StmtNode<CastExpr>;
 def ExplicitCastExpr : StmtNode<CastExpr, 1>;
 def CStyleCastExpr : StmtNode<ExplicitCastExpr>;
+def OMPArrayShapingExpr : StmtNode<Expr>;
 def CompoundLiteralExpr : StmtNode<Expr>;
 def ExtVectorElementExpr : StmtNode<Expr>;
 def InitListExpr : StmtNode<Expr>;
@@ -215,6 +217,7 @@ def ConvertVectorExpr : StmtNode<Expr>;
 def BlockExpr : StmtNode<Expr>;
 def OpaqueValueExpr : StmtNode<Expr>;
 def TypoExpr : StmtNode<Expr>;
+def RecoveryExpr : StmtNode<Expr>;
 def BuiltinBitCastExpr : StmtNode<ExplicitCastExpr>;
 
 // Microsoft Extensions.

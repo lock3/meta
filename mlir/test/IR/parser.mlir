@@ -1,4 +1,4 @@
-// RUN: mlir-opt %s | FileCheck %s
+// RUN: mlir-opt -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-DAG: #map{{[0-9]+}} = affine_map<(d0, d1, d2, d3, d4)[s0] -> (d0, d1, d2, d4, d3)>
 #map0 = affine_map<(d0, d1, d2, d3, d4)[s0] -> (d0, d1, d2, d4, d3)>
@@ -697,6 +697,11 @@ func @densetensorattr() -> () {
   "intscalar"(){bar = dense<1> : tensor<i32>} : () -> ()
 // CHECK: "floatscalar"() {bar = dense<5.000000e+00> : tensor<f32>} : () -> ()
   "floatscalar"(){bar = dense<5.0> : tensor<f32>} : () -> ()
+
+// CHECK: "index"() {bar = dense<1> : tensor<index>} : () -> ()
+  "index"(){bar = dense<1> : tensor<index>} : () -> ()
+// CHECK: "index"() {bar = dense<[1, 2]> : tensor<2xindex>} : () -> ()
+  "index"(){bar = dense<[1, 2]> : tensor<2xindex>} : () -> ()
   return
 }
 
@@ -1224,4 +1229,3 @@ func @pretty_names() {
   // CHECK: return
   return
 }
-

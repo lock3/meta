@@ -8,24 +8,14 @@
 
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/BlockAndValueMapping.h"
-#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dialect.h"
-#include "mlir/IR/Function.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/StandardTypes.h"
 #include "mlir/IR/TypeUtilities.h"
-#include "llvm/Support/CommandLine.h"
 #include <numeric>
 
 using namespace mlir;
-
-static llvm::cl::opt<bool> printOpOnDiagnostic(
-    "mlir-print-op-on-diagnostic",
-    llvm::cl::desc("When a diagnostic is emitted on an operation, also print "
-                   "the operation as an attached note"));
 
 OpAsmParser::~OpAsmParser() {}
 
@@ -113,14 +103,16 @@ Operation *Operation::create(Location location, OperationName name,
                              bool resizableOperandList) {
   // We only need to allocate additional memory for a subset of results.
   unsigned numTrailingResults = OpResult::getNumTrailing(resultTypes.size());
+  unsigned numInlineResults = OpResult::getNumInline(resultTypes.size());
   unsigned numSuccessors = successors.size();
   unsigned numOperands = operands.size();
 
   // Compute the byte size for the operation and the operand storage.
-  auto byteSize = totalSizeToAlloc<detail::TrailingOpResult, BlockOperand,
-                                   Region, detail::OperandStorage>(
-      numTrailingResults, numSuccessors, numRegions,
-      /*detail::OperandStorage*/ 1);
+  auto byteSize =
+      totalSizeToAlloc<detail::InLineOpResult, detail::TrailingOpResult,
+                       BlockOperand, Region, detail::OperandStorage>(
+          numInlineResults, numTrailingResults, numSuccessors, numRegions,
+          /*detail::OperandStorage*/ 1);
   byteSize += llvm::alignTo(detail::OperandStorage::additionalAllocSize(
                                 numOperands, resizableOperandList),
                             alignof(Operation));
@@ -133,16 +125,11 @@ Operation *Operation::create(Location location, OperationName name,
   assert((numSuccessors == 0 || !op->isKnownNonTerminator()) &&
          "unexpected successors in a non-terminator operation");
 
-  // Initialize the trailing results.
-  if (LLVM_UNLIKELY(numTrailingResults > 0)) {
-    // We initialize the trailing results with their result number. This makes
-    // 'getResultNumber' checks much more efficient. The main purpose for these
-    // results is to give an anchor to the main operation anyways, so this is
-    // purely an optimization.
-    auto *trailingResultIt = op->getTrailingObjects<detail::TrailingOpResult>();
-    for (unsigned i = 0; i != numTrailingResults; ++i, ++trailingResultIt)
-      trailingResultIt->trailingResultNumber = i;
-  }
+  // Initialize the results.
+  for (unsigned i = 0; i < numInlineResults; ++i)
+    new (op->getInlineResult(i)) detail::InLineOpResult();
+  for (unsigned i = 0; i < numTrailingResults; ++i)
+    new (op->getTrailingResult(i)) detail::TrailingOpResult(i);
 
   // Initialize the regions.
   for (unsigned i = 0; i != numRegions; ++i)
@@ -256,7 +243,7 @@ void Operation::setOperands(ValueRange operands) {
 /// any diagnostic handlers that may be listening.
 InFlightDiagnostic Operation::emitError(const Twine &message) {
   InFlightDiagnostic diag = mlir::emitError(getLoc(), message);
-  if (printOpOnDiagnostic) {
+  if (getContext()->shouldPrintOpOnDiagnostic()) {
     // Print out the operation explicitly here so that we can print the generic
     // form.
     // TODO(riverriddle) It would be nice if we could instead provide the
@@ -276,7 +263,7 @@ InFlightDiagnostic Operation::emitError(const Twine &message) {
 /// handlers that may be listening.
 InFlightDiagnostic Operation::emitWarning(const Twine &message) {
   InFlightDiagnostic diag = mlir::emitWarning(getLoc(), message);
-  if (printOpOnDiagnostic)
+  if (getContext()->shouldPrintOpOnDiagnostic())
     diag.attachNote(getLoc()) << "see current operation: " << *this;
   return diag;
 }
@@ -285,7 +272,7 @@ InFlightDiagnostic Operation::emitWarning(const Twine &message) {
 /// handlers that may be listening.
 InFlightDiagnostic Operation::emitRemark(const Twine &message) {
   InFlightDiagnostic diag = mlir::emitRemark(getLoc(), message);
-  if (printOpOnDiagnostic)
+  if (getContext()->shouldPrintOpOnDiagnostic())
     diag.attachNote(getLoc()) << "see current operation: " << *this;
   return diag;
 }
@@ -417,24 +404,24 @@ Block *llvm::ilist_traits<::mlir::Operation>::getContainingBlock() {
   return reinterpret_cast<Block *>(reinterpret_cast<char *>(Anchor) - Offset);
 }
 
-/// This is a trait method invoked when a operation is added to a block.  We
+/// This is a trait method invoked when an operation is added to a block.  We
 /// keep the block pointer up to date.
 void llvm::ilist_traits<::mlir::Operation>::addNodeToList(Operation *op) {
-  assert(!op->getBlock() && "already in a operation block!");
+  assert(!op->getBlock() && "already in an operation block!");
   op->block = getContainingBlock();
 
   // Invalidate the order on the operation.
   op->orderIndex = Operation::kInvalidOrderIdx;
 }
 
-/// This is a trait method invoked when a operation is removed from a block.
+/// This is a trait method invoked when an operation is removed from a block.
 /// We keep the block pointer up to date.
 void llvm::ilist_traits<::mlir::Operation>::removeNodeFromList(Operation *op) {
-  assert(op->block && "not already in a operation block!");
+  assert(op->block && "not already in an operation block!");
   op->block = nullptr;
 }
 
-/// This is a trait method invoked when a operation is moved from one block
+/// This is a trait method invoked when an operation is moved from one block
 /// to another.  We keep the block pointer up to date.
 void llvm::ilist_traits<::mlir::Operation>::transferNodesFromList(
     ilist_traits<Operation> &otherList, op_iterator first, op_iterator last) {
@@ -716,6 +703,32 @@ LogicalResult OpTrait::impl::verifySameTypeOperands(Operation *op) {
   for (auto opType : llvm::drop_begin(op->getOperandTypes(), 1))
     if (opType != type)
       return op->emitOpError() << "requires all operands to have the same type";
+  return success();
+}
+
+LogicalResult OpTrait::impl::verifyZeroRegion(Operation *op) {
+  if (op->getNumRegions() != 0)
+    return op->emitOpError() << "requires zero regions";
+  return success();
+}
+
+LogicalResult OpTrait::impl::verifyOneRegion(Operation *op) {
+  if (op->getNumRegions() != 1)
+    return op->emitOpError() << "requires one region";
+  return success();
+}
+
+LogicalResult OpTrait::impl::verifyNRegions(Operation *op,
+                                            unsigned numRegions) {
+  if (op->getNumRegions() != numRegions)
+    return op->emitOpError() << "expected " << numRegions << " regions";
+  return success();
+}
+
+LogicalResult OpTrait::impl::verifyAtLeastNRegions(Operation *op,
+                                                   unsigned numRegions) {
+  if (op->getNumRegions() < numRegions)
+    return op->emitOpError() << "expected " << numRegions << " or more regions";
   return success();
 }
 
@@ -1055,4 +1068,39 @@ void impl::ensureRegionTerminator(
     return;
 
   block.push_back(buildTerminatorOp());
+}
+
+//===----------------------------------------------------------------------===//
+// UseIterator
+//===----------------------------------------------------------------------===//
+
+Operation::UseIterator::UseIterator(Operation *op, bool end)
+    : op(op), res(end ? op->result_end() : op->result_begin()) {
+  // Only initialize current use if there are results/can be uses.
+  if (op->getNumResults())
+    skipOverResultsWithNoUsers();
+}
+
+Operation::UseIterator &Operation::UseIterator::operator++() {
+  // We increment over uses, if we reach the last use then move to next
+  // result.
+  if (use != (*res).use_end())
+    ++use;
+  if (use == (*res).use_end()) {
+    ++res;
+    skipOverResultsWithNoUsers();
+  }
+  return *this;
+}
+
+void Operation::UseIterator::skipOverResultsWithNoUsers() {
+  while (res != op->result_end() && (*res).use_empty())
+    ++res;
+
+  // If we are at the last result, then set use to first use of
+  // first result (sentinel value used for end).
+  if (res == op->result_end())
+    use = {};
+  else
+    use = (*res).use_begin();
 }
