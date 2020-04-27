@@ -3001,6 +3001,7 @@ private:
   /// argument list.
   bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
   bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
+  bool ParseTemplateReifier(TemplateArgList &Args);
 
   /// Parse a variadic reifier as a member/base initializer.
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);

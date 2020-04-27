@@ -1562,41 +1562,23 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-
     if (isVariadicReifier()) {
-      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
-      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SourceLocation KWLoc = Tok.getLocation();
-
-      switch(Tok.getIdentifierInfo()->getTokenID()) {
-      case tok::kw_typename:
-        if (ParseTypeReifier(TemplateArgs, KWLoc))
-          return true;
-        break;
-      case tok::kw_valueof:
-      case tok::kw_unqualid:
-      case tok::kw_idexpr:
-        if (ParseNonTypeReifier(TemplateArgs, KWLoc))
-          return true;
-        break;
-      default:
+      if (ParseTemplateReifier(TemplateArgs))
         return true;
-      }
-    }
-    else {
-      ParsedTemplateArgument Arg = ParseTemplateArgument();
-      SourceLocation EllipsisLoc;
-      if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
-        Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
 
-      if (Arg.isInvalid()) {
-        SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-        return true;
-      }
-
-      // Save this template argument.
-      TemplateArgs.push_back(Arg);
+      continue;
     }
+
+    ParsedTemplateArgument Arg = ParseTemplateArgument();
+    SourceLocation EllipsisLoc;
+    if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+      Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
+
+    if (Arg.isInvalid())
+      return true;
+
+    // Save this template argument.
+    TemplateArgs.push_back(Arg);
 
     // If the next token is a comma, consume it and keep reading
     // arguments.
