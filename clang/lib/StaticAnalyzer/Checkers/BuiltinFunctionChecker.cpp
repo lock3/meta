@@ -136,6 +136,6 @@ void ento::registerBuiltinFunctionChecker(CheckerManager &mgr) {
   mgr.registerChecker<BuiltinFunctionChecker>();
 }
 
-bool ento::shouldRegisterBuiltinFunctionChecker(const LangOptions &LO) {
+bool ento::shouldRegisterBuiltinFunctionChecker(const CheckerManager &mgr) {
   return true;
 }

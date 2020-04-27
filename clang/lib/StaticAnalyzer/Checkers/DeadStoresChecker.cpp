@@ -543,6 +543,6 @@ void ento::registerDeadStoresChecker(CheckerManager &Mgr) {
       AnOpts.getCheckerBooleanOption(Chk, "ShowFixIts");
 }
 
-bool ento::shouldRegisterDeadStoresChecker(const LangOptions &LO) {
+bool ento::shouldRegisterDeadStoresChecker(const CheckerManager &mgr) {
   return true;
 }

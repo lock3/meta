@@ -17,10 +17,12 @@
 #include "InputSection.h"
 #include "lld/Common/LLVM.h"
 #include "lld/Common/Strings.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
 
 namespace lld {
+// Returns a string representation for a symbol for diagnostics.
 std::string toString(const elf::Symbol &);
 
 // There are two different ways to convert an Archive::Symbol to a string:
@@ -515,13 +517,16 @@ size_t Symbol::getSymbolSize() const {
 void Symbol::replace(const Symbol &newSym) {
   using llvm::ELF::STT_TLS;
 
-  // Symbols representing thread-local variables must be referenced by
-  // TLS-aware relocations, and non-TLS symbols must be reference by
-  // non-TLS relocations, so there's a clear distinction between TLS
-  // and non-TLS symbols. It is an error if the same symbol is defined
-  // as a TLS symbol in one file and as a non-TLS symbol in other file.
-  if (symbolKind != PlaceholderKind && !isLazy() && !newSym.isLazy() &&
-      (type == STT_TLS) != (newSym.type == STT_TLS))
+  // st_value of STT_TLS represents the assigned offset, not the actual address
+  // which is used by STT_FUNC and STT_OBJECT. STT_TLS symbols can only be
+  // referenced by special TLS relocations. It is usually an error if a STT_TLS
+  // symbol is replaced by a non-STT_TLS symbol, vice versa. There are two
+  // exceptions: (a) a STT_NOTYPE lazy/undefined symbol can be replaced by a
+  // STT_TLS symbol, (b) a STT_TLS undefined symbol can be replaced by a
+  // STT_NOTYPE lazy symbol.
+  if (symbolKind != PlaceholderKind && !newSym.isLazy() &&
+      (type == STT_TLS) != (newSym.type == STT_TLS) &&
+      type != llvm::ELF::STT_NOTYPE)
     error("TLS attribute mismatch: " + toString(*this) + "\n>>> defined in " +
           toString(newSym.file) + "\n>>> defined in " + toString(file));
 
@@ -555,6 +560,11 @@ void Symbol::replace(const Symbol &newSym) {
 
 void maybeWarnUnorderableSymbol(const Symbol *sym);
 bool computeIsPreemptible(const Symbol &sym);
+void reportBackrefs();
+
+// A mapping from a symbol to an InputFile referencing it backward. Used by
+// --warn-backrefs.
+extern llvm::DenseMap<const Symbol *, const InputFile *> backwardReferences;
 
 } // namespace elf
 } // namespace lld

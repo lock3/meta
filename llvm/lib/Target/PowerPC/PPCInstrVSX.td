@@ -1341,6 +1341,21 @@ def DWToSPExtractConv {
   dag BVS = (v4f32 (build_vector El0SS1, El1SS1, El0SS2, El1SS2));
 }
 
+def WToDPExtractConv {
+  dag El0S = (f64 (PPCfcfid (PPCmtvsra (extractelt v4i32:$A, 0))));
+  dag El1S = (f64 (PPCfcfid (PPCmtvsra (extractelt v4i32:$A, 1))));
+  dag El2S = (f64 (PPCfcfid (PPCmtvsra (extractelt v4i32:$A, 2))));
+  dag El3S = (f64 (PPCfcfid (PPCmtvsra (extractelt v4i32:$A, 3))));
+  dag El0U = (f64 (PPCfcfidu (PPCmtvsrz (extractelt v4i32:$A, 0))));
+  dag El1U = (f64 (PPCfcfidu (PPCmtvsrz (extractelt v4i32:$A, 1))));
+  dag El2U = (f64 (PPCfcfidu (PPCmtvsrz (extractelt v4i32:$A, 2))));
+  dag El3U = (f64 (PPCfcfidu (PPCmtvsrz (extractelt v4i32:$A, 3))));
+  dag BV02S = (v2f64 (build_vector El0S, El2S));
+  dag BV13S = (v2f64 (build_vector El1S, El3S));
+  dag BV02U = (v2f64 (build_vector El0U, El2U));
+  dag BV13U = (v2f64 (build_vector El1U, El3U));
+}
+
 // The following VSX instructions were introduced in Power ISA 2.07
 /* FIXME: if the operands are v2i64, these patterns will not match.
    we should define new patterns or otherwise match the same patterns
@@ -3296,19 +3311,19 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
 
       def : Pat<(v2i64 (scalar_to_vector (i64 (sextloadi32 xoaddr:$src)))),
                 (v2i64 (XXPERMDIs
-                (COPY_TO_REGCLASS (LIWAX xoaddr:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (LIWAX xoaddr:$src), VSFRC), 2))>;
 
       def : Pat<(v2i64 (scalar_to_vector (i64 (zextloadi32 xoaddr:$src)))),
                 (v2i64 (XXPERMDIs
-                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSFRC), 2))>;
 
       def : Pat<(v4i32 (scalar_to_vector (i32 (load xoaddr:$src)))),
                 (v4i32 (XXPERMDIs
-                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSFRC), 2))>;
 
       def : Pat<(v4f32 (scalar_to_vector (f32 (load xoaddr:$src)))),
                 (v4f32 (XXPERMDIs
-                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (LIWZX xoaddr:$src), VSFRC), 2))>;
     }
 
     let Predicates = [IsBigEndian] in {
@@ -3354,6 +3369,16 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
             (v4i32 (XXSPLTWs (VEXTSH2Ws (LXSIHZX xoaddr:$src)), 1))>;
   def : Pat<(v2i64 (scalar_to_vector ScalarLoads.SELi16i64)),
             (v2i64 (XXPERMDIs (VEXTSH2Ds (LXSIHZX xoaddr:$src)), 0))>;
+
+  // Load/convert and convert/store patterns for f16.
+  def : Pat<(f64 (extloadf16 xoaddr:$src)),
+            (f64 (XSCVHPDP (LXSIHZX xoaddr:$src)))>;
+  def : Pat<(truncstoref16 f64:$src, xoaddr:$dst),
+            (STXSIHX (XSCVDPHP $src), xoaddr:$dst)>;
+  def : Pat<(f32 (extloadf16 xoaddr:$src)),
+            (f32 (COPY_TO_REGCLASS (XSCVHPDP (LXSIHZX xoaddr:$src)), VSSRC))>;
+  def : Pat<(truncstoref16 f32:$src, xoaddr:$dst),
+            (STXSIHX (XSCVDPHP (COPY_TO_REGCLASS $src, VSFRC)), xoaddr:$dst)>;
 
   let Predicates = [IsBigEndian, HasP9Vector] in {
   // Scalar stores of i8
@@ -3499,17 +3524,17 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
     let Predicates = [IsLittleEndian, HasP9Vector] in {
       def : Pat<(v2i64 (scalar_to_vector (i64 (load iaddrX4:$src)))),
                 (v2i64 (XXPERMDIs
-                (COPY_TO_REGCLASS (DFLOADf64 iaddrX4:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (DFLOADf64 iaddrX4:$src), VSFRC), 2))>;
       def : Pat<(v2i64 (scalar_to_vector (i64 (load xaddrX4:$src)))),
                 (v2i64 (XXPERMDIs
-		(COPY_TO_REGCLASS (XFLOADf64 xaddrX4:$src), VSRC), 2))>;
+		(COPY_TO_REGCLASS (XFLOADf64 xaddrX4:$src), VSFRC), 2))>;
 
       def : Pat<(v2f64 (scalar_to_vector (f64 (load iaddrX4:$src)))),
                 (v2f64 (XXPERMDIs
-                (COPY_TO_REGCLASS (DFLOADf64 iaddrX4:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (DFLOADf64 iaddrX4:$src), VSFRC), 2))>;
       def : Pat<(v2f64 (scalar_to_vector (f64 (load xaddrX4:$src)))),
                 (v2f64 (XXPERMDIs
-                (COPY_TO_REGCLASS (XFLOADf64 xaddrX4:$src), VSRC), 2))>;
+                (COPY_TO_REGCLASS (XFLOADf64 xaddrX4:$src), VSFRC), 2))>;
       def : Pat<(store (i64 (extractelt v2i64:$A, 0)), xaddrX4:$src),
                 (XFSTOREf64 (EXTRACT_SUBREG (XXPERMDI $A, $A, 2),
                              sub_64), xaddrX4:$src)>;
@@ -3620,7 +3645,7 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
                         (EXTRACT_SUBREG (VEXTRACTUB Idx, $src), sub_64)))>;
     }
 
-    // Unsiged int in vsx register -> QP
+    // Unsigned int in vsx register -> QP
     def : Pat<(f128 (uint_to_fp (i32 (PPCmfvsr f64:$src)))),
               (f128 (XSCVUDQP
                       (XXEXTRACTUW (SUBREG_TO_REG (i64 1), $src, sub_64), 4)))>;
@@ -3691,7 +3716,7 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
                           (VEXTRACTUB !head(!tail(Idx)), $src), sub_64)))>;
     }
 
-    // Unsiged int in vsx register -> QP
+    // Unsigned int in vsx register -> QP
     def : Pat<(f128 (uint_to_fp (i32 (PPCmfvsr f64:$src)))),
               (f128 (XSCVUDQP
                       (XXEXTRACTUW (SUBREG_TO_REG (i64 1), $src, sub_64), 8)))>;
@@ -4171,6 +4196,41 @@ let AddedComplexity = 400 in {
     def : Pat<(v4i32 (build_vector ExtDbl.A0U, ExtDbl.A1U,
                                    ExtDbl.B0U, ExtDbl.B1U)),
               (v4i32 (VMRGEW MrgWords.CVA0B0U, MrgWords.CVA1B1U))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 1))))),
+              (v2f64 (XVCVSPDP (XXMRGHW $A, $A)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 1))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 0))))),
+              (v2f64 (XXPERMDI (XVCVSPDP (XXMRGHW $A, $A)),
+                               (XVCVSPDP (XXMRGHW $A, $A)), 2))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 2))))),
+              (v2f64 (XVCVSPDP $A))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 1))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 3))))),
+              (v2f64 (XVCVSPDP (XXSLDWI $A, $A, 3)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 2))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 3))))),
+              (v2f64 (XVCVSPDP (XXMRGLW $A, $A)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 3))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 2))))),
+              (v2f64 (XXPERMDI (XVCVSPDP (XXMRGLW $A, $A)),
+                               (XVCVSPDP (XXMRGLW $A, $A)), 2))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$B, 0))))),
+              (v2f64 (XVCVSPDP (XXPERMDI $A, $B, 0)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 3))),
+                                   (f64 (fpextend (extractelt v4f32:$B, 3))))),
+              (v2f64 (XVCVSPDP (XXSLDWI (XXPERMDI $A, $B, 3),
+                                        (XXPERMDI $A, $B, 3), 1)))>;
+    def : Pat<WToDPExtractConv.BV02S,
+              (v2f64 (XVCVSXWDP $A))>;
+    def : Pat<WToDPExtractConv.BV13S,
+              (v2f64 (XVCVSXWDP (XXSLDWI $A, $A, 3)))>;
+    def : Pat<WToDPExtractConv.BV02U,
+              (v2f64 (XVCVUXWDP $A))>;
+    def : Pat<WToDPExtractConv.BV13U,
+              (v2f64 (XVCVUXWDP (XXSLDWI $A, $A, 3)))>;
   }
 
   let Predicates = [IsLittleEndian, HasP8Vector] in {
@@ -4249,6 +4309,41 @@ let AddedComplexity = 400 in {
     def : Pat<(v4i32 (build_vector ExtDbl.A0U, ExtDbl.A1U,
                                    ExtDbl.B0U, ExtDbl.B1U)),
               (v4i32 (VMRGEW MrgWords.CVB1A1U, MrgWords.CVB0A0U))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 1))))),
+              (v2f64 (XVCVSPDP (XXMRGLW $A, $A)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 1))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 0))))),
+              (v2f64 (XXPERMDI (XVCVSPDP (XXMRGLW $A, $A)),
+                               (XVCVSPDP (XXMRGLW $A, $A)), 2))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 2))))),
+              (v2f64 (XVCVSPDP (XXSLDWI $A, $A, 1)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 1))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 3))))),
+              (v2f64 (XVCVSPDP $A))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 2))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 3))))),
+              (v2f64 (XVCVSPDP (XXMRGHW $A, $A)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 3))),
+                                   (f64 (fpextend (extractelt v4f32:$A, 2))))),
+              (v2f64 (XXPERMDI (XVCVSPDP (XXMRGHW $A, $A)),
+                               (XVCVSPDP (XXMRGHW $A, $A)), 2))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 0))),
+                                   (f64 (fpextend (extractelt v4f32:$B, 0))))),
+              (v2f64 (XVCVSPDP (XXSLDWI (XXPERMDI $B, $A, 3),
+                                        (XXPERMDI $B, $A, 3), 1)))>;
+    def : Pat<(v2f64 (build_vector (f64 (fpextend (extractelt v4f32:$A, 3))),
+                                   (f64 (fpextend (extractelt v4f32:$B, 3))))),
+              (v2f64 (XVCVSPDP (XXPERMDI $B, $A, 0)))>;
+    def : Pat<WToDPExtractConv.BV02S,
+              (v2f64 (XVCVSXWDP (XXSLDWI $A, $A, 1)))>;
+    def : Pat<WToDPExtractConv.BV13S,
+              (v2f64 (XVCVSXWDP $A))>;
+    def : Pat<WToDPExtractConv.BV02U,
+              (v2f64 (XVCVUXWDP (XXSLDWI $A, $A, 1)))>;
+    def : Pat<WToDPExtractConv.BV13U,
+              (v2f64 (XVCVUXWDP $A))>;
   }
 
   let Predicates = [HasDirectMove] in {

@@ -85,7 +85,6 @@ public:
     /// TemplateSpecializationType).
     ///
     /// Also used to represent:
-    /// - a non-dependent __uuidof expression (a Microsoft extension).
     /// - a non-dependent reflection expression (C++ Reflection).
     Expression,
 

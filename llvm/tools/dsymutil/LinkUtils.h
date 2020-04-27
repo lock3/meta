@@ -16,15 +16,11 @@
 #include "llvm/Support/WithColor.h"
 
 #include "llvm/DWARFLinker/DWARFLinker.h"
+#include "llvm/DWARFLinker/DWARFStreamer.h"
 #include <string>
 
 namespace llvm {
 namespace dsymutil {
-
-enum class OutputFileType {
-  Object,
-  Assembly,
-};
 
 struct LinkOptions {
   /// Verbosity
@@ -56,6 +52,9 @@ struct LinkOptions {
 
   /// -oso-prepend-path
   std::string PrependPath;
+
+  /// The -object-prefix-map.
+  std::map<std::string, std::string> ObjectPrefixMap;
 
   /// The Resources directory in the .dSYM bundle.
   Optional<std::string> ResourceDir;

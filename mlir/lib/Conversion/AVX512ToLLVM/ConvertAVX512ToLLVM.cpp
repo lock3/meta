@@ -8,6 +8,7 @@
 
 #include "mlir/Conversion/AVX512ToLLVM/ConvertAVX512ToLLVM.h"
 
+#include "../PassDetail.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
@@ -27,7 +28,8 @@ using namespace mlir::edsc::intrinsics;
 using namespace mlir::vector;
 using namespace mlir::avx512;
 
-template <typename OpTy> Type getSrcVectorElementType(OpTy op) {
+template <typename OpTy>
+static Type getSrcVectorElementType(OpTy op) {
   return op.src().getType().template cast<VectorType>().getElementType();
 }
 
@@ -38,10 +40,11 @@ template <typename OpTy> Type getSrcVectorElementType(OpTy op) {
 /// LLVM Dialect Ops. Convert the type of the result to an LLVM type, pass
 /// operands as is, preserve attributes.
 template <typename SourceOp, typename TargetOp>
-LogicalResult matchAndRewriteOneToOne(const ConvertToLLVMPattern &lowering,
-                                      LLVMTypeConverter &typeConverter,
-                                      Operation *op, ArrayRef<Value> operands,
-                                      ConversionPatternRewriter &rewriter) {
+static LogicalResult
+matchAndRewriteOneToOne(const ConvertToLLVMPattern &lowering,
+                        LLVMTypeConverter &typeConverter, Operation *op,
+                        ArrayRef<Value> operands,
+                        ConversionPatternRewriter &rewriter) {
   unsigned numResults = op->getNumResults();
 
   Type packedType;
@@ -75,6 +78,7 @@ LogicalResult matchAndRewriteOneToOne(const ConvertToLLVMPattern &lowering,
   return success();
 }
 
+namespace {
 // TODO(ntv): Patterns are too verbose due to the fact that we have 1 op (e.g.
 // MaskRndScaleOp) and different possible target ops. It would be better to take
 // a Functor so that all these conversions become 1-liners.
@@ -145,6 +149,7 @@ struct ScaleFOpPD512Conversion : public ConvertToLLVMPattern {
         *this, this->typeConverter, op, operands, rewriter);
   }
 };
+} // namespace
 
 /// Populate the given list with patterns that convert from AVX512 to LLVM.
 void mlir::populateAVX512ToLLVMConversionPatterns(
@@ -159,12 +164,13 @@ void mlir::populateAVX512ToLLVMConversionPatterns(
 }
 
 namespace {
-struct ConvertAVX512ToLLVMPass : public ModulePass<ConvertAVX512ToLLVMPass> {
-  void runOnModule() override;
+struct ConvertAVX512ToLLVMPass
+    : public ConvertAVX512ToLLVMBase<ConvertAVX512ToLLVMPass> {
+  void runOnOperation() override;
 };
 } // namespace
 
-void ConvertAVX512ToLLVMPass::runOnModule() {
+void ConvertAVX512ToLLVMPass::runOnOperation() {
   // Convert to the LLVM IR dialect.
   OwningRewritePatternList patterns;
   LLVMTypeConverter converter(&getContext());
@@ -178,16 +184,12 @@ void ConvertAVX512ToLLVMPass::runOnModule() {
   target.addIllegalDialect<avx512::AVX512Dialect>();
   target.addDynamicallyLegalOp<FuncOp>(
       [&](FuncOp op) { return converter.isSignatureLegal(op.getType()); });
-  if (failed(
-          applyPartialConversion(getModule(), target, patterns, &converter))) {
+  if (failed(applyPartialConversion(getOperation(), target, patterns,
+                                    &converter))) {
     signalPassFailure();
   }
 }
 
-std::unique_ptr<OpPassBase<ModuleOp>> mlir::createConvertAVX512ToLLVMPass() {
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createConvertAVX512ToLLVMPass() {
   return std::make_unique<ConvertAVX512ToLLVMPass>();
 }
-
-static PassRegistration<ConvertAVX512ToLLVMPass> pass(
-    "convert-avx512-to-llvm",
-    "Convert the operations from the avx512 dialect into the LLVM dialect");

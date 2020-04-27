@@ -255,6 +255,7 @@ static const RecordDecl *getRecordDeclOfFriend(FriendDecl *FD) {
 struct ImportExpr : TestImportBase {};
 struct ImportType : TestImportBase {};
 struct ImportDecl : TestImportBase {};
+struct ImportFixedPointExpr : ImportExpr {};
 
 struct CanonicalRedeclChain : ASTImporterOptionSpecificTestBase {};
 
@@ -525,6 +526,14 @@ TEST_P(ImportExpr, ImportFloatinglLiteralExpr) {
       Lang_C, "", Lang_C, Verifier,
       functionDecl(hasDescendant(
           floatLiteral(equals(1.0e-5f), hasType(asString("float"))))));
+}
+
+TEST_P(ImportFixedPointExpr, ImportFixedPointerLiteralExpr) {
+  MatchVerifier<Decl> Verifier;
+  testImport("void declToImport() { (void)1.0k; }", Lang_C, "", Lang_C,
+             Verifier, functionDecl(hasDescendant(fixedPointLiteral())));
+  testImport("void declToImport() { (void)0.75r; }", Lang_C, "", Lang_C,
+             Verifier, functionDecl(hasDescendant(fixedPointLiteral())));
 }
 
 TEST_P(ImportExpr, ImportImaginaryLiteralExpr) {
@@ -5922,6 +5931,81 @@ TEST_P(ASTImporterOptionSpecificTestBase, ImportExprOfAlignmentAttr) {
   EXPECT_TRUE(ToA);
 }
 
+template <typename T>
+auto ExtendWithOptions(const T &Values, const ArgVector &Args) {
+  auto Copy = Values;
+  for (ArgVector &ArgV : Copy) {
+    for (const std::string &Arg : Args) {
+      ArgV.push_back(Arg);
+    }
+  }
+  return ::testing::ValuesIn(Copy);
+}
+
+struct ImportWithExternalSource : ASTImporterOptionSpecificTestBase {
+  ImportWithExternalSource() {
+    Creator = [](ASTContext &ToContext, FileManager &ToFileManager,
+                 ASTContext &FromContext, FileManager &FromFileManager,
+                 bool MinimalImport,
+                 const std::shared_ptr<ASTImporterSharedState> &SharedState) {
+      return new ASTImporter(ToContext, ToFileManager, FromContext,
+                             FromFileManager, MinimalImport,
+                             // We use the regular lookup.
+                             /*SharedState=*/nullptr);
+    };
+  }
+};
+
+/// An ExternalASTSource that keeps track of the tags is completed.
+struct SourceWithCompletedTagList : clang::ExternalASTSource {
+  std::vector<clang::TagDecl *> &CompletedTags;
+  SourceWithCompletedTagList(std::vector<clang::TagDecl *> &CompletedTags)
+      : CompletedTags(CompletedTags) {}
+  void CompleteType(TagDecl *Tag) override {
+    auto *Record = cast<CXXRecordDecl>(Tag);
+    Record->startDefinition();
+    Record->completeDefinition();
+    CompletedTags.push_back(Tag);
+  }
+  void
+  FindExternalLexicalDecls(const DeclContext *DC,
+                           llvm::function_ref<bool(Decl::Kind)> IsKindWeWant,
+                           SmallVectorImpl<Decl *> &Result) override {}
+};
+
+TEST_P(ImportWithExternalSource, CompleteRecordBeforeImporting) {
+  // Create an empty TU.
+  TranslationUnitDecl *FromTU = getTuDecl("", Lang_CXX, "input.cpp");
+
+  // Create and add the test ExternalASTSource.
+  std::vector<clang::TagDecl *> CompletedTags;
+  IntrusiveRefCntPtr<ExternalASTSource> source =
+      new SourceWithCompletedTagList(CompletedTags);
+  clang::ASTContext &Context = FromTU->getASTContext();
+  Context.setExternalSource(std::move(source));
+
+  // Create a dummy class by hand with external lexical storage.
+  IdentifierInfo &Ident = Context.Idents.get("test_class");
+  auto *Record = CXXRecordDecl::Create(
+      Context, TTK_Class, FromTU, SourceLocation(), SourceLocation(), &Ident);
+  Record->setHasExternalLexicalStorage();
+  FromTU->addDecl(Record);
+
+  // Do a minimal import of the created class.
+  EXPECT_EQ(0U, CompletedTags.size());
+  Import(Record, Lang_CXX);
+  EXPECT_EQ(0U, CompletedTags.size());
+
+  // Import the definition of the created class.
+  llvm::Error Err = findFromTU(Record)->Importer->ImportDefinition(Record);
+  EXPECT_FALSE((bool)Err);
+  consumeError(std::move(Err));
+
+  // Make sure the class was completed once.
+  EXPECT_EQ(1U, CompletedTags.size());
+  EXPECT_EQ(Record, CompletedTags.front());
+}
+
 INSTANTIATE_TEST_CASE_P(ParameterizedTests, ASTImporterLookupTableTest,
                         DefaultTestValuesForRunOptions, );
 
@@ -5930,6 +6014,10 @@ INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportPath,
 
 INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportExpr,
                         DefaultTestValuesForRunOptions, );
+
+INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportFixedPointExpr,
+                        ExtendWithOptions(DefaultTestArrayForRunOptions,
+                                          ArgVector{"-ffixed-point"}), );
 
 INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportType,
                         DefaultTestValuesForRunOptions, );
@@ -5981,6 +6069,9 @@ INSTANTIATE_TEST_CASE_P(ParameterizedTests, LLDBLookupTest,
                         DefaultTestValuesForRunOptions, );
 
 INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportSourceLocations,
+                        DefaultTestValuesForRunOptions, );
+
+INSTANTIATE_TEST_CASE_P(ParameterizedTests, ImportWithExternalSource,
                         DefaultTestValuesForRunOptions, );
 
 } // end namespace ast_matchers

@@ -259,6 +259,9 @@ bool MachinePipeliner::scheduleLoop(MachineLoop &L) {
 }
 
 void MachinePipeliner::setPragmaPipelineOptions(MachineLoop &L) {
+  // Reset the pragma for the next loop in iteration.
+  disabledByPragma = false;
+
   MachineBasicBlock *LBLK = L.getTopBlock();
 
   if (LBLK == nullptr)
@@ -806,7 +809,7 @@ void SwingSchedulerDAG::updatePhiDependences() {
           if (!MI->isPHI()) {
             SDep Dep(SU, SDep::Data, Reg);
             Dep.setLatency(0);
-            ST.adjustSchedDependency(SU, &I, Dep);
+            ST.adjustSchedDependency(SU, 0, &I, MI->getOperandNo(MOI), Dep);
             I.addPred(Dep);
           } else {
             HasPhiUse = Reg;
@@ -2368,7 +2371,7 @@ int SMSchedule::earliestCycleInChain(const SDep &Dep) {
       continue;
     EarlyCycle = std::min(EarlyCycle, it->second);
     for (const auto &PI : PrevSU->Preds)
-      if (PI.getKind() == SDep::Order || Dep.getKind() == SDep::Output)
+      if (PI.getKind() == SDep::Order || PI.getKind() == SDep::Output)
         Worklist.push_back(PI);
     Visited.insert(PrevSU);
   }
@@ -2391,7 +2394,7 @@ int SMSchedule::latestCycleInChain(const SDep &Dep) {
       continue;
     LateCycle = std::max(LateCycle, it->second);
     for (const auto &SI : SuccSU->Succs)
-      if (SI.getKind() == SDep::Order || Dep.getKind() == SDep::Output)
+      if (SI.getKind() == SDep::Order || SI.getKind() == SDep::Output)
         Worklist.push_back(SI);
     Visited.insert(SuccSU);
   }
