@@ -450,7 +450,9 @@ public:
         break;
       } else if (auto *VD = Var.asVarDecl()) {
         // Allow to return a pointer to *p (then p is a parameter).
-        if (VD->hasLocalStorage() && !Var.isDeref()) {
+        if (VD->hasLocalStorage() &&
+            (!Var.isDeref() ||
+             classifyTypeCategory(VD->getType()) == TypeCategory::Owner)) {
           RetPSet = PSet::invalid(InvalidationReason::PointeeLeftScope(
               R->getSourceRange(), CurrentBlock, VD));
           break;
