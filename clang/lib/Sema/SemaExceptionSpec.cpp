@@ -1299,6 +1299,8 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
     // Some might be dependent for other reasons.
   case Expr::ArraySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::OMPArrayShapingExprClass:
+  case Expr::OMPIteratorExprClass:
   case Expr::BinaryOperatorClass:
   case Expr::DependentCoawaitExprClass:
   case Expr::CompoundAssignOperatorClass:
@@ -1340,6 +1342,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::CXXUnresolvedConstructExprClass:
   case Expr::DependentScopeDeclRefExprClass:
   case Expr::CXXFoldExprClass:
+  case Expr::RecoveryExprClass:
     return CT_Dependent;
 
   case Expr::AsTypeExprClass:

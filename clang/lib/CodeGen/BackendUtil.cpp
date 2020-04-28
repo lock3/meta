@@ -222,6 +222,7 @@ getSancovOptsFromCGOpts(const CodeGenOptions &CGOpts) {
   Opts.TracePCGuard = CGOpts.SanitizeCoverageTracePCGuard;
   Opts.NoPrune = CGOpts.SanitizeCoverageNoPrune;
   Opts.Inline8bitCounters = CGOpts.SanitizeCoverageInline8bitCounters;
+  Opts.InlineBoolFlag = CGOpts.SanitizeCoverageInlineBoolFlag;
   Opts.PCTable = CGOpts.SanitizeCoveragePCTable;
   Opts.StackDepth = CGOpts.SanitizeCoverageStackDepth;
   return Opts;
@@ -233,7 +234,9 @@ static void addSanitizerCoveragePass(const PassManagerBuilder &Builder,
       static_cast<const PassManagerBuilderWrapper &>(Builder);
   const CodeGenOptions &CGOpts = BuilderWrapper.getCGOpts();
   auto Opts = getSancovOptsFromCGOpts(CGOpts);
-  PM.add(createModuleSanitizerCoverageLegacyPassPass(Opts));
+  PM.add(createModuleSanitizerCoverageLegacyPassPass(
+      Opts, CGOpts.SanitizeCoverageWhitelistFiles,
+      CGOpts.SanitizeCoverageBlacklistFiles));
 }
 
 // Check if ASan should use GC-friendly instrumentation for globals.
@@ -579,8 +582,9 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
   // At O0 and O1 we only run the always inliner which is more efficient. At
   // higher optimization levels we run the normal inliner.
   if (CodeGenOpts.OptimizationLevel <= 1) {
-    bool InsertLifetimeIntrinsics = (CodeGenOpts.OptimizationLevel != 0 &&
-                                     !CodeGenOpts.DisableLifetimeMarkers);
+    bool InsertLifetimeIntrinsics = ((CodeGenOpts.OptimizationLevel != 0 &&
+                                      !CodeGenOpts.DisableLifetimeMarkers) ||
+                                     LangOpts.Coroutines);
     PMBuilder.Inliner = createAlwaysInlinerLegacyPass(InsertLifetimeIntrinsics);
   } else {
     // We do not want to inline hot callsites for SamplePGO module-summary build
@@ -1107,6 +1111,7 @@ void EmitAssemblyHelper::EmitAssemblyWithNewPassManager(
   PTO.LoopInterleaving = CodeGenOpts.UnrollLoops;
   PTO.LoopVectorization = CodeGenOpts.VectorizeLoop;
   PTO.SLPVectorization = CodeGenOpts.VectorizeSLP;
+  PTO.CallGraphProfile = CodeGenOpts.CallGraphProfile;
   PTO.Coroutines = LangOpts.Coroutines;
 
   PassInstrumentationCallbacks PIC;
@@ -1176,7 +1181,10 @@ void EmitAssemblyHelper::EmitAssemblyWithNewPassManager(
       // which is just that always inlining occurs. Further, disable generating
       // lifetime intrinsics to avoid enabling further optimizations during
       // code generation.
-      MPM.addPass(AlwaysInlinerPass(/*InsertLifetimeIntrinsics=*/false));
+      // However, we need to insert lifetime intrinsics to avoid invalid access
+      // caused by multithreaded coroutines.
+      MPM.addPass(
+          AlwaysInlinerPass(/*InsertLifetimeIntrinsics=*/LangOpts.Coroutines));
 
       // At -O0, we can still do PGO. Add all the requested passes for
       // instrumentation PGO, if requested.
@@ -1514,6 +1522,7 @@ static void runThinLTOBackend(ModuleSummaryIndex *CombinedIndex, Module *M,
   Conf.PTO.LoopInterleaving = CGOpts.UnrollLoops;
   Conf.PTO.LoopVectorization = CGOpts.VectorizeLoop;
   Conf.PTO.SLPVectorization = CGOpts.VectorizeSLP;
+  Conf.PTO.CallGraphProfile = CGOpts.CallGraphProfile;
 
   // Context sensitive profile.
   if (CGOpts.hasProfileCSIRInstr()) {

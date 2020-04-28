@@ -25,7 +25,7 @@ public:
 
 // Test CTTZ expansion when CTTZ_ZERO_UNDEF is legal or custom,
 // in which case it becomes CTTZ_ZERO_UNDEF with select.
-TEST_F(GISelMITest, LowerBitCountingCTTZ0) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTTZ0) {
   setUp();
   if (!TM)
     return;
@@ -57,7 +57,7 @@ TEST_F(GISelMITest, LowerBitCountingCTTZ0) {
 }
 
 // CTTZ expansion in terms of CTLZ
-TEST_F(GISelMITest, LowerBitCountingCTTZ1) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTTZ1) {
   setUp();
   if (!TM)
     return;
@@ -91,7 +91,7 @@ TEST_F(GISelMITest, LowerBitCountingCTTZ1) {
 }
 
 // CTLZ scalar narrowing
-TEST_F(GISelMITest, NarrowScalarCTLZ) {
+TEST_F(AArch64GISelMITest, NarrowScalarCTLZ) {
   setUp();
   if (!TM)
     return;
@@ -126,7 +126,7 @@ TEST_F(GISelMITest, NarrowScalarCTLZ) {
 }
 
 // CTTZ scalar narrowing
-TEST_F(GISelMITest, NarrowScalarCTTZ) {
+TEST_F(AArch64GISelMITest, NarrowScalarCTTZ) {
   setUp();
   if (!TM)
     return;
@@ -161,7 +161,7 @@ TEST_F(GISelMITest, NarrowScalarCTTZ) {
 }
 
 // CTTZ expansion in terms of CTPOP
-TEST_F(GISelMITest, LowerBitCountingCTTZ2) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTTZ2) {
   setUp();
   if (!TM)
     return;
@@ -192,7 +192,7 @@ TEST_F(GISelMITest, LowerBitCountingCTTZ2) {
 }
 
 // CTPOP widening.
-TEST_F(GISelMITest, WidenBitCountingCTPOP1) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTPOP1) {
   if (!TM)
     return;
 
@@ -224,7 +224,7 @@ TEST_F(GISelMITest, WidenBitCountingCTPOP1) {
 }
 
 // Test a strange case where the result is wider than the source
-TEST_F(GISelMITest, WidenBitCountingCTPOP2) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTPOP2) {
   if (!TM)
     return;
 
@@ -257,7 +257,7 @@ TEST_F(GISelMITest, WidenBitCountingCTPOP2) {
 }
 
 // CTTZ_ZERO_UNDEF expansion in terms of CTTZ
-TEST_F(GISelMITest, LowerBitCountingCTTZ3) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTTZ3) {
   setUp();
   if (!TM)
     return;
@@ -284,7 +284,7 @@ TEST_F(GISelMITest, LowerBitCountingCTTZ3) {
 }
 
 // CTLZ expansion in terms of CTLZ_ZERO_UNDEF
-TEST_F(GISelMITest, LowerBitCountingCTLZ0) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTLZ0) {
   setUp();
   if (!TM)
     return;
@@ -315,7 +315,7 @@ TEST_F(GISelMITest, LowerBitCountingCTLZ0) {
 }
 
 // CTLZ expansion in terms of CTLZ_ZERO_UNDEF if the latter is a libcall
-TEST_F(GISelMITest, LowerBitCountingCTLZLibcall) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTLZLibcall) {
   setUp();
   if (!TM)
     return;
@@ -346,7 +346,7 @@ TEST_F(GISelMITest, LowerBitCountingCTLZLibcall) {
 }
 
 // CTLZ expansion
-TEST_F(GISelMITest, LowerBitCountingCTLZ1) {
+TEST_F(AArch64GISelMITest, LowerBitCountingCTLZ1) {
   setUp();
   if (!TM)
     return;
@@ -387,7 +387,7 @@ TEST_F(GISelMITest, LowerBitCountingCTLZ1) {
 }
 
 // CTLZ widening.
-TEST_F(GISelMITest, WidenBitCountingCTLZ) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTLZ) {
   setUp();
   if (!TM)
     return;
@@ -422,7 +422,7 @@ TEST_F(GISelMITest, WidenBitCountingCTLZ) {
 }
 
 // CTLZ_ZERO_UNDEF widening.
-TEST_F(GISelMITest, WidenBitCountingCTLZZeroUndef) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTLZZeroUndef) {
   setUp();
   if (!TM)
     return;
@@ -458,7 +458,7 @@ TEST_F(GISelMITest, WidenBitCountingCTLZZeroUndef) {
 }
 
 // CTPOP widening.
-TEST_F(GISelMITest, WidenBitCountingCTPOP) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTPOP) {
   setUp();
   if (!TM)
     return;
@@ -491,7 +491,7 @@ TEST_F(GISelMITest, WidenBitCountingCTPOP) {
 }
 
 // CTTZ_ZERO_UNDEF widening.
-TEST_F(GISelMITest, WidenBitCountingCTTZ_ZERO_UNDEF) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTTZ_ZERO_UNDEF) {
   setUp();
   if (!TM)
     return;
@@ -525,7 +525,7 @@ TEST_F(GISelMITest, WidenBitCountingCTTZ_ZERO_UNDEF) {
 }
 
 // CTTZ widening.
-TEST_F(GISelMITest, WidenBitCountingCTTZ) {
+TEST_F(AArch64GISelMITest, WidenBitCountingCTTZ) {
   setUp();
   if (!TM)
     return;
@@ -559,7 +559,7 @@ TEST_F(GISelMITest, WidenBitCountingCTTZ) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 // UADDO widening.
-TEST_F(GISelMITest, WidenUADDO) {
+TEST_F(AArch64GISelMITest, WidenUADDO) {
   setUp();
   if (!TM)
     return;
@@ -598,7 +598,7 @@ TEST_F(GISelMITest, WidenUADDO) {
 }
 
 // USUBO widening.
-TEST_F(GISelMITest, WidenUSUBO) {
+TEST_F(AArch64GISelMITest, WidenUSUBO) {
   setUp();
   if (!TM)
     return;
@@ -636,7 +636,7 @@ TEST_F(GISelMITest, WidenUSUBO) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, FewerElementsAnd) {
+TEST_F(AArch64GISelMITest, FewerElementsAnd) {
   if (!TM)
     return;
 
@@ -683,7 +683,7 @@ TEST_F(GISelMITest, FewerElementsAnd) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, MoreElementsAnd) {
+TEST_F(AArch64GISelMITest, MoreElementsAnd) {
   if (!TM)
     return;
 
@@ -724,7 +724,7 @@ TEST_F(GISelMITest, MoreElementsAnd) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, FewerElementsPhi) {
+TEST_F(AArch64GISelMITest, FewerElementsPhi) {
   if (!TM)
     return;
 
@@ -819,7 +819,7 @@ TEST_F(GISelMITest, FewerElementsPhi) {
 }
 
 // FNEG expansion in terms of FSUB
-TEST_F(GISelMITest, LowerFNEG) {
+TEST_F(AArch64GISelMITest, LowerFNEG) {
   if (!TM)
     return;
 
@@ -864,7 +864,7 @@ TEST_F(GISelMITest, LowerFNEG) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LowerMinMax) {
+TEST_F(AArch64GISelMITest, LowerMinMax) {
   if (!TM)
     return;
 
@@ -942,7 +942,7 @@ TEST_F(GISelMITest, LowerMinMax) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, WidenScalarBuildVector) {
+TEST_F(AArch64GISelMITest, WidenScalarBuildVector) {
   if (!TM)
     return;
 
@@ -988,7 +988,7 @@ TEST_F(GISelMITest, WidenScalarBuildVector) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LowerMergeValues) {
+TEST_F(AArch64GISelMITest, LowerMergeValues) {
   if (!TM)
     return;
 
@@ -1089,7 +1089,7 @@ TEST_F(GISelMITest, LowerMergeValues) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, WidenScalarMergeValuesPointer) {
+TEST_F(AArch64GISelMITest, WidenScalarMergeValuesPointer) {
   if (!TM)
     return;
 
@@ -1126,7 +1126,7 @@ TEST_F(GISelMITest, WidenScalarMergeValuesPointer) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, WidenSEXTINREG) {
+TEST_F(AArch64GISelMITest, WidenSEXTINREG) {
   if (!TM)
     return;
 
@@ -1157,7 +1157,7 @@ TEST_F(GISelMITest, WidenSEXTINREG) {
   ASSERT_TRUE(CheckMachineFunction(*MF, CheckStr));
 }
 
-TEST_F(GISelMITest, NarrowSEXTINREG) {
+TEST_F(AArch64GISelMITest, NarrowSEXTINREG) {
   if (!TM)
     return;
 
@@ -1188,7 +1188,7 @@ TEST_F(GISelMITest, NarrowSEXTINREG) {
   ASSERT_TRUE(CheckMachineFunction(*MF, CheckStr));
 }
 
-TEST_F(GISelMITest, NarrowSEXTINREG2) {
+TEST_F(AArch64GISelMITest, NarrowSEXTINREG2) {
   if (!TM)
     return;
 
@@ -1220,7 +1220,7 @@ TEST_F(GISelMITest, NarrowSEXTINREG2) {
   ASSERT_TRUE(CheckMachineFunction(*MF, CheckStr));
 }
 
-TEST_F(GISelMITest, LowerSEXTINREG) {
+TEST_F(AArch64GISelMITest, LowerSEXTINREG) {
   if (!TM)
     return;
 
@@ -1250,7 +1250,7 @@ TEST_F(GISelMITest, LowerSEXTINREG) {
   ASSERT_TRUE(CheckMachineFunction(*MF, CheckStr));
 }
 
-TEST_F(GISelMITest, LibcallFPExt) {
+TEST_F(AArch64GISelMITest, LibcallFPExt) {
   setUp();
   if (!TM)
     return;
@@ -1289,7 +1289,7 @@ TEST_F(GISelMITest, LibcallFPExt) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFPTrunc) {
+TEST_F(AArch64GISelMITest, LibcallFPTrunc) {
   setUp();
   if (!TM)
     return;
@@ -1331,7 +1331,7 @@ TEST_F(GISelMITest, LibcallFPTrunc) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallSimple) {
+TEST_F(AArch64GISelMITest, LibcallSimple) {
   setUp();
   if (!TM)
     return;
@@ -1354,7 +1354,7 @@ TEST_F(GISelMITest, LibcallSimple) {
             Helper.libcall(*MIBFADD));
 }
 
-TEST_F(GISelMITest, LibcallSRem) {
+TEST_F(AArch64GISelMITest, LibcallSRem) {
   setUp();
   if (!TM)
     return;
@@ -1411,7 +1411,7 @@ TEST_F(GISelMITest, LibcallSRem) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallURem) {
+TEST_F(AArch64GISelMITest, LibcallURem) {
   setUp();
   if (!TM)
     return;
@@ -1468,7 +1468,7 @@ TEST_F(GISelMITest, LibcallURem) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallCtlzZeroUndef) {
+TEST_F(AArch64GISelMITest, LibcallCtlzZeroUndef) {
   setUp();
   if (!TM)
     return;
@@ -1521,7 +1521,7 @@ TEST_F(GISelMITest, LibcallCtlzZeroUndef) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFAdd) {
+TEST_F(AArch64GISelMITest, LibcallFAdd) {
   setUp();
   if (!TM)
     return;
@@ -1573,7 +1573,7 @@ TEST_F(GISelMITest, LibcallFAdd) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFSub) {
+TEST_F(AArch64GISelMITest, LibcallFSub) {
   setUp();
   if (!TM)
     return;
@@ -1625,7 +1625,7 @@ TEST_F(GISelMITest, LibcallFSub) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFMul) {
+TEST_F(AArch64GISelMITest, LibcallFMul) {
   setUp();
   if (!TM)
     return;
@@ -1677,7 +1677,7 @@ TEST_F(GISelMITest, LibcallFMul) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFDiv) {
+TEST_F(AArch64GISelMITest, LibcallFDiv) {
   setUp();
   if (!TM)
     return;
@@ -1729,7 +1729,7 @@ TEST_F(GISelMITest, LibcallFDiv) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFExp) {
+TEST_F(AArch64GISelMITest, LibcallFExp) {
   setUp();
   if (!TM)
     return;
@@ -1776,7 +1776,7 @@ TEST_F(GISelMITest, LibcallFExp) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFExp2) {
+TEST_F(AArch64GISelMITest, LibcallFExp2) {
   setUp();
   if (!TM)
     return;
@@ -1823,7 +1823,7 @@ TEST_F(GISelMITest, LibcallFExp2) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFRem) {
+TEST_F(AArch64GISelMITest, LibcallFRem) {
   setUp();
   if (!TM)
     return;
@@ -1870,7 +1870,7 @@ TEST_F(GISelMITest, LibcallFRem) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFPow) {
+TEST_F(AArch64GISelMITest, LibcallFPow) {
   setUp();
   if (!TM)
     return;
@@ -1917,7 +1917,7 @@ TEST_F(GISelMITest, LibcallFPow) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFMa) {
+TEST_F(AArch64GISelMITest, LibcallFMa) {
   setUp();
   if (!TM)
     return;
@@ -1965,7 +1965,7 @@ TEST_F(GISelMITest, LibcallFMa) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFCeil) {
+TEST_F(AArch64GISelMITest, LibcallFCeil) {
   setUp();
   if (!TM)
     return;
@@ -2012,7 +2012,7 @@ TEST_F(GISelMITest, LibcallFCeil) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFFloor) {
+TEST_F(AArch64GISelMITest, LibcallFFloor) {
   setUp();
   if (!TM)
     return;
@@ -2059,7 +2059,7 @@ TEST_F(GISelMITest, LibcallFFloor) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFMinNum) {
+TEST_F(AArch64GISelMITest, LibcallFMinNum) {
   setUp();
   if (!TM)
     return;
@@ -2109,7 +2109,7 @@ TEST_F(GISelMITest, LibcallFMinNum) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFMaxNum) {
+TEST_F(AArch64GISelMITest, LibcallFMaxNum) {
   setUp();
   if (!TM)
     return;
@@ -2159,7 +2159,7 @@ TEST_F(GISelMITest, LibcallFMaxNum) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFSqrt) {
+TEST_F(AArch64GISelMITest, LibcallFSqrt) {
   setUp();
   if (!TM)
     return;
@@ -2206,7 +2206,7 @@ TEST_F(GISelMITest, LibcallFSqrt) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFRint) {
+TEST_F(AArch64GISelMITest, LibcallFRint) {
   setUp();
   if (!TM)
     return;
@@ -2253,7 +2253,7 @@ TEST_F(GISelMITest, LibcallFRint) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LibcallFNearbyInt) {
+TEST_F(AArch64GISelMITest, LibcallFNearbyInt) {
   setUp();
   if (!TM)
     return;
@@ -2303,7 +2303,7 @@ TEST_F(GISelMITest, LibcallFNearbyInt) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, NarrowScalarExtract) {
+TEST_F(AArch64GISelMITest, NarrowScalarExtract) {
   setUp();
   if (!TM)
     return;
@@ -2342,7 +2342,7 @@ TEST_F(GISelMITest, NarrowScalarExtract) {
   EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
 }
 
-TEST_F(GISelMITest, LowerInsert) {
+TEST_F(AArch64GISelMITest, LowerInsert) {
   setUp();
   if (!TM)
     return;
@@ -2443,7 +2443,7 @@ TEST_F(GISelMITest, LowerInsert) {
 }
 
 // Test lowering of G_FFLOOR
-TEST_F(GISelMITest, LowerFFloor) {
+TEST_F(AArch64GISelMITest, LowerFFloor) {
   setUp();
   if (!TM)
     return;
@@ -2475,7 +2475,7 @@ TEST_F(GISelMITest, LowerFFloor) {
 }
 
 // Test lowering of G_BSWAP
-TEST_F(GISelMITest, LowerBSWAP) {
+TEST_F(AArch64GISelMITest, LowerBSWAP) {
   setUp();
   if (!TM)
     return;
@@ -2517,7 +2517,7 @@ TEST_F(GISelMITest, LowerBSWAP) {
 }
 
 // Test widening of G_UNMERGE_VALUES
-TEST_F(GISelMITest, WidenUnmerge) {
+TEST_F(AArch64GISelMITest, WidenUnmerge) {
   setUp();
   if (!TM)
     return;
@@ -2559,6 +2559,456 @@ TEST_F(GISelMITest, WidenUnmerge) {
   CHECK: [[C:%[0-9]+]]:_(s96) = G_CONSTANT i96 32
   CHECK: [[LSHR:%[0-9]+]]:_(s96) = G_LSHR [[ANYEXT]]:_, [[C]]
   CHECK: [[TRUNC1:%[0-9]+]]:_(s32) = G_TRUNC [[LSHR]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+TEST_F(AArch64GISelMITest, BitcastLoad) {
+  setUp();
+  if (!TM)
+    return;
+
+  LLT P0 = LLT::pointer(0, 64);
+  LLT S32 = LLT::scalar(32);
+  LLT V4S8 = LLT::vector(4, 8);
+  auto Ptr = B.buildUndef(P0);
+
+  DefineLegalizerInfo(A, {});
+
+  MachineMemOperand *MMO = B.getMF().getMachineMemOperand(
+      MachinePointerInfo(), MachineMemOperand::MOLoad, 4, Align(4));
+  auto Load = B.buildLoad(V4S8, Ptr, *MMO);
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*Load, 0, S32));
+
+  auto CheckStr = R"(
+  CHECK: [[PTR:%[0-9]+]]:_(p0) = G_IMPLICIT_DEF
+  CHECK: [[LOAD:%[0-9]+]]:_(s32) = G_LOAD
+  CHECK: [[CAST:%[0-9]+]]:_(<4 x s8>) = G_BITCAST [[LOAD]]
+
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+TEST_F(AArch64GISelMITest, BitcastStore) {
+  setUp();
+  if (!TM)
+    return;
+
+  LLT P0 = LLT::pointer(0, 64);
+  LLT S32 = LLT::scalar(32);
+  LLT V4S8 = LLT::vector(4, 8);
+  auto Ptr = B.buildUndef(P0);
+
+  DefineLegalizerInfo(A, {});
+
+  MachineMemOperand *MMO = B.getMF().getMachineMemOperand(
+      MachinePointerInfo(), MachineMemOperand::MOStore, 4, Align(4));
+  auto Val = B.buildUndef(V4S8);
+  auto Store = B.buildStore(Val, Ptr, *MMO);
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*Store, 0, S32));
+
+  auto CheckStr = R"(
+  CHECK: [[VAL:%[0-9]+]]:_(<4 x s8>) = G_IMPLICIT_DEF
+  CHECK: [[CAST:%[0-9]+]]:_(s32) = G_BITCAST [[VAL]]
+  CHECK: G_STORE [[CAST]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+TEST_F(AArch64GISelMITest, BitcastSelect) {
+  setUp();
+  if (!TM)
+    return;
+
+  LLT S1 = LLT::scalar(1);
+  LLT S32 = LLT::scalar(32);
+  LLT V4S8 = LLT::vector(4, 8);
+
+  DefineLegalizerInfo(A, {});
+
+  auto Cond = B.buildUndef(S1);
+  auto Val0 = B.buildConstant(V4S8, 123);
+  auto Val1 = B.buildConstant(V4S8, 99);
+
+  auto Select = B.buildSelect(V4S8, Cond, Val0, Val1);
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*Select, 0, S32));
+
+  auto CheckStr = R"(
+  CHECK: [[VAL0:%[0-9]+]]:_(<4 x s8>) = G_BUILD_VECTOR
+  CHECK: [[VAL1:%[0-9]+]]:_(<4 x s8>) = G_BUILD_VECTOR
+  CHECK: [[CAST0:%[0-9]+]]:_(s32) = G_BITCAST [[VAL0]]
+  CHECK: [[CAST1:%[0-9]+]]:_(s32) = G_BITCAST [[VAL1]]
+  CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT %{{[0-9]+}}:_(s1), [[CAST0]]:_, [[CAST1]]:_
+  CHECK: [[CAST2:%[0-9]+]]:_(<4 x s8>) = G_BITCAST [[SELECT]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+
+  // Doesn't make sense
+  auto VCond = B.buildUndef(LLT::vector(4, 1));
+  auto VSelect = B.buildSelect(V4S8, VCond, Val0, Val1);
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::UnableToLegalize,
+            Helper.bitcast(*VSelect, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::UnableToLegalize,
+            Helper.bitcast(*VSelect, 1, LLT::scalar(4)));
+}
+
+TEST_F(AArch64GISelMITest, BitcastBitOps) {
+  setUp();
+  if (!TM)
+    return;
+
+  LLT S32 = LLT::scalar(32);
+  LLT V4S8 = LLT::vector(4, 8);
+
+  DefineLegalizerInfo(A, {});
+
+  auto Val0 = B.buildConstant(V4S8, 123);
+  auto Val1 = B.buildConstant(V4S8, 99);
+  auto And = B.buildAnd(V4S8, Val0, Val1);
+  auto Or = B.buildOr(V4S8, Val0, Val1);
+  auto Xor = B.buildXor(V4S8, Val0, Val1);
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*And, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*Or, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.bitcast(*Xor, 0, S32));
+
+  auto CheckStr = R"(
+  CHECK: [[VAL0:%[0-9]+]]:_(<4 x s8>) = G_BUILD_VECTOR
+  CHECK: [[VAL1:%[0-9]+]]:_(<4 x s8>) = G_BUILD_VECTOR
+  CHECK: [[CAST0:%[0-9]+]]:_(s32) = G_BITCAST [[VAL0]]
+  CHECK: [[CAST1:%[0-9]+]]:_(s32) = G_BITCAST [[VAL1]]
+  CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[CAST0]]:_, [[CAST1]]:_
+  CHECK: [[CAST_AND:%[0-9]+]]:_(<4 x s8>) = G_BITCAST [[AND]]
+  CHECK: [[CAST2:%[0-9]+]]:_(s32) = G_BITCAST [[VAL0]]
+  CHECK: [[CAST3:%[0-9]+]]:_(s32) = G_BITCAST [[VAL1]]
+  CHECK: [[OR:%[0-9]+]]:_(s32) = G_OR [[CAST2]]:_, [[CAST3]]:_
+  CHECK: [[CAST_OR:%[0-9]+]]:_(<4 x s8>) = G_BITCAST [[OR]]
+  CHECK: [[CAST4:%[0-9]+]]:_(s32) = G_BITCAST [[VAL0]]
+  CHECK: [[CAST5:%[0-9]+]]:_(s32) = G_BITCAST [[VAL1]]
+  CHECK: [[XOR:%[0-9]+]]:_(s32) = G_XOR [[CAST4]]:_, [[CAST5]]:_
+  CHECK: [[CAST_XOR:%[0-9]+]]:_(<4 x s8>) = G_BITCAST [[XOR]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+TEST_F(AArch64GISelMITest, CreateLibcall) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+
+  LLVMContext &Ctx = MF->getFunction().getContext();
+  auto *RetTy = Type::getVoidTy(Ctx);
+
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            createLibcall(B, "abort", {{}, RetTy}, {}, CallingConv::C));
+
+  auto CheckStr = R"(
+  CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $sp, implicit $sp
+  CHECK: BL &abort
+  CHECK: ADJCALLSTACKUP 0, 0, implicit-def $sp, implicit $sp
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+// Test narrowing of G_IMPLICIT_DEF
+TEST_F(AArch64GISelMITest, NarrowImplicitDef) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  // Make sure that G_IMPLICIT_DEF can be narrowed if the original size is not a
+  // multiple of narrow size
+  LLT S32{LLT::scalar(32)};
+  LLT S48{LLT::scalar(48)};
+  LLT S64{LLT::scalar(64)};
+  LLT V2S64{{LLT::vector(2, 64)}};
+
+  auto Implicit1 = B.buildUndef(S64);
+  auto Implicit2 = B.buildUndef(S64);
+  auto Implicit3 = B.buildUndef(V2S64);
+  auto Implicit4 = B.buildUndef(V2S64);
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+
+  // Perform Legalization
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*Implicit1, 0, S48));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*Implicit2, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*Implicit3, 0, S48));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*Implicit4, 0, S32));
+
+  const auto *CheckStr = R"(
+  CHECK: [[DEF:%[0-9]+]]:_(s48) = G_IMPLICIT_DEF
+  CHECK: [[ANYEXT:%[0-9]+]]:_(s64) = G_ANYEXT [[DEF]]
+
+  CHECK: [[DEF:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[DEF1:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[DEF]]:_(s32), [[DEF1]]
+
+  CHECK: [[DEF:%[0-9]+]]:_(<2 x s48>) = G_IMPLICIT_DEF
+  CHECK: [[ANYEXT:%[0-9]+]]:_(<2 x s64>) = G_ANYEXT [[DEF]]
+
+  CHECK: [[DEF:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[DEF1:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[DEF2:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[DEF3:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[BV:%[0-9]+]]:_(<2 x s64>) = G_BUILD_VECTOR [[DEF]]:_(s32), [[DEF1]]:_(s32), [[DEF2]]:_(s32), [[DEF3]]:_(s32)
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+// Test widening of G_FREEZE
+TEST_F(AArch64GISelMITest, WidenFreeze) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  // Make sure that G_FREEZE is widened with anyext
+  LLT S64{LLT::scalar(64)};
+  LLT S128{LLT::scalar(128)};
+  LLT V2S32{LLT::vector(2, 32)};
+  LLT V2S64{LLT::vector(2, 64)};
+
+  auto Vector = B.buildBitcast(V2S32, Copies[0]);
+
+  auto FreezeScalar = B.buildInstr(TargetOpcode::G_FREEZE, {S64}, {Copies[0]});
+  auto FreezeVector = B.buildInstr(TargetOpcode::G_FREEZE, {V2S32}, {Vector});
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+
+  // Perform Legalization
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.widenScalar(*FreezeScalar, 0, S128));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.widenScalar(*FreezeVector, 0, V2S64));
+
+  const auto *CheckStr = R"(
+  CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY
+  CHECK: [[BITCAST:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[COPY]]
+
+  CHECK: [[ANYEXT:%[0-9]+]]:_(s128) = G_ANYEXT [[COPY]]
+  CHECK: [[FREEZE:%[0-9]+]]:_(s128) = G_FREEZE [[ANYEXT]]
+  CHECK: [[TRUNC:%[0-9]+]]:_(s64) = G_TRUNC [[FREEZE]]
+
+  CHECK: [[ANYEXT1:%[0-9]+]]:_(<2 x s64>) = G_ANYEXT [[BITCAST]]
+  CHECK: [[FREEZE1:%[0-9]+]]:_(<2 x s64>) = G_FREEZE [[ANYEXT1]]
+  CHECK: [[TRUNC1:%[0-9]+]]:_(<2 x s32>) = G_TRUNC [[FREEZE1]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+// Test narrowing of G_FREEZE
+TEST_F(AArch64GISelMITest, NarrowFreeze) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  // Make sure that G_FREEZE is narrowed using unmerge/extract
+  LLT S16{LLT::scalar(16)};
+  LLT S32{LLT::scalar(32)};
+  LLT S33{LLT::scalar(33)};
+  LLT S64{LLT::scalar(64)};
+  LLT V2S16{LLT::vector(2, 16)};
+  LLT V2S32{LLT::vector(2, 32)};
+
+  auto Trunc = B.buildTrunc(S33, {Copies[0]});
+  auto Vector = B.buildBitcast(V2S32, Copies[0]);
+
+  auto FreezeScalar = B.buildInstr(TargetOpcode::G_FREEZE, {S64}, {Copies[0]});
+  auto FreezeOdd = B.buildInstr(TargetOpcode::G_FREEZE, {S33}, {Trunc});
+  auto FreezeVector = B.buildInstr(TargetOpcode::G_FREEZE, {V2S32}, {Vector});
+  auto FreezeVector1 = B.buildInstr(TargetOpcode::G_FREEZE, {V2S32}, {Vector});
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+
+  // Perform Legalization
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*FreezeScalar, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*FreezeOdd, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*FreezeVector, 0, V2S16));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.narrowScalar(*FreezeVector1, 0, S16));
+
+  const auto *CheckStr = R"(
+  CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY
+  CHECK: [[TRUNC:%[0-9]+]]:_(s33) = G_TRUNC [[COPY]]
+  CHECK: [[BITCAST:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[COPY]]
+
+  CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]]
+  CHECK: [[FREEZE:%[0-9]+]]:_(s32) = G_FREEZE [[UV]]
+  CHECK: [[FREEZE1:%[0-9]+]]:_(s32) = G_FREEZE [[UV1]]
+  CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[FREEZE]]:_(s32), [[FREEZE1]]
+
+  CHECK: (s1) = G_UNMERGE_VALUES [[TRUNC]]:_(s33)
+  CHECK: [[UNDEF:%[0-9]+]]:_(s1) = G_IMPLICIT_DEF
+  CHECK: [[MV1:%[0-9]+]]:_(s32) = G_MERGE_VALUES
+  CHECK: [[MV2:%[0-9]+]]:_(s32) = G_MERGE_VALUES
+  CHECK: [[UNDEF1:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[FREEZE2:%[0-9]+]]:_(s32) = G_FREEZE [[MV1]]
+  CHECK: [[FREEZE3:%[0-9]+]]:_(s32) = G_FREEZE [[MV2]]
+  CHECK: [[UNDEF2:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+  CHECK: [[MV3:%[0-9]+]]:_(s1056) = G_MERGE_VALUES [[FREEZE2]]:_(s32), [[FREEZE3]]:_(s32), [[UNDEF2]]
+  CHECK: [[TRUNC1:%[0-9]+]]:_(s33) = G_TRUNC [[MV3]]
+
+  CHECK: [[BITCAST1:%[0-9]+]]:_(s64) = G_BITCAST [[BITCAST]]
+  CHECK: [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[BITCAST1]]
+  CHECK: [[FREEZE4:%[0-9]+]]:_(s32) = G_FREEZE [[UV2]]
+  CHECK: [[FREEZE5:%[0-9]+]]:_(s32) = G_FREEZE [[UV3]]
+  CHECK: [[MV4:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[FREEZE4]]:_(s32), [[FREEZE5]]:_(s32)
+  CHECK: [[BITCAST2:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[MV4]]
+
+  CHECK: [[BITCAST3:%[0-9]+]]:_(s64) = G_BITCAST [[BITCAST]]
+  CHECK: [[UV4:%[0-9]+]]:_(s16), [[UV5:%[0-9]+]]:_(s16), [[UV6:%[0-9]+]]:_(s16), [[UV7:%[0-9]+]]:_(s16) = G_UNMERGE_VALUES [[BITCAST3]]
+  CHECK: [[FREEZE6:%[0-9]+]]:_(s16) = G_FREEZE [[UV4]]
+  CHECK: [[FREEZE7:%[0-9]+]]:_(s16) = G_FREEZE [[UV5]]
+  CHECK: [[FREEZE8:%[0-9]+]]:_(s16) = G_FREEZE [[UV6]]
+  CHECK: [[FREEZE9:%[0-9]+]]:_(s16) = G_FREEZE [[UV7]]
+  CHECK: [[MV5:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[FREEZE6]]:_(s16), [[FREEZE7]]:_(s16), [[FREEZE8]]:_(s16), [[FREEZE9]]
+  CHECK: [[BITCAST3:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[MV5]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+// Test fewer elements of G_FREEZE
+TEST_F(AArch64GISelMITest, FewerElementsFreeze) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  LLT S32{LLT::scalar(32)};
+  LLT V2S16{LLT::vector(2, 16)};
+  LLT V2S32{LLT::vector(2, 32)};
+  LLT V4S16{LLT::vector(4, 16)};
+
+  auto Vector1 = B.buildBitcast(V2S32, Copies[0]);
+  auto Vector2 = B.buildBitcast(V4S16, Copies[0]);
+
+  auto FreezeVector1 = B.buildInstr(TargetOpcode::G_FREEZE, {V2S32}, {Vector1});
+  auto FreezeVector2 = B.buildInstr(TargetOpcode::G_FREEZE, {V4S16}, {Vector2});
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+
+  // Perform Legalization
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.fewerElementsVector(*FreezeVector1, 0, S32));
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.fewerElementsVector(*FreezeVector2, 0, V2S16));
+
+  const auto *CheckStr = R"(
+  CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY
+  CHECK: [[BITCAST:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[COPY]]
+  CHECK: [[BITCAST1:%[0-9]+]]:_(<4 x s16>) = G_BITCAST [[COPY]]
+
+  CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[BITCAST]]
+  CHECK: [[FREEZE:%[0-9]+]]:_(s32) = G_FREEZE [[UV]]
+  CHECK: [[FREEZE1:%[0-9]+]]:_(s32) = G_FREEZE [[UV1]]
+  CHECK: [[MV:%[0-9]+]]:_(<2 x s32>) = G_BUILD_VECTOR [[FREEZE]]:_(s32), [[FREEZE1]]
+
+  CHECK: [[UV:%[0-9]+]]:_(<2 x s16>), [[UV1:%[0-9]+]]:_(<2 x s16>) = G_UNMERGE_VALUES [[BITCAST1]]
+  CHECK: [[FREEZE2:%[0-9]+]]:_(<2 x s16>) = G_FREEZE [[UV]]
+  CHECK: [[FREEZE3:%[0-9]+]]:_(<2 x s16>) = G_FREEZE [[UV1]]
+  CHECK: [[MV:%[0-9]+]]:_(<4 x s16>) = G_CONCAT_VECTORS [[FREEZE2]]:_(<2 x s16>), [[FREEZE3]]
+  )";
+
+  // Check
+  EXPECT_TRUE(CheckMachineFunction(*MF, CheckStr)) << *MF;
+}
+
+// Test more elements of G_FREEZE
+TEST_F(AArch64GISelMITest, MoreElementsFreeze) {
+  setUp();
+  if (!TM)
+    return;
+
+  DefineLegalizerInfo(A, {});
+
+  LLT V2S32{LLT::vector(2, 32)};
+  LLT V4S32{LLT::vector(4, 32)};
+
+  auto Vector1 = B.buildBitcast(V2S32, Copies[0]);
+  auto FreezeVector1 = B.buildInstr(TargetOpcode::G_FREEZE, {V2S32}, {Vector1});
+
+  AInfo Info(MF->getSubtarget());
+  DummyGISelObserver Observer;
+  LegalizerHelper Helper(*MF, Info, Observer, B);
+
+  // Perform Legalization
+  EXPECT_EQ(LegalizerHelper::LegalizeResult::Legalized,
+            Helper.moreElementsVector(*FreezeVector1, 0, V4S32));
+
+  const auto *CheckStr = R"(
+  CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY
+  CHECK: [[BITCAST:%[0-9]+]]:_(<2 x s32>) = G_BITCAST [[COPY]]
+
+  CHECK: [[UNDEF:%[0-9]+]]:_(<2 x s32>) = G_IMPLICIT_DEF
+  CHECK: [[CV:%[0-9]+]]:_(<4 x s32>) = G_CONCAT_VECTORS [[BITCAST]]:_(<2 x s32>), [[UNDEF]]
+  CHECK: [[FREEZE:%[0-9]+]]:_(<4 x s32>) = G_FREEZE [[CV]]
+  CHECK: [[EXTR:%[0-9]+]]:_(<2 x s32>) = G_EXTRACT [[FREEZE]]:_(<4 x s32>), 0
   )";
 
   // Check

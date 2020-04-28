@@ -1,4 +1,7 @@
-set(LLVM_LINK_COMPONENTS support)
+set(LLVM_LINK_COMPONENTS
+  FrontendOpenMP
+  Support
+)
 
 add_clang_library(clangStaticAnalyzerCore
   APSIntType.cpp
@@ -45,6 +48,7 @@ add_clang_library(clangStaticAnalyzerCore
   SValBuilder.cpp
   SVals.cpp
   SymbolManager.cpp
+  TextDiagnostics.cpp
   WorkList.cpp
 
   LINK_LIBS
@@ -56,5 +60,6 @@ add_clang_library(clangStaticAnalyzerCore
   clangFrontend
   clangLex
   clangRewrite
+  clangToolingCore
   )
 

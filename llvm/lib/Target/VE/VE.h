@@ -37,7 +37,7 @@ namespace llvm {
 // Enums corresponding to VE condition codes, both icc's and fcc's.  These
 // values must be kept in sync with the ones in the .td file.
 namespace VECC {
-enum CondCodes {
+enum CondCode {
   // Integer comparison
   CC_IG =  0,  // Greater
   CC_IL =  1,  // Less
@@ -65,8 +65,21 @@ enum CondCodes {
   CC_AT =    15 + 6, // Always
 };
 }
+// Enums corresponding to VE Rounding Mode.  These values must be kept in
+// sync with the ones in the .td file.
+namespace VERD {
+enum RoundingMode {
+  RD_NONE = 0, // According to PSW
+  RD_RZ = 8,   // Round toward Zero
+  RD_RP = 9,   // Round toward Plus infinity
+  RD_RM = 10,  // Round toward Minus infinity
+  RD_RN = 11,  // Round to Nearest (ties to Even)
+  RD_RA = 12,  // Round to Nearest (ties to Away)
+  UNKNOWN
+};
+}
 
-inline static const char *VECondCodeToString(VECC::CondCodes CC) {
+inline static const char *VECondCodeToString(VECC::CondCode CC) {
   switch (CC) {
   case VECC::CC_IG:    return "gt";
   case VECC::CC_IL:    return "lt";
@@ -93,6 +106,28 @@ inline static const char *VECondCodeToString(VECC::CondCodes CC) {
   }
   llvm_unreachable("Invalid cond code");
 }
+
+inline static const char *VERDToString(VERD::RoundingMode R) {
+  switch (R) {
+  case VERD::RD_NONE:
+    return "";
+  case VERD::RD_RZ:
+    return ".rz";
+  case VERD::RD_RP:
+    return ".rp";
+  case VERD::RD_RM:
+    return ".rm";
+  case VERD::RD_RN:
+    return ".rn";
+  case VERD::RD_RA:
+    return ".ra";
+  default:
+    llvm_unreachable("Invalid branch predicate");
+  }
+}
+
+inline unsigned M0(unsigned Val) { return Val + 64; }
+inline unsigned M1(unsigned Val) { return Val; }
 
 } // namespace llvm
 #endif

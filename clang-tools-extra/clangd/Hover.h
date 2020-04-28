@@ -62,7 +62,7 @@ struct HoverInfo {
   /// Pretty-printed variable type.
   /// Set only for variables.
   llvm::Optional<std::string> Type;
-  /// Set for functions and lambadas.
+  /// Set for functions and lambdas.
   llvm::Optional<std::string> ReturnType;
   /// Set for functions, lambdas and macros with parameters.
   llvm::Optional<std::vector<Param>> Parameters;
@@ -70,10 +70,18 @@ struct HoverInfo {
   llvm::Optional<std::vector<Param>> TemplateParameters;
   /// Contains the evaluated value of the symbol if available.
   llvm::Optional<std::string> Value;
+  /// Contains the byte-size of fields and types where it's interesting.
+  llvm::Optional<uint64_t> Size;
+  /// Contains the offset of fields within the enclosing class.
+  llvm::Optional<uint64_t> Offset;
 
   /// Produce a user-readable information.
   markup::Document present() const;
 };
+
+// Try to infer structure of a documentation comment (e.g. line breaks).
+void parseDocumentation(llvm::StringRef Input, markup::Document &Output);
+
 llvm::raw_ostream &operator<<(llvm::raw_ostream &, const HoverInfo::Param &);
 inline bool operator==(const HoverInfo::Param &LHS,
                        const HoverInfo::Param &RHS) {

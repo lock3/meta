@@ -95,6 +95,7 @@ namespace clang {
     void VisitCXXConversionDecl(CXXConversionDecl *D);
     void VisitFieldDecl(FieldDecl *D);
     void VisitMSPropertyDecl(MSPropertyDecl *D);
+    void VisitMSGuidDecl(MSGuidDecl *D);
     void VisitIndirectFieldDecl(IndirectFieldDecl *D);
     void VisitVarDecl(VarDecl *D);
     void VisitImplicitParamDecl(ImplicitParamDecl *D);
@@ -955,6 +956,17 @@ void ASTDeclWriter::VisitMSPropertyDecl(MSPropertyDecl *D) {
   Record.AddIdentifierRef(D->getGetterId());
   Record.AddIdentifierRef(D->getSetterId());
   Code = serialization::DECL_MS_PROPERTY;
+}
+
+void ASTDeclWriter::VisitMSGuidDecl(MSGuidDecl *D) {
+  VisitValueDecl(D);
+  MSGuidDecl::Parts Parts = D->getParts();
+  Record.push_back(Parts.Part1);
+  Record.push_back(Parts.Part2);
+  Record.push_back(Parts.Part3);
+  for (auto C : Parts.Part4And5)
+    Record.push_back(C);
+  Code = serialization::DECL_MS_GUID;
 }
 
 void ASTDeclWriter::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
@@ -2309,7 +2321,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //DeclRefExpr
@@ -2333,7 +2345,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //Integer Literal
@@ -2352,7 +2364,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   //Character Literal
@@ -2371,7 +2383,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //InstantiationDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //UnexpandedParamPack
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ContainsErrors
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ContainsErrors
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetValueKind
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); //GetObjectKind
   // CastExpr
@@ -2451,12 +2463,12 @@ void ASTWriter::WriteDecl(ASTContext &Context, Decl *D) {
   SourceLocation Loc = D->getLocation();
   unsigned Index = ID - FirstDeclID;
   if (DeclOffsets.size() == Index)
-    DeclOffsets.push_back(DeclOffset(Loc, Offset));
+    DeclOffsets.emplace_back(Loc, Offset);
   else if (DeclOffsets.size() < Index) {
     // FIXME: Can/should this happen?
     DeclOffsets.resize(Index+1);
     DeclOffsets[Index].setLocation(Loc);
-    DeclOffsets[Index].BitOffset = Offset;
+    DeclOffsets[Index].setBitOffset(Offset);
   } else {
     llvm_unreachable("declarations should be emitted in ID order");
   }

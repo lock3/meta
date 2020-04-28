@@ -1996,6 +1996,20 @@ static void handleCommonAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     D->addAttr(CA);
 }
 
+static void handleCmseNSEntryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  if (S.LangOpts.CPlusPlus && !D->getDeclContext()->isExternCContext()) {
+    S.Diag(AL.getLoc(), diag::err_attribute_not_clinkage) << AL;
+    return;
+  }
+
+  if (cast<FunctionDecl>(D)->getStorageClass() == SC_Static) {
+    S.Diag(AL.getLoc(), diag::warn_attribute_cmse_entry_static);
+    return;
+  }
+
+  D->addAttr(::new (S.Context) CmseNSEntryAttr(S.Context, AL));
+}
+
 static void handleNakedAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (checkAttrMutualExclusion<DisableTailCallsAttr>(S, D, AL))
     return;
@@ -2818,6 +2832,12 @@ static void handleWarnUnusedResult(Sema &S, Decl *D, const ParsedAttr &AL) {
 
   StringRef Str;
   if ((AL.isCXX11Attribute() || AL.isC2xAttribute()) && !AL.getScopeName()) {
+    // The standard attribute cannot be applied to variable declarations such
+    // as a function pointer.
+    if (isa<VarDecl>(D))
+      S.Diag(AL.getLoc(), diag::warn_attribute_wrong_decl_type_str)
+          << AL << "functions, classes, or enumerations";
+
     // If this is spelled as the standard C++17 attribute, but not in C++17,
     // warn about using it as an extension. If there are attribute arguments,
     // then claim it's a C++2a extension instead.
@@ -2825,8 +2845,8 @@ static void handleWarnUnusedResult(Sema &S, Decl *D, const ParsedAttr &AL) {
     // extension warning for C2x mode.
     const LangOptions &LO = S.getLangOpts();
     if (AL.getNumArgs() == 1) {
-      if (LO.CPlusPlus && !LO.CPlusPlus2a)
-        S.Diag(AL.getLoc(), diag::ext_cxx2a_attr) << AL;
+      if (LO.CPlusPlus && !LO.CPlusPlus20)
+        S.Diag(AL.getLoc(), diag::ext_cxx20_attr) << AL;
 
       // Since this this is spelled [[nodiscard]], get the optional string
       // literal. If in C++ mode, but not in C++2a mode, diagnose as an
@@ -4073,8 +4093,9 @@ void Sema::AddModeAttr(Decl *D, const AttributeCommonInfo &CI,
     Diag(AttrLoc, diag::err_enum_mode_vector_type) << Name << CI.getRange();
     return;
   }
-  bool IntegralOrAnyEnumType =
-      OldElemTy->isIntegralOrEnumerationType() || OldElemTy->getAs<EnumType>();
+  bool IntegralOrAnyEnumType = (OldElemTy->isIntegralOrEnumerationType() &&
+                                !OldElemTy->isExtIntType()) ||
+                               OldElemTy->getAs<EnumType>();
 
   if (!OldElemTy->getAs<BuiltinType>() && !OldElemTy->isComplexType() &&
       !IntegralOrAnyEnumType)
@@ -5492,9 +5513,9 @@ static void handleObjCPreciseLifetimeAttr(Sema &S, Decl *D,
 //===----------------------------------------------------------------------===//
 
 UuidAttr *Sema::mergeUuidAttr(Decl *D, const AttributeCommonInfo &CI,
-                              StringRef Uuid) {
+                              StringRef UuidAsWritten, MSGuidDecl *GuidDecl) {
   if (const auto *UA = D->getAttr<UuidAttr>()) {
-    if (UA->getGuid().equals_lower(Uuid))
+    if (declaresSameEntity(UA->getGuidDecl(), GuidDecl))
       return nullptr;
     if (!UA->getGuid().empty()) {
       Diag(UA->getLocation(), diag::err_mismatched_uuid);
@@ -5503,7 +5524,7 @@ UuidAttr *Sema::mergeUuidAttr(Decl *D, const AttributeCommonInfo &CI,
     }
   }
 
-  return ::new (Context) UuidAttr(Context, CI, Uuid);
+  return ::new (Context) UuidAttr(Context, CI, UuidAsWritten, GuidDecl);
 }
 
 static void handleUuidAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -5513,13 +5534,14 @@ static void handleUuidAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
   }
 
-  StringRef StrRef;
+  StringRef OrigStrRef;
   SourceLocation LiteralLoc;
-  if (!S.checkStringLiteralArgumentAttr(AL, 0, StrRef, &LiteralLoc))
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, OrigStrRef, &LiteralLoc))
     return;
 
   // GUID format is "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" or
   // "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}", normalize to the former.
+  StringRef StrRef = OrigStrRef;
   if (StrRef.size() == 38 && StrRef.front() == '{' && StrRef.back() == '}')
     StrRef = StrRef.drop_front().drop_back();
 
@@ -5541,6 +5563,16 @@ static void handleUuidAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     }
   }
 
+  // Convert to our parsed format and canonicalize.
+  MSGuidDecl::Parts Parsed;
+  StrRef.substr(0, 8).getAsInteger(16, Parsed.Part1);
+  StrRef.substr(9, 4).getAsInteger(16, Parsed.Part2);
+  StrRef.substr(14, 4).getAsInteger(16, Parsed.Part3);
+  for (unsigned i = 0; i != 8; ++i)
+    StrRef.substr(19 + 2 * i + (i >= 2 ? 1 : 0), 2)
+        .getAsInteger(16, Parsed.Part4And5[i]);
+  MSGuidDecl *Guid = S.Context.getMSGuidDecl(Parsed);
+
   // FIXME: It'd be nice to also emit a fixit removing uuid(...) (and, if it's
   // the only thing in the [] list, the [] too), and add an insertion of
   // __declspec(uuid(...)).  But sadly, neither the SourceLocs of the commas
@@ -5550,7 +5582,7 @@ static void handleUuidAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (AL.isMicrosoftAttribute()) // Check for [uuid(...)] spelling.
     S.Diag(AL.getLoc(), diag::warn_atl_uuid_deprecated);
 
-  UuidAttr *UA = S.mergeUuidAttr(D, AL, StrRef);
+  UuidAttr *UA = S.mergeUuidAttr(D, AL, OrigStrRef, Guid);
   if (UA)
     D->addAttr(UA);
 }
@@ -6703,7 +6735,7 @@ static void handleMSAllocatorAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   handleSimpleAttribute<MSAllocatorAttr>(S, D, AL);
 }
 
-static void handeAcquireHandleAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleAcquireHandleAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (AL.isUsedAsTypeAttr())
     return;
   // Warn if the parameter is definitely not an output parameter.
@@ -6952,9 +6984,15 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_CUDAHost:
     handleSimpleAttributeWithExclusions<CUDAHostAttr, CUDAGlobalAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_HIPPinnedShadow:
-    handleSimpleAttributeWithExclusions<HIPPinnedShadowAttr, CUDADeviceAttr,
-                                        CUDAConstantAttr>(S, D, AL);
+  case ParsedAttr::AT_CUDADeviceBuiltinSurfaceType:
+    handleSimpleAttributeWithExclusions<CUDADeviceBuiltinSurfaceTypeAttr,
+                                        CUDADeviceBuiltinTextureTypeAttr>(S, D,
+                                                                          AL);
+    break;
+  case ParsedAttr::AT_CUDADeviceBuiltinTextureType:
+    handleSimpleAttributeWithExclusions<CUDADeviceBuiltinTextureTypeAttr,
+                                        CUDADeviceBuiltinSurfaceTypeAttr>(S, D,
+                                                                          AL);
     break;
   case ParsedAttr::AT_GNUInline:
     handleGNUInlineAttr(S, D, AL);
@@ -7181,6 +7219,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_NoDebug:
     handleNoDebugAttr(S, D, AL);
     break;
+  case ParsedAttr::AT_CmseNSEntry:
+    handleCmseNSEntryAttr(S, D, AL);
+    break;
   case ParsedAttr::AT_StdCall:
   case ParsedAttr::AT_CDecl:
   case ParsedAttr::AT_FastCall:
@@ -7387,7 +7428,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
 
   case ParsedAttr::AT_AcquireHandle:
-    handeAcquireHandleAttr(S, D, AL);
+    handleAcquireHandleAttr(S, D, AL);
     break;
 
   case ParsedAttr::AT_ReleaseHandle:

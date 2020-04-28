@@ -902,8 +902,3 @@ CheckerManager::getCachedStmtCheckersFor(const Stmt *S, bool isPreVisit) {
       Checkers.push_back(Info.CheckFn);
   return Checkers;
 }
-
-CheckerManager::~CheckerManager() {
-  for (const auto &CheckerDtor : CheckerDtors)
-    CheckerDtor();
-}

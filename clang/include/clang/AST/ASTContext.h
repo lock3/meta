@@ -104,6 +104,7 @@ class MangleNumberingContext;
 class MaterializeTemporaryExpr;
 class MemberSpecializationInfo;
 class Module;
+struct MSGuidDeclParts;
 class ObjCCategoryDecl;
 class ObjCCategoryImplDecl;
 class ObjCContainerDecl;
@@ -116,6 +117,7 @@ class ObjCPropertyDecl;
 class ObjCPropertyImplDecl;
 class ObjCProtocolDecl;
 class ObjCTypeParamDecl;
+class OMPTraitInfo;
 struct ParsedTargetAttr;
 class Preprocessor;
 class Stmt;
@@ -223,6 +225,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<AtomicType> AtomicTypes;
   llvm::FoldingSet<AttributedType> AttributedTypes;
   mutable llvm::FoldingSet<PipeType> PipeTypes;
+  mutable llvm::FoldingSet<ExtIntType> ExtIntTypes;
+  mutable llvm::FoldingSet<DependentExtIntType> DependentExtIntTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
   mutable llvm::FoldingSet<DependentTemplateName> DependentTemplateNames;
@@ -268,6 +272,9 @@ class ASTContext : public RefCountedBase<ASTContext> {
 
   /// Mapping from __block VarDecls to BlockVarCopyInit.
   llvm::DenseMap<const VarDecl *, BlockVarCopyInit> BlockVarCopyInits;
+
+  /// Mapping from GUIDs to the corresponding MSGuidDecl.
+  mutable llvm::FoldingSet<MSGuidDecl> MSGuidDecls;
 
   /// Used to cleanups APValues stored in the AST.
   mutable llvm::SmallVector<APValue *, 0> APValueCleanups;
@@ -976,7 +983,7 @@ public:
 #include "clang/Basic/OpenCLImageTypes.def"
   CanQualType OCLSamplerTy, OCLEventTy, OCLClkEventTy;
   CanQualType OCLQueueTy, OCLReserveIDTy;
-  CanQualType OMPArraySectionTy;
+  CanQualType OMPArraySectionTy, OMPArrayShapingTy, OMPIteratorTy;
 #define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
   CanQualType Id##Ty;
 #include "clang/Basic/OpenCLExtensionTypes.def"
@@ -990,7 +997,10 @@ public:
 
   // Decl used to help define __builtin_va_list for some targets.
   // The decl is built when constructing 'BuiltinVaListDecl'.
-  mutable Decl *VaListTagDecl;
+  mutable Decl *VaListTagDecl = nullptr;
+
+  // Implicitly-declared type 'struct _GUID'.
+  mutable TagDecl *MSGuidTagDecl = nullptr;
 
   ASTContext(LangOptions &LOpts, SourceManager &SM, IdentifierTable &idents,
              SelectorTable &sels, Builtin::Context &builtins);
@@ -1205,6 +1215,14 @@ public:
 
   /// Return a write_only pipe type for the specified type.
   QualType getWritePipeType(QualType T) const;
+
+  /// Return an extended integer type with the specified signedness and bit
+  /// count.
+  QualType getExtIntType(bool Unsigned, unsigned NumBits) const;
+
+  /// Return a dependent extended integer type with the specified signedness and
+  /// bit count.
+  QualType getDependentExtIntType(bool Unsigned, Expr *BitsExpr) const;
 
   /// Gets the struct used to keep track of the extended descriptor for
   /// pointer to blocks.
@@ -1872,6 +1890,15 @@ public:
   /// Retrieve the type of the \c __builtin_ms_va_list type.
   QualType getBuiltinMSVaListType() const {
     return getTypeDeclType(getBuiltinMSVaListDecl());
+  }
+
+  /// Retrieve the implicitly-predeclared 'struct _GUID' declaration.
+  TagDecl *getMSGuidTagDecl() const { return MSGuidTagDecl; }
+
+  /// Retrieve the implicitly-predeclared 'struct _GUID' type.
+  QualType getMSGuidType() const {
+    assert(MSGuidTagDecl && "asked for GUID type but MS extensions disabled");
+    return getTagDeclType(MSGuidTagDecl);
   }
 
   /// Return whether a declaration to a builtin is allowed to be
@@ -2555,7 +2582,7 @@ public:
   QualType mergeTypes(QualType, QualType, bool OfBlockPointer=false,
                       bool Unqualified = false, bool BlockReturnType = false);
   QualType mergeFunctionTypes(QualType, QualType, bool OfBlockPointer=false,
-                              bool Unqualified = false);
+                              bool Unqualified = false, bool AllowCXX = false);
   QualType mergeFunctionParameterTypes(QualType, QualType,
                                        bool OfBlockPointer = false,
                                        bool Unqualified = false);
@@ -2776,6 +2803,10 @@ public:
   /// PredefinedExpr to cache evaluated results.
   StringLiteral *getPredefinedStringLiteralFromCache(StringRef Key) const;
 
+  /// Return a declaration for the global GUID object representing the given
+  /// GUID value.
+  MSGuidDecl *getMSGuidDecl(MSGuidDeclParts Parts) const;
+
   /// Parses the target attributes passed in, and returns only the ones that are
   /// valid feature names.
   ParsedTargetAttr filterFunctionTargetAttrs(const TargetAttr *TD) const;
@@ -2983,6 +3014,14 @@ public:
   };
 
   llvm::StringMap<SectionInfo> SectionInfos;
+
+  /// Return a new OMPTraitInfo object owned by this context.
+  OMPTraitInfo &getNewOMPTraitInfo();
+
+private:
+  /// All OMPTraitInfo objects live in this collection, one per
+  /// `pragma omp [begin] declare variant` directive.
+  SmallVector<OMPTraitInfo *, 4> OMPTraitInfoVector;
 };
 
 /// Utility function for constructing a nullary selector.

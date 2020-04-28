@@ -815,6 +815,7 @@ CGFunctionInfo *CGFunctionInfo::create(unsigned llvmCC,
   FI->ASTCallingConvention = info.getCC();
   FI->InstanceMethod = instanceMethod;
   FI->ChainCall = chainCall;
+  FI->CmseNSCall = info.getCmseNSCall();
   FI->NoReturn = info.getNoReturn();
   FI->ReturnsRetained = info.getProducesResult();
   FI->NoCallerSavedRegs = info.getNoCallerSavedRegs();
@@ -1232,7 +1233,7 @@ static llvm::Value *CreateCoercedLoad(Address Src, llvm::Type *Ty,
 
   if (llvm::StructType *SrcSTy = dyn_cast<llvm::StructType>(SrcTy)) {
     Src = EnterStructPointerForCoercedAccess(Src, SrcSTy, DstSize, CGF);
-    SrcTy = Src.getType()->getElementType();
+    SrcTy = Src.getElementType();
   }
 
   uint64_t SrcSize = CGF.CGM.getDataLayout().getTypeAllocSize(SrcTy);
@@ -1298,7 +1299,7 @@ static void CreateCoercedStore(llvm::Value *Src,
                                bool DstIsVolatile,
                                CodeGenFunction &CGF) {
   llvm::Type *SrcTy = Src->getType();
-  llvm::Type *DstTy = Dst.getType()->getElementType();
+  llvm::Type *DstTy = Dst.getElementType();
   if (SrcTy == DstTy) {
     CGF.Builder.CreateStore(Src, Dst, DstIsVolatile);
     return;
@@ -1308,7 +1309,7 @@ static void CreateCoercedStore(llvm::Value *Src,
 
   if (llvm::StructType *DstSTy = dyn_cast<llvm::StructType>(DstTy)) {
     Dst = EnterStructPointerForCoercedAccess(Dst, DstSTy, SrcSize, CGF);
-    DstTy = Dst.getType()->getElementType();
+    DstTy = Dst.getElementType();
   }
 
   llvm::PointerType *SrcPtrTy = llvm::dyn_cast<llvm::PointerType>(SrcTy);
@@ -1877,6 +1878,9 @@ void CodeGenModule::ConstructAttributeList(
   if (FI.isNoReturn())
     FuncAttrs.addAttribute(llvm::Attribute::NoReturn);
 
+  if (FI.isCmseNSCall())
+    FuncAttrs.addAttribute("cmse_nonsecure_call");
+
   // If we have information about the function prototype, we can learn
   // attributes from there.
   AddAttributesFromFunctionProtoType(getContext(), FuncAttrs,
@@ -2004,6 +2008,9 @@ void CodeGenModule::ConstructAttributeList(
   }
 
   if (!AttrOnCallSite) {
+    if (TargetDecl && TargetDecl->hasAttr<CmseNSEntryAttr>())
+      FuncAttrs.addAttribute("cmse_nonsecure_entry");
+
     bool DisableTailCalls = false;
 
     if (CodeGenOpts.DisableTailCalls)
@@ -2077,6 +2084,7 @@ void CodeGenModule::ConstructAttributeList(
     hasUsedSRet = true;
     if (RetAI.getInReg())
       SRETAttrs.addAttribute(llvm::Attribute::InReg);
+    SRETAttrs.addAlignmentAttr(RetAI.getIndirectAlign().getQuantity());
     ArgAttrs[IRFunctionArgs.getSRetArgNo()] =
         llvm::AttributeSet::get(getLLVMContext(), SRETAttrs);
   }
@@ -4169,8 +4177,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         bool NeedCopy = false;
 
         if (Addr.getAlignment() < Align &&
-            llvm::getOrEnforceKnownAlignment(V, Align.getQuantity(), *TD) <
-                Align.getQuantity()) {
+            llvm::getOrEnforceKnownAlignment(V, Align.getAsAlign(), *TD) <
+                Align.getAsAlign()) {
           NeedCopy = true;
         } else if (I->hasLValue()) {
           auto LV = I->getKnownLValue();
@@ -4296,7 +4304,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       llvm::StructType *STy =
             dyn_cast<llvm::StructType>(ArgInfo.getCoerceToType());
       if (STy && ArgInfo.isDirect() && ArgInfo.getCanBeFlattened()) {
-        llvm::Type *SrcTy = Src.getType()->getElementType();
+        llvm::Type *SrcTy = Src.getElementType();
         uint64_t SrcSize = CGM.getDataLayout().getTypeAllocSize(SrcTy);
         uint64_t DstSize = CGM.getDataLayout().getTypeAllocSize(STy);
 

@@ -14,6 +14,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LifetimeAttrData.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
+#include "llvm/ADT/StringExtras.h"
 #include <map>
 #include <set>
 

@@ -14,6 +14,7 @@
 #ifndef LLVM_CLANG_SERIALIZATION_ASTRECORDREADER_H
 #define LLVM_CLANG_SERIALIZATION_ASTRECORDREADER_H
 
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/AbstractBasicReader.h"
 #include "clang/Lex/Token.h"
 #include "clang/Serialization/ASTReader.h"
@@ -22,7 +23,7 @@
 #include "llvm/ADT/APSInt.h"
 
 namespace clang {
-struct OMPTraitInfo;
+class OMPTraitInfo;
 
 /// An object for streaming information from a record.
 class ASTRecordReader
@@ -260,7 +261,7 @@ public:
   }
 
   /// Read an OMPTraitInfo object, advancing Idx.
-  OMPTraitInfo readOMPTraitInfo();
+  OMPTraitInfo *readOMPTraitInfo();
 
   /// Read an OpenMP clause, advancing Idx.
   OMPClause *readOMPClause();

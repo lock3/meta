@@ -1,4 +1,4 @@
-// RUN: mlir-opt %s -pass-pipeline='func(canonicalize)' -split-input-file | FileCheck %s
+// RUN: mlir-opt -allow-unregistered-dialect %s -pass-pipeline='func(canonicalize)' -split-input-file | FileCheck %s
 
 // CHECK-LABEL: func @test_subi_zero
 func @test_subi_zero(%arg0: i32) -> i32 {
@@ -370,7 +370,7 @@ func @dead_dealloc_fold_multi_use(%cond : i1) {
 
 // CHECK-LABEL: func @dead_block_elim
 func @dead_block_elim() {
-  // CHECK-NOT ^bb
+  // CHECK-NOT: ^bb
   func @nested() {
     return
 
@@ -392,14 +392,20 @@ func @dyn_shape_fold(%L : index, %M : index) -> (memref<? x ? x i32>, memref<? x
   %N = constant 1024 : index
   %K = constant 512 : index
 
-  // CHECK-NEXT: %0 = alloc(%arg0) : memref<?x1024xf32>
+  // CHECK-NEXT: alloc(%arg0) : memref<?x1024xf32>
   %a = alloc(%L, %N) : memref<? x ? x f32>
 
-  // CHECK-NEXT: %1 = alloc(%arg1) : memref<4x1024x8x512x?xf32>
+  // CHECK-NEXT: alloc(%arg1) : memref<4x1024x8x512x?xf32>
   %b = alloc(%N, %K, %M) : memref<4 x ? x 8 x ? x ? x f32>
 
-  // CHECK-NEXT: %2 = alloc() : memref<512x1024xi32>
+  // CHECK-NEXT: alloc() : memref<512x1024xi32>
   %c = alloc(%K, %N) : memref<? x ? x i32>
+
+  // CHECK: alloc() : memref<9x9xf32>
+  %d = alloc(%nine, %nine) : memref<? x ? x f32>
+
+  // CHECK: alloca(%arg1) : memref<4x1024x8x512x?xf32>
+  %e = alloca(%N, %K, %M) : memref<4 x ? x 8 x ? x ? x f32>
 
   // CHECK: affine.for
   affine.for %i = 0 to %L {
@@ -411,9 +417,6 @@ func @dyn_shape_fold(%L : index, %M : index) -> (memref<? x ? x i32>, memref<? x
       store %v, %b[%zero, %zero, %i, %j, %zero] : memref<4x?x8x?x?xf32>
     }
   }
-
-  // CHECK: alloc() : memref<9x9xf32>
-  %d = alloc(%nine, %nine) : memref<? x ? x f32>
 
   return %c, %d : memref<? x ? x i32>, memref<? x ? x f32>
 }
@@ -501,52 +504,6 @@ func @const_fold_propagate() -> memref<?x?xf32> {
   // CHECK: = alloc() : memref<64x32xf32>
   %Av = alloc(%VT_i_s, %VT_k_l) : memref<?x?xf32>
   return %Av : memref<?x?xf32>
-}
-
-// CHECK-LABEL: func @br_folding
-func @br_folding() -> i32 {
-  // CHECK-NEXT: %[[CST:.*]] = constant 0 : i32
-  // CHECK-NEXT: return %[[CST]] : i32
-  %c0_i32 = constant 0 : i32
-  br ^bb1(%c0_i32 : i32)
-^bb1(%x : i32):
-  return %x : i32
-}
-
-// CHECK-LABEL: func @cond_br_folding
-func @cond_br_folding(%cond : i1, %a : i32) {
-  %false_cond = constant 0 : i1
-  %true_cond = constant 1 : i1
-  cond_br %cond, ^bb1, ^bb2(%a : i32)
-
-^bb1:
-  // CHECK: ^bb1:
-  // CHECK-NEXT: br ^bb3
-  cond_br %true_cond, ^bb3, ^bb2(%a : i32)
-
-^bb2(%x : i32):
-  // CHECK: ^bb2
-  // CHECK: br ^bb3
-  cond_br %false_cond, ^bb2(%x : i32), ^bb3
-
-^bb3:
-  return
-}
-
-// CHECK-LABEL: func @cond_br_and_br_folding
-func @cond_br_and_br_folding(%a : i32) {
-  // Test the compound folding of conditional and unconditional branches.
-  // CHECK-NEXT: return
-
-  %false_cond = constant 0 : i1
-  %true_cond = constant 1 : i1
-  cond_br %true_cond, ^bb2, ^bb1(%a : i32)
-
-^bb1(%x : i32):
-  cond_br %false_cond, ^bb1(%x : i32), ^bb2
-
-^bb2:
-  return
 }
 
 // CHECK-LABEL: func @indirect_call_folding
@@ -895,3 +852,25 @@ func @index_cast_fold() -> (i16, index) {
   // CHECK: return %[[C4_I16]], %[[C4]] : i16, index
   return %1, %2 : i16, index
 }
+
+// CHECK-LABEL: func @remove_dead_else
+func @remove_dead_else(%M : memref<100 x i32>) {
+  affine.for %i = 0 to 100 {
+    affine.load %M[%i] : memref<100xi32>
+    affine.if affine_set<(d0) : (d0 - 2 >= 0)>(%i) {
+      affine.for %j = 0 to 100 {
+        affine.load %M[%j] : memref<100xi32>
+      }
+    } else {
+      // Nothing
+    }
+    affine.load %M[%i] : memref<100xi32>
+  }
+  return
+}
+// CHECK:      affine.if
+// CHECK-NEXT:   affine.for
+// CHECK-NEXT:     affine.load
+// CHECK-NEXT:   }
+// CHECK-NEXT: }
+// CHECK-NEXT: affine.load

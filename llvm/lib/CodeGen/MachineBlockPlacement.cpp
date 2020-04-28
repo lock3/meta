@@ -2506,14 +2506,9 @@ MachineBlockPlacement::collectLoopBlockSet(const MachineLoop &L) {
   // its frequency and the frequency of the loop block. When it is too small,
   // don't add it to the loop chain. If there are outer loops, then this block
   // will be merged into the first outer loop chain for which this block is not
-  // cold anymore.
-  //
-  // If a block uses static profiling data (e.g. from '__builtin_expect()'),
-  // then the programmer is explicitly telling us which paths are hot and cold.
-  // There's no reason for the compiler to believe otherwise, unless
-  // '-fprofile-use' is specified.
-  if (F->getFunction().hasProfileData() || ForceLoopColdBlock ||
-      L.hasStaticProfInfo()) {
+  // cold anymore. This needs precise profile data and we only do this when
+  // profile data is available.
+  if (F->getFunction().hasProfileData() || ForceLoopColdBlock) {
     BlockFrequency LoopFreq(0);
     for (auto LoopPred : L.getHeader()->predecessors())
       if (!L.contains(LoopPred))
@@ -2919,10 +2914,7 @@ bool MachineBlockPlacement::repeatedlyTailDuplicateBlock(
   // duplicated into is still small enough to be duplicated again.
   // No need to call markBlockSuccessors in this case, as the blocks being
   // duplicated from here on are already scheduled.
-  // Note that DuplicatedToLPred always implies Removed.
-  while (DuplicatedToLPred) {
-    assert(Removed && "Block must have been removed to be duplicated into its "
-           "layout predecessor.");
+  while (DuplicatedToLPred && Removed) {
     MachineBasicBlock *DupBB, *DupPred;
     // The removal callback causes Chain.end() to be updated when a block is
     // removed. On the first pass through the loop, the chain end should be the
@@ -2961,8 +2953,7 @@ bool MachineBlockPlacement::repeatedlyTailDuplicateBlock(
 ///                          chosen in the given order due to unnatural CFG
 ///                          only needed if \p BB is removed and
 ///                          \p PrevUnplacedBlockIt pointed to \p BB.
-/// \p DuplicatedToLPred - True if the block was duplicated into LPred. Will
-///                        only be true if the block was removed.
+/// \p DuplicatedToLPred - True if the block was duplicated into LPred.
 /// \return  - True if the block was duplicated into all preds and removed.
 bool MachineBlockPlacement::maybeTailDuplicateBlock(
     MachineBasicBlock *BB, MachineBasicBlock *LPred,

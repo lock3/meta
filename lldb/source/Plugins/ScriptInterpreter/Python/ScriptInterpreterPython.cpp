@@ -224,10 +224,6 @@ struct InitializePythonRAII {
 public:
   InitializePythonRAII()
       : m_gil_state(PyGILState_UNLOCKED), m_was_already_initialized(false) {
-    // Python will muck with STDIN terminal state, so save off any current TTY
-    // settings so we can restore them.
-    m_stdin_tty_state.Save(STDIN_FILENO, false);
-
     InitializePythonHome();
 
 #ifdef LLDB_USE_LIBEDIT_READLINE_COMPAT_MODULE
@@ -271,8 +267,6 @@ public:
       // We initialized the threads in this function, just unlock the GIL.
       PyEval_SaveThread();
     }
-
-    m_stdin_tty_state.Restore();
   }
 
 private:
@@ -953,7 +947,7 @@ bool ScriptInterpreterPythonImpl::ExecuteOneLine(
                                            true));
 #endif
           if (conn_up->IsConnected()) {
-            output_comm.SetConnection(conn_up.release());
+            output_comm.SetConnection(std::move(conn_up));
             output_comm.SetReadThreadBytesReceivedCallback(
                 ReadThreadBytesReceived, &result->GetOutputStream());
             output_comm.StartReadThread();
@@ -2772,6 +2766,7 @@ bool ScriptInterpreterPythonImpl::LoadScriptingModule(
   {
     FileSpec target_file(pathname);
     FileSystem::Instance().Resolve(target_file);
+    FileSystem::Instance().Collect(target_file);
     std::string basename(target_file.GetFilename().GetCString());
 
     StreamString command_stream;

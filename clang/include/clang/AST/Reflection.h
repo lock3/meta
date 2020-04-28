@@ -382,9 +382,7 @@ public:
     return NewName;
   }
 
-  std::string getNewNameAsString() const {
-    return cast<StringLiteral>(NewName)->getString().str();
-  }
+  std::string getNewNameAsString() const;
 };
 
 /// The reflection class provides context for evaluating queries.

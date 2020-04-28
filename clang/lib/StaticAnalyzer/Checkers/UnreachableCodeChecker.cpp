@@ -258,6 +258,6 @@ void ento::registerUnreachableCodeChecker(CheckerManager &mgr) {
   mgr.registerChecker<UnreachableCodeChecker>();
 }
 
-bool ento::shouldRegisterUnreachableCodeChecker(const LangOptions &LO) {
+bool ento::shouldRegisterUnreachableCodeChecker(const CheckerManager &mgr) {
   return true;
 }

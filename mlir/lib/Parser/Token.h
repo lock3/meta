@@ -23,7 +23,6 @@ public:
 #define TOK_IDENTIFIER(NAME) NAME,
 #define TOK_LITERAL(NAME) NAME,
 #define TOK_PUNCTUATION(NAME, SPELLING) NAME,
-#define TOK_OPERATOR(NAME, SPELLING) NAME,
 #define TOK_KEYWORD(SPELLING) kw_##SPELLING,
 #include "TokenKinds.def"
   };
@@ -50,7 +49,8 @@ public:
   bool isNot(Kind k) const { return kind != k; }
 
   /// Return true if this token isn't one of the specified kinds.
-  template <typename... T> bool isNot(Kind k1, Kind k2, T... others) const {
+  template <typename... T>
+  bool isNot(Kind k1, Kind k2, T... others) const {
     return !isAny(k1, k2, others...);
   }
 
@@ -65,7 +65,10 @@ public:
 
   /// For an integer token, return its value as an uint64_t.  If it doesn't fit,
   /// return None.
-  Optional<uint64_t> getUInt64IntegerValue() const;
+  static Optional<uint64_t> getUInt64IntegerValue(StringRef spelling);
+  Optional<uint64_t> getUInt64IntegerValue() const {
+    return getUInt64IntegerValue(getSpelling());
+  }
 
   /// For a floatliteral token, return its value as a double. Returns None in
   /// the case of underflow or overflow.

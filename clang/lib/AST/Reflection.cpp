@@ -22,6 +22,10 @@
 #include "clang/Sema/SemaDiagnostic.h"
 
 namespace clang {
+  std::string ReflectionModifiers::getNewNameAsString() const {
+    return cast<StringLiteral>(NewName)->getString().str();
+  }
+
   enum ReflectionQuery : unsigned {
     query_unknown,
 

@@ -988,10 +988,16 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
                                         NextToken().is(tok::kw_operator)))) &&
       mayHaveIdentifier) {
     // declarator-id
-    if (Tok.is(tok::annot_cxxscope))
+    if (Tok.is(tok::annot_cxxscope)) {
+      CXXScopeSpec SS;
+      Actions.RestoreNestedNameSpecifierAnnotation(
+          Tok.getAnnotationValue(), Tok.getAnnotationRange(), SS);
+      if (SS.isInvalid())
+        return TPResult::Error;
       ConsumeAnnotationToken();
-    else if (Tok.is(tok::identifier))
+    } else if (Tok.is(tok::identifier)) {
       TentativelyDeclaredIdentifiers.push_back(Tok.getIdentifierInfo());
+    }
     if (Tok.is(tok::kw_operator)) {
       if (TryParseOperatorId() == TPResult::Error)
         return TPResult::Error;
@@ -1123,6 +1129,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_L__FUNCSIG__:
   case tok::kw___PRETTY_FUNCTION__:
   case tok::kw___uuidof:
+  case tok::kw___builtin_unique_stable_name:
   case tok::kw___compiler_error:
 #define TYPE_TRAIT(N,Spelling,K) \
   case tok::kw_##Spelling:
@@ -1139,6 +1146,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_half:
   case tok::kw_float:
   case tok::kw_int:
+  case tok::kw__ExtInt:
   case tok::kw_long:
   case tok::kw___int64:
   case tok::kw___int128:
@@ -1544,7 +1552,9 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
     TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
     // If lookup for the template-name found nothing, don't assume we have a
     // definitive disambiguation result yet.
-    if (TemplateId->Kind == TNK_Undeclared_template && InvalidAsDeclSpec) {
+    if ((TemplateId->hasInvalidName() ||
+         TemplateId->Kind == TNK_Undeclared_template) &&
+        InvalidAsDeclSpec) {
       // 'template-id(' can be a valid expression but not a valid decl spec if
       // the template-name is not declared, but we don't consider this to be a
       // definitive disambiguation. In any other context, it's an error either
@@ -1552,6 +1562,8 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
       *InvalidAsDeclSpec = NextToken().is(tok::l_paren);
       return TPResult::Ambiguous;
     }
+    if (TemplateId->hasInvalidName())
+      return TPResult::Error;
     if (IsPlaceholderSpecifier(TemplateId, /*Lookahead=*/0))
       return TPResult::True;
     if (TemplateId->Kind != TNK_Type_template)
@@ -1571,6 +1583,13 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
           NextToken().is(tok::annot_template_id)) {
         TemplateIdAnnotation *TemplateId =
             takeTemplateIdAnnotation(NextToken());
+        if (TemplateId->hasInvalidName()) {
+          if (InvalidAsDeclSpec) {
+            *InvalidAsDeclSpec = NextToken().is(tok::l_paren);
+            return TPResult::Ambiguous;
+          }
+          return TPResult::Error;
+        }
         if (IsPlaceholderSpecifier(TemplateId, /*Lookahead=*/1))
           return TPResult::True;
       }
@@ -1767,6 +1786,24 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw__Atomic:
     return TPResult::True;
 
+  case tok::kw__ExtInt: {
+    if (NextToken().isNot(tok::l_paren))
+      return TPResult::Error;
+    RevertingTentativeParsingAction PA(*this);
+    ConsumeToken();
+    ConsumeParen();
+
+    if (!SkipUntil(tok::r_paren, StopAtSemi))
+      return TPResult::Error;
+
+    if (Tok.is(tok::l_paren))
+      return TPResult::Ambiguous;
+
+    if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace))
+      return BracedCastResult;
+
+    return TPResult::True;
+  }
   default:
     return TPResult::False;
   }
@@ -1799,6 +1836,7 @@ bool Parser::isCXXDeclarationSpecifierAType() {
   case tok::kw_bool:
   case tok::kw_short:
   case tok::kw_int:
+  case tok::kw__ExtInt:
   case tok::kw_long:
   case tok::kw___int64:
   case tok::kw___int128:
@@ -2018,17 +2056,14 @@ Parser::TryParseParameterDeclarationClause(bool *InvalidAsDeclaration,
     //   (a) the previous parameter did, and
     //   (b) this must be the first declaration of the function, so we can't
     //       inherit any default arguments from elsewhere.
-    // If we see an ')', then we've reached the end of a
-    // parameter-declaration-clause, and the last param is missing its default
-    // argument.
+    // FIXME: If we reach a ')' without consuming any '>'s, then this must
+    // also be a function parameter (that's missing its default argument).
     if (VersusTemplateArgument)
-      return Tok.isOneOf(tok::equal, tok::r_paren) ? TPResult::True
-                                                   : TPResult::False;
+      return Tok.is(tok::equal) ? TPResult::True : TPResult::False;
 
     if (Tok.is(tok::equal)) {
       // '=' assignment-expression
       // Parse through assignment-expression.
-      // FIXME: assignment-expression may contain an unparenthesized comma.
       if (!SkipUntil(tok::comma, tok::r_paren, StopAtSemi | StopBeforeMatch))
         return TPResult::Error;
     }

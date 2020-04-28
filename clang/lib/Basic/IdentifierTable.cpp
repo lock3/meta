@@ -97,11 +97,11 @@ namespace {
     KEYZVECTOR    = 0x40000,
     KEYCOROUTINES = 0x80000,
     KEYMODULES    = 0x100000,
-    KEYCXX2A      = 0x200000,
+    KEYCXX20      = 0x200000,
     KEYOPENCLCXX  = 0x400000,
     KEYMSCOMPAT   = 0x800000,
     KEYREFLECT    = 0x1000000,
-    KEYALLCXX = KEYCXX | KEYCXX11 | KEYCXX2A,
+    KEYALLCXX = KEYCXX | KEYCXX11 | KEYCXX20,
     KEYALL = (0xffffff & ~KEYNOMS18 &
               ~KEYNOOPENCL) // KEYNOMS18 and KEYNOOPENCL are used to exclude.
   };
@@ -123,7 +123,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   if (Flags == KEYALL) return KS_Enabled;
   if (LangOpts.CPlusPlus && (Flags & KEYCXX)) return KS_Enabled;
   if (LangOpts.CPlusPlus11 && (Flags & KEYCXX11)) return KS_Enabled;
-  if (LangOpts.CPlusPlus2a && (Flags & KEYCXX2A)) return KS_Enabled;
+  if (LangOpts.CPlusPlus20 && (Flags & KEYCXX20)) return KS_Enabled;
   if (LangOpts.C99 && (Flags & KEYC99)) return KS_Enabled;
   if (LangOpts.GNUKeywords && (Flags & KEYGNU)) return KS_Extension;
   if (LangOpts.MicrosoftExt && (Flags & KEYMS)) return KS_Extension;
@@ -143,7 +143,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   // We treat bridge casts as objective-C keywords so we can warn on them
   // in non-arc mode.
   if (LangOpts.ObjC && (Flags & KEYOBJC)) return KS_Enabled;
-  if (LangOpts.CPlusPlus2a && (Flags & KEYCONCEPTS)) return KS_Enabled;
+  if (LangOpts.CPlusPlus20 && (Flags & KEYCONCEPTS)) return KS_Enabled;
   if (LangOpts.Coroutines && (Flags & KEYCOROUTINES)) return KS_Enabled;
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
   if (LangOpts.Reflection && (Flags & KEYREFLECT)) return KS_Extension;
@@ -222,10 +222,6 @@ void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
 
   // Add the 'import' contextual keyword.
   get("import").setModulesImport(true);
-
-  // Add the 'consteval' keyword
-  if (LangOpts.CPlusPlus17)
-    get("consteval").setConsteval();
 }
 
 /// Checks if the specified token kind represents a keyword in the
@@ -263,7 +259,7 @@ bool IdentifierInfo::isCPlusPlusKeyword(const LangOptions &LangOpts) const {
   LangOptions LangOptsNoCPP = LangOpts;
   LangOptsNoCPP.CPlusPlus = false;
   LangOptsNoCPP.CPlusPlus11 = false;
-  LangOptsNoCPP.CPlusPlus2a = false;
+  LangOptsNoCPP.CPlusPlus20 = false;
   return !isKeyword(LangOptsNoCPP);
 }
 
