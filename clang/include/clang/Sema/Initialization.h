@@ -1344,7 +1344,7 @@ public:
   void AddOCLIntelSubgroupAVCZeroInitStep(QualType T);
 
   /// Add a step to passing an argument to an in/out/etc. paraemter.
-  void AddParameterModeInit(QualType T);
+  void AddParameterAdjustmentStep(QualType T);
 
   /// Add steps to unwrap a initializer list for a reference around a
   /// single element and rewrap it at the end.

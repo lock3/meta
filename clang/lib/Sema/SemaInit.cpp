@@ -3763,7 +3763,7 @@ void InitializationSequence::RewrapReferenceInitList(QualType T,
   Steps.push_back(S);
 }
 
-void InitializationSequence::AddParameterModeInit(QualType T)
+void InitializationSequence::AddParameterAdjustmentStep(QualType T)
 {
   Step S;
   S.Kind = SK_ParameterModeInit;
@@ -4297,6 +4297,12 @@ static void TryListInitialization(Sema &S,
                                   bool TreatUnavailableAsInvalid) {
   QualType DestType = Entity.getType();
 
+  // For parameter types, initialize an object of the underlying type.
+  //
+  // FIXME: This is not valid for referency types.
+  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getParameterType();
+
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
   if (S.getLangOpts().CPlusPlus && DestType->isScalarType() &&
@@ -4680,8 +4686,11 @@ static void TryReferenceInitialization(Sema &S,
                                        Expr *Initializer,
                                        InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+
+  // Remove the parameter type.
   if (DestType->isParameterType())
     DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
+
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4723,8 +4732,11 @@ static void TryReferenceInitializationCore(Sema &S,
                                            Qualifiers T2Quals,
                                            InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+
+  // Remove the parameter type.
   if (DestType->isParameterType())
     DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
+
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
   // Compute some basic properties of the types and the initializer.
@@ -5627,29 +5639,6 @@ static bool canPerformArrayCopy(const InitializedEntity &Entity) {
   return false;
 }
 
-// TODO: This belongs in LLVM.
-template<typename F>
-struct FinalAction
-{
-  FinalAction(F Fn)
-    : Fn(std::move(Fn))
-  { }
-
-  ~FinalAction()
-  {
-    Fn();
-  }
-
-  F Fn;
-};
-
-// TODO: This belongs in LLVM.
-template<typename F>
-FinalAction<F> Finally(F fn)
-{
-  return FinalAction<F>(std::move(fn));
-}
-
 void InitializationSequence::InitializeFrom(Sema &S,
                                             const InitializedEntity &Entity,
                                             const InitializationKind &Kind,
@@ -5681,6 +5670,12 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //   parenthesized list of expressions.
   QualType DestType = Entity.getType();
 
+  // Let DestType be the underlying type of parameter types for all subsequent
+  // considerations.
+  const auto *ParamType = DestType->getAs<ParameterType>();
+  if (ParamType)
+    DestType = ParamType->getParameterType();
+
   if (DestType->isDependentType() ||
       Expr::hasAnyTypeDependentArguments(Args) ||
       Expr::hasDependentVariadicReifierArguments(Args)) {
@@ -5690,19 +5685,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
 
   // Almost everything is a normal sequence.
   setSequenceKind(NormalSequence);
-
-  // If the destination is a parameter with a passing mode, then initialization
-  // is performed as if initializing a parameter whose type is determined by
-  // the passing mode.
-  //
-  // Basically, we're going to pretend to initialize a different object and
-  // then force the the types to agree later.
-  auto ParmAdjustment = Finally([&, this, OrigType = DestType]() {
-    if (OrigType->isParameterType())
-      AddParameterModeInit(OrigType);
-  });
-  if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getAdjustedType(Context);
 
   QualType SourceType;
   Expr *Initializer = nullptr;
@@ -5732,6 +5714,10 @@ void InitializationSequence::InitializeFrom(Sema &S,
     if (InitListExpr *InitList = dyn_cast_or_null<InitListExpr>(Initializer)) {
       TryListInitialization(S, Entity, Kind, InitList, *this,
                             TreatUnavailableAsInvalid);
+
+      if (!Failed() && ParamType)
+        AddParameterAdjustmentStep(QualType(ParamType, 0));
+
       return;
     }
   }
@@ -5917,6 +5903,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
     else
       TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                                TopLevelOfInitList);
+
+    // In either case, if this was a paramter type, add the adjustment.
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -5949,8 +5940,13 @@ void InitializationSequence::InitializeFrom(Sema &S,
     TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                              TopLevelOfInitList);
     MaybeProduceObjCObject(S, *this, Entity);
+
     if (!Failed() && NeedAtomicConversion)
       AddAtomicConversionStep(Entity.getType());
+
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -6020,6 +6016,9 @@ void InitializationSequence::InitializeFrom(Sema &S,
 
     MaybeProduceObjCObject(S, *this, Entity);
   }
+
+  if (!Failed() && ParamType)
+    AddParameterAdjustmentStep(QualType(ParamType, 0));
 }
 
 InitializationSequence::~InitializationSequence() {
@@ -8699,10 +8698,14 @@ ExprResult InitializationSequence::Perform(Sema &S,
       //
       // We can't hack around this and just update ResultType, since there's
       // no guarantee it's actually provided.
+      //
+      // FIXME: The value category depends on the kind of parameter. For
+      // example, inputs should be rvalue, everything else lvalue?
       CurInit = ImplicitCastExpr::Create(S.Context, Step->Type,
                                          CK_ParameterQualification,
                                          CurInit.get(), nullptr,
-                                         CurInit.get()->getValueKind());
+                                         VK_RValue);
+                                         // CurInit.get()->getValueKind());
       break;
     }
     }

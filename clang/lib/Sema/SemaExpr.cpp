@@ -3292,8 +3292,8 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
     switch (type->getTypeClass()) {
     case Type::InParameter: {
       // The type is adjusted to T const.
-      QualType ParmTy = cast<ParameterType>(type)->getParameterType();
-      type = Context.getConstType(ParmTy);
+      type = Context.getConstType(
+        cast<ParameterType>(type)->getParameterType());
       break;
     }
 
@@ -3308,8 +3308,9 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
       break;
 
     case Type::MoveParameter:
-      // TODO: I think this becomes an xvlaue.
-      llvm_unreachable("not implemented");
+      // The type is adjusted to an xvalue of type T.
+      type = cast<ParameterType>(type)->getParameterType();
+      valueKind = VK_RValue;
       break;
 
     default:

@@ -941,6 +941,8 @@ public:
 
   QualType getNonReferenceType() const;
 
+  QualType getParameterType() const;
+
   /// Determine the type of a (typically non-lvalue) expression with the
   /// specified result type.
   ///
@@ -6931,6 +6933,14 @@ inline QualType QualType::getNonReferenceType() const {
     return RefType->getPointeeType();
   else
     return *this;
+}
+
+/// If Type is a parameter type (e.g., in int), returns the underlying
+/// type of the parameter (i.e., int).
+inline QualType QualType::getParameterType() const {
+  if (const auto *ParmType = (*this)->getAs<ParameterType>())
+    return ParmType->getParameterType();
+  return *this;
 }
 
 inline bool QualType::isCForbiddenLValueType() const {

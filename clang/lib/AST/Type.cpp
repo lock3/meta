@@ -4545,8 +4545,12 @@ QualType ParameterType::getAdjustedType(ASTContext &Ctx) const
   case Type::InOutParameter:
     return Ctx.getLValueReferenceType(P);
 
-  case Type::MoveParameter:
-    return Ctx.getRValueReferenceType(P);
+  case Type::MoveParameter: {
+    if (CXXRecordDecl *Class = P->getAsCXXRecordDecl())
+      if (!Class->canPassInRegisters())
+        return Ctx.getRValueReferenceType(P);
+    return P;
+  }
 
   default:
     break;

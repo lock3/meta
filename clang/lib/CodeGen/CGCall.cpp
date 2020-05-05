@@ -154,8 +154,8 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
     // Copy out parameters, performing adjustments as needed.
     for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
       auto PT = FPT->getParamType(I);
-      if (auto const *Parm = cast<ParameterType>(PT)) {
-        QualType Adjusted = cast<ParameterType>(Parm)->getAdjustedType(Ctx);
+      if (auto const *Parm = dyn_cast<ParameterType>(PT)) {
+        QualType Adjusted = Parm->getAdjustedType(Ctx);
         PT = Ctx.getCanonicalType(Adjusted);
       }
       prefix.push_back(PT);
@@ -174,8 +174,8 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
   for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
     // Adjust the parameter type as needed.
     auto PT =  FPT->getParamType(I);
-    if (auto const *Parm = cast<ParameterType>(PT)) {
-      QualType Adjusted = cast<ParameterType>(Parm)->getAdjustedType(Ctx);
+    if (auto const *Parm = dyn_cast<ParameterType>(PT)) {
+      QualType Adjusted = Parm->getAdjustedType(Ctx);
       PT = Ctx.getCanonicalType(Adjusted);
     }
     prefix.push_back(PT);
