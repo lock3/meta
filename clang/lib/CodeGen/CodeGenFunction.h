@@ -3883,6 +3883,11 @@ public:
   llvm::Value *EmitARMCDEBuiltinExpr(unsigned BuiltinID, const CallExpr *E,
                                      ReturnValueSlot ReturnValue,
                                      llvm::Triple::ArchType Arch);
+  llvm::Value *EmitCMSEClearRecord(llvm::Value *V, llvm::IntegerType *ITy,
+                                   QualType RTy);
+  llvm::Value *EmitCMSEClearRecord(llvm::Value *V, llvm::ArrayType *ATy,
+                                   QualType RTy);
+  llvm::Value *EmitCMSEClearFP16(llvm::Value *V);
 
   llvm::Value *EmitCommonNeonBuiltinExpr(unsigned BuiltinID,
                                          unsigned LLVMIntrinsic,
@@ -3917,10 +3922,12 @@ public:
   SmallVector<llvm::Type *, 2> getSVEOverloadTypes(SVETypeFlags TypeFlags,
                                                    ArrayRef<llvm::Value *> Ops);
   llvm::Type *getEltType(SVETypeFlags TypeFlags);
-  llvm::VectorType *getSVEType(const SVETypeFlags &TypeFlags);
-  llvm::VectorType *getSVEPredType(SVETypeFlags TypeFlags);
+  llvm::ScalableVectorType *getSVEType(const SVETypeFlags &TypeFlags);
+  llvm::ScalableVectorType *getSVEPredType(SVETypeFlags TypeFlags);
+  llvm::Value *EmitSVEAllTruePred(SVETypeFlags TypeFlags);
   llvm::Value *EmitSVEDupX(llvm::Value *Scalar);
-  llvm::Value *EmitSVEPredicateCast(llvm::Value *Pred, llvm::VectorType *VTy);
+  llvm::Value *EmitSVEPredicateCast(llvm::Value *Pred,
+                                    llvm::ScalableVectorType *VTy);
   llvm::Value *EmitSVEGatherLoad(SVETypeFlags TypeFlags,
                                  llvm::SmallVectorImpl<llvm::Value *> &Ops,
                                  unsigned IntID);
@@ -3936,6 +3943,9 @@ public:
   llvm::Value *EmitSVEPrefetchLoad(SVETypeFlags TypeFlags,
                                    SmallVectorImpl<llvm::Value *> &Ops,
                                    unsigned BuiltinID);
+  llvm::Value *EmitSVEGatherPrefetch(SVETypeFlags TypeFlags,
+                                     SmallVectorImpl<llvm::Value *> &Ops,
+                                     unsigned IntID);
   llvm::Value *EmitAArch64SVEBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
 
   llvm::Value *EmitAArch64BuiltinExpr(unsigned BuiltinID, const CallExpr *E,
@@ -4572,6 +4582,11 @@ inline llvm::Value *DominatingLLVMValue::restore(CodeGenFunction &CGF,
 }
 
 }  // end namespace CodeGen
+
+// Map the LangOption for floating point exception behavior into
+// the corresponding enum in the IR.
+llvm::fp::ExceptionBehavior
+ToConstrainedExceptMD(LangOptions::FPExceptionModeKind Kind);
 }  // end namespace clang
 
 #endif

@@ -148,6 +148,8 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
   if (LangOpts.Reflection && (Flags & KEYREFLECT)) return KS_Extension;
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
+  if (LangOpts.CPlusPlus && !LangOpts.CPlusPlus20 && (Flags & CHAR8SUPPORT))
+    return KS_Future;
   return KS_Disabled;
 }
 
