@@ -14,9 +14,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/IR/AbstractCallSite.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/StringSwitch.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -65,7 +64,7 @@ AbstractCallSite::AbstractCallSite(const Use *U)
     // This happens by updating the use @p U to the use of the constant
     // cast expression and afterwards re-initializing CB accordingly.
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(U->getUser()))
-      if (CE->getNumUses() == 1 && CE->isCast()) {
+      if (CE->hasOneUse() && CE->isCast()) {
         U = &*CE->use_begin();
         CB = dyn_cast<CallBase>(U->getUser());
       }

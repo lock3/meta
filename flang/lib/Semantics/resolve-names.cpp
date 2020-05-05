@@ -3679,7 +3679,7 @@ bool DeclarationVisitor::Pre(const parser::DerivedTypeDef &x) {
     if (symbol->has<TypeParamDetails>() && !paramNames.count(name)) {
       SayDerivedType(name,
           "'%s' is not a type parameter of this derived type"_err_en_US,
-          currScope()); // C742
+          currScope()); // C741
     }
   }
   Walk(std::get<std::list<parser::Statement<parser::PrivateOrSequence>>>(x.t));
@@ -3820,12 +3820,48 @@ void DeclarationVisitor::Post(const parser::ComponentDecl &x) {
       !attrs.HasAny({Attr::PUBLIC, Attr::PRIVATE})) {
     attrs.set(Attr::PRIVATE);
   }
-  if (!attrs.HasAny({Attr::POINTER, Attr::ALLOCATABLE})) {
-    if (const auto *declType{GetDeclTypeSpec()}) {
-      if (const auto *derived{declType->AsDerived()}) {
+  if (const auto *declType{GetDeclTypeSpec()}) {
+    if (const auto *derived{declType->AsDerived()}) {
+      if (!attrs.HasAny({Attr::POINTER, Attr::ALLOCATABLE})) {
         if (derivedTypeInfo_.type == &derived->typeSymbol()) { // C744
           Say("Recursive use of the derived type requires "
               "POINTER or ALLOCATABLE"_err_en_US);
+        }
+      }
+      if (!coarraySpec().empty()) { // C747
+        if (IsTeamType(derived)) {
+          Say("A coarray component may not be of type TEAM_TYPE from "
+              "ISO_FORTRAN_ENV"_err_en_US);
+        } else {
+          if (IsIsoCType(derived)) {
+            Say("A coarray component may not be of type C_PTR or C_FUNPTR from "
+                "ISO_C_BINDING"_err_en_US);
+          }
+        }
+      }
+      if (auto it{FindCoarrayUltimateComponent(*derived)}) { // C748
+        std::string ultimateName{it.BuildResultDesignatorName()};
+        // Strip off the leading "%"
+        if (ultimateName.length() > 1) {
+          ultimateName.erase(0, 1);
+          if (attrs.HasAny({Attr::POINTER, Attr::ALLOCATABLE})) {
+            evaluate::AttachDeclaration(
+                Say(name.source,
+                    "A component with a POINTER or ALLOCATABLE attribute may "
+                    "not "
+                    "be of a type with a coarray ultimate component (named "
+                    "'%s')"_err_en_US,
+                    ultimateName),
+                derived->typeSymbol());
+          }
+          if (!arraySpec().empty() || !coarraySpec().empty()) {
+            evaluate::AttachDeclaration(
+                Say(name.source,
+                    "An array or coarray component may not be of a type with a "
+                    "coarray ultimate component (named '%s')"_err_en_US,
+                    ultimateName),
+                derived->typeSymbol());
+          }
         }
       }
     }
@@ -4741,7 +4777,7 @@ Symbol *DeclarationVisitor::MakeTypeSymbol(
     const SourceName &name, Details &&details) {
   Scope &derivedType{currScope()};
   CHECK(derivedType.IsDerivedType());
-  if (auto *symbol{FindInScope(derivedType, name)}) {
+  if (auto *symbol{FindInScope(derivedType, name)}) { // C742
     Say2(name,
         "Type parameter, component, or procedure binding '%s'"
         " already defined in this type"_err_en_US,
@@ -5499,7 +5535,7 @@ void DeclarationVisitor::CheckInitialDataTarget(
     const Symbol &pointer, const SomeExpr &expr, SourceName source) {
   auto &messages{GetFoldingContext().messages()};
   auto restorer{messages.SetLocation(source)};
-  if (!evaluate::IsInitialDataTarget(expr, messages)) {
+  if (!evaluate::IsInitialDataTarget(expr, &messages)) {
     Say(source,
         "Pointer '%s' cannot be initialized with a reference to a designator with non-constant subscripts"_err_en_US,
         pointer.name());
@@ -6299,6 +6335,15 @@ bool OmpAttributeVisitor::Pre(const parser::OpenMPBlockConstruct &x) {
     break;
   case parser::OmpBlockDirective::Directive::Workshare:
     PushContext(beginDir.source, OmpDirective::WORKSHARE);
+    break;
+  case parser::OmpBlockDirective::Directive::ParallelWorkshare:
+    PushContext(beginDir.source, OmpDirective::PARALLEL_WORKSHARE);
+    break;
+  case parser::OmpBlockDirective::Directive::TargetTeams:
+    PushContext(beginDir.source, OmpDirective::TARGET_TEAMS);
+    break;
+  case parser::OmpBlockDirective::Directive::TargetParallel:
+    PushContext(beginDir.source, OmpDirective::TARGET_PARALLEL);
     break;
   default:
     // TODO others
