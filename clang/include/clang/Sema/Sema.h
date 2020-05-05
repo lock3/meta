@@ -555,6 +555,9 @@ public:
   PragmaStack<StringLiteral *> ConstSegStack;
   PragmaStack<StringLiteral *> CodeSegStack;
 
+  // This stack tracks the current state of Sema.CurFPFeatures.
+  PragmaStack<unsigned> FpPragmaStack;
+
   // RAII object to push / pop sentinel slots for all MS #pragma stacks.
   // Actions should be performed only if we enter / exit a C++ method body.
   class PragmaStackSentinelRAII {
@@ -1359,7 +1362,7 @@ public:
   /// should not be used elsewhere.
   void EmitCurrentDiagnostic(unsigned DiagID);
 
-  /// Records and restores the FPFeatures state on entry/exit of compound
+  /// Records and restores the CurFPFeatures state on entry/exit of compound
   /// statements.
   class FPFeaturesStateRAII {
   public:
@@ -6955,7 +6958,7 @@ public:
                                     bool IgnoreAccess = false);
   bool CheckDerivedToBaseConversion(QualType Derived, QualType Base,
                                     unsigned InaccessibleBaseID,
-                                    unsigned AmbigiousBaseConvID,
+                                    unsigned AmbiguousBaseConvID,
                                     SourceLocation Loc, SourceRange Range,
                                     DeclarationName Name,
                                     CXXCastPath *BasePath,
@@ -9677,6 +9680,18 @@ public:
   void ActOnPragmaDetectMismatch(SourceLocation Loc, StringRef Name,
                                  StringRef Value);
 
+  /// Are precise floating point semantics currently enabled?
+  bool isPreciseFPEnabled() {
+    return !CurFPFeatures.allowAssociativeMath() &&
+           !CurFPFeatures.noSignedZeros() &&
+           !CurFPFeatures.allowReciprocalMath() &&
+           !CurFPFeatures.allowApproximateFunctions();
+  }
+
+  /// ActOnPragmaFloatControl - Call on well-formed \#pragma float_control
+  void ActOnPragmaFloatControl(SourceLocation Loc, PragmaMsStackAction Action,
+                               PragmaFloatControlKind Value);
+
   /// ActOnPragmaUnused - Called on well-formed '\#pragma unused'.
   void ActOnPragmaUnused(const Token &Identifier,
                          Scope *curScope,
@@ -9717,7 +9732,8 @@ public:
 
   /// ActOnPragmaFenvAccess - Called on well formed
   /// \#pragma STDC FENV_ACCESS
-  void ActOnPragmaFEnvAccess(LangOptions::FEnvAccessModeKind FPC);
+  void ActOnPragmaFEnvAccess(SourceLocation Loc,
+                             LangOptions::FEnvAccessModeKind FPC);
 
   /// Called to set rounding mode for floating point operations.
   void setRoundingMode(llvm::RoundingMode);
@@ -11173,6 +11189,21 @@ public:
                                           SourceLocation LParenLoc,
                                           SourceLocation EndLoc);
 
+  /// Data for list of allocators.
+  struct UsesAllocatorsData {
+    /// Allocator.
+    Expr *Allocator = nullptr;
+    /// Allocator traits.
+    Expr *AllocatorTraits = nullptr;
+    /// Locations of '(' and ')' symbols.
+    SourceLocation LParenLoc, RParenLoc;
+  };
+  /// Called on well-formed 'uses_allocators' clause.
+  OMPClause *ActOnOpenMPUsesAllocatorClause(SourceLocation StartLoc,
+                                            SourceLocation LParenLoc,
+                                            SourceLocation EndLoc,
+                                            ArrayRef<UsesAllocatorsData> Data);
+
   /// The kind of conversion being performed.
   enum CheckedConversionKind {
     /// An implicit conversion.
@@ -12401,6 +12432,7 @@ private:
   bool CheckX86BuiltinGatherScatterScale(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckPPCBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckAMDGCNBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
 
   bool SemaBuiltinVAStart(unsigned BuiltinID, CallExpr *TheCall);
   bool SemaBuiltinVAStartARMMicrosoft(CallExpr *Call);

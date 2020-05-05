@@ -859,28 +859,28 @@ MCSection *TargetLoweringObjectFileELF::getSectionForMachineBasicBlock(
     const Function &F, const MachineBasicBlock &MBB,
     const TargetMachine &TM) const {
   assert(MBB.isBeginSection() && "Basic block does not start a section!");
-  SmallString<128> Name;
-  Name =
-      (static_cast<MCSectionELF *>(MBB.getParent()->getSection()))->getName();
   unsigned UniqueID = MCContext::GenericSectionID;
 
-  switch (MBB.getSectionID().Type) {
-    // Append suffixes to represent special cold and exception sections.
-  case MBBSectionID::SectionType::Exception:
-    Name += ".eh";
-    break;
-  case MBBSectionID::SectionType::Cold:
-    Name += ".unlikely";
-    break;
-  // For regular sections, either use a unique name, or a unique ID for the
-  // section.
-  default:
+  // For cold sections use the .text.unlikely prefix along with the parent
+  // function name. All cold blocks for the same function go to the same
+  // section. Similarly all exception blocks are grouped by symbol name
+  // under the .text.eh prefix. For regular sections, we either use a unique
+  // name, or a unique ID for the section.
+  SmallString<128> Name;
+  if (MBB.getSectionID() == MBBSectionID::ColdSectionID) {
+    Name += ".text.unlikely.";
+    Name += MBB.getParent()->getName();
+  } else if (MBB.getSectionID() == MBBSectionID::ExceptionSectionID) {
+    Name += ".text.eh.";
+    Name += MBB.getParent()->getName();
+  } else {
+    Name += MBB.getParent()->getSection()->getName();
     if (TM.getUniqueBBSectionNames()) {
       Name += ".";
       Name += MBB.getSymbol()->getName();
-    } else
+    } else {
       UniqueID = NextUniqueID++;
-    break;
+    }
   }
 
   unsigned Flags = ELF::SHF_ALLOC | ELF::SHF_EXECINSTR;
@@ -2131,15 +2131,19 @@ XCOFF::StorageClass TargetLoweringObjectFileXCOFF::getStorageClassForGlobal(
   case GlobalValue::CommonLinkage:
     return XCOFF::C_EXT;
   case GlobalValue::ExternalWeakLinkage:
+  case GlobalValue::LinkOnceAnyLinkage:
   case GlobalValue::LinkOnceODRLinkage:
+  case GlobalValue::WeakAnyLinkage:
+  case GlobalValue::WeakODRLinkage:
     return XCOFF::C_WEAKEXT;
   case GlobalValue::AppendingLinkage:
     report_fatal_error(
         "There is no mapping that implements AppendingLinkage for XCOFF.");
-  default:
-    report_fatal_error(
-        "Unhandled linkage when mapping linkage to StorageClass.");
+  case GlobalValue::AvailableExternallyLinkage:
+    report_fatal_error("unhandled AvailableExternallyLinkage when mapping "
+                       "linkage to StorageClass");
   }
+  llvm_unreachable("Unknown linkage type!");
 }
 
 MCSection *TargetLoweringObjectFileXCOFF::getSectionForFunctionDescriptor(

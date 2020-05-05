@@ -1007,9 +1007,6 @@ ASTContext::~ASTContext() {
 
   for (APValue *Value : APValueCleanups)
     Value->~APValue();
-
-  // Destroy the OMPTraitInfo objects that life here.
-  llvm::DeleteContainerPointers(OMPTraitInfoVector);
 }
 
 void ASTContext::setTraversalScope(const std::vector<Decl *> &TopLevelDecls) {
@@ -3704,10 +3701,10 @@ ASTContext::getDependentVectorType(QualType VecType, Expr *SizeExpr,
       (void)CanonCheck;
       DependentVectorTypes.InsertNode(New, InsertPos);
     } else {
-      QualType CanonExtTy = getDependentSizedExtVectorType(CanonVecTy, SizeExpr,
-                                                           SourceLocation());
+      QualType CanonTy = getDependentVectorType(CanonVecTy, SizeExpr,
+                                                SourceLocation(), VecKind);
       New = new (*this, TypeAlignment) DependentVectorType(
-          *this, VecType, CanonExtTy, SizeExpr, AttrLoc, VecKind);
+          *this, VecType, CanonTy, SizeExpr, AttrLoc, VecKind);
     }
   }
 
@@ -4919,7 +4916,7 @@ ASTContext::getObjCTypeParamType(const ObjCTypeParamDecl *Decl,
                                  ArrayRef<ObjCProtocolDecl *> protocols) const {
   // Look in the folding set for an existing type.
   llvm::FoldingSetNodeID ID;
-  ObjCTypeParamType::Profile(ID, Decl, protocols);
+  ObjCTypeParamType::Profile(ID, Decl, Decl->getUnderlyingType(), protocols);
   void *InsertPos = nullptr;
   if (ObjCTypeParamType *TypeParam =
       ObjCTypeParamTypes.FindNodeOrInsertPos(ID, InsertPos))
@@ -4943,6 +4940,17 @@ ASTContext::getObjCTypeParamType(const ObjCTypeParamDecl *Decl,
   Types.push_back(newType);
   ObjCTypeParamTypes.InsertNode(newType, InsertPos);
   return QualType(newType, 0);
+}
+
+void ASTContext::adjustObjCTypeParamBoundType(const ObjCTypeParamDecl *Orig,
+                                              ObjCTypeParamDecl *New) const {
+  New->setTypeSourceInfo(getTrivialTypeSourceInfo(Orig->getUnderlyingType()));
+  // Update TypeForDecl after updating TypeSourceInfo.
+  auto NewTypeParamTy = cast<ObjCTypeParamType>(New->getTypeForDecl());
+  SmallVector<ObjCProtocolDecl *, 8> protocols;
+  protocols.append(NewTypeParamTy->qual_begin(), NewTypeParamTy->qual_end());
+  QualType UpdatedTy = getObjCTypeParamType(New, protocols);
+  New->setTypeForDecl(UpdatedTy.getTypePtr());
 }
 
 /// ObjCObjectAdoptsQTypeProtocols - Checks that protocols in IC's
@@ -11055,6 +11063,6 @@ void ASTContext::getFunctionFeatureMap(llvm::StringMap<bool> &FeatureMap,
 }
 
 OMPTraitInfo &ASTContext::getNewOMPTraitInfo() {
-  OMPTraitInfoVector.push_back(new OMPTraitInfo());
+  OMPTraitInfoVector.emplace_back(new OMPTraitInfo());
   return *OMPTraitInfoVector.back();
 }

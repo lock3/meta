@@ -6679,9 +6679,10 @@ ExpectedStmt ASTNodeImporter::VisitUnaryOperator(UnaryOperator *E) {
   if (Err)
     return std::move(Err);
 
-  return new (Importer.getToContext()) UnaryOperator(
-      ToSubExpr, E->getOpcode(), ToType, E->getValueKind(), E->getObjectKind(),
-      ToOperatorLoc, E->canOverflow());
+  return UnaryOperator::Create(
+      Importer.getToContext(), ToSubExpr, E->getOpcode(), ToType,
+      E->getValueKind(), E->getObjectKind(), ToOperatorLoc, E->canOverflow(),
+      E->getFPFeatures(Importer.getFromContext().getLangOpts()));
 }
 
 ExpectedStmt
@@ -8579,7 +8580,7 @@ Expected<FileID> ASTImporter::Import(FileID FromID, bool IsBuiltin) {
   } else {
     const SrcMgr::ContentCache *Cache = FromSLoc.getFile().getContentCache();
 
-    if (!IsBuiltin) {
+    if (!IsBuiltin && !Cache->BufferOverridden) {
       // Include location of this file.
       ExpectedSLoc ToIncludeLoc = Import(FromSLoc.getFile().getIncludeLoc());
       if (!ToIncludeLoc)

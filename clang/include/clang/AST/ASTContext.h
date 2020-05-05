@@ -1470,6 +1470,8 @@ public:
 
   QualType getObjCTypeParamType(const ObjCTypeParamDecl *Decl,
                                 ArrayRef<ObjCProtocolDecl *> protocols) const;
+  void adjustObjCTypeParamBoundType(const ObjCTypeParamDecl *Orig,
+                                    ObjCTypeParamDecl *New) const;
 
   bool ObjCObjectAdoptsQTypeProtocols(QualType QT, ObjCInterfaceDecl *Decl);
 
@@ -3014,7 +3016,7 @@ public:
 private:
   /// All OMPTraitInfo objects live in this collection, one per
   /// `pragma omp [begin] declare variant` directive.
-  SmallVector<OMPTraitInfo *, 4> OMPTraitInfoVector;
+  SmallVector<std::unique_ptr<OMPTraitInfo>, 4> OMPTraitInfoVector;
 };
 
 /// Utility function for constructing a nullary selector.

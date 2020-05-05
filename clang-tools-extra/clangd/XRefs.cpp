@@ -10,7 +10,6 @@
 #include "CodeCompletionStrings.h"
 #include "FindSymbols.h"
 #include "FindTarget.h"
-#include "Logger.h"
 #include "ParsedAST.h"
 #include "Protocol.h"
 #include "Quality.h"
@@ -21,7 +20,9 @@
 #include "index/Merge.h"
 #include "index/Relation.h"
 #include "index/SymbolLocation.h"
+#include "support/Logger.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTTypeTraits.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Attrs.inc"
 #include "clang/AST/Decl.h"
@@ -139,17 +140,20 @@ SymbolLocation getPreferredLocation(const Location &ASTLoc,
   return Merged.CanonicalDeclaration;
 }
 
-std::vector<const NamedDecl *> getDeclAtPosition(ParsedAST &AST,
-                                                 SourceLocation Pos,
-                                                 DeclRelationSet Relations) {
+std::vector<const NamedDecl *>
+getDeclAtPosition(ParsedAST &AST, SourceLocation Pos, DeclRelationSet Relations,
+                  ASTNodeKind *NodeKind = nullptr) {
   unsigned Offset = AST.getSourceManager().getDecomposedSpellingLoc(Pos).second;
   std::vector<const NamedDecl *> Result;
   SelectionTree::createEach(AST.getASTContext(), AST.getTokens(), Offset,
                             Offset, [&](SelectionTree ST) {
                               if (const SelectionTree::Node *N =
-                                      ST.commonAncestor())
+                                      ST.commonAncestor()) {
+                                if (NodeKind)
+                                  *NodeKind = N->ASTNode.getNodeKind();
                                 llvm::copy(targetDecl(N->ASTNode, Relations),
                                            std::back_inserter(Result));
+                              }
                               return !Result.empty();
                             });
   return Result;
@@ -183,7 +187,7 @@ llvm::Optional<LocatedSymbol> locateFileReferent(const Position &Pos,
                                                  ParsedAST &AST,
                                                  llvm::StringRef MainFilePath) {
   for (auto &Inc : AST.getIncludeStructure().MainFileIncludes) {
-    if (!Inc.Resolved.empty() && Inc.R.start.line == Pos.line) {
+    if (!Inc.Resolved.empty() && Inc.HashLine == Pos.line) {
       LocatedSymbol File;
       File.Name = std::string(llvm::sys::path::filename(Inc.Resolved));
       File.PreferredDeclaration = {
@@ -221,7 +225,7 @@ locateMacroReferent(const syntax::Token &TouchedIdentifier, ParsedAST &AST,
 std::vector<LocatedSymbol>
 locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
                   ParsedAST &AST, llvm::StringRef MainFilePath,
-                  const SymbolIndex *Index) {
+                  const SymbolIndex *Index, ASTNodeKind *NodeKind) {
   const SourceManager &SM = AST.getSourceManager();
   // Results follow the order of Symbols.Decls.
   std::vector<LocatedSymbol> Result;
@@ -250,7 +254,8 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
   // Emit all symbol locations (declaration or definition) from AST.
   DeclRelationSet Relations =
       DeclRelation::TemplatePattern | DeclRelation::Alias;
-  for (const NamedDecl *D : getDeclAtPosition(AST, CurLoc, Relations)) {
+  for (const NamedDecl *D :
+       getDeclAtPosition(AST, CurLoc, Relations, NodeKind)) {
     // Special case: void foo() ^override: jump to the overridden method.
     if (const auto *CMD = llvm::dyn_cast<CXXMethodDecl>(D)) {
       const InheritableAttr *Attr = D->getAttr<OverrideAttr>();
@@ -332,14 +337,26 @@ llvm::StringRef sourcePrefix(SourceLocation Loc, const SourceManager &SM) {
   return Buf.substr(0, D.second);
 }
 
+bool isDependentName(ASTNodeKind NodeKind) {
+  return NodeKind.isSame(ASTNodeKind::getFromNodeKind<OverloadExpr>()) ||
+         NodeKind.isSame(
+             ASTNodeKind::getFromNodeKind<CXXDependentScopeMemberExpr>()) ||
+         NodeKind.isSame(
+             ASTNodeKind::getFromNodeKind<DependentScopeDeclRefExpr>());
+}
+
 } // namespace
 
 std::vector<LocatedSymbol>
 locateSymbolTextually(const SpelledWord &Word, ParsedAST &AST,
-                      const SymbolIndex *Index,
-                      const std::string &MainFilePath) {
-  // Don't use heuristics if this is a real identifier, or not an identifier.
-  if (Word.ExpandedToken || !Word.LikelyIdentifier || !Index)
+                      const SymbolIndex *Index, const std::string &MainFilePath,
+                      ASTNodeKind NodeKind) {
+  // Don't use heuristics if this is a real identifier, or not an
+  // identifier.
+  // Exception: dependent names, because those may have useful textual
+  // matches that AST-based heuristics cannot find.
+  if ((Word.ExpandedToken && !isDependentName(NodeKind)) ||
+      !Word.LikelyIdentifier || !Index)
     return {};
   // We don't want to handle words in string literals. It'd be nice to whitelist
   // comments instead, but they're not retained in TokenBuffer.
@@ -540,8 +557,9 @@ std::vector<LocatedSymbol> locateSymbolAt(ParsedAST &AST, Position Pos,
       // expansion.)
       return {*std::move(Macro)};
 
-  auto ASTResults =
-      locateASTReferent(*CurLoc, TouchedIdentifier, AST, *MainFilePath, Index);
+  ASTNodeKind NodeKind;
+  auto ASTResults = locateASTReferent(*CurLoc, TouchedIdentifier, AST,
+                                      *MainFilePath, Index, &NodeKind);
   if (!ASTResults.empty())
     return ASTResults;
 
@@ -554,14 +572,15 @@ std::vector<LocatedSymbol> locateSymbolAt(ParsedAST &AST, Position Pos,
             findNearbyIdentifier(*Word, AST.getTokens())) {
       if (auto Macro = locateMacroReferent(*NearbyIdent, AST, *MainFilePath))
         return {*std::move(Macro)};
-      ASTResults = locateASTReferent(NearbyIdent->location(), NearbyIdent, AST,
-                                     *MainFilePath, Index);
+      ASTResults =
+          locateASTReferent(NearbyIdent->location(), NearbyIdent, AST,
+                            *MainFilePath, Index, /*NodeKind=*/nullptr);
       if (!ASTResults.empty())
         return ASTResults;
     }
     // No nearby word, or it didn't refer to anything either. Try the index.
     auto TextualResults =
-        locateSymbolTextually(*Word, AST, Index, *MainFilePath);
+        locateSymbolTextually(*Word, AST, Index, *MainFilePath, NodeKind);
     if (!TextualResults.empty())
       return TextualResults;
   }
@@ -580,10 +599,23 @@ std::vector<DocumentLink> getDocumentLinks(ParsedAST &AST) {
 
   std::vector<DocumentLink> Result;
   for (auto &Inc : AST.getIncludeStructure().MainFileIncludes) {
-    if (!Inc.Resolved.empty()) {
-      Result.push_back(DocumentLink(
-          {Inc.R, URIForFile::canonicalize(Inc.Resolved, *MainFilePath)}));
-    }
+    if (Inc.Resolved.empty())
+      continue;
+    auto HashLoc = SM.getComposedLoc(SM.getMainFileID(), Inc.HashOffset);
+    const auto *HashTok = AST.getTokens().spelledTokenAt(HashLoc);
+    assert(HashTok && "got inclusion at wrong offset");
+    const auto *IncludeTok = std::next(HashTok);
+    const auto *FileTok = std::next(IncludeTok);
+    // FileTok->range is not sufficient here, as raw lexing wouldn't yield
+    // correct tokens for angled filenames. Hence we explicitly use
+    // Inc.Written's length.
+    auto FileRange =
+        syntax::FileRange(SM, FileTok->location(), Inc.Written.length())
+            .toCharRange(SM);
+
+    Result.push_back(
+        DocumentLink({halfOpenToRange(SM, FileRange),
+                      URIForFile::canonicalize(Inc.Resolved, *MainFilePath)}));
   }
 
   return Result;

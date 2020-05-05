@@ -623,9 +623,9 @@ static Expr *DeclRefExprToValueExpr(Sema &S, DeclRefExpr *Ref) {
     QualType Ty = F->getType();
     const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
     Ty = S.Context.getMemberPointerType(Ty, Cls);
-    return new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue,
-                                         OK_Ordinary, Ref->getExprLoc(),
-                                         false);
+    return UnaryOperator::Create(
+        S.Context, Ref, UO_AddrOf, Ty, VK_RValue, OK_Ordinary,
+        Ref->getExprLoc(), /*CanOverflow=*/false, S.CurFPFeatures);
   }
 
   return Ref;
