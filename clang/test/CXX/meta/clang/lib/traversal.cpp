@@ -21,6 +21,61 @@ consteval bool is_invalid(meta::info reflection) {
   return __reflect(query_is_invalid, reflection);
 }
 
+namespace ns {
+  int a;
+  void b();
+  void b();
+  void c();
+
+  class d;
+  class d { };
+  class e;
+}
+
+consteval void namespace_range_test() {
+  constexpr meta::info namespace_refl = reflexpr(ns);
+  {
+    constexpr meta::info first_member_refl = __reflect(query_get_begin_member, namespace_refl);
+    static_assert(string_eq(name_of(first_member_refl), "a"));
+
+    constexpr meta::info second_member_refl = __reflect(query_get_next_member, first_member_refl);
+    static_assert(string_eq(name_of(second_member_refl), "b"));
+
+    constexpr meta::info third_member_refl = __reflect(query_get_next_member, second_member_refl);
+    static_assert(string_eq(name_of(third_member_refl), "c"));
+
+    constexpr meta::info fourth_member_refl = __reflect(query_get_next_member, third_member_refl);
+    static_assert(string_eq(name_of(fourth_member_refl), "d"));
+
+    constexpr meta::info fifth_member_refl = __reflect(query_get_next_member, fourth_member_refl);
+    static_assert(string_eq(name_of(fifth_member_refl), "e"));
+
+    constexpr meta::info end = __reflect(query_get_next_member, fifth_member_refl);
+    static_assert(is_invalid(end));
+  }
+
+  // Legacy
+  {
+    constexpr meta::info first_member_refl = __reflect(query_get_begin, namespace_refl);
+    static_assert(string_eq(name_of(first_member_refl), "a"));
+
+    constexpr meta::info second_member_refl = __reflect(query_get_next, first_member_refl);
+    static_assert(string_eq(name_of(second_member_refl), "b"));
+
+    constexpr meta::info third_member_refl = __reflect(query_get_next, second_member_refl);
+    static_assert(string_eq(name_of(third_member_refl), "c"));
+
+    constexpr meta::info fourth_member_refl = __reflect(query_get_next, third_member_refl);
+    static_assert(string_eq(name_of(fourth_member_refl), "d"));
+
+    constexpr meta::info fifth_member_refl = __reflect(query_get_next, fourth_member_refl);
+    static_assert(string_eq(name_of(fifth_member_refl), "e"));
+
+    constexpr meta::info end = __reflect(query_get_next, fifth_member_refl);
+    static_assert(is_invalid(end));
+  }
+}
+
 namespace class_helper {
   class clazz_a {};
   class clazz_b {};

@@ -2504,7 +2504,7 @@ static bool getDefinition(const Reflection &R, APValue &Result) {
 }
 
 /// True if D is reflectable. Some declarations are not reflected (e.g.,
-/// access specifiers).
+/// access specifiers, non-canonical decls).
 static bool isReflectableDecl(const Decl *D) {
   assert(D && "null declaration");
   if (isa<AccessSpecDecl>(D))
@@ -2514,7 +2514,7 @@ static bool isReflectableDecl(const Decl *D) {
   if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
     if (Class->isInjectedClassName())
       return false;
-  return true;
+  return D->getCanonicalDecl() == D;
 }
 
 /// Filter non-reflectable members.
