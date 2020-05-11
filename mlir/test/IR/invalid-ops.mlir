@@ -303,9 +303,34 @@ func @invalid_cmp_shape(%idx : () -> ()) {
 
 // -----
 
+func @dma_start_not_enough_operands() {
+  // expected-error@+1 {{expected at least 4 operands}}
+  "std.dma_start"() : () -> ()
+}
+
+// -----
+
 func @dma_no_src_memref(%m : f32, %tag : f32, %c0 : index) {
   // expected-error@+1 {{expected source to be of memref type}}
   dma_start %m[%c0], %m[%c0], %c0, %tag[%c0] : f32, f32, f32
+}
+
+// -----
+
+func @dma_start_not_enough_operands_for_src(
+    %src: memref<2x2x2xf32>, %idx: index) {
+  // expected-error@+1 {{expected at least 7 operands}}
+  "std.dma_start"(%src, %idx, %idx, %idx) : (memref<2x2x2xf32>, index, index, index) -> ()
+}
+
+// -----
+
+func @dma_start_src_index_wrong_type(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>, %flt: f32) {
+  // expected-error@+1 {{expected source indices to be of index type}}
+  "std.dma_start"(%src, %idx, %flt, %dst, %idx, %tag, %idx)
+      : (memref<2x2xf32>, index, f32, memref<2xf32,1>, index, memref<i32,2>, index) -> ()
 }
 
 // -----
@@ -318,6 +343,36 @@ func @dma_no_dst_memref(%m : f32, %tag : f32, %c0 : index) {
 
 // -----
 
+func @dma_start_not_enough_operands_for_dst(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>) {
+  // expected-error@+1 {{expected at least 7 operands}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %idx)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, index) -> ()
+}
+
+// -----
+
+func @dma_start_dst_index_wrong_type(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>, %flt: f32) {
+  // expected-error@+1 {{expected destination indices to be of index type}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %flt, %tag, %idx)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, f32, memref<i32,2>, index) -> ()
+}
+
+// -----
+
+func @dma_start_dst_index_wrong_type(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>, %flt: f32) {
+  // expected-error@+1 {{expected num elements to be of index type}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %flt, %tag)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, f32, memref<i32,2>) -> ()
+}
+
+// -----
+
 func @dma_no_tag_memref(%tag : f32, %c0 : index) {
   %mref = alloc() : memref<8 x f32>
   // expected-error@+1 {{expected tag to be of memref type}}
@@ -326,9 +381,80 @@ func @dma_no_tag_memref(%tag : f32, %c0 : index) {
 
 // -----
 
+func @dma_start_not_enough_operands_for_tag(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<2xi32,2>) {
+  // expected-error@+1 {{expected at least 8 operands}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %idx, %tag)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, index, memref<2xi32,2>) -> ()
+}
+
+// -----
+
+func @dma_start_dst_index_wrong_type(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<2xi32,2>, %flt: f32) {
+  // expected-error@+1 {{expected tag indices to be of index type}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %idx, %tag, %flt)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, index, memref<2xi32,2>, f32) -> ()
+}
+
+// -----
+
+func @dma_start_same_space(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32>,
+    %tag: memref<i32,2>) {
+  // expected-error@+1 {{DMA should be between different memory spaces}}
+  dma_start %src[%idx, %idx], %dst[%idx], %idx, %tag[] : memref<2x2xf32>, memref<2xf32>, memref<i32,2>
+}
+
+// -----
+
+func @dma_start_too_many_operands(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>) {
+  // expected-error@+1 {{incorrect number of operands}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %idx, %tag, %idx, %idx, %idx)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, index, memref<i32,2>, index, index, index) -> ()
+}
+
+
+// -----
+
+func @dma_start_wrong_stride_type(
+    %src: memref<2x2xf32>, %idx: index, %dst: memref<2xf32,1>,
+    %tag: memref<i32,2>, %flt: f32) {
+  // expected-error@+1 {{expected stride and num elements per stride to be of type index}}
+  "std.dma_start"(%src, %idx, %idx, %dst, %idx, %idx, %tag, %idx, %flt)
+      : (memref<2x2xf32>, index, index, memref<2xf32,1>, index, index, memref<i32,2>, index, f32) -> ()
+}
+
+// -----
+
+func @dma_wait_not_enough_operands() {
+  // expected-error@+1 {{expected at least 2 operands}}
+  "std.dma_wait"() : () -> ()
+}
+
+// -----
+
 func @dma_wait_no_tag_memref(%tag : f32, %c0 : index) {
   // expected-error@+1 {{expected tag to be of memref type}}
-  dma_wait %tag[%c0], %arg0 : f32
+  "std.dma_wait"(%tag, %c0, %c0) : (f32, index, index) -> ()
+}
+
+// -----
+
+func @dma_wait_wrong_index_type(%tag : memref<2xi32>, %idx: index, %flt: f32) {
+  // expected-error@+1 {{expected tag indices to be of index type}}
+  "std.dma_wait"(%tag, %flt, %idx) : (memref<2xi32>, f32, index) -> ()
+}
+
+// -----
+
+func @dma_wait_wrong_num_elements_type(%tag : memref<2xi32>, %idx: index, %flt: f32) {
+  // expected-error@+1 {{expected the number of elements to be of index type}}
+  "std.dma_wait"(%tag, %idx, %flt) : (memref<2xi32>, index, f32) -> ()
 }
 
 // -----
@@ -801,29 +927,9 @@ func @invalid_splat(%v : f32) { // expected-note {{prior use here}}
 
 func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
   %0 = alloc() : memref<2048xi8>
-  // expected-error@+1 {{incorrect number of operands for type}}
+  // expected-error@+1 {{expects 1 offset operand}}
   %1 = view %0[][%arg0, %arg1]
-    : memref<2048xi8> to memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * 4 + d1 + s0)>>
-  return
-}
-
-// -----
-
-func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
-  %0 = alloc() : memref<2048xi8>
-  // expected-error@+1 {{is not strided}}
-  %1 = view %0[][%arg0, %arg1]
-    : memref<2048xi8> to memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0, d1, s0)>>
-  return
-}
-
-// -----
-
-func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
-  %0 = alloc() : memref<2048xf32>
-  // expected-error@+1 {{must be 1D memref of 8-bit signless integer values}}
-  %1 = view %0[][%arg0, %arg1]
-    : memref<2048xf32> to memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * 4 + d1 + s0)>>
+    : memref<2048xi8> to memref<?x?xf32>
   return
 }
 
@@ -831,8 +937,8 @@ func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
 
 func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
   %0 = alloc() : memref<2048xi8, affine_map<(d0) -> (d0 floordiv 8, d0 mod 8)>>
-  // expected-error@+1 {{unsupported map for base memref}}
-  %1 = view %0[][%arg0, %arg1]
+  // expected-error@+1 {{unsupported map for base memref type}}
+  %1 = view %0[%arg2][%arg0, %arg1]
     : memref<2048xi8, affine_map<(d0) -> (d0 floordiv 8, d0 mod 8)>> to
       memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * 4 + d1 + s0)>>
   return
@@ -841,11 +947,19 @@ func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
 // -----
 
 func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
+  %0 = alloc() : memref<2048xi8>
+  // expected-error@+1 {{unsupported map for result memref type}}
+  %1 = view %0[%arg2][%arg0, %arg1]
+    : memref<2048xi8> to memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0, d1, s0)>>
+  return
+}
+
+// -----
+
+func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
   %0 = alloc() : memref<2048xi8, 2>
   // expected-error@+1 {{different memory spaces}}
-  %1 = view %0[][%arg0, %arg1]
-    : memref<2048xi8, 2> to
-      memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * 4 + d1 + s0)>, 1>
+  %1 = view %0[%arg2][%arg0, %arg1] :  memref<2048xi8, 2> to memref<?x?xf32, 1>
   return
 }
 
@@ -853,32 +967,9 @@ func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
 
 func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
   %0 = alloc() : memref<2048xi8>
-  // expected-error@+1 {{incorrect dynamic strides}}
-  %1 = view %0[][%arg0, %arg1]
-    : memref<2048xi8> to
-      memref<?x?x4xf32, affine_map<(d0, d1, d2) -> (d0 * 777 + d1 * 4 + d2)>>
-  return
-}
-
-// -----
-
-func @invalid_view(%arg0 : index, %arg1 : index, %arg2 : index) {
-  %0 = alloc() : memref<2048xi8>
-  // expected-error@+1 {{incorrect dynamic strides}}
-  %1 = view %0[%arg0][]
-    : memref<2048xi8> to
-      memref<16x4x?xf32, affine_map<(d0, d1, d2) -> (d0 * 777 + d1 * 4 + d2)>>
-  return
-}
-
-// -----
-
-func @multiple_offsets(%arg0: index) {
-  %0 = alloc() : memref<2048xi8>
-  // expected-error@+1 {{expects 0 or 1 offset operand}}
-  %1 = view %0[%arg0, %arg0][%arg0]
-    : memref<2048xi8> to
-      memref<?x?x4xf32, affine_map<(d0, d1, d2) -> (d0 * 777 + d1 * 4 + d2)>>
+  // expected-error@+1 {{incorrect number of size operands for type}}
+  %1 = view %0[%arg2][%arg0]
+    : memref<2048xi8> to memref<?x?xf32>
   return
 }
 
