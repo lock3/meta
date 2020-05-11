@@ -105,6 +105,25 @@ def ext_clang_c_enum_fixed_underlying_type : Extension<
 def warn_cxx98_compat_enum_fixed_underlying_type : Warning<
   "enumeration types with a fixed underlying type are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def ext_enum_base_in_type_specifier : ExtWarn<
+  "non-defining declaration of enumeration with a fixed underlying type is "
+  "only permitted as a standalone declaration"
+  "%select{|; missing list of enumerators?}0">,
+  InGroup<DiagGroup<"elaborated-enum-base">>, DefaultError;
+def ext_elaborated_enum_class : ExtWarn<
+  "reference to enumeration must use 'enum' not 'enum %select{struct|class}0'">,
+  InGroup<DiagGroup<"elaborated-enum-class">>, DefaultError;
+def err_scoped_enum_missing_identifier : Error<
+  "scoped enumeration requires a name">;
+def ext_scoped_enum : ExtWarn<
+  "scoped enumerations are a C++11 extension">, InGroup<CXX11>;
+def warn_cxx98_compat_scoped_enum : Warning<
+  "scoped enumerations are incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def err_anonymous_enum_bitfield : Error<
+  "ISO C++ only allows ':' in member enumeration declaration to introduce "
+  "a fixed underlying type, not an anonymous bit-field">;
+
 def warn_cxx98_compat_alignof : Warning<
   "alignof expressions are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
@@ -397,8 +416,6 @@ def warn_cxx14_compat_static_assert_no_message : Warning<
   DefaultIgnore, InGroup<CXXPre17Compat>;
 def err_function_definition_not_allowed : Error<
   "function definition is not allowed here">;
-def err_expected_enumerator_identifier : Error<
-  "expected an enumerator identifier">;
 def err_expected_end_of_enumerator : Error<
   "expected '= constant-expression' or end of enumerator definition">;
 def err_expected_coloncolon_after_super : Error<
@@ -890,14 +907,6 @@ def err_access_specifier_interface : Error<
 def err_duplicate_virt_specifier : Error<
   "class member already marked '%0'">;
 
-def err_scoped_enum_missing_identifier : Error<
-  "scoped enumeration requires a name">;
-def ext_scoped_enum : ExtWarn<
-  "scoped enumerations are a C++11 extension">, InGroup<CXX11>;
-def warn_cxx98_compat_scoped_enum : Warning<
-  "scoped enumerations are incompatible with C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
-
 def err_expected_parameter_pack : Error<
   "expected the name of a parameter pack">;
 def err_paren_sizeof_parameter_pack : Error<
@@ -1340,10 +1349,12 @@ def err_pragma_loop_invalid_option : Error<
   "pipeline, pipeline_initiation_interval, vectorize_predicate, or distribute">;
 
 def err_pragma_fp_invalid_option : Error<
-  "%select{invalid|missing}0 option%select{ %1|}0; expected contract">;
+  "%select{invalid|missing}0 option%select{ %1|}0; expected 'contract' or 'reassociate'">;
 def err_pragma_fp_invalid_argument : Error<
   "unexpected argument '%0' to '#pragma clang fp %1'; "
-  "expected 'on', 'fast' or 'off'">;
+  "%select{"
+  "expected 'fast' or 'on' or 'off'|"
+  "expected 'on' or 'off'}2">;
 
 def err_pragma_invalid_keyword : Error<
   "invalid argument; expected 'enable'%select{|, 'full'}0%select{|, 'assume_safety'}1 or 'disable'">;
