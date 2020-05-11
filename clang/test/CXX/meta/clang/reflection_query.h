@@ -76,6 +76,9 @@ enum reflection_query {
   query_is_externally_linked,
   query_is_internally_linked,
 
+  // Initializers
+  query_has_initializer,
+
   // General purpose
   query_is_extern_specified,
   query_is_inline,
