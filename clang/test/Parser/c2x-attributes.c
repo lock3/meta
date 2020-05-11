@@ -11,7 +11,7 @@ enum [[]] { Four };
 [[]] enum E2 { Five }; // expected-error {{misplaced attributes}}
 
 // FIXME: this diagnostic can be improved.
-enum { [[]] Six }; // expected-error {{expected an enumerator identifier}}
+enum { [[]] Six }; // expected-error {{expected identifier}}
 
 // FIXME: this diagnostic can be improved.
 enum E3 [[]] { Seven }; // expected-error {{expected identifier or '('}}
