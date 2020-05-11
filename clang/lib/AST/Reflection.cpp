@@ -91,6 +91,9 @@ namespace clang {
     query_is_externally_linked,
     query_is_internally_linked,
 
+    // Initializers
+    query_has_initializer,
+
     // General purpose
     query_is_extern_specified,
     query_is_inline,
@@ -1005,6 +1008,19 @@ static bool isInternallyLinked(ReflectionQueryEvaluator &Eval,
     if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
       return SuccessBool(Eval, Result, ND->hasInternalFormalLinkage());
   }
+  return SuccessFalse(Eval, Result);
+}
+
+/// Initializers
+
+static bool hasInitializer(ReflectionQueryEvaluator &Eval,
+                           SmallVectorImpl<APValue> &Args,
+                           APValue &Result) {
+  Reflection R(Eval.getContext(), Args[1]);
+  if (const VarDecl *D = getAsVarDecl(R))
+    return SuccessBool(Eval, Result, D->hasInit());
+  if (const FieldDecl *D = getAsDataMember(R))
+    return SuccessBool(Eval, Result, D->hasInClassInitializer());
   return SuccessFalse(Eval, Result);
 }
 
@@ -2037,6 +2053,10 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
     return isExternallyLinked(*this, Args, Result);
   case query_is_internally_linked:
     return isInternallyLinked(*this, Args, Result);
+
+  // Initializers
+  case query_has_initializer:
+    return hasInitializer(*this, Args, Result);
 
   // General purpose
   case query_is_extern_specified:

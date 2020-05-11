@@ -98,6 +98,9 @@ enum reflection_query : unsigned {
   query_is_externally_linked,
   query_is_internally_linked,
 
+  // Initializers
+  query_has_initializer,
+
   // General purpose
   query_is_extern_specified,
   query_is_inline,
@@ -271,6 +274,8 @@ enum reflection_query : unsigned {
 /// Explicit requirements.
 consteval static void require_variable(info reflection,
                                        const char *custom_err = nullptr);
+consteval static void require_var_or_data_mem(info reflection,
+                                              const char *custom_err = nullptr);
 consteval static void require_class(info reflection,
                                     const char *custom_err = nullptr);
 consteval static void require_class_member(info reflection,
@@ -670,8 +675,7 @@ constexpr struct is_nonstatic_data_member_fn
   }
 } is_nonstatic_data_member;
 
-// Returns true if the reflected entity is a data member
-// declared without the static declaration specifier.
+// Returns true if the reflected entity is a data member.
 constexpr struct is_data_member_fn
 {
   consteval bool operator()(info reflection) const
@@ -1056,6 +1060,21 @@ consteval bool is_internally_linked(info reflection) {
 [[deprecated]] consteval bool has_internal_linkage(info reflection) {
   return is_internally_linked(reflection);
 }
+
+// -------------------------------------------------------------------------- //
+// Initializers
+
+// Requires: is_variable(var_or_data_mem) || is_data_member(var_or_data_mem)
+//
+// Returns true if the reflected entity has an initializer.
+constexpr struct has_initializer_fn
+{
+  consteval bool operator()(info var_or_data_mem) const
+  {
+    detail::require_var_or_data_mem(var_or_data_mem);
+    return __reflect(detail::query_has_initializer, var_or_data_mem);
+  }
+} has_initializer;
 
 // -------------------------------------------------------------------------- //
 // General purpose
@@ -3226,6 +3245,17 @@ detail::require_variable(info reflection, const char* custom_err) {
   if(custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a variable.");
+}
+
+consteval void
+detail::require_var_or_data_mem(info reflection, const char* custom_err) {
+  if (is_variable(reflection))
+    return;
+  if (is_data_member(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a variable or data member.");
 }
 
 consteval void
