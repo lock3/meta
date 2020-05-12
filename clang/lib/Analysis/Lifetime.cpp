@@ -75,8 +75,9 @@ bool hasPathThroughNodePred(const CFG &Cfg, const CFGBlock *Source,
   while (!WorkList.empty()) {
     const CFGBlock *Current = WorkList.pop_back_val();
     for (const CFGBlock *Succ : Current->succs()) {
-      // Ensure we only mark path through simple paths.
-      if (Succ == Source)
+      // Ensure we only mark path through simple paths
+      // and skip infeasible branches.
+      if (!Succ || Succ == Source)
         continue;
 
       ParentMap.insert(std::make_pair(Succ, Current));
