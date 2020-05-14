@@ -4687,9 +4687,9 @@ static void TryReferenceInitialization(Sema &S,
                                        InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
 
-  // Remove the parameter type.
+  // Adjust parameter types as needed.
   if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
+    DestType = cast<ParameterType>(DestType)->getAdjustedType();
 
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
@@ -4733,9 +4733,9 @@ static void TryReferenceInitializationCore(Sema &S,
                                            InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
 
-  // Remove the parameter type.
+  // Adjust the parameter type as needed.
   if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getAdjustedType(S.Context);
+    DestType = cast<ParameterType>(DestType)->getAdjustedType();
 
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
@@ -5670,11 +5670,10 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //   parenthesized list of expressions.
   QualType DestType = Entity.getType();
 
-  // Let DestType be the underlying type of parameter types for all subsequent
-  // considerations.
+  // Adjust destination parameter types as needed.
   const auto *ParamType = DestType->getAs<ParameterType>();
   if (ParamType)
-    DestType = ParamType->getParameterType();
+    DestType = ParamType->getAdjustedType();
 
   if (DestType->isDependentType() ||
       Expr::hasAnyTypeDependentArguments(Args) ||
@@ -5715,6 +5714,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
       TryListInitialization(S, Entity, Kind, InitList, *this,
                             TreatUnavailableAsInvalid);
 
+      // Re-adjust to a parameter type as needed.
       if (!Failed() && ParamType)
         AddParameterAdjustmentStep(QualType(ParamType, 0));
 
@@ -5739,6 +5739,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
       SetFailed(FK_ParenthesizedListInitForReference);
     else
       TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
+
+    // Re-adjust to a parameter type as needed.
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -5944,6 +5949,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
     if (!Failed() && NeedAtomicConversion)
       AddAtomicConversionStep(Entity.getType());
 
+    // Re-adjust to a parameter type as needed.
     if (!Failed() && ParamType)
       AddParameterAdjustmentStep(QualType(ParamType, 0));
 

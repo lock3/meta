@@ -5246,8 +5246,8 @@ TryParameterConversion(Sema &S, Expr *From, QualType ToType,
   assert(ToType->isParameterType());
   const ParameterType *ParmType = cast<ParameterType>(ToType);
 
-  // Perform the conversion/initialization on the underlying type.
-  ToType = ParmType->getParameterType();
+  // Perform the conversion/initialization on the adjusted type.
+  ToType = ParmType->getAdjustedType();
 
   // FIXME: For move semantics, we might want to preserve the parameter
   // type so we can infer an lvalue to xvalue conversion -- if we need that

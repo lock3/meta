@@ -2377,10 +2377,9 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
 
   QualType Ty = D.getType();
 
-  // If the the parameter has a passing mode, get the underlying type.
-  if (Ty->isParameterType()) {
-    Ty = cast<ParameterType>(Ty)->getAdjustedType(getContext());
-  }
+  // If the the parameter has a passing mode, get its adjusted type.
+  if (Ty->isParameterType())
+    Ty = cast<ParameterType>(Ty)->getAdjustedType();
 
   // Use better IR generation for certain implicit parameters.
   if (auto IPD = dyn_cast<ImplicitParamDecl>(&D)) {

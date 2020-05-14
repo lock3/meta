@@ -258,8 +258,8 @@ TypeEvaluationKind CodeGenFunction::getEvaluationKind(QualType type) {
     case Type::OutParameter:
     case Type::InOutParameter:
     case Type::MoveParameter:
-      // Operate on values according to their underlying type.
-      type = cast<ParameterType>(type)->getParameterType();
+      // The evaluation kind depends on that of the adjusted type.
+      type = cast<ParameterType>(type)->getAdjustedType();
       continue;
     }
     llvm_unreachable("unknown type kind!");

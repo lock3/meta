@@ -817,9 +817,8 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::OutParameter:
   case Type::InOutParameter:
   case Type::MoveParameter:
-    // Convert the parameter type to its as-if type.
-    ResultType = ConvertType(
-                        cast<ParameterType>(Ty)->getAdjustedType(getContext()));
+    // Convert to the adjusted type.
+    ResultType = ConvertType(Ty->getAs<ParameterType>()->getAdjustedType());
     break;
   }
 

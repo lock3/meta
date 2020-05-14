@@ -6558,14 +6558,21 @@ public:
 
 /// Base for LValueReferenceType and RValueReferenceType
 class ParameterType : public Type, public llvm::FoldingSetNode {
+  /// The underlying parameter type.
   QualType ParmType;
+
+  /// The adjusted parameter type. This is used during code generation to
+  /// lower declarations to their corresponding "as if ..." modes.
+  QualType AdjType;
+
+  /// The parameter passing mode.
   ParameterPassingKind PassingMode;
 
 protected:
   ParameterType(TypeClass tc, QualType Parm, QualType CanonicalParm,
-                ParameterPassingKind PPK)
+                ParameterPassingKind PPK, QualType Adjusted)
       : Type(tc, CanonicalParm, Parm->getDependence(), false),
-        ParmType(Parm), PassingMode(PPK) {
+        ParmType(Parm), AdjType(Adjusted), PassingMode(PPK) {
     ParameterTypeBits.PassingMode = PPK;
   }
 
@@ -6578,7 +6585,7 @@ public:
 
   QualType getParameterType() const { return ParmType; }
 
-  QualType getAdjustedType(ASTContext &Cxt) const;
+  QualType getAdjustedType() const { return AdjType; }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, ParmType, PassingMode);
@@ -6603,8 +6610,8 @@ public:
 class InParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  InParameterType(QualType Parm, QualType CanonicalParm)
-    : ParameterType(InParameter, Parm, CanonicalParm, PassingMode) {}
+  InParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
+    : ParameterType(InParameter, Parm, Canonical, PassingMode, Adjusted) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_in;
@@ -6621,8 +6628,8 @@ public:
 class OutParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  OutParameterType(QualType Parm, QualType CanonicalParm)
-    : ParameterType(OutParameter, Parm, CanonicalParm, PassingMode) {}
+  OutParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
+    : ParameterType(OutParameter, Parm, Canonical, PassingMode, Adjusted) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_out;
@@ -6639,8 +6646,8 @@ public:
 class InOutParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  InOutParameterType(QualType Parm, QualType CanonicalParm)
-    : ParameterType(InOutParameter, Parm, CanonicalParm, PassingMode) {}
+  InOutParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
+    : ParameterType(InOutParameter, Parm, Canonical, PassingMode, Adjusted) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_inout;
@@ -6657,8 +6664,8 @@ public:
 class MoveParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  MoveParameterType(QualType Parm, QualType CanonicalParm)
-    : ParameterType(MoveParameter, Parm, CanonicalParm, PassingMode) {}
+  MoveParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
+    : ParameterType(MoveParameter, Parm, Canonical, PassingMode, Adjusted) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_move;

@@ -3398,8 +3398,16 @@ QualType ASTContext::getInParameterType(QualType T) const {
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
+  // Build the adjusted type. Input types are passed by value if scalar and
+  // non-trivial. For large or non-trivial classes, we pass by reference.
+  QualType Adjusted = T;
+  if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+    if (!Class->canPassInRegisters())
+      Adjusted = getLValueReferenceType(T);
+
   // Build and register the type.
-  auto *NewTy = new (*this, TypeAlignment) InParameterType(T, Canonical);
+  auto *NewTy =
+    new (*this, TypeAlignment) InParameterType(T, Canonical, Adjusted);
   Types.push_back(NewTy);
   InParameterTypes.InsertNode(NewTy, InsertPos);
   return QualType(NewTy, 0);
@@ -3424,8 +3432,12 @@ QualType ASTContext::getOutParameterType(QualType T) const {
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
+  // Build the adjusted type. This is an lvalue reference.
+  QualType Adjusted = getLValueReferenceType(T);
+
   // Build and register the type.
-  auto *NewTy = new (*this, TypeAlignment) OutParameterType(T, Canonical);
+  auto *NewTy =
+    new (*this, TypeAlignment) OutParameterType(T, Canonical, Adjusted);
   Types.push_back(NewTy);
   OutParameterTypes.InsertNode(NewTy, InsertPos);
   return QualType(NewTy, 0);
@@ -3450,8 +3462,12 @@ QualType ASTContext::getInOutParameterType(QualType T) const {
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
+  // Build the adjusted type. This is an lvalue reference.
+  QualType Adjusted = getLValueReferenceType(T);
+
   // Build and register the type.
-  auto *NewTy = new (*this, TypeAlignment) InOutParameterType(T, Canonical);
+  auto *NewTy =
+    new (*this, TypeAlignment) InOutParameterType(T, Canonical, Adjusted);
   Types.push_back(NewTy);
   InOutParameterTypes.InsertNode(NewTy, InsertPos);
   return QualType(NewTy, 0);
@@ -3476,8 +3492,16 @@ QualType ASTContext::getMoveParameterType(QualType T) const {
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
+  // Build the adjusted type. Move types are passed by value if scalar and
+  // non-trivial. For large or non-trivial classes, we pass by rvalue reference.
+  QualType Adjusted = T;
+  if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+    if (!Class->canPassInRegisters())
+      Adjusted = getRValueReferenceType(T);
+
   // Build and register the type.
-  auto *NewTy = new (*this, TypeAlignment) MoveParameterType(T, Canonical);
+  auto *NewTy =
+    new (*this, TypeAlignment) MoveParameterType(T, Canonical, Adjusted);
   Types.push_back(NewTy);
   MoveParameterTypes.InsertNode(NewTy, InsertPos);
   return QualType(NewTy, 0);
