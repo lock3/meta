@@ -4235,6 +4235,11 @@ static void TryReferenceListInitialization(Sema &S,
   }
 
   QualType DestType = Entity.getType();
+
+  // For parameter types, initialize an object of the underlying type.
+  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType();
+
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4298,10 +4303,8 @@ static void TryListInitialization(Sema &S,
   QualType DestType = Entity.getType();
 
   // For parameter types, initialize an object of the underlying type.
-  //
-  // FIXME: This is not valid for referency types.
   if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getParameterType();
+    DestType = ParamType->getAdjustedType();
 
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
