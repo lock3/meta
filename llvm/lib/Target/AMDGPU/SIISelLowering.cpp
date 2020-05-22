@@ -95,6 +95,16 @@ static cl::opt<bool> DisableLoopAlignment(
   cl::desc("Do not align and prefetch loops"),
   cl::init(false));
 
+static cl::opt<bool> VGPRReserveforSGPRSpill(
+    "amdgpu-reserve-vgpr-for-sgpr-spill",
+    cl::desc("Allocates one VGPR for future SGPR Spill"), cl::init(true));
+
+static cl::opt<bool> UseDivergentRegisterIndexing(
+  "amdgpu-use-divergent-register-indexing",
+  cl::Hidden,
+  cl::desc("Use indirect register addressing for divergent indexes"),
+  cl::init(false));
+
 static bool hasFP32Denormals(const MachineFunction &MF) {
   const SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
   return Info->getMode().allFP32Denormals();
@@ -144,8 +154,17 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
   addRegisterClass(MVT::v8i32, &AMDGPU::SGPR_256RegClass);
   addRegisterClass(MVT::v8f32, &AMDGPU::VReg_256RegClass);
 
+  addRegisterClass(MVT::v4i64, &AMDGPU::SGPR_256RegClass);
+  addRegisterClass(MVT::v4f64, &AMDGPU::VReg_256RegClass);
+
   addRegisterClass(MVT::v16i32, &AMDGPU::SGPR_512RegClass);
   addRegisterClass(MVT::v16f32, &AMDGPU::VReg_512RegClass);
+
+  addRegisterClass(MVT::v8i64, &AMDGPU::SGPR_512RegClass);
+  addRegisterClass(MVT::v8f64, &AMDGPU::VReg_512RegClass);
+
+  addRegisterClass(MVT::v16i64, &AMDGPU::SGPR_1024RegClass);
+  addRegisterClass(MVT::v16f64, &AMDGPU::VReg_1024RegClass);
 
   if (Subtarget->has16BitInsts()) {
     addRegisterClass(MVT::i16, &AMDGPU::SReg_32RegClass);
@@ -158,10 +177,8 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
     addRegisterClass(MVT::v4f16, &AMDGPU::SReg_64RegClass);
   }
 
-  if (Subtarget->hasMAIInsts()) {
-    addRegisterClass(MVT::v32i32, &AMDGPU::VReg_1024RegClass);
-    addRegisterClass(MVT::v32f32, &AMDGPU::VReg_1024RegClass);
-  }
+  addRegisterClass(MVT::v32i32, &AMDGPU::VReg_1024RegClass);
+  addRegisterClass(MVT::v32f32, &AMDGPU::VReg_1024RegClass);
 
   computeRegisterProperties(Subtarget->getRegisterInfo());
 
@@ -229,6 +246,12 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::TRUNCATE, MVT::v2i32, Expand);
   setOperationAction(ISD::FP_ROUND, MVT::v2f32, Expand);
+  setOperationAction(ISD::TRUNCATE, MVT::v4i32, Expand);
+  setOperationAction(ISD::FP_ROUND, MVT::v4f32, Expand);
+  setOperationAction(ISD::TRUNCATE, MVT::v8i32, Expand);
+  setOperationAction(ISD::FP_ROUND, MVT::v8f32, Expand);
+  setOperationAction(ISD::TRUNCATE, MVT::v16i32, Expand);
+  setOperationAction(ISD::FP_ROUND, MVT::v16f32, Expand);
 
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i1, Custom);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v4i1, Custom);
@@ -265,7 +288,8 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
   // with > 4 elements.
   for (MVT VT : { MVT::v8i32, MVT::v8f32, MVT::v16i32, MVT::v16f32,
                   MVT::v2i64, MVT::v2f64, MVT::v4i16, MVT::v4f16,
-                  MVT::v32i32, MVT::v32f32 }) {
+                  MVT::v4i64, MVT::v4f64, MVT::v8i64, MVT::v8f64,
+                  MVT::v16i64, MVT::v16f64, MVT::v32i32, MVT::v32f32 }) {
     for (unsigned Op = 0; Op < ISD::BUILTIN_OP_END; ++Op) {
       switch (Op) {
       case ISD::LOAD:
@@ -307,6 +331,48 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
 
     setOperationAction(ISD::SCALAR_TO_VECTOR, Vec64, Promote);
     AddPromotedToType(ISD::SCALAR_TO_VECTOR, Vec64, MVT::v4i32);
+  }
+
+  for (MVT Vec64 : { MVT::v4i64, MVT::v4f64 }) {
+    setOperationAction(ISD::BUILD_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::BUILD_VECTOR, Vec64, MVT::v8i32);
+
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::EXTRACT_VECTOR_ELT, Vec64, MVT::v8i32);
+
+    setOperationAction(ISD::INSERT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::INSERT_VECTOR_ELT, Vec64, MVT::v8i32);
+
+    setOperationAction(ISD::SCALAR_TO_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::SCALAR_TO_VECTOR, Vec64, MVT::v8i32);
+  }
+
+  for (MVT Vec64 : { MVT::v8i64, MVT::v8f64 }) {
+    setOperationAction(ISD::BUILD_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::BUILD_VECTOR, Vec64, MVT::v16i32);
+
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::EXTRACT_VECTOR_ELT, Vec64, MVT::v16i32);
+
+    setOperationAction(ISD::INSERT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::INSERT_VECTOR_ELT, Vec64, MVT::v16i32);
+
+    setOperationAction(ISD::SCALAR_TO_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::SCALAR_TO_VECTOR, Vec64, MVT::v16i32);
+  }
+
+  for (MVT Vec64 : { MVT::v16i64, MVT::v16f64 }) {
+    setOperationAction(ISD::BUILD_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::BUILD_VECTOR, Vec64, MVT::v32i32);
+
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::EXTRACT_VECTOR_ELT, Vec64, MVT::v32i32);
+
+    setOperationAction(ISD::INSERT_VECTOR_ELT, Vec64, Promote);
+    AddPromotedToType(ISD::INSERT_VECTOR_ELT, Vec64, MVT::v32i32);
+
+    setOperationAction(ISD::SCALAR_TO_VECTOR, Vec64, Promote);
+    AddPromotedToType(ISD::SCALAR_TO_VECTOR, Vec64, MVT::v32i32);
   }
 
   setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v8i32, Expand);
@@ -895,9 +961,8 @@ unsigned SITargetLowering::getVectorTypeBreakdownForCallingConv(
 static EVT memVTFromImageData(Type *Ty, unsigned DMaskLanes) {
   assert(DMaskLanes != 0);
 
-  if (auto *VT = dyn_cast<VectorType>(Ty)) {
-    unsigned NumElts = std::min(DMaskLanes,
-                                static_cast<unsigned>(VT->getNumElements()));
+  if (auto *VT = dyn_cast<FixedVectorType>(Ty)) {
+    unsigned NumElts = std::min(DMaskLanes, VT->getNumElements());
     return EVT::getVectorVT(Ty->getContext(),
                             EVT::getEVT(VT->getElementType()),
                             NumElts);
@@ -3874,12 +3939,14 @@ MachineBasicBlock *SITargetLowering::EmitInstrWithCustomInserter(
   case AMDGPU::SI_INDIRECT_SRC_V4:
   case AMDGPU::SI_INDIRECT_SRC_V8:
   case AMDGPU::SI_INDIRECT_SRC_V16:
+  case AMDGPU::SI_INDIRECT_SRC_V32:
     return emitIndirectSrc(MI, *BB, *getSubtarget());
   case AMDGPU::SI_INDIRECT_DST_V1:
   case AMDGPU::SI_INDIRECT_DST_V2:
   case AMDGPU::SI_INDIRECT_DST_V4:
   case AMDGPU::SI_INDIRECT_DST_V8:
   case AMDGPU::SI_INDIRECT_DST_V16:
+  case AMDGPU::SI_INDIRECT_DST_V32:
     return emitIndirectDst(MI, *BB, *getSubtarget());
   case AMDGPU::SI_KILL_F32_COND_IMM_PSEUDO:
   case AMDGPU::SI_KILL_I1_PSEUDO:
@@ -4650,13 +4717,6 @@ SDValue SITargetLowering::LowerBRCOND(SDValue BRCOND,
     Target = BR->getOperand(1);
   }
 
-  // FIXME: This changes the types of the intrinsics instead of introducing new
-  // nodes with the correct types.
-  // e.g. llvm.amdgcn.loop
-
-  // eg: i1,ch = llvm.amdgcn.loop t0, TargetConstant:i32<6271>, t3
-  // =>     t9: ch = llvm.amdgcn.loop t0, TargetConstant:i32<6271>, t3, BasicBlock:ch<bb1 0x7fee5286d088>
-
   unsigned CFNode = isCFIntrinsic(Intr);
   if (CFNode == 0) {
     // This is a uniform branch so we don't need to legalize.
@@ -4871,7 +4931,7 @@ SDValue SITargetLowering::getSegmentAperture(unsigned AS, const SDLoc &DL,
 
   MachineFunction &MF = DAG.getMachineFunction();
   SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
-  unsigned UserSGPR = Info->getQueuePtrUserSGPR();
+  Register UserSGPR = Info->getQueuePtrUserSGPR();
   assert(UserSGPR != AMDGPU::NoRegister);
 
   SDValue QueuePtr = CreateLiveInRegister(
@@ -9414,6 +9474,39 @@ SDValue SITargetLowering::performCvtPkRTZCombine(SDNode *N,
   return SDValue();
 }
 
+// Check if EXTRACT_VECTOR_ELT/INSERT_VECTOR_ELT (<n x e>, var-idx) should be
+// expanded into a set of cmp/select instructions.
+static bool shouldExpandVectorDynExt(SDNode *N) {
+  SDValue Idx = N->getOperand(N->getNumOperands() - 1);
+  if (UseDivergentRegisterIndexing || isa<ConstantSDNode>(Idx))
+    return false;
+
+  SDValue Vec = N->getOperand(0);
+  EVT VecVT = Vec.getValueType();
+  EVT EltVT = VecVT.getVectorElementType();
+  unsigned VecSize = VecVT.getSizeInBits();
+  unsigned EltSize = EltVT.getSizeInBits();
+  unsigned NumElem = VecVT.getVectorNumElements();
+
+  // Sub-dword vectors of size 2 dword or less have better implementation.
+  if (VecSize <= 64 && EltSize < 32)
+    return false;
+
+  // Always expand the rest of sub-dword instructions, otherwise it will be
+  // lowered via memory.
+  if (EltSize < 32)
+    return true;
+
+  // Always do this if var-idx is divergent, otherwise it will become a loop.
+  if (Idx->isDivergent())
+    return true;
+
+  // Large vectors would yield too many compares and v_cndmask_b32 instructions.
+  unsigned NumInsts = NumElem /* Number of compares */ +
+                      ((EltSize + 31) / 32) * NumElem /* Number of cndmasks */;
+  return NumInsts <= 16;
+}
+
 SDValue SITargetLowering::performExtractVectorEltCombine(
   SDNode *N, DAGCombinerInfo &DCI) const {
   SDValue Vec = N->getOperand(0);
@@ -9475,12 +9568,7 @@ SDValue SITargetLowering::performExtractVectorEltCombine(
   unsigned EltSize = EltVT.getSizeInBits();
 
   // EXTRACT_VECTOR_ELT (<n x e>, var-idx) => n x select (e, const-idx)
-  // This elminates non-constant index and subsequent movrel or scratch access.
-  // Sub-dword vectors of size 2 dword or less have better implementation.
-  // Vectors of size bigger than 8 dwords would yield too many v_cndmask_b32
-  // instructions.
-  if (VecSize <= 256 && (VecSize > 64 || EltSize >= 32) &&
-      !isa<ConstantSDNode>(N->getOperand(1))) {
+  if (shouldExpandVectorDynExt(N)) {
     SDLoc SL(N);
     SDValue Idx = N->getOperand(1);
     SDValue V;
@@ -9540,17 +9628,10 @@ SITargetLowering::performInsertVectorEltCombine(SDNode *N,
   SDValue Idx = N->getOperand(2);
   EVT VecVT = Vec.getValueType();
   EVT EltVT = VecVT.getVectorElementType();
-  unsigned VecSize = VecVT.getSizeInBits();
-  unsigned EltSize = EltVT.getSizeInBits();
 
   // INSERT_VECTOR_ELT (<n x e>, var-idx)
   // => BUILD_VECTOR n x select (e, const-idx)
-  // This elminates non-constant index and subsequent movrel or scratch access.
-  // Sub-dword vectors of size 2 dword or less have better implementation.
-  // Vectors of size bigger than 8 dwords would yield too many v_cndmask_b32
-  // instructions.
-  if (isa<ConstantSDNode>(Idx) ||
-      VecSize > 256 || (VecSize <= 64 && EltSize < 32))
+  if (!shouldExpandVectorDynExt(N))
     return SDValue();
 
   SelectionDAG &DAG = DCI.DAG;
@@ -10858,6 +10939,13 @@ void SITargetLowering::finalizeLowering(MachineFunction &MF) const {
   }
 
   TargetLoweringBase::finalizeLowering(MF);
+
+  // Allocate a VGPR for future SGPR Spill if
+  // "amdgpu-reserve-vgpr-for-sgpr-spill" option is used
+  // FIXME: We won't need this hack if we split SGPR allocation from VGPR
+  if (VGPRReserveforSGPRSpill && !Info->VGPRReservedForSGPRSpill &&
+      !Info->isEntryFunction() && MF.getFrameInfo().hasStackObjects())
+    Info->reserveVGPRforSGPRSpills(MF);
 }
 
 void SITargetLowering::computeKnownBitsForFrameIndex(const SDValue Op,
@@ -10965,30 +11053,19 @@ bool SITargetLowering::isSDNodeSourceOfDivergence(const SDNode * N,
     case ISD::CopyFromReg:
     {
       const RegisterSDNode *R = cast<RegisterSDNode>(N->getOperand(1));
-      const MachineFunction * MF = FLI->MF;
-      const GCNSubtarget &ST = MF->getSubtarget<GCNSubtarget>();
-      const MachineRegisterInfo &MRI = MF->getRegInfo();
-      const SIRegisterInfo &TRI = ST.getInstrInfo()->getRegisterInfo();
+      const MachineRegisterInfo &MRI = FLI->MF->getRegInfo();
+      const SIRegisterInfo *TRI = Subtarget->getRegisterInfo();
       Register Reg = R->getReg();
-      if (Reg.isPhysical())
-        return !TRI.isSGPRReg(MRI, Reg);
 
-      if (MRI.isLiveIn(Reg)) {
-        // workitem.id.x workitem.id.y workitem.id.z
-        // Any VGPR formal argument is also considered divergent
-        if (!TRI.isSGPRReg(MRI, Reg))
-          return true;
-        // Formal arguments of non-entry functions
-        // are conservatively considered divergent
-        else if (!AMDGPU::isEntryFunctionCC(FLI->Fn->getCallingConv()))
-          return true;
-        return false;
-      }
-      const Value *V = FLI->getValueFromVirtualReg(Reg);
-      if (V)
+      // FIXME: Why does this need to consider isLiveIn?
+      if (Reg.isPhysical() || MRI.isLiveIn(Reg))
+        return !TRI->isSGPRReg(MRI, Reg);
+
+      if (const Value *V = FLI->getValueFromVirtualReg(R->getReg()))
         return KDA->isDivergent(V);
+
       assert(Reg == FLI->DemoteRegister || isCopyFromRegOfInlineAsm(N));
-      return !TRI.isSGPRReg(MRI, Reg);
+      return !TRI->isSGPRReg(MRI, Reg);
     }
     break;
     case ISD::LOAD: {

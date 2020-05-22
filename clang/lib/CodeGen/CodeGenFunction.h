@@ -595,6 +595,9 @@ public:
   /// region.
   bool IsInPreservedAIRegion = false;
 
+  /// True if the current statement has nomerge attribute.
+  bool InNoMergeAttributedStmt = false;
+
   const CodeGen::CGBlockInfo *BlockInfo = nullptr;
   llvm::Value *BlockPointer = nullptr;
 
@@ -2265,13 +2268,6 @@ public:
 
   LValue MakeNaturalAlignPointeeAddrLValue(llvm::Value *V, QualType T);
   LValue MakeNaturalAlignAddrLValue(llvm::Value *V, QualType T);
-  CharUnits getNaturalTypeAlignment(QualType T,
-                                    LValueBaseInfo *BaseInfo = nullptr,
-                                    TBAAAccessInfo *TBAAInfo = nullptr,
-                                    bool forPointeeType = false);
-  CharUnits getNaturalPointeeTypeAlignment(QualType T,
-                                           LValueBaseInfo *BaseInfo = nullptr,
-                                           TBAAAccessInfo *TBAAInfo = nullptr);
 
   Address EmitLoadOfReference(LValue RefLVal,
                               LValueBaseInfo *PointeeBaseInfo = nullptr,
@@ -3926,6 +3922,7 @@ public:
   llvm::ScalableVectorType *getSVEPredType(SVETypeFlags TypeFlags);
   llvm::Value *EmitSVEAllTruePred(SVETypeFlags TypeFlags);
   llvm::Value *EmitSVEDupX(llvm::Value *Scalar);
+  llvm::Value *EmitSVEDupX(llvm::Value *Scalar, llvm::Type *Ty);
   llvm::Value *EmitSVEReinterpret(llvm::Value *Val, llvm::Type *Ty);
   llvm::Value *EmitSVEPMull(SVETypeFlags TypeFlags,
                             llvm::SmallVectorImpl<llvm::Value *> &Ops,

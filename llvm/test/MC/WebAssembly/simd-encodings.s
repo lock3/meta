@@ -328,9 +328,6 @@ main:
     # CHECK: i8x16.sub_saturate_u # encoding: [0xfd,0x73]
     i8x16.sub_saturate_u
 
-    # CHECK: i8x16.mul # encoding: [0xfd,0x75]
-    i8x16.mul
-
     # CHECK: i8x16.min_s # encoding: [0xfd,0x76]
     i8x16.min_s
 
@@ -508,6 +505,9 @@ main:
     # CHECK: i64x2.sub # encoding: [0xfd,0xd1,0x01]
     i64x2.sub
 
+    # CHECK: i64x2.mul # encoding: [0xfd,0xd5,0x01]
+    i64x2.mul
+
     # CHECK: f32x4.abs # encoding: [0xfd,0xe0,0x01]
     f32x4.abs
 
@@ -535,6 +535,12 @@ main:
     # CHECK: f32x4.max # encoding: [0xfd,0xe9,0x01]
     f32x4.max
 
+    # CHECK: f32x4.pmin # encoding: [0xfd,0xea,0x01]
+    f32x4.pmin
+
+    # CHECK: f32x4.pmax # encoding: [0xfd,0xeb,0x01]
+    f32x4.pmax
+
     # CHECK: f64x2.abs # encoding: [0xfd,0xec,0x01]
     f64x2.abs
 
@@ -561,6 +567,12 @@ main:
 
     # CHECK: f64x2.max # encoding: [0xfd,0xf5,0x01]
     f64x2.max
+
+    # CHECK: f64x2.pmin # encoding: [0xfd,0xf6,0x01]
+    f64x2.pmin
+
+    # CHECK: f64x2.pmax # encoding: [0xfd,0xf7,0x01]
+    f64x2.pmax
 
     # CHECK: i32x4.trunc_sat_f32x4_s # encoding: [0xfd,0xf8,0x01]
     i32x4.trunc_sat_f32x4_s

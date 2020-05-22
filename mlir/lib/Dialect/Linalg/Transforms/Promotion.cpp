@@ -56,6 +56,8 @@ struct LinalgOpInstancePromotionOptions {
                                    const LinalgPromotionOptions &options);
   /// SubViews to promote.
   SetVector<Value> subViews;
+  /// True if the full view should be used for the promoted buffer.
+  DenseMap<Value, bool> useFullTileBuffers;
   /// Allow the use of dynamicaly-sized buffers.
   bool dynamicBuffers;
   /// Alignment of promoted buffer.
@@ -65,20 +67,28 @@ struct LinalgOpInstancePromotionOptions {
 
 LinalgOpInstancePromotionOptions::LinalgOpInstancePromotionOptions(
     LinalgOp linalgOp, const LinalgPromotionOptions &options)
-    : subViews(), dynamicBuffers(options.dynamicBuffers),
+    : subViews(), useFullTileBuffers(), dynamicBuffers(options.dynamicBuffers),
       alignment(options.alignment) {
+  unsigned nBuffers = linalgOp.getNumInputsAndOutputBuffers();
+  auto vUseFullTileBuffers =
+      options.useFullTileBuffers.getValueOr(llvm::SmallBitVector());
+  vUseFullTileBuffers.resize(nBuffers, options.useFullTileBuffersDefault);
+
   if (options.operandsToPromote.hasValue()) {
-    for (unsigned idx : options.operandsToPromote.getValue()) {
-      auto *op = linalgOp.getBuffer(idx).getDefiningOp();
-      if (auto sv = dyn_cast_or_null<SubViewOp>(op))
+    for (auto it : llvm::enumerate(options.operandsToPromote.getValue())) {
+      auto *op = linalgOp.getBuffer(it.value()).getDefiningOp();
+      if (auto sv = dyn_cast_or_null<SubViewOp>(op)) {
         subViews.insert(sv);
+        useFullTileBuffers[sv] = vUseFullTileBuffers[it.index()];
+      }
     }
   } else {
-    unsigned nBuffers = linalgOp.getNumInputsAndOutputBuffers();
     for (unsigned idx = 0; idx < nBuffers; ++idx) {
       auto *op = linalgOp.getBuffer(idx).getDefiningOp();
-      if (auto sv = dyn_cast_or_null<SubViewOp>(op))
+      if (auto sv = dyn_cast_or_null<SubViewOp>(op)) {
         subViews.insert(sv);
+        useFullTileBuffers[sv] = vUseFullTileBuffers[idx];
+      }
     }
   }
 }
@@ -88,7 +98,7 @@ LinalgOpInstancePromotionOptions::LinalgOpInstancePromotionOptions(
 /// Otherwise return size.
 static Value extractSmallestConstantBoundingSize(OpBuilder &b, Location loc,
                                                  Value size) {
-  auto affineMinOp = dyn_cast_or_null<AffineMinOp>(size.getDefiningOp());
+  auto affineMinOp = size.getDefiningOp<AffineMinOp>();
   if (!affineMinOp)
     return size;
   int64_t minConst = std::numeric_limits<int64_t>::max();
@@ -112,7 +122,7 @@ static Value allocBuffer(Type elementType, Value size, bool dynamicBuffers,
     alignment_attr =
         IntegerAttr::get(IntegerType::get(64, ctx), alignment.getValue());
   if (!dynamicBuffers)
-    if (auto cst = dyn_cast_or_null<ConstantIndexOp>(size.getDefiningOp()))
+    if (auto cst = size.getDefiningOp<ConstantIndexOp>())
       return std_alloc(
           MemRefType::get(width * cst.getValue(), IntegerType::get(8, ctx)),
           ValueRange{}, alignment_attr);
@@ -153,7 +163,7 @@ static PromotionInfo promoteSubviewAsNewBuffer(OpBuilder &b, Location loc,
   SmallVector<Value, 8> fullSizes, partialSizes;
   fullSizes.reserve(rank);
   partialSizes.reserve(rank);
-  for (auto en : llvm::enumerate(subView.getRanges())) {
+  for (auto en : llvm::enumerate(subView.getOrCreateRanges(b, loc))) {
     auto rank = en.index();
     auto rangeValue = en.value();
     // Try to extract a tight constant.
@@ -169,7 +179,7 @@ static PromotionInfo promoteSubviewAsNewBuffer(OpBuilder &b, Location loc,
                             dynamicBuffers, folder, alignment);
   auto fullLocalView = folded_std_view(
       folder, MemRefType::get(dynSizes, viewType.getElementType()), buffer,
-      folded_std_constant_index(folder, 0), fullSizes);
+      zero, fullSizes);
   SmallVector<Value, 4> zeros(fullSizes.size(), zero);
   SmallVector<Value, 4> ones(fullSizes.size(), one);
   auto partialLocalView =
@@ -200,6 +210,9 @@ promoteSubViews(OpBuilder &b, Location loc,
     SubViewOp subView = cast<SubViewOp>(v.getDefiningOp());
     auto info = promotionInfoMap.find(v);
     if (info == promotionInfoMap.end())
+      continue;
+    // Only fill the buffer if the full local view is used
+    if (!options.useFullTileBuffers[v])
       continue;
     Value fillVal;
     if (auto t = subView.getType().getElementType().dyn_cast<FloatType>())
@@ -244,7 +257,10 @@ static void promoteSubViews(OpBuilder &b, LinalgOp op,
   unsigned promotedIdx = 0;
   for (auto view : op.getInputsAndOutputBuffers()) {
     if (options.subViews.count(view) != 0) {
-      opViews.push_back(promotedBufferAndViews[promotedIdx].fullLocalView);
+      if (options.useFullTileBuffers[view])
+        opViews.push_back(promotedBufferAndViews[promotedIdx].fullLocalView);
+      else
+        opViews.push_back(promotedBufferAndViews[promotedIdx].partialLocalView);
       writebackViews.emplace_back(std::make_pair(
           view, promotedBufferAndViews[promotedIdx].partialLocalView));
       promotedIdx++;

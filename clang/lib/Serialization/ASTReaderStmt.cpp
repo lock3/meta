@@ -1821,6 +1821,10 @@ void ASTStmtReader::VisitCXXReinterpretCastExpr(CXXReinterpretCastExpr *E) {
   return VisitCXXNamedCastExpr(E);
 }
 
+void ASTStmtReader::VisitCXXAddrspaceCastExpr(CXXAddrspaceCastExpr *E) {
+  return VisitCXXNamedCastExpr(E);
+}
+
 void ASTStmtReader::VisitCXXConstCastExpr(CXXConstCastExpr *E) {
   return VisitCXXNamedCastExpr(E);
 }
@@ -3707,6 +3711,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case EXPR_CXX_CONST_CAST:
       S = CXXConstCastExpr::CreateEmpty(Context);
+      break;
+
+    case EXPR_CXX_ADDRSPACE_CAST:
+      S = CXXAddrspaceCastExpr::CreateEmpty(Context);
       break;
 
     case EXPR_CXX_FUNCTIONAL_CAST:

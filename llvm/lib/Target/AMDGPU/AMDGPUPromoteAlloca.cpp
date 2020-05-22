@@ -128,14 +128,39 @@ public:
   }
 };
 
+class AMDGPUPromoteAllocaToVector : public FunctionPass {
+public:
+  static char ID;
+
+  AMDGPUPromoteAllocaToVector() : FunctionPass(ID) {}
+
+  bool runOnFunction(Function &F) override;
+
+  StringRef getPassName() const override {
+    return "AMDGPU Promote Alloca to vector";
+  }
+
+  bool handleAlloca(AllocaInst &I);
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.setPreservesCFG();
+    FunctionPass::getAnalysisUsage(AU);
+  }
+};
+
 } // end anonymous namespace
 
 char AMDGPUPromoteAlloca::ID = 0;
+char AMDGPUPromoteAllocaToVector::ID = 0;
 
 INITIALIZE_PASS(AMDGPUPromoteAlloca, DEBUG_TYPE,
                 "AMDGPU promote alloca to vector or LDS", false, false)
 
+INITIALIZE_PASS(AMDGPUPromoteAllocaToVector, DEBUG_TYPE "-to-vector",
+                "AMDGPU promote alloca to vector", false, false)
+
 char &llvm::AMDGPUPromoteAllocaID = AMDGPUPromoteAlloca::ID;
+char &llvm::AMDGPUPromoteAllocaToVectorID = AMDGPUPromoteAllocaToVector::ID;
 
 bool AMDGPUPromoteAlloca::doInitialization(Module &M) {
   Mod = &M;
@@ -297,9 +322,9 @@ Value *AMDGPUPromoteAlloca::getWorkitemID(IRBuilder<> &Builder, unsigned N) {
   return CI;
 }
 
-static VectorType *arrayTypeToVecType(ArrayType *ArrayTy) {
-  return VectorType::get(ArrayTy->getElementType(),
-                         ArrayTy->getNumElements());
+static FixedVectorType *arrayTypeToVecType(ArrayType *ArrayTy) {
+  return FixedVectorType::get(ArrayTy->getElementType(),
+                              ArrayTy->getNumElements());
 }
 
 static Value *stripBitcasts(Value *V) {
@@ -390,7 +415,7 @@ static bool tryPromoteAllocaToVector(AllocaInst *Alloca, const DataLayout &DL) {
   }
 
   Type *AllocaTy = Alloca->getAllocatedType();
-  VectorType *VectorTy = dyn_cast<VectorType>(AllocaTy);
+  auto *VectorTy = dyn_cast<FixedVectorType>(AllocaTy);
   if (auto *ArrayTy = dyn_cast<ArrayType>(AllocaTy)) {
     if (VectorType::isValidElementType(ArrayTy->getElementType()) &&
         ArrayTy->getNumElements() > 0)
@@ -468,7 +493,7 @@ static bool tryPromoteAllocaToVector(AllocaInst *Alloca, const DataLayout &DL) {
     IRBuilder<> Builder(Inst);
     switch (Inst->getOpcode()) {
     case Instruction::Load: {
-      if (Inst->getType() == AllocaTy)
+      if (Inst->getType() == AllocaTy || Inst->getType()->isVectorTy())
         break;
 
       Type *VecPtrTy = VectorTy->getPointerTo(AMDGPUAS::PRIVATE_ADDRESS);
@@ -486,7 +511,8 @@ static bool tryPromoteAllocaToVector(AllocaInst *Alloca, const DataLayout &DL) {
     }
     case Instruction::Store: {
       StoreInst *SI = cast<StoreInst>(Inst);
-      if (SI->getValueOperand()->getType() == AllocaTy)
+      if (SI->getValueOperand()->getType() == AllocaTy ||
+          SI->getValueOperand()->getType()->isVectorTy())
         break;
 
       Type *VecPtrTy = VectorTy->getPointerTo(AMDGPUAS::PRIVATE_ADDRESS);
@@ -981,6 +1007,43 @@ bool AMDGPUPromoteAlloca::handleAlloca(AllocaInst &I, bool SufficientLDS) {
   return true;
 }
 
+bool AMDGPUPromoteAllocaToVector::runOnFunction(Function &F) {
+  if (skipFunction(F) || DisablePromoteAllocaToVector)
+    return false;
+
+  bool Changed = false;
+  BasicBlock &EntryBB = *F.begin();
+
+  SmallVector<AllocaInst *, 16> Allocas;
+  for (Instruction &I : EntryBB) {
+    if (AllocaInst *AI = dyn_cast<AllocaInst>(&I))
+      Allocas.push_back(AI);
+  }
+
+  for (AllocaInst *AI : Allocas) {
+    if (handleAlloca(*AI))
+      Changed = true;
+  }
+
+  return Changed;
+}
+
+bool AMDGPUPromoteAllocaToVector::handleAlloca(AllocaInst &I) {
+  // Array allocations are probably not worth handling, since an allocation of
+  // the array type is the canonical form.
+  if (!I.isStaticAlloca() || I.isArrayAllocation())
+    return false;
+
+  LLVM_DEBUG(dbgs() << "Trying to promote " << I << '\n');
+
+  Module *Mod = I.getParent()->getParent()->getParent();
+  return tryPromoteAllocaToVector(&I, Mod->getDataLayout());
+}
+
 FunctionPass *llvm::createAMDGPUPromoteAlloca() {
   return new AMDGPUPromoteAlloca();
+}
+
+FunctionPass *llvm::createAMDGPUPromoteAllocaToVector() {
+  return new AMDGPUPromoteAllocaToVector();
 }

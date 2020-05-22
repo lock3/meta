@@ -5836,7 +5836,8 @@ public:
   void CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
                                       bool IsDereference, SourceRange Range);
 
-  /// ActOnCXXNamedCast - Parse {dynamic,static,reinterpret,const}_cast's.
+  /// ActOnCXXNamedCast - Parse
+  /// {dynamic,static,reinterpret,const,addrspace}_cast's.
   ExprResult ActOnCXXNamedCast(SourceLocation OpLoc,
                                tok::TokenKind Kind,
                                SourceLocation LAngleBracketLoc,
@@ -6528,14 +6529,9 @@ public:
   /// A diagnostic is emitted if it is not, false is returned, and
   /// PossibleNonPrimary will be set to true if the failure might be due to a
   /// non-primary expression being used as an atomic constraint.
-  bool CheckConstraintExpression(Expr *CE, Token NextToken = Token(),
+  bool CheckConstraintExpression(const Expr *CE, Token NextToken = Token(),
                                  bool *PossibleNonPrimary = nullptr,
                                  bool IsTrailingRequiresClause = false);
-
-  /// Check whether the given type-dependent expression will be the name of a
-  /// function or another callable function-like entity (e.g. a function
-  // template or overload set) for any substitution.
-  bool IsDependentFunctionNameExpr(Expr *E);
 
 private:
   /// Caches pairs of template-like decls whose associated constraints were
@@ -11391,6 +11387,12 @@ public:
                                             SourceLocation LParenLoc,
                                             SourceLocation EndLoc,
                                             ArrayRef<UsesAllocatorsData> Data);
+  /// Called on well-formed 'affinity' clause.
+  OMPClause *ActOnOpenMPAffinityClause(SourceLocation StartLoc,
+                                       SourceLocation LParenLoc,
+                                       SourceLocation ColonLoc,
+                                       SourceLocation EndLoc, Expr *Modifier,
+                                       ArrayRef<Expr *> Locators);
 
   /// The kind of conversion being performed.
   enum CheckedConversionKind {
@@ -11448,9 +11450,8 @@ public:
                                                   bool Diagnose = true);
 
   // DefaultLvalueConversion - performs lvalue-to-rvalue conversion on
-  // the operand.  This is DefaultFunctionArrayLvalueConversion,
-  // except that it assumes the operand isn't of function or array
-  // type.
+  // the operand. This function is a no-op if the operand has a function type
+  // or an array type.
   ExprResult DefaultLvalueConversion(Expr *E);
 
   // DefaultArgumentPromotion (C99 6.5.2.2p6). Used for function calls that
@@ -12690,32 +12691,41 @@ private:
   ExprResult CheckBuiltinFunctionCall(FunctionDecl *FDecl,
                                       unsigned BuiltinID, CallExpr *TheCall);
 
-  bool CheckTSBuiltinFunctionCall(llvm::Triple::ArchType Arch,
-                                  unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckTSBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                  CallExpr *TheCall);
 
   void checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD, CallExpr *TheCall);
 
   bool CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
                                     unsigned MaxWidth);
-  bool CheckNeonBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckNeonBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                    CallExpr *TheCall);
   bool CheckMVEBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckSVEBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckCDEBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckARMCoprocessorImmediate(const Expr *CoprocArg, bool WantCDE);
-  bool CheckARMBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckCDEBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                   CallExpr *TheCall);
+  bool CheckARMCoprocessorImmediate(const TargetInfo &TI, const Expr *CoprocArg,
+                                    bool WantCDE);
+  bool CheckARMBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                   CallExpr *TheCall);
 
-  bool CheckAArch64BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckAArch64BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                       CallExpr *TheCall);
   bool CheckBPFBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckHexagonBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckHexagonBuiltinArgument(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckMipsBuiltinCpu(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckMipsBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                    CallExpr *TheCall);
+  bool CheckMipsBuiltinCpu(const TargetInfo &TI, unsigned BuiltinID,
+                           CallExpr *TheCall);
   bool CheckMipsBuiltinArgument(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckSystemZBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckX86BuiltinGatherScatterScale(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
-  bool CheckPPCBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                   CallExpr *TheCall);
+  bool CheckPPCBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                   CallExpr *TheCall);
   bool CheckAMDGCNBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
 
   bool SemaBuiltinVAStart(unsigned BuiltinID, CallExpr *TheCall);

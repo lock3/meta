@@ -170,9 +170,10 @@ public:
   bool isZExtFree(EVT Src, EVT Dest) const override;
   bool isZExtFree(SDValue Val, EVT VT2) const override;
 
-  NegatibleCost getNegatibleCost(SDValue Op, SelectionDAG &DAG,
-                                 bool LegalOperations, bool ForCodeSize,
-                                 unsigned Depth) const override;
+  SDValue getNegatedExpression(SDValue Op, SelectionDAG &DAG,
+                               bool LegalOperations, bool ForCodeSize,
+                               NegatibleCost &Cost,
+                               unsigned Depth) const override;
 
   bool isNarrowingProfitable(EVT VT1, EVT VT2) const override;
 
@@ -287,19 +288,19 @@ public:
   /// a copy from the register.
   SDValue CreateLiveInRegister(SelectionDAG &DAG,
                                const TargetRegisterClass *RC,
-                               unsigned Reg, EVT VT,
+                               Register Reg, EVT VT,
                                const SDLoc &SL,
                                bool RawReg = false) const;
   SDValue CreateLiveInRegister(SelectionDAG &DAG,
                                const TargetRegisterClass *RC,
-                               unsigned Reg, EVT VT) const {
+                               Register Reg, EVT VT) const {
     return CreateLiveInRegister(DAG, RC, Reg, VT, SDLoc(DAG.getEntryNode()));
   }
 
   // Returns the raw live in register rather than a copy from it.
   SDValue CreateLiveInRegisterRaw(SelectionDAG &DAG,
                                   const TargetRegisterClass *RC,
-                                  unsigned Reg, EVT VT) const {
+                                  Register Reg, EVT VT) const {
     return CreateLiveInRegister(DAG, RC, Reg, VT, SDLoc(DAG.getEntryNode()), true);
   }
 

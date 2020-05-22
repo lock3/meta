@@ -611,15 +611,19 @@ getELFSectionNameForGlobal(const GlobalObject *GO, SectionKind Kind,
     Name = getSectionPrefixForGlobal(Kind);
   }
 
+  bool HasPrefix = false;
   if (const auto *F = dyn_cast<Function>(GO)) {
-    if (Optional<StringRef> Prefix = F->getSectionPrefix())
+    if (Optional<StringRef> Prefix = F->getSectionPrefix()) {
       Name += *Prefix;
+      HasPrefix = true;
+    }
   }
 
   if (UniqueSectionName) {
     Name.push_back('.');
     TM.getNameWithPrefix(Name, GO, Mang, /*MayAlwaysUsePrivate*/true);
-  }
+  } else if (HasPrefix)
+    Name.push_back('.');
   return Name;
 }
 
@@ -838,7 +842,7 @@ bool TargetLoweringObjectFileELF::shouldPutJumpTableInFunctionSection(
 /// information, return a section that it should be placed in.
 MCSection *TargetLoweringObjectFileELF::getSectionForConstant(
     const DataLayout &DL, SectionKind Kind, const Constant *C,
-    unsigned &Align) const {
+    Align &Alignment) const {
   if (Kind.isMergeableConst4() && MergeableConst4Section)
     return MergeableConst4Section;
   if (Kind.isMergeableConst8() && MergeableConst8Section)
@@ -1190,7 +1194,7 @@ MCSection *TargetLoweringObjectFileMachO::SelectSectionForGlobal(
 
 MCSection *TargetLoweringObjectFileMachO::getSectionForConstant(
     const DataLayout &DL, SectionKind Kind, const Constant *C,
-    unsigned &Align) const {
+    Align &Alignment) const {
   // If this constant requires a relocation, we have to put it in the data
   // segment, not in the text segment.
   if (Kind.isData() || Kind.isReadOnlyWithRel())
@@ -1773,7 +1777,7 @@ static std::string scalarConstantToHexString(const Constant *C) {
 
 MCSection *TargetLoweringObjectFileCOFF::getSectionForConstant(
     const DataLayout &DL, SectionKind Kind, const Constant *C,
-    unsigned &Align) const {
+    Align &Alignment) const {
   if (Kind.isMergeableConst() && C &&
       getContext().getAsmInfo()->hasCOFFComdatConstants()) {
     // This creates comdat sections with the given symbol name, but unless
@@ -1785,25 +1789,25 @@ MCSection *TargetLoweringObjectFileCOFF::getSectionForConstant(
                                      COFF::IMAGE_SCN_LNK_COMDAT;
     std::string COMDATSymName;
     if (Kind.isMergeableConst4()) {
-      if (Align <= 4) {
+      if (Alignment <= 4) {
         COMDATSymName = "__real@" + scalarConstantToHexString(C);
-        Align = 4;
+        Alignment = Align(4);
       }
     } else if (Kind.isMergeableConst8()) {
-      if (Align <= 8) {
+      if (Alignment <= 8) {
         COMDATSymName = "__real@" + scalarConstantToHexString(C);
-        Align = 8;
+        Alignment = Align(8);
       }
     } else if (Kind.isMergeableConst16()) {
       // FIXME: These may not be appropriate for non-x86 architectures.
-      if (Align <= 16) {
+      if (Alignment <= 16) {
         COMDATSymName = "__xmm@" + scalarConstantToHexString(C);
-        Align = 16;
+        Alignment = Align(16);
       }
     } else if (Kind.isMergeableConst32()) {
-      if (Align <= 32) {
+      if (Alignment <= 32) {
         COMDATSymName = "__ymm@" + scalarConstantToHexString(C);
-        Align = 32;
+        Alignment = Align(32);
       }
     }
 
@@ -1813,9 +1817,9 @@ MCSection *TargetLoweringObjectFileCOFF::getSectionForConstant(
                                          COFF::IMAGE_COMDAT_SELECT_ANY);
   }
 
-  return TargetLoweringObjectFile::getSectionForConstant(DL, Kind, C, Align);
+  return TargetLoweringObjectFile::getSectionForConstant(DL, Kind, C,
+                                                         Alignment);
 }
-
 
 //===----------------------------------------------------------------------===//
 //                                  Wasm
@@ -2092,7 +2096,7 @@ bool TargetLoweringObjectFileXCOFF::shouldPutJumpTableInFunctionSection(
 /// information, return a section that it should be placed in.
 MCSection *TargetLoweringObjectFileXCOFF::getSectionForConstant(
     const DataLayout &DL, SectionKind Kind, const Constant *C,
-    unsigned &Align) const {
+    Align &Alignment) const {
   //TODO: Enable emiting constant pool to unique sections when we support it.
   return ReadOnlySection;
 }

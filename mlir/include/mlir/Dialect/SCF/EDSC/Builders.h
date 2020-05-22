@@ -41,7 +41,7 @@ inline LoopBuilder makeLoopBuilder(Value *iv, Value lb, Value ub, Value step) {
   return makeLoopBuilder(iv, lb, ub, step, MutableArrayRef<Value>{}, {});
 }
 
-/// Helper class to sugar building loop.parallel loop nests from lower/upper
+/// Helper class to sugar building scf.parallel loop nests from lower/upper
 /// bounds and step sizes.
 class ParallelLoopNestBuilder {
 public:
@@ -54,9 +54,9 @@ private:
   SmallVector<LoopBuilder, 4> loops;
 };
 
-/// Helper class to sugar building loop.for loop nests from ranges.
+/// Helper class to sugar building scf.for loop nests from ranges.
 /// This is similar to edsc::AffineLoopNestBuilder except it operates on
-/// loop.for.
+/// scf.for.
 class LoopNestBuilder {
 public:
   LoopNestBuilder(Value *iv, Value lb, Value ub, Value step);
@@ -65,11 +65,22 @@ public:
                   ValueRange iterArgsInitValues);
   LoopNestBuilder(MutableArrayRef<Value> ivs, ArrayRef<Value> lbs,
                   ArrayRef<Value> ubs, ArrayRef<Value> steps);
-  Operation::result_range operator()(std::function<void(void)> fun = nullptr);
+  ValueRange operator()(std::function<void(void)> fun = nullptr);
 
 private:
   SmallVector<LoopBuilder, 4> loops;
 };
+
+/// Adapters for building loop nests using the builder and the location stored
+/// in ScopedContext. Actual builders are in scf::buildLoopNest.
+scf::ValueVector loopNestBuilder(ValueRange lbs, ValueRange ubs,
+                                 ValueRange steps,
+                                 function_ref<void(ValueRange)> fun = nullptr);
+scf::ValueVector loopNestBuilder(Value lb, Value ub, Value step,
+                                 function_ref<void(Value)> fun = nullptr);
+scf::ValueVector loopNestBuilder(
+    Value lb, Value ub, Value step, ValueRange iterArgInitValues,
+    function_ref<scf::ValueVector(Value, ValueRange)> fun = nullptr);
 
 } // namespace edsc
 } // namespace mlir
