@@ -11,9 +11,12 @@
 
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/SmallBitVector.h"
 
 namespace mlir {
 namespace linalg {
+
+struct LinalgTilingOptions;
 
 //===----------------------------------------------------------------------===//
 // Transformations exposed as function calls.
@@ -33,10 +36,6 @@ struct TiledLinalgOp {
 /// An empty vector is interpreted as the identity permutation and the
 /// transformation returns early.
 ///
-/// When non-null, the optional pointer `folder` is used to call into the
-/// `createAndFold` builder method. If `folder` is null, the regular `create`
-/// method is called.
-///
 /// Returns a struct containing the tiled loops in the specified order
 /// and the cloned op if successful, llvm::None otherwise.
 ///
@@ -45,26 +44,7 @@ struct TiledLinalgOp {
 /// integers, in the range 0..`tileSizes.size()` without duplications
 /// (i.e. `[1,1,2]` is an invalid permutation).
 Optional<TiledLinalgOp> tileLinalgOp(OpBuilder &b, LinalgOp op,
-                                     ArrayRef<Value> tileSizes,
-                                     ArrayRef<unsigned> interchangeVector = {},
-                                     OperationFolder *folder = nullptr);
-Optional<TiledLinalgOp>
-tileLinalgOpToParallelLoops(OpBuilder &b, LinalgOp op,
-                            ArrayRef<Value> tileSizes,
-                            ArrayRef<unsigned> interchangeVector = {},
-                            OperationFolder *folder = nullptr);
-
-/// Performs standalone tiling of a single LinalgOp by constant `tileSizes`.
-/// See `tileLinalgOp(... ArrayRef<Value> tileSizes,)` for more details
-Optional<TiledLinalgOp> tileLinalgOp(OpBuilder &b, LinalgOp op,
-                                     ArrayRef<int64_t> tileSizes,
-                                     ArrayRef<unsigned> interchangeVector = {},
-                                     OperationFolder *folder = nullptr);
-Optional<TiledLinalgOp>
-tileLinalgOpToParallelLoops(OpBuilder &b, LinalgOp op,
-                            ArrayRef<int64_t> tileSizes,
-                            ArrayRef<unsigned> interchangeVector = {},
-                            OperationFolder *folder = nullptr);
+                                     const LinalgTilingOptions &options);
 
 /// Interchanges the `iterator_types` and `iterator_maps` dimensions of `op`.
 /// This is an in-place transformation controlled by `interchangeVector`.
@@ -97,6 +77,28 @@ struct LinalgPromotionOptions {
     operandsToPromote->insert(operands.begin(), operands.end());
     return *this;
   }
+  /// If ith element of `useFullTiles` is true the full view should be used for
+  /// the promoted buffer of the ith operand in `operandsToPromote`. Otherwise
+  /// the partial view will be used.
+  /// The decision is defaulted to `useFullTileBuffersDefault` when
+  /// `useFullTileBuffers` is None and for operands missing from
+  /// `useFullTileBuffers`.
+  Optional<llvm::SmallBitVector> useFullTileBuffers = None;
+  LinalgPromotionOptions &setUseFullTileBuffers(ArrayRef<bool> useFullTiles) {
+    unsigned size = useFullTiles.size();
+    llvm::SmallBitVector tmp(size, false);
+    for (unsigned i = 0; i < size; ++i)
+      tmp[i] = useFullTiles[i];
+    useFullTileBuffers = tmp;
+    return *this;
+  }
+  /// If true all operands unspecified by `useFullTileBuffers` will use the full
+  /// view, otherwise the partial view.
+  bool useFullTileBuffersDefault = false;
+  LinalgPromotionOptions &useFullTileBuffersByDefault() {
+    useFullTileBuffersDefault = true;
+    return *this;
+  }
   /// Allow the use of dynamicaly-sized buffers.
   bool dynamicBuffers = false;
   LinalgPromotionOptions &setDynamicBuffers(unsigned dynamic) {
@@ -121,11 +123,11 @@ void vectorizeLinalgOp(OpBuilder &builder, Operation *op);
 template <typename LoopTy, typename ConcreteOp>
 Optional<LinalgLoops> linalgLowerOpToLoops(OpBuilder &builder, Operation *op);
 
-/// Emits a loop nest of `loop.for` with the proper body for `op`.
+/// Emits a loop nest of `scf.for` with the proper body for `op`.
 template <typename ConcreteOp>
 LogicalResult linalgOpToLoops(OpBuilder &builder, Operation *op);
 
-/// Emits a loop nest of `loop.parallel` with the proper body for `op`.
+/// Emits a loop nest of `scf.parallel` with the proper body for `op`.
 template <typename ConcreteOp>
 LogicalResult linalgOpToParallelLoops(OpBuilder &builder, Operation *op);
 
@@ -180,15 +182,34 @@ private:
 enum class LinalgTilingLoopType {
   Loops = 0,
   AffineLoops = 1,
-  ParallelLoops = 2
+  ParallelLoops = 2,
 };
+using TileSizeComputationFunction =
+    std::function<SmallVector<Value, 4>(OpBuilder &, Operation *)>;
 struct LinalgTilingOptions {
-  /// The tile sizes by which to tile.
-  SmallVector<int64_t, 4> tileSizes{};
-  LinalgTilingOptions &setTileSizes(ArrayRef<int64_t> ts) {
-    tileSizes.assign(ts.begin(), ts.end());
+  /// Computation function that returns the tile sizes for each operation.
+  /// Delayed construction of constant tile sizes should occur to interoperate
+  /// with folding.
+  TileSizeComputationFunction tileSizeComputationFunction = nullptr;
+  LinalgTilingOptions &
+  setTileSizeComputationFunction(TileSizeComputationFunction &fun) {
+    tileSizeComputationFunction = fun;
     return *this;
   }
+  /// Set the `tileSizeComputationFunction` to return the values `ts`. The
+  /// values must not fold away when tiling. Otherwise, use a more robust
+  /// `tileSizeComputationFunction`.
+  LinalgTilingOptions &setTileSizes(ValueRange ts) {
+    tileSizeComputationFunction = [&](OpBuilder &, Operation *) {
+      return SmallVector<Value, 4>(ts.begin(), ts.end());
+    };
+    return *this;
+  }
+  /// Convenience function to set the `tileSizeComputationFunction` to a
+  /// function that computes tile sizes at the point they are needed. Allows
+  /// proper interaction with folding.
+  LinalgTilingOptions &setTileSizes(ArrayRef<int64_t> ts);
+
   /// The interchange vector to reorder the tiled loops.
   SmallVector<unsigned, 4> interchangeVector{};
   LinalgTilingOptions &setInterchange(ArrayRef<unsigned> interchange) {
@@ -202,6 +223,12 @@ struct LinalgTilingOptions {
     return *this;
   }
 };
+
+/// Canonicalization patterns relevant to apply after tiling patterns. These are
+/// applied automatically by the tiling pass but need to be applied manually
+/// when tiling is called programmatically.
+OwningRewritePatternList
+getLinalgTilingCanonicalizationPatterns(MLIRContext *ctx);
 
 struct LinalgBaseTilingPattern : public RewritePattern {
   LinalgBaseTilingPattern(StringRef opName, MLIRContext *context,
@@ -362,11 +389,28 @@ struct LinalgLoweringPattern : public RewritePattern {
 private:
   /// LinalgTransformMarker handles special attribute manipulations.
   LinalgMarker marker;
-  /// Controls whether the pattern lowers to library calls, loop.for, affine.for
-  /// or loop.parallel.
+  /// Controls whether the pattern lowers to library calls, scf.for, affine.for
+  /// or scf.parallel.
   LinalgLoweringType loweringType;
 };
 
+//===----------------------------------------------------------------------===//
+// Support for staged pattern application.
+//===----------------------------------------------------------------------===//
+/// Helper function to allow applying rewrite patterns, interleaved with more
+/// global transformations, in a staged fashion:
+///   1. the first stage consists of a list of OwningRewritePatternList. Each
+///   OwningRewritePatternList in this list is applied once, in order.
+///   2. the second stage consists of a single OwningRewritePattern that is
+///   applied greedily until convergence.
+///   3. the third stage consists of applying a lambda, generally used for
+///   non-local transformation effects. This allows creating custom fused
+///   transformations where patterns can be ordered and applied at a finer
+///   granularity than a sequence of traditional compiler passes.
+LogicalResult applyStagedPatterns(
+    Operation *op, ArrayRef<OwningRewritePatternList> stage1Patterns,
+    const OwningRewritePatternList &stage2Patterns,
+    llvm::function_ref<LogicalResult(Operation *)> stage3Lambda = nullptr);
 } // namespace linalg
 } // namespace mlir
 

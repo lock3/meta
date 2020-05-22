@@ -4419,6 +4419,9 @@ recurse:
   case Expr::CXXConstCastExprClass:
     mangleCastExpression(E, "cc");
     break;
+  case Expr::CXXAddrspaceCastExprClass:
+    mangleCastExpression(E, "ac");
+    break;
 
   case Expr::CXXOperatorCallExprClass: {
     const CXXOperatorCallExpr *CE = cast<CXXOperatorCallExpr>(E);
