@@ -300,6 +300,8 @@ public:
   DefaultBool ChecksEnabled[CK_NumCheckKinds];
   CheckerNameRef CheckNames[CK_NumCheckKinds];
 
+  bool DisplayLoadedSummaries = false;
+
 private:
   Optional<Summary> findFunctionSummary(const FunctionDecl *FD,
                                         CheckerContext &C) const;
@@ -566,21 +568,6 @@ StdLibraryFunctionsChecker::findFunctionSummary(const CallEvent &Call,
   return findFunctionSummary(FD, C);
 }
 
-llvm::Optional<const FunctionDecl *>
-lookupGlobalCFunction(StringRef Name, const ASTContext &ACtx) {
-  IdentifierInfo &II = ACtx.Idents.get(Name);
-  auto LookupRes = ACtx.getTranslationUnitDecl()->lookup(&II);
-  if (LookupRes.size() == 0)
-    return None;
-
-  assert(LookupRes.size() == 1 && "In C, identifiers should be unique");
-  Decl *D = LookupRes.front()->getCanonicalDecl();
-  auto *FD = dyn_cast<FunctionDecl>(D);
-  if (!FD)
-    return None;
-  return FD->getCanonicalDecl();
-}
-
 void StdLibraryFunctionsChecker::initFunctionSummaries(
     CheckerContext &C) const {
   if (!FunctionSummaryMap.empty())
@@ -639,8 +626,12 @@ void StdLibraryFunctionsChecker::initFunctionSummaries(
   struct AddToFunctionSummaryMap {
     const ASTContext &ACtx;
     FunctionSummaryMapType &Map;
-    AddToFunctionSummaryMap(const ASTContext &ACtx, FunctionSummaryMapType &FSM)
-        : ACtx(ACtx), Map(FSM) {}
+    bool DisplayLoadedSummaries;
+    AddToFunctionSummaryMap(const ASTContext &ACtx, FunctionSummaryMapType &FSM,
+                            bool DisplayLoadedSummaries)
+        : ACtx(ACtx), Map(FSM), DisplayLoadedSummaries(DisplayLoadedSummaries) {
+    }
+
     // Add a summary to a FunctionDecl found by lookup. The lookup is performed
     // by the given Name, and in the global scope. The summary will be attached
     // to the found FunctionDecl only if the signatures match.
@@ -655,6 +646,11 @@ void StdLibraryFunctionsChecker::initFunctionSummaries(
             auto Res = Map.insert({FD->getCanonicalDecl(), S});
             assert(Res.second && "Function already has a summary set!");
             (void)Res;
+            if (DisplayLoadedSummaries) {
+              llvm::errs() << "Loaded summary for: ";
+              FD->print(llvm::errs());
+              llvm::errs() << "\n";
+            }
             return;
           }
         }
@@ -665,7 +661,7 @@ void StdLibraryFunctionsChecker::initFunctionSummaries(
       for (const Summary &S : Summaries)
         operator()(Name, S);
     }
-  } addToFunctionSummaryMap(ACtx, FunctionSummaryMap);
+  } addToFunctionSummaryMap(ACtx, FunctionSummaryMap, DisplayLoadedSummaries);
 
   // We are finally ready to define specifications for all supported functions.
   //
@@ -937,7 +933,10 @@ void StdLibraryFunctionsChecker::initFunctionSummaries(
 }
 
 void ento::registerStdCLibraryFunctionsChecker(CheckerManager &mgr) {
-  mgr.registerChecker<StdLibraryFunctionsChecker>();
+  auto *Checker = mgr.registerChecker<StdLibraryFunctionsChecker>();
+  Checker->DisplayLoadedSummaries =
+      mgr.getAnalyzerOptions().getCheckerBooleanOption(
+          Checker, "DisplayLoadedSummaries");
 }
 
 bool ento::shouldRegisterStdCLibraryFunctionsChecker(const CheckerManager &mgr) {

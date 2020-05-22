@@ -82,6 +82,12 @@ buildCompilerInvocation(const ParseInputs &Inputs, clang::DiagnosticConsumer &D,
   CI->getPreprocessorOpts().PCHThroughHeader.clear();
   CI->getPreprocessorOpts().PCHWithHdrStop = false;
   CI->getPreprocessorOpts().PCHWithHdrStopCreate = false;
+
+  // Recovery expression currently only works for C++.
+  if (CI->getLangOpts()->CPlusPlus) {
+    CI->getLangOpts()->RecoveryAST = Inputs.Opts.BuildRecoveryAST;
+    CI->getLangOpts()->RecoveryASTType = Inputs.Opts.PreserveRecoveryASTType;
+  }
   return CI;
 }
 

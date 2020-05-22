@@ -1924,6 +1924,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
         D->hasWrittenPrototype(), getNewConstexprSpecKind(D, TemplateArgs),
         TrailingRequiresClause);
     Function->setRangeEnd(D->getSourceRange().getEnd());
+    Function->setUsesFPIntrin(D->usesFPIntrin());
   }
 
   if (D->isInlined())
