@@ -843,8 +843,8 @@ public:
       // the extracts could be optimized away.
       Value *EV;
       ConstantInt *Ex1Idx, *Ex2Idx;
-      if (match(V1, m_ExtractElement(m_Value(EV), m_ConstantInt(Ex1Idx))) &&
-          match(V2, m_ExtractElement(m_Deferred(EV), m_ConstantInt(Ex2Idx))) &&
+      if (match(V1, m_ExtractElt(m_Value(EV), m_ConstantInt(Ex1Idx))) &&
+          match(V2, m_ExtractElt(m_Deferred(EV), m_ConstantInt(Ex2Idx))) &&
           Ex1Idx->getZExtValue() + 1 == Ex2Idx->getZExtValue())
         return VLOperands::ScoreConsecutiveExtracts;
 
@@ -2365,6 +2365,7 @@ BoUpSLP::~BoUpSLP() {
            "trying to erase instruction with users.");
     Pair.getFirst()->eraseFromParent();
   }
+  assert(!verifyFunction(*F, &dbgs()));
 }
 
 void BoUpSLP::eraseInstructions(ArrayRef<Value *> AV) {
@@ -5743,7 +5744,6 @@ bool SLPVectorizerPass::runImpl(Function &F, ScalarEvolution *SE_,
   if (Changed) {
     R.optimizeGatherSequence();
     LLVM_DEBUG(dbgs() << "SLP: vectorized \"" << F.getName() << "\"\n");
-    LLVM_DEBUG(verifyFunction(F));
   }
   return Changed;
 }
