@@ -116,6 +116,9 @@ def NonDeterminismAlpha : Package<"nondeterminism">, ParentPackage<Alpha>;
 def Fuchsia : Package<"fuchsia">;
 def FuchsiaAlpha : Package<"fuchsia">, ParentPackage<Alpha>;
 
+def WebKit : Package<"webkit">;
+def WebKitAlpha : Package<"webkit">, ParentPackage<Alpha>;
+
 //===----------------------------------------------------------------------===//
 // Core Checkers.
 //===----------------------------------------------------------------------===//
@@ -553,13 +556,13 @@ def NewDeleteChecker : Checker<"NewDelete">,
 
 def NewDeleteLeaksChecker : Checker<"NewDeleteLeaks">,
   HelpText<"Check for memory leaks. Traces memory managed by new/delete.">,
-  Dependencies<[NewDeleteChecker]>,
+  Dependencies<[DynamicMemoryModeling]>,
   Documentation<HasDocumentation>;
 
 def PlacementNewChecker : Checker<"PlacementNew">,
   HelpText<"Check if default placement new is provided with pointers to "
            "sufficient storage capacity">,
-  Dependencies<[NewDeleteChecker]>,
+  Dependencies<[DynamicMemoryModeling]>,
   Documentation<HasDocumentation>;
 
 def CXXSelfAssignmentChecker : Checker<"SelfAssignment">,
@@ -1092,15 +1095,6 @@ def RetainCountChecker : Checker<"RetainCount">,
   HelpText<"Check for leaks and improper reference count management">,
   CheckerOptions<[
     CmdLineOption<Boolean,
-                  "CheckOSObject",
-                  "Find violations of retain-release rules applied to XNU "
-                  "OSObject instances. By default, the checker only checks "
-                  "retain-release rules for Objective-C NSObject instances "
-                  "and CoreFoundation objects.",
-                  "true",
-                  InAlpha,
-                  Hide>,
-    CmdLineOption<Boolean,
                   "TrackNSCFStartParam",
                   "Check not only that the code follows retain-release rules "
                   "with respect to objects it allocates or borrows from "
@@ -1620,3 +1614,13 @@ def FuchsiaLockChecker : Checker<"Lock">,
 
 } // end fuchsia
 
+//===----------------------------------------------------------------------===//
+// WebKit checkers.
+//===----------------------------------------------------------------------===//
+
+let ParentPackage = WebKit in {
+
+def RefCntblBaseVirtualDtorChecker : Checker<"RefCntblBaseVirtualDtor">,
+  HelpText<"Check for any ref-countable base class having virtual destructor.">,
+  Documentation<HasDocumentation>;
+} // end webkit

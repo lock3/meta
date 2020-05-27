@@ -2873,7 +2873,7 @@ def warn_auto_var_is_id : Warning<
 // Attributes
 def warn_nomerge_attribute_ignored_in_stmt: Warning<
   "%0 attribute is ignored because there exists no call expression inside the "
-  "statement">, 
+  "statement">,
   InGroup<IgnoredAttributes>;
 def err_nsobject_attribute : Error<
   "'NSObject' attribute is for pointer types only">;

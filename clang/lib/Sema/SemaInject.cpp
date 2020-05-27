@@ -1371,11 +1371,16 @@ static void CheckInjectedVarDecl(Sema &SemaRef, VarDecl *VD,
 
   // FIXME: Duplicates part of ActOnVariableDeclarator
   if (auto *RD = dyn_cast<CXXRecordDecl>(Owner)) {
-    if (!RD->getDeclName() &&
-        !(RD->getParent() && RD->getParent()->isFragment()))
-      SemaRef.Diag(VD->getLocation(),
-         diag::err_static_data_member_not_allowed_in_anon_struct)
-        << VD->getDeclName() << RD->isUnion();
+    const DeclContext *ImmediateParent = RD->getParent();
+    if (ImmediateParent && ImmediateParent->isFragment())
+      return;
+
+    if (RD->getDeclName())
+      return;
+
+    SemaRef.Diag(VD->getLocation(),
+                   diag::err_static_data_member_not_allowed_in_anon_struct)
+      << VD->getDeclName() << RD->getTagKind();
   }
 }
 
