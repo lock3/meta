@@ -188,7 +188,8 @@ public:
   void VisitCallExpr(const CallExpr *E) { FoundCallExpr = true; }
 
   void Visit(const Stmt *St) {
-    if (!St) return;
+    if (!St)
+      return;
     ConstEvaluatedExprVisitor<CallExprFinder>::Visit(St);
   }
 };
@@ -199,7 +200,7 @@ static Attr *handleNoMergeAttr(Sema &S, Stmt *St, const ParsedAttr &A,
   NoMergeAttr NMA(S.Context, A);
   if (S.CheckAttrNoArgs(A))
     return nullptr;
-  
+
   CallExprFinder CEF(S, St);
 
   if (!CEF.foundCallExpr()) {

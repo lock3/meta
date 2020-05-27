@@ -616,7 +616,7 @@ void CodeGenFunction::EmitLabelStmt(const LabelStmt &S) {
 
 void CodeGenFunction::EmitAttributedStmt(const AttributedStmt &S) {
   bool nomerge = false;
-  for (const auto *A: S.getAttrs())
+  for (const auto *A : S.getAttrs())
     if (A->getKind() == attr::NoMerge) {
       nomerge = true;
       break;

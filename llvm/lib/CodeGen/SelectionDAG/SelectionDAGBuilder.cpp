@@ -3906,7 +3906,7 @@ void SelectionDAGBuilder::visitAlloca(const AllocaInst &I) {
   // the stack alignment, ignore it.  If the size is greater than or equal to
   // the stack alignment, we note this in the DYNAMIC_STACKALLOC node.
   Align StackAlign = DAG.getSubtarget().getFrameLowering()->getStackAlign();
-  if (Alignment <= StackAlign)
+  if (*Alignment <= StackAlign)
     Alignment = None;
 
   const uint64_t StackAlignMask = StackAlign.value() - 1U;
@@ -6072,6 +6072,7 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
   case Intrinsic::rint:
   case Intrinsic::nearbyint:
   case Intrinsic::round:
+  case Intrinsic::roundeven:
   case Intrinsic::canonicalize: {
     unsigned Opcode;
     switch (Intrinsic) {
@@ -6086,6 +6087,7 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     case Intrinsic::rint:      Opcode = ISD::FRINT;      break;
     case Intrinsic::nearbyint: Opcode = ISD::FNEARBYINT; break;
     case Intrinsic::round:     Opcode = ISD::FROUND;     break;
+    case Intrinsic::roundeven: Opcode = ISD::FROUNDEVEN; break;
     case Intrinsic::canonicalize: Opcode = ISD::FCANONICALIZE; break;
     }
 

@@ -66,12 +66,6 @@ static LegalityPredicate isMultiple32(unsigned TypeIdx,
   };
 }
 
-static LegalityPredicate sizeIs(unsigned TypeIdx, unsigned Size) {
-  return [=](const LegalityQuery &Query) {
-    return Query.Types[TypeIdx].getSizeInBits() == Size;
-  };
-}
-
 static LegalityPredicate isSmallOddVector(unsigned TypeIdx) {
   return [=](const LegalityQuery &Query) {
     const LLT Ty = Query.Types[TypeIdx];
@@ -560,9 +554,17 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .scalarize(0);
   }
 
-  getActionDefinitionsBuilder({G_PTR_ADD, G_PTR_MASK})
-    .scalarize(0)
-    .alwaysLegal();
+  // FIXME: Clamp offset operand.
+  getActionDefinitionsBuilder(G_PTR_ADD)
+    .legalIf(isPointer(0))
+    .scalarize(0);
+
+  getActionDefinitionsBuilder(G_PTRMASK)
+    .legalIf(typeInSet(1, {S64, S32}))
+    .minScalar(1, S32)
+    .maxScalarIf(sizeIs(0, 32), 1, S32)
+    .maxScalarIf(sizeIs(0, 64), 1, S64)
+    .scalarize(0);
 
   auto &CmpBuilder =
     getActionDefinitionsBuilder(G_ICMP)
@@ -2278,22 +2280,30 @@ bool AMDGPULegalizerInfo::legalizeBuildVector(
 // Return the use branch instruction, otherwise null if the usage is invalid.
 static MachineInstr *verifyCFIntrinsic(MachineInstr &MI,
                                        MachineRegisterInfo &MRI,
-                                       MachineInstr *&Br) {
+                                       MachineInstr *&Br,
+                                       MachineBasicBlock *&UncondBrTarget) {
   Register CondDef = MI.getOperand(0).getReg();
   if (!MRI.hasOneNonDBGUse(CondDef))
     return nullptr;
 
+  MachineBasicBlock *Parent = MI.getParent();
   MachineInstr &UseMI = *MRI.use_instr_nodbg_begin(CondDef);
-  if (UseMI.getParent() != MI.getParent() ||
+  if (UseMI.getParent() != Parent ||
       UseMI.getOpcode() != AMDGPU::G_BRCOND)
     return nullptr;
 
-  // Make sure the cond br is followed by a G_BR
+  // Make sure the cond br is followed by a G_BR, or is the last instruction.
   MachineBasicBlock::iterator Next = std::next(UseMI.getIterator());
-  if (Next != MI.getParent()->end()) {
+  if (Next == Parent->end()) {
+    MachineFunction::iterator NextMBB = std::next(Parent->getIterator());
+    if (NextMBB == Parent->getParent()->end()) // Illegal intrinsic use.
+      return nullptr;
+    UncondBrTarget = &*NextMBB;
+  } else {
     if (Next->getOpcode() != AMDGPU::G_BR)
       return nullptr;
     Br = &*Next;
+    UncondBrTarget = Br->getOperand(0).getMBB();
   }
 
   return &UseMI;
@@ -4110,7 +4120,8 @@ bool AMDGPULegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
   case Intrinsic::amdgcn_if:
   case Intrinsic::amdgcn_else: {
     MachineInstr *Br = nullptr;
-    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br)) {
+    MachineBasicBlock *UncondBrTarget = nullptr;
+    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br, UncondBrTarget)) {
       const SIRegisterInfo *TRI
         = static_cast<const SIRegisterInfo *>(MRI.getTargetRegisterInfo());
 
@@ -4118,25 +4129,28 @@ bool AMDGPULegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
       Register Def = MI.getOperand(1).getReg();
       Register Use = MI.getOperand(3).getReg();
 
-      MachineBasicBlock *BrTarget = BrCond->getOperand(1).getMBB();
-      if (Br)
-        BrTarget = Br->getOperand(0).getMBB();
-
+      MachineBasicBlock *CondBrTarget = BrCond->getOperand(1).getMBB();
       if (IntrID == Intrinsic::amdgcn_if) {
         B.buildInstr(AMDGPU::SI_IF)
           .addDef(Def)
           .addUse(Use)
-          .addMBB(BrTarget);
+          .addMBB(UncondBrTarget);
       } else {
         B.buildInstr(AMDGPU::SI_ELSE)
           .addDef(Def)
           .addUse(Use)
-          .addMBB(BrTarget)
+          .addMBB(UncondBrTarget)
           .addImm(0);
       }
 
-      if (Br)
-        Br->getOperand(0).setMBB(BrCond->getOperand(1).getMBB());
+      if (Br) {
+        Br->getOperand(0).setMBB(CondBrTarget);
+      } else {
+        // The IRTranslator skips inserting the G_BR for fallthrough cases, but
+        // since we're swapping branch targets it needs to be reinserted.
+        // FIXME: IRTranslator should probably not do this
+        B.buildBr(*CondBrTarget);
+      }
 
       MRI.setRegClass(Def, TRI->getWaveMaskRegClass());
       MRI.setRegClass(Use, TRI->getWaveMaskRegClass());
@@ -4149,23 +4163,23 @@ bool AMDGPULegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
   }
   case Intrinsic::amdgcn_loop: {
     MachineInstr *Br = nullptr;
-    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br)) {
+    MachineBasicBlock *UncondBrTarget = nullptr;
+    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br, UncondBrTarget)) {
       const SIRegisterInfo *TRI
         = static_cast<const SIRegisterInfo *>(MRI.getTargetRegisterInfo());
 
       B.setInstr(*BrCond);
 
-      MachineBasicBlock *BrTarget = BrCond->getOperand(1).getMBB();
-      if (Br)
-        BrTarget = Br->getOperand(0).getMBB();
-
+      MachineBasicBlock *CondBrTarget = BrCond->getOperand(1).getMBB();
       Register Reg = MI.getOperand(2).getReg();
       B.buildInstr(AMDGPU::SI_LOOP)
         .addUse(Reg)
-        .addMBB(BrTarget);
+        .addMBB(UncondBrTarget);
 
       if (Br)
-        Br->getOperand(0).setMBB(BrCond->getOperand(1).getMBB());
+        Br->getOperand(0).setMBB(CondBrTarget);
+      else
+        B.buildBr(*CondBrTarget);
 
       MI.eraseFromParent();
       BrCond->eraseFromParent();

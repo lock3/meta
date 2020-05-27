@@ -6,9 +6,8 @@
 ; RUN: llc < %s -mtriple=x86_64-unknown-unknown -mattr=+avx512bw | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX512 --check-prefix=AVX512BW
 ; RUN: llc < %s -mtriple=x86_64-unknown-unknown -mattr=+avx512dq | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX512 --check-prefix=AVX512DQ
 
-; COM: AVX1 has support for 256-bit bitwise logic because the FP variants were
-; COM: included. If using those ops requires extra insert/extract though, it's
-; COM: probably not worth it.
+; AVX1 has support for 256-bit bitwise logic because the FP variants were included.
+; If using those ops requires extra insert/extract though, it's probably not worth it.
 
 define <8 x i32> @PR32790(<8 x i32> %a, <8 x i32> %b, <8 x i32> %c, <8 x i32> %d) {
 ; SSE-LABEL: PR32790:
@@ -152,12 +151,11 @@ define <4 x double> @fmul_v2f64(<2 x  double> %x, <2 x double> %y) {
 ; SSE:       # %bb.0:
 ; SSE-NEXT:    movapd %xmm1, %xmm2
 ; SSE-NEXT:    unpcklpd {{.*#+}} xmm2 = xmm2[0],xmm0[0]
-; SSE-NEXT:    unpckhpd {{.*#+}} xmm0 = xmm0[1],xmm1[1]
-; SSE-NEXT:    mulpd %xmm0, %xmm0
 ; SSE-NEXT:    mulpd %xmm2, %xmm2
-; SSE-NEXT:    addpd %xmm0, %xmm2
-; SSE-NEXT:    unpckhpd {{.*#+}} xmm2 = xmm2[1,1]
-; SSE-NEXT:    movapd %xmm2, %xmm0
+; SSE-NEXT:    mulpd %xmm1, %xmm1
+; SSE-NEXT:    addpd %xmm2, %xmm1
+; SSE-NEXT:    unpckhpd {{.*#+}} xmm1 = xmm1[1,1]
+; SSE-NEXT:    movapd %xmm1, %xmm0
 ; SSE-NEXT:    retq
 ;
 ; AVX1-LABEL: fmul_v2f64:

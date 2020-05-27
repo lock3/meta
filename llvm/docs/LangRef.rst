@@ -1065,17 +1065,22 @@ Currently, only the following parameter attributes are defined:
     form and the known alignment of the pointer specified to the call
     site. If the alignment is not specified, then the code generator
     makes a target-specific assumption.
+
+.. _attr_preallocated:
+
 ``preallocated(<ty>)``
     This indicates that the pointer parameter should really be passed by
     value to the function, and that the pointer parameter's pointee has
     already been initialized before the call instruction. This attribute
     is only valid on LLVM pointer arguments. The argument must be the value
     returned by the appropriate
-    :ref:`llvm.call.preallocated.arg<int_call_preallocated_arg>`, although is
-    ignored during codegen.
+    :ref:`llvm.call.preallocated.arg<int_call_preallocated_arg>` on non
+    ``musttail`` calls, or the corresponding caller parameter in ``musttail``
+    calls, although it is ignored during codegen.
 
-    Any function call with a ``preallocated`` attribute in any parameter
-    must have a ``"preallocated"`` operand bundle.
+    A non ``musttail`` function call with a ``preallocated`` attribute in
+    any parameter must have a ``"preallocated"`` operand bundle. A ``musttail``
+    function call cannot have a ``"preallocated"`` operand bundle.
 
     The preallocated attribute requires a type argument, which must be
     the same as the pointee type of the argument.
@@ -4128,7 +4133,7 @@ AMDGPU:
 - ``[0-9]v``: The 32-bit VGPR register, number 0-9.
 - ``[0-9]s``: The 32-bit SGPR register, number 0-9.
 - ``[0-9]a``: The 32-bit AGPR register, number 0-9.
-
+- ``A``: An integer or a floating-point inline constant.
 
 All ARM modes:
 
@@ -5104,9 +5109,11 @@ The current supported opcode vocabulary is limited:
 
   ``DW_OP_LLVM_entry_value`` is only legal in MIR. The operation is introduced
   by the ``LiveDebugValues`` pass; currently only for function parameters that
-  are unmodified throughout a function and that are described as simple
-  register location descriptions. The operation is also introduced by the
-  ``AsmPrinter`` pass when a call site parameter value
+  are unmodified throughout a function. Support is limited to function
+  parameter that are described as simple register location descriptions, or as
+  indirect locations (e.g. when a struct is passed-by-value to a callee via a
+  pointer to a temporary copy made in the caller). The entry value op is also
+  introduced by the ``AsmPrinter`` pass when a call site parameter value
   (``DW_AT_call_site_parameter_value``) is represented as entry value of the
   parameter.
 - ``DW_OP_breg`` (or ``DW_OP_bregx``) represents a content on the provided
@@ -10632,8 +10639,8 @@ This instruction requires several arguments:
 
    #. The call will not cause unbounded stack growth if it is part of a
       recursive cycle in the call graph.
-   #. Arguments with the :ref:`inalloca <attr_inalloca>` attribute are
-      forwarded in place.
+   #. Arguments with the :ref:`inalloca <attr_inalloca>` or
+      :ref:`preallocated <attr_preallocated>` attribute are forwarded in place.
    #. If the musttail call appears in a function with the ``"thunk"`` attribute
       and the caller and callee both have varargs, than any unprototyped
       arguments in register or memory are forwarded to the callee. Similarly,
@@ -13159,6 +13166,44 @@ Semantics:
 
 This function returns the same values as the libm ``round``
 functions would, and handles error conditions in the same way.
+
+'``llvm.roundeven.*``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.roundeven`` on any
+floating-point or vector of floating-point type. Not all targets support
+all types however.
+
+::
+
+      declare float     @llvm.roundeven.f32(float  %Val)
+      declare double    @llvm.roundeven.f64(double %Val)
+      declare x86_fp80  @llvm.roundeven.f80(x86_fp80  %Val)
+      declare fp128     @llvm.roundeven.f128(fp128 %Val)
+      declare ppc_fp128 @llvm.roundeven.ppcf128(ppc_fp128  %Val)
+
+Overview:
+"""""""""
+
+The '``llvm.roundeven.*``' intrinsics returns the operand rounded to the nearest
+integer in floating-point format rounding halfway cases to even (that is, to the
+nearest value that is an even integer).
+
+Arguments:
+""""""""""
+
+The argument and return value are floating-point numbers of the same type.
+
+Semantics:
+""""""""""
+
+This function implements IEEE-754 operation ``roundToIntegralTiesToEven``. It
+also behaves in the same way as C standard function ``roundeven``, except that
+it does not raise floating point exceptions.
+
 
 '``llvm.lround.*``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -18174,6 +18219,42 @@ This function returns the same values as the libm ``round`` functions
 would and handles error conditions in the same way.
 
 
+'``llvm.experimental.constrained.roundeven``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare <type>
+      @llvm.experimental.constrained.roundeven(<type> <op1>,
+                                               metadata <exception behavior>)
+
+Overview:
+"""""""""
+
+The '``llvm.experimental.constrained.roundeven``' intrinsic returns the first
+operand rounded to the nearest integer in floating-point format, rounding
+halfway cases to even (that is, to the nearest value that is an even integer),
+regardless of the current rounding direction.
+
+Arguments:
+""""""""""
+
+The first argument and the return value are floating-point numbers of the same
+type.
+
+The second argument specifies the exception behavior as described above.
+
+Semantics:
+""""""""""
+
+This function implements IEEE-754 operation ``roundToIntegralTiesToEven``. It
+also behaves in the same way as C standard function ``roundeven`` and can signal
+the invalid operation exception for a SNAN operand.
+
+
 '``llvm.experimental.constrained.lround``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -18283,6 +18364,46 @@ Semantics:
 This function returns the same values as the libm ``trunc`` functions
 would and handles error conditions in the same way.
 
+
+Floating Point Environment Manipulation intrinsics
+--------------------------------------------------
+
+These functions read or write floating point environment, such as rounding
+mode or state of floating point exceptions. Altering the floating point
+environment requires special care. See :ref:`Floating Point Environment <floatenv>`.
+
+'``llvm.flt.rounds``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare i32 @llvm.flt.rounds()
+
+Overview:
+"""""""""
+
+The '``llvm.flt.rounds``' intrinsic reads the current rounding mode.
+
+Semantics:
+""""""""""
+
+The '``llvm.flt.rounds``' intrinsic returns the current rounding mode.
+Encoding of the returned values is same as the result of ``FLT_ROUNDS``,
+specified by C standard:
+
+::
+
+    0  - toward zero
+    1  - to nearest, ties to even
+    2  - toward positive infinity
+    3  - toward negative infinity
+    4  - to nearest, ties away from zero
+
+Other values may be used to represent additional rounding modes, supported by a
+target. These values are target-specific.
 
 General Intrinsics
 ------------------
