@@ -1069,66 +1069,60 @@ unsigned SIInstrInfo::getMovOpcode(const TargetRegisterClass *DstRC) const {
 }
 
 static unsigned getIndirectVGPRWritePseudoOpc(unsigned VecSize) {
-  switch (VecSize) {
-  case 32: // 4 bytes
+  if (VecSize <= 32) // 4 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V1;
-  case 64: // 8 bytes
+  if (VecSize <= 64) // 8 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V2;
-  case 96: // 12 bytes
+  if (VecSize <= 96) // 12 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V3;
-  case 128: // 16 bytes
+  if (VecSize <= 128) // 16 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V4;
-  case 160: // 20 bytes
+  if (VecSize <= 160) // 20 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V5;
-  case 256: // 32 bytes
+  if (VecSize <= 256) // 32 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V8;
-  case 512: // 64 bytes
+  if (VecSize <= 512) // 64 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V16;
-  case 1024: // 128 bytes
+  if (VecSize <= 1024) // 128 bytes
     return AMDGPU::V_INDIRECT_REG_WRITE_B32_V32;
-  default:
-    llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
-  }
+
+  llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
 }
 
 static unsigned getIndirectSGPRWritePseudo32(unsigned VecSize) {
-  switch (VecSize) {
-  case 32: // 4 bytes
+  if (VecSize <= 32) // 4 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V1;
-  case 64: // 8 bytes
+  if (VecSize <= 64) // 8 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V2;
-  case 96: // 12 bytes
+  if (VecSize <= 96) // 12 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V3;
-  case 128: // 16 bytes
+  if (VecSize <= 128) // 16 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V4;
-  case 160: // 20 bytes
+  if (VecSize <= 160) // 20 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V5;
-  case 256: // 32 bytes
+  if (VecSize <= 256) // 32 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V8;
-  case 512: // 64 bytes
+  if (VecSize <= 512) // 64 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V16;
-  case 1024: // 128 bytes
+  if (VecSize <= 1024) // 128 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B32_V32;
-  default:
-    llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
-  }
+
+  llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
 }
 
 static unsigned getIndirectSGPRWritePseudo64(unsigned VecSize) {
-  switch (VecSize) {
-  case 64: // 8 bytes
+  if (VecSize <= 64) // 8 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B64_V1;
-  case 128: // 16 bytes
+  if (VecSize <= 128) // 16 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B64_V2;
-  case 256: // 32 bytes
+  if (VecSize <= 256) // 32 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B64_V4;
-  case 512: // 64 bytes
+  if (VecSize <= 512) // 64 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B64_V8;
-  case 1024: // 128 bytes
+  if (VecSize <= 1024) // 128 bytes
     return AMDGPU::S_INDIRECT_REG_WRITE_B64_V16;
-  default:
-    llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
-  }
+
+  llvm_unreachable("unsupported size for IndirectRegWrite pseudos");
 }
 
 const MCInstrDesc &SIInstrInfo::getIndirectRegWritePseudo(
@@ -2936,16 +2930,26 @@ static bool changesVGPRIndexingMode(const MachineInstr &MI) {
 bool SIInstrInfo::isSchedulingBoundary(const MachineInstr &MI,
                                        const MachineBasicBlock *MBB,
                                        const MachineFunction &MF) const {
-  // XXX - Do we want the SP check in the base implementation?
+  // Skipping the check for SP writes in the base implementation. The reason it
+  // was added was apparently due to compile time concerns.
+  //
+  // TODO: Do we really want this barrier? It triggers unnecessary hazard nops
+  // but is probably avoidable.
+
+  // Copied from base implementation.
+  // Terminators and labels can't be scheduled around.
+  if (MI.isTerminator() || MI.isPosition())
+    return true;
 
   // Target-independent instructions do not have an implicit-use of EXEC, even
   // when they operate on VGPRs. Treating EXEC modifications as scheduling
   // boundaries prevents incorrect movements of such instructions.
-  return TargetInstrInfo::isSchedulingBoundary(MI, MBB, MF) ||
-         MI.modifiesRegister(AMDGPU::EXEC, &RI) ||
+
+  // TODO: Don't treat setreg with known constant that only changes MODE as
+  // barrier.
+  return MI.modifiesRegister(AMDGPU::EXEC, &RI) ||
          MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32 ||
          MI.getOpcode() == AMDGPU::S_SETREG_B32 ||
-         MI.getOpcode() == AMDGPU::S_DENORM_MODE ||
          changesVGPRIndexingMode(MI);
 }
 
@@ -3272,7 +3276,8 @@ MachineInstr *SIInstrInfo::buildShrunkInst(MachineInstr &MI,
                                            unsigned Op32) const {
   MachineBasicBlock *MBB = MI.getParent();;
   MachineInstrBuilder Inst32 =
-    BuildMI(*MBB, MI, MI.getDebugLoc(), get(Op32));
+    BuildMI(*MBB, MI, MI.getDebugLoc(), get(Op32))
+    .setMIFlags(MI.getFlags());
 
   // Add the dst operand if the 32-bit encoding also has an explicit $vdst.
   // For VOPC instructions, this is replaced by an implicit def of vcc.
@@ -3441,6 +3446,11 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     }
 
     return true;
+  }
+
+  if (isMIMG(MI) && MI.memoperands_empty() && MI.mayLoadOrStore()) {
+    ErrInfo = "missing memory operand from MIMG instruction.";
+    return false;
   }
 
   // Make sure the register classes are correct.
@@ -5239,18 +5249,24 @@ void SIInstrInfo::moveToVALU(MachineInstr &TopInst,
                          ? AMDGPU::V_ADDC_U32_e64
                          : AMDGPU::V_SUBB_U32_e64;
       const auto *CarryRC = RI.getRegClass(AMDGPU::SReg_1_XEXECRegClassID);
-      Register DummyCReg = MRI.createVirtualRegister(CarryRC);
-      Register CarryReg = MRI.createVirtualRegister(CarryRC);
+
+      Register CarryInReg = Inst.getOperand(4).getReg();
+      if (!MRI.constrainRegClass(CarryInReg, CarryRC)) {
+        Register NewCarryReg = MRI.createVirtualRegister(CarryRC);
+        BuildMI(*MBB, &Inst, Inst.getDebugLoc(), get(AMDGPU::COPY), NewCarryReg)
+            .addReg(CarryInReg);
+      }
+
+      Register CarryOutReg = Inst.getOperand(1).getReg();
+
       Register DestReg = MRI.createVirtualRegister(RI.getEquivalentVGPRClass(
           MRI.getRegClass(Inst.getOperand(0).getReg())));
-      BuildMI(*MBB, &Inst, Inst.getDebugLoc(), get(AMDGPU::COPY), CarryReg)
-          .addReg(Inst.getOperand(4).getReg());
       MachineInstr *CarryOp =
           BuildMI(*MBB, &Inst, Inst.getDebugLoc(), get(Opc), DestReg)
-              .addReg(DummyCReg, RegState::Define | RegState::Dead)
+              .addReg(CarryOutReg, RegState::Define)
               .add(Inst.getOperand(2))
               .add(Inst.getOperand(3))
-              .addReg(CarryReg, RegState::Kill)
+              .addReg(CarryInReg)
               .addImm(0);
       legalizeOperands(*CarryOp);
       MRI.replaceRegWith(Inst.getOperand(0).getReg(), DestReg);

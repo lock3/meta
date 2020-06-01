@@ -1435,6 +1435,8 @@ static const EnumEntry<unsigned> ElfMachineType[] = {
   ENUM_ENT(EM_STXP7X,        "STMicroelectronics STxP7x family"),
   ENUM_ENT(EM_NDS32,         "Andes Technology compact code size embedded RISC processor family"),
   ENUM_ENT(EM_ECOG1,         "Cyan Technology eCOG1 microprocessor"),
+  // FIXME: Following EM_ECOG1X definitions is dead code since EM_ECOG1X has
+  //        an identical number to EM_ECOG1.
   ENUM_ENT(EM_ECOG1X,        "Cyan Technology eCOG1X family"),
   ENUM_ENT(EM_MAXQ30,        "Dallas Semiconductor MAXQ30 Core microcontrollers"),
   ENUM_ENT(EM_XIMO16,        "New Japan Radio (NJR) 16-bit DSP Processor"),
@@ -1469,6 +1471,7 @@ static const EnumEntry<unsigned> ElfMachineType[] = {
   ENUM_ENT(EM_RISCV,         "RISC-V"),
   ENUM_ENT(EM_LANAI,         "EM_LANAI"),
   ENUM_ENT(EM_BPF,           "EM_BPF"),
+  ENUM_ENT(EM_VE,            "NEC SX-Aurora Vector Engine"),
 };
 
 static const EnumEntry<unsigned> ElfSymbolBindings[] = {
@@ -2347,7 +2350,8 @@ static const EnumEntry<unsigned> ElfDynamicDTFlags1[] = {
   LLVM_READOBJ_DT_FLAG_ENT(DF_1, NORELOC),
   LLVM_READOBJ_DT_FLAG_ENT(DF_1, SYMINTPOSE),
   LLVM_READOBJ_DT_FLAG_ENT(DF_1, GLOBAUDIT),
-  LLVM_READOBJ_DT_FLAG_ENT(DF_1, SINGLETON)
+  LLVM_READOBJ_DT_FLAG_ENT(DF_1, SINGLETON),
+  LLVM_READOBJ_DT_FLAG_ENT(DF_1, PIE),
 };
 
 static const EnumEntry<unsigned> ElfDynamicDTMipsFlags[] = {
@@ -2639,37 +2643,71 @@ template <class ELFT> void ELFDumper<ELFT>::printNeededLibraries() {
 }
 
 template <class ELFT>
-static bool checkHashTable(const ELFFile<ELFT> *Obj,
-                           const typename ELFT::Hash *H, StringRef FileName) {
-  auto WarnAndReturn = [&](uint64_t Off, const Twine &Msg = "") {
-    reportWarning(createError("the hash table at offset 0x" +
-                              Twine::utohexstr(Off) +
-                              " goes past the end of the file (0x" +
-                              Twine::utohexstr(Obj->getBufSize()) + ")" + Msg),
-                  FileName);
-    return false;
+static Error checkHashTable(const ELFFile<ELFT> *Obj,
+                            const typename ELFT::Hash *H,
+                            bool *IsHeaderValid = nullptr) {
+  auto MakeError = [&](uint64_t Off, const Twine &Msg = "") {
+    return createError("the hash table at offset 0x" + Twine::utohexstr(Off) +
+                       " goes past the end of the file (0x" +
+                       Twine::utohexstr(Obj->getBufSize()) + ")" + Msg);
   };
 
   // Each SHT_HASH section starts from two 32-bit fields: nbucket and nchain.
   const unsigned HeaderSize = 2 * sizeof(typename ELFT::Word);
   const uint64_t SecOffset = (const uint8_t *)H - Obj->base();
+
+  if (IsHeaderValid)
+    *IsHeaderValid = Obj->getBufSize() - SecOffset >= HeaderSize;
+
   if (Obj->getBufSize() - SecOffset < HeaderSize)
-    return WarnAndReturn(SecOffset);
+    return MakeError(SecOffset);
 
   if (Obj->getBufSize() - SecOffset - HeaderSize <
       ((uint64_t)H->nbucket + H->nchain) * sizeof(typename ELFT::Word))
-    return WarnAndReturn(SecOffset, ", nbucket = " + Twine(H->nbucket) +
-                                        ", nchain = " + Twine(H->nchain));
-  return true;
+    return MakeError(SecOffset, ", nbucket = " + Twine(H->nbucket) +
+                                    ", nchain = " + Twine(H->nchain));
+  return Error::success();
+}
+
+template <class ELFT>
+static Error checkGNUHashTable(const ELFFile<ELFT> *Obj,
+                               const typename ELFT::GnuHash *GnuHashTable,
+                               bool *IsHeaderValid = nullptr) {
+  const uint8_t *TableData = reinterpret_cast<const uint8_t *>(GnuHashTable);
+  assert(TableData >= Obj->base() &&
+         TableData < Obj->base() + Obj->getBufSize() &&
+         "GnuHashTable must always point to a location inside the file");
+
+  uint64_t TableOffset = TableData - Obj->base();
+  if (IsHeaderValid)
+    *IsHeaderValid = TableOffset + /*Header size:*/ 16 < Obj->getBufSize();
+  if (TableOffset + 16 + GnuHashTable->nbuckets * 4 +
+          GnuHashTable->maskwords * sizeof(typename ELFT::Off) >=
+      Obj->getBufSize())
+    return createError("unable to dump the SHT_GNU_HASH "
+                       "section at 0x" +
+                       Twine::utohexstr(TableOffset) +
+                       ": it goes past the end of the file");
+  return Error::success();
 }
 
 template <typename ELFT> void ELFDumper<ELFT>::printHashTable() {
   DictScope D(W, "HashTable");
-  if (!HashTable ||
-      !checkHashTable(ObjF->getELFFile(), HashTable, ObjF->getFileName()))
+  if (!HashTable)
     return;
-  W.printNumber("Num Buckets", HashTable->nbucket);
-  W.printNumber("Num Chains", HashTable->nchain);
+
+  bool IsHeaderValid;
+  Error Err = checkHashTable(ObjF->getELFFile(), HashTable, &IsHeaderValid);
+  if (IsHeaderValid) {
+    W.printNumber("Num Buckets", HashTable->nbucket);
+    W.printNumber("Num Chains", HashTable->nchain);
+  }
+
+  if (Err) {
+    reportUniqueWarning(std::move(Err));
+    return;
+  }
+
   W.printList("Buckets", HashTable->buckets());
   W.printList("Chains", HashTable->chains());
 }
@@ -2679,27 +2717,19 @@ void ELFDumper<ELFT>::printGnuHashTable(const object::ObjectFile *Obj) {
   DictScope D(W, "GnuHashTable");
   if (!GnuHashTable)
     return;
-  W.printNumber("Num Buckets", GnuHashTable->nbuckets);
-  W.printNumber("First Hashed Symbol Index", GnuHashTable->symndx);
-  W.printNumber("Num Mask Words", GnuHashTable->maskwords);
-  W.printNumber("Shift Count", GnuHashTable->shift2);
 
-  MemoryBufferRef File = Obj->getMemoryBufferRef();
-  const char *TableData = reinterpret_cast<const char *>(GnuHashTable);
-  assert(TableData >= File.getBufferStart() &&
-         TableData < File.getBufferEnd() &&
-         "GnuHashTable must always point to a location inside the file");
+  bool IsHeaderValid;
+  Error Err =
+      checkGNUHashTable<ELFT>(ObjF->getELFFile(), GnuHashTable, &IsHeaderValid);
+  if (IsHeaderValid) {
+    W.printNumber("Num Buckets", GnuHashTable->nbuckets);
+    W.printNumber("First Hashed Symbol Index", GnuHashTable->symndx);
+    W.printNumber("Num Mask Words", GnuHashTable->maskwords);
+    W.printNumber("Shift Count", GnuHashTable->shift2);
+  }
 
-  uint64_t TableOffset = TableData - File.getBufferStart();
-  if (TableOffset +
-          /*Header size:*/ 16 + GnuHashTable->nbuckets * 4 +
-          GnuHashTable->maskwords * sizeof(typename ELFT::Off) >=
-      File.getBufferSize()) {
-    reportWarning(createError("unable to dump the SHT_GNU_HASH "
-                              "section at 0x" +
-                              Twine::utohexstr(TableOffset) +
-                              ": it goes past the end of the file"),
-                  ObjF->getFileName());
+  if (Err) {
+    reportUniqueWarning(std::move(Err));
     return;
   }
 
@@ -4009,7 +4039,9 @@ template <class ELFT> void GNUStyle<ELFT>::printHashSymbols(const ELFO *Obj) {
 
   if (const Elf_Hash *SysVHash = this->dumper()->getHashTable()) {
     OS << "\n Symbol table of .hash for image:\n";
-    if (checkHashTable(Obj, SysVHash, this->FileName))
+    if (Error E = checkHashTable<ELFT>(Obj, SysVHash))
+      this->reportUniqueWarning(std::move(E));
+    else
       PrintHashTable(SysVHash);
   }
 
@@ -4671,13 +4703,20 @@ void GNUStyle<ELFT>::printGnuHashHistogram(const Elf_GnuHash &GnuHashTable) {
 template <class ELFT>
 void GNUStyle<ELFT>::printHashHistograms(const ELFFile<ELFT> *Obj) {
   // Print histogram for the .hash section.
-  if (const Elf_Hash *HashTable = this->dumper()->getHashTable())
-    if (checkHashTable(Obj, HashTable, this->FileName))
+  if (const Elf_Hash *HashTable = this->dumper()->getHashTable()) {
+    if (Error E = checkHashTable<ELFT>(Obj, HashTable))
+      this->reportUniqueWarning(std::move(E));
+    else
       printHashHistogram(*HashTable);
+  }
 
   // Print histogram for the .gnu.hash section.
-  if (const Elf_GnuHash *GnuHashTable = this->dumper()->getGnuHashTable())
-    printGnuHashHistogram(*GnuHashTable);
+  if (const Elf_GnuHash *GnuHashTable = this->dumper()->getGnuHashTable()) {
+    if (Error E = checkGNUHashTable<ELFT>(Obj, GnuHashTable))
+      this->reportUniqueWarning(std::move(E));
+    else
+      printGnuHashHistogram(*GnuHashTable);
+  }
 }
 
 template <class ELFT>
