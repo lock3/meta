@@ -10,6 +10,7 @@
 #define DIALECT_LINALG_TRANSFORMS_TRANSFORMS_H_
 
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
+#include "mlir/Dialect/Vector/VectorOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/SmallBitVector.h"
 
@@ -438,6 +439,67 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// Op-specific patterns.
+//===----------------------------------------------------------------------===//
+/// Match and rewrite for the pattern:
+/// ```
+///    %alloc = ...
+///    [optional] %view = std.view %alloc ...
+///    %subView = subview %allocOrView ...
+///    [optional] linalg.fill(%allocOrView, %cst) ...
+///    ...
+///    linalg.copy(%in, %subView) ...
+///    vector.transfer_read %allocOrView[...], %cst ...
+/// ```
+/// into
+/// ```
+///    [unchanged] %alloc = ...
+///    [unchanged] [optional] %view = std.view %alloc ...
+///    [unchanged] [unchanged] %subView = subview %allocOrView ...
+///    ...
+///    vector.transfer_read %in[...], %cst ...
+/// ```
+/// Where there is no interleaved use between linalg.copy and transfer_read as
+/// well as no interleaved use between linalg.fill and linalg.copy (if
+/// linalg.fill is specified).
+/// This is a custom rewrite to forward partial reads (with optional fills) to
+/// vector.transfer_read.
+struct LinalgCopyVTRForwardingPattern
+    : public OpRewritePattern<vector::TransferReadOp> {
+  using OpRewritePattern<vector::TransferReadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(vector::TransferReadOp xferOp,
+                                PatternRewriter &rewriter) const override;
+};
+
+/// Match and rewrite for the pattern:
+/// ```
+///    %alloc = ...
+///    [optional] %view = std.view %alloc ...
+///    %subView = subview %allocOrView...
+///    ...
+///    vector.transfer_write %..., %allocOrView[...]
+///    linalg.copy(%subView, %out)
+/// ```
+/// into
+/// ```
+///    [unchanged] %alloc = ...
+///    [unchanged] [optional] %view = std.view %alloc ...
+///    [unchanged] %subView = subview %allocOrView...
+///    ...
+///    vector.transfer_write %..., %out[...]
+/// ```
+/// Where there is no interleaved use between transfer_write and linalg.copy.
+/// This is a custom rewrite to forward partial writes to vector.transfer_write.
+struct LinalgCopyVTWForwardingPattern
+    : public OpRewritePattern<vector::TransferWriteOp> {
+  using OpRewritePattern<vector::TransferWriteOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(vector::TransferWriteOp xferOp,
+                                PatternRewriter &rewriter) const override;
+};
+
+//===----------------------------------------------------------------------===//
 // Support for staged pattern application.
 //===----------------------------------------------------------------------===//
 /// Helper function to allow applying rewrite patterns, interleaved with more
@@ -453,7 +515,7 @@ private:
 LogicalResult applyStagedPatterns(
     Operation *op, ArrayRef<OwningRewritePatternList> stage1Patterns,
     const OwningRewritePatternList &stage2Patterns,
-    llvm::function_ref<LogicalResult(Operation *)> stage3Lambda = nullptr);
+    function_ref<LogicalResult(Operation *)> stage3Lambda = nullptr);
 } // namespace linalg
 } // namespace mlir
 
