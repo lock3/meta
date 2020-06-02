@@ -2802,6 +2802,8 @@ def err_reflection_not_known : Error<
   "expression does not reflect a construct">;
 def err_empty_type_reflection : Error<
   "cannot project a type for an empty reflection">;
+def err_reflection_not_member : Error<
+  "expression does not reflect a data member or member function">;
 def err_cannot_project_value : Error<
   "cannot project a value for a %select{constructor|destructor}0">;
 def err_reflect_print_literal_wrong_operand_type : Error<

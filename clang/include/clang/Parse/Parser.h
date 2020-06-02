@@ -3049,6 +3049,7 @@ private:
   bool ParseCXXReflectedId(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
                            UnqualifiedId &Result);
   ExprResult ParseCXXIdExprExpression();
+  ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
                                          SourceLocation &EndLoc);

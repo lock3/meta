@@ -819,6 +819,7 @@ class CastExpressionIdValidator final : public CorrectionCandidateCallback {
 /// [G++]   binary-type-trait '(' type-id ',' type-id ')'           [TODO]
 /// [EMBT]  array-type-trait '(' type-id ',' integer ')'
 /// [clang] '^' block-literal
+/// [meta]  idexpr-splice
 ///
 ///       constant: [C99 6.4.4]
 ///         integer-constant
@@ -1150,6 +1151,14 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
                                      isVectorLiteral,
                                      NotPrimaryExpression);
       }
+    }
+
+    if (Tok.is(tok::kw_idexpr)) {
+      ExprResult IdExpr = ParseCXXIdExprExpression();
+      if (IdExpr.isInvalid())
+        return ExprError();
+
+      return IdExpr;
     }
 
     // Consume the identifier so that we can see if it is followed by a '(' or
@@ -2072,6 +2081,21 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
     }
     case tok::arrow:
     case tok::period: {
+      // postfix-expression: p-e '->' idexpr-splice
+      //
+      // If the next token is idexpr process this as a special
+      // expression
+      if (NextToken().is(tok::kw_idexpr) ||
+          (NextToken().is(tok::kw_template) &&
+           GetLookAheadToken(2).is(tok::kw_idexpr))) {
+        // FIXME: How does this happen? Does this happen?
+        // if (LHS.isInvalid())
+        //  break;
+
+        LHS = ParseCXXMemberIdExprExpression(LHS.get());
+        break;
+      }
+
       // postfix-expression: p-e '->' template[opt] id-expression
       // postfix-expression: p-e '.' template[opt] id-expression
       tok::TokenKind OpKind = Tok.getKind();
@@ -2107,18 +2131,6 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
             cutOffParsing();
             return ExprError();
           }
-          break;
-        }
-
-        if (getLangOpts().CPlusPlus && Tok.is(tok::kw_idexpr)) {
-          ExprResult IdExpr = ParseCXXIdExprExpression();
-
-          if (IdExpr.isInvalid())
-            return ExprError(); // Errors should already be reported
-                                // by ParseCXXIdExprExpression.
-
-          LHS = Actions.ActOnMemberAccessExpr(LHS.get(), OpLoc,
-                                              OpKind, IdExpr.get());
           break;
         }
 

@@ -1276,6 +1276,7 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
 
   case Expr::ObjCPropertyRefExprClass:
   case Expr::CXXIdExprExprClass:
+  case Expr::CXXMemberIdExprExprClass:
   case Expr::CXXValueOfExprClass:
     llvm_unreachable("cannot emit a property reference directly");
 

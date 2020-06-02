@@ -10025,6 +10025,19 @@ public:
                                 SourceLocation RParenLoc,
                                 SourceLocation EllipsisLoc = SourceLocation());
 
+  ExprResult ActOnCXXMemberIdExprExpr(
+      Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
+      SourceLocation TemplateKWLoc,
+      SourceLocation LParenLoc,  SourceLocation RParenLoc,
+      const TemplateArgumentListInfo *TemplateArgs);
+
+  ExprResult ActOnCXXMemberIdExprExpr(
+      Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
+      SourceLocation TemplateKWLoc,
+      SourceLocation LParenLoc,  SourceLocation RParenLoc,
+      SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
+      SourceLocation RAngleLoc);
+
   bool
   ActOnVariadicReifier(SmallVectorImpl<Expr *> &Expressions,
                        SourceLocation KWLoc,
@@ -10083,9 +10096,6 @@ public:
   ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
                                                         Expr *E);
 
-  ExprResult ActOnDependentMemberExpr(Expr *BaseExpr, QualType BaseType,
-                                      SourceLocation OpLoc, bool IsArrow,
-                                      Expr *IdExpr);
   ExprResult ActOnMemberAccessExpr(Expr *Base,
                                    SourceLocation OpLoc,
                                    tok::TokenKind OpKind,

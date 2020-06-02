@@ -3528,10 +3528,6 @@ class CXXDependentScopeMemberExpr final
   /// FIXME: could also be a template-id
   DeclarationNameInfo MemberNameInfo;
 
-  /// This is a hack which allows us to work in reflections to the existing
-  /// structure.
-  Expr *IdExpr;
-
   // CXXDependentScopeMemberExpr is followed by several trailing objects,
   // some of which optional. They are in order:
   //
@@ -3576,11 +3572,6 @@ class CXXDependentScopeMemberExpr final
                               DeclarationNameInfo MemberNameInfo,
                               const TemplateArgumentListInfo *TemplateArgs);
 
-  CXXDependentScopeMemberExpr(const ASTContext &C, Expr *Base,
-                              QualType BaseType, bool IsArrow,
-                              SourceLocation OperatorLoc,
-                              Expr *IdExpr);
-
   CXXDependentScopeMemberExpr(EmptyShell Empty, bool HasTemplateKWAndArgsInfo,
                               bool HasFirstQualifierFoundInScope);
 
@@ -3591,10 +3582,6 @@ public:
          SourceLocation TemplateKWLoc, NamedDecl *FirstQualifierFoundInScope,
          DeclarationNameInfo MemberNameInfo,
          const TemplateArgumentListInfo *TemplateArgs);
-
-  static CXXDependentScopeMemberExpr *
-  Create(const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
-         SourceLocation OperatorLoc, Expr *IdExpr);
 
   static CXXDependentScopeMemberExpr *
   CreateEmpty(const ASTContext &Ctx, bool HasTemplateKWAndArgsInfo,
@@ -3724,10 +3711,6 @@ public:
 
   ArrayRef<TemplateArgumentLoc> template_arguments() const {
     return {getTemplateArgs(), getNumTemplateArgs()};
-  }
-
-  Expr *getIdExpr() const {
-    return IdExpr;
   }
 
   SourceLocation getBeginLoc() const LLVM_READONLY {
@@ -5284,10 +5267,10 @@ class CXXIdExprExpr : public Expr {
   SourceLocation KeywordLoc;
   SourceLocation LParenLoc;
   SourceLocation RParenLoc;
-public:
-  CXXIdExprExpr(QualType T, Expr *Reflection,
-                SourceLocation KeywordLoc,
-                SourceLocation LParenLoc, SourceLocation RParenLoc)
+
+  CXXIdExprExpr(
+      QualType T, Expr *Reflection, SourceLocation KeywordLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc)
     : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
@@ -5296,6 +5279,13 @@ public:
 
   CXXIdExprExpr(EmptyShell Empty)
     : Expr(CXXIdExprExprClass, Empty) {}
+
+public:
+  static CXXIdExprExpr *Create(
+      const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc);
+
+  static CXXIdExprExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the reflection operand.
   Expr *getReflection() const { return Reflection; }
@@ -5323,6 +5313,142 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXIdExprExprClass;
+  }
+};
+
+class CXXMemberIdExprExpr final
+  : public Expr,
+    private llvm::TrailingObjects<CXXMemberIdExprExpr,
+                                  ASTTemplateKWAndArgsInfo,
+                                  TemplateArgumentLoc> {
+  friend TrailingObjects;
+
+  // FIXME: Extract some details into expr bits
+  Stmt *Base;
+  Expr *Reflection;
+
+  unsigned IsArrow : 1;
+  unsigned HasTemplateKWAndArgsInfo : 1;
+
+  SourceLocation OpLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+  CXXMemberIdExprExpr(
+      QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
+      SourceLocation OpLoc, SourceLocation TemplateKWLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      const TemplateArgumentListInfo *Args);
+
+  CXXMemberIdExprExpr(EmptyShell Empty)
+    : Expr(CXXMemberIdExprExprClass, Empty) {}
+
+  size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
+    return hasTemplateKWAndArgsInfo();
+  }
+
+  bool hasTemplateKWAndArgsInfo() const {
+    return HasTemplateKWAndArgsInfo;
+  }
+public:
+  static CXXMemberIdExprExpr *Create(
+      const ASTContext &C, Expr *Base, Expr *Reflection,
+      bool IsArrow, SourceLocation OpLoc,
+      SourceLocation TemplateKWLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXMemberIdExprExpr *CreateEmpty(const ASTContext &C);
+
+  /// Returns the base expression
+  Expr *getBase() const { return cast<Expr>(Base); }
+
+  /// Returns the reflection operand.
+  Expr *getReflection() const { return Reflection; }
+
+  bool isArrow() const { return IsArrow; }
+
+  /// Returns the location of the introducing operator '.' or '->'
+  SourceLocation getOperatorLoc() const { return OpLoc; }
+
+  /// Retrieve the location of the template keyword preceding
+  /// this name, if any.
+  SourceLocation getTemplateKeywordLoc() const {
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->TemplateKWLoc;
+  }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Retrieve the location of the left angle bracket starting the
+  /// explicit template argument list following the name, if any.
+  SourceLocation getLAngleLoc() const {
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+  }
+
+  /// Retrieve the location of the right angle bracket ending the
+  /// explicit template argument list following the name, if any.
+  SourceLocation getRAngleLoc() const {
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+  }
+
+  /// Determines whether the name was preceded by the template keyword.
+  bool hasTemplateKeyword() const { return getTemplateKeywordLoc().isValid(); }
+
+  /// Determines whether this lookup had explicit template arguments.
+  bool hasExplicitTemplateArgs() const { return getLAngleLoc().isValid(); }
+
+  /// Copies the template arguments (if present) into the given
+  /// structure.
+  void copyTemplateArgumentsInto(TemplateArgumentListInfo &List) const {
+    if (hasExplicitTemplateArgs())
+      getTrailingObjects<ASTTemplateKWAndArgsInfo>()->copyInto(
+          getTrailingObjects<TemplateArgumentLoc>(), List);
+  }
+
+  TemplateArgumentLoc const *getTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return nullptr;
+
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  unsigned getNumTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return 0;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
+  }
+
+  ArrayRef<TemplateArgumentLoc> template_arguments() const {
+    return {getTemplateArgs(), getNumTemplateArgs()};
+  }
+
+  SourceLocation getBeginLoc() const { return Base->getBeginLoc(); }
+
+  SourceLocation getEndLoc() const {
+    if (hasExplicitTemplateArgs())
+      return getRAngleLoc();
+    return RParenLoc;
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXMemberIdExprExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Base, &Base+1); }
+  const_child_range children() const {
+    return const_child_range(&Base, &Base + 1);
   }
 };
 

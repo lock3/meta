@@ -291,7 +291,7 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
 /// Parse an idexpr expression.
 ///
 /// \verbatim
-///   primary-expression:
+///   idexpr-splice:
 ///     idexpr '(' constant-expression ')'
 /// \endverbatim
 ExprResult Parser::ParseCXXIdExprExpression() {
@@ -315,6 +315,57 @@ ExprResult Parser::ParseCXXIdExprExpression() {
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
   return Actions.ActOnCXXIdExprExpr(Loc, Expr.get(), LPLoc, RPLoc);
+}
+
+ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
+  assert(Tok.isOneOf(tok::arrow, tok::period));
+
+  bool IsArrow = Tok.getKind() == tok::arrow;
+  SourceLocation OperatorLoc = ConsumeToken();
+  SourceLocation TemplateKWLoc;
+  if (Tok.is(tok::kw_template))
+    TemplateKWLoc = ConsumeToken();
+
+  if (ExpectAndConsume(tok::kw_idexpr))
+    return ExprError();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+
+  // Check for template arguments
+  if (Tok.is(tok::less) && !TemplateKWLoc.isInvalid()) {
+    SourceLocation LAngleLoc;
+    TemplateArgList TemplateArgs;
+    SourceLocation RAngleLoc;
+
+    if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
+                                         LAngleLoc, TemplateArgs, RAngleLoc))
+      return ExprError();
+
+    ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
+
+    return Actions.ActOnCXXMemberIdExprExpr(
+        Base, Expr.get(), IsArrow, OperatorLoc, TemplateKWLoc,
+        LPLoc, RPLoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
+  }
+
+  return Actions.ActOnCXXMemberIdExprExpr(
+      Base, Expr.get(), IsArrow, OperatorLoc,
+      TemplateKWLoc, LPLoc, RPLoc, /*TemplateArgs=*/nullptr);
 }
 
 /// Parse a valueof expression.

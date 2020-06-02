@@ -408,6 +408,10 @@ ExprDependence clang::computeDependence(CXXIdExprExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
+ExprDependence clang::computeDependence(CXXMemberIdExprExpr *E) {
+  return ExprDependence::TypeValueInstantiation;
+}
+
 ExprDependence clang::computeDependence(CXXDependentVariadicReifierExpr *E) {
   return E->getRange()->getDependence() | ExprDependence::TypeValue;
 }
