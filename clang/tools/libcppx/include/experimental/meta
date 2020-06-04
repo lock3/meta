@@ -3021,8 +3021,15 @@ consteval bool is_glvalue(info reflection) {
   return is_lvalue(reflection) || is_xvalue(reflection);
 }
 
-// True if reflection reflects a value.
-consteval bool is_value(info reflection) {
+// True if reflection reflects a literal.
+//
+// Deprecated in favor of is_literal.
+[[deprecated]] consteval bool is_value(info reflection) {
+  return __reflect(detail::query_is_value, reflection);
+}
+
+// True if reflection reflects a literal expression.
+consteval bool is_literal(info reflection) {
   return __reflect(detail::query_is_value, reflection);
 }
 
