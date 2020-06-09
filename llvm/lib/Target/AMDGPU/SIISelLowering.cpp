@@ -1764,7 +1764,7 @@ static ArgDescriptor allocateVGPR32Input(CCState &CCInfo, unsigned Mask = ~0u,
   unsigned RegIdx = CCInfo.getFirstUnallocated(ArgVGPRs);
   if (RegIdx == ArgVGPRs.size()) {
     // Spill to stack required.
-    int64_t Offset = CCInfo.AllocateStack(4, 4);
+    int64_t Offset = CCInfo.AllocateStack(4, Align(4));
 
     return ArgDescriptor::createStack(Offset, Mask);
   }
@@ -2596,7 +2596,8 @@ void SITargetLowering::passSpecialInputs(
       if (!CCInfo.AllocateReg(OutgoingArg->getRegister()))
         report_fatal_error("failed to allocate implicit input argument");
     } else {
-      unsigned SpecialArgOffset = CCInfo.AllocateStack(ArgVT.getStoreSize(), 4);
+      unsigned SpecialArgOffset =
+          CCInfo.AllocateStack(ArgVT.getStoreSize(), Align(4));
       SDValue ArgStore = storeStackInputValue(DAG, DL, Chain, InputReg,
                                               SpecialArgOffset);
       MemOpChains.push_back(ArgStore);
@@ -2663,7 +2664,7 @@ void SITargetLowering::passSpecialInputs(
     RegsToPass.emplace_back(OutgoingArg->getRegister(), InputReg);
     CCInfo.AllocateReg(OutgoingArg->getRegister());
   } else {
-    unsigned SpecialArgOffset = CCInfo.AllocateStack(4, 4);
+    unsigned SpecialArgOffset = CCInfo.AllocateStack(4, Align(4));
     SDValue ArgStore = storeStackInputValue(DAG, DL, Chain, InputReg,
                                             SpecialArgOffset);
     MemOpChains.push_back(ArgStore);
@@ -3126,9 +3127,12 @@ SDValue SITargetLowering::lowerDYNAMIC_STACKALLOCImpl(
 
   unsigned StackAlign = TFL->getStackAlignment();
   Tmp1 = DAG.getNode(Opc, dl, VT, SP, ScaledSize); // Value
-  if (Align > StackAlign)
-    Tmp1 = DAG.getNode(ISD::AND, dl, VT, Tmp1,
-                       DAG.getConstant(-(uint64_t)Align, dl, VT));
+  if (Align > StackAlign) {
+    Tmp1 = DAG.getNode(
+      ISD::AND, dl, VT, Tmp1,
+      DAG.getConstant(-(uint64_t)Align << ST.getWavefrontSizeLog2(), dl, VT));
+  }
+
   Chain = DAG.getCopyToReg(Chain, dl, SPReg, Tmp1);    // Output chain
   Tmp2 = DAG.getCALLSEQ_END(
       Chain, DAG.getIntPtrConstant(0, dl, true),
@@ -7904,9 +7908,10 @@ SDValue SITargetLowering::lowerFastUnsafeFDIV(SDValue Op,
 }
 
 static SDValue getFPBinOp(SelectionDAG &DAG, unsigned Opcode, const SDLoc &SL,
-                          EVT VT, SDValue A, SDValue B, SDValue GlueChain) {
+                          EVT VT, SDValue A, SDValue B, SDValue GlueChain,
+                          SDNodeFlags Flags) {
   if (GlueChain->getNumValues() <= 1) {
-    return DAG.getNode(Opcode, SL, VT, A, B);
+    return DAG.getNode(Opcode, SL, VT, A, B, Flags);
   }
 
   assert(GlueChain->getNumValues() == 3);
@@ -7919,15 +7924,16 @@ static SDValue getFPBinOp(SelectionDAG &DAG, unsigned Opcode, const SDLoc &SL,
     break;
   }
 
-  return DAG.getNode(Opcode, SL, VTList, GlueChain.getValue(1), A, B,
-                     GlueChain.getValue(2));
+  return DAG.getNode(Opcode, SL, VTList,
+                     {GlueChain.getValue(1), A, B, GlueChain.getValue(2)},
+                     Flags);
 }
 
 static SDValue getFPTernOp(SelectionDAG &DAG, unsigned Opcode, const SDLoc &SL,
                            EVT VT, SDValue A, SDValue B, SDValue C,
-                           SDValue GlueChain) {
+                           SDValue GlueChain, SDNodeFlags Flags) {
   if (GlueChain->getNumValues() <= 1) {
-    return DAG.getNode(Opcode, SL, VT, A, B, C);
+    return DAG.getNode(Opcode, SL, VT, {A, B, C}, Flags);
   }
 
   assert(GlueChain->getNumValues() == 3);
@@ -7940,8 +7946,9 @@ static SDValue getFPTernOp(SelectionDAG &DAG, unsigned Opcode, const SDLoc &SL,
     break;
   }
 
-  return DAG.getNode(Opcode, SL, VTList, GlueChain.getValue(1), A, B, C,
-                     GlueChain.getValue(2));
+  return DAG.getNode(Opcode, SL, VTList,
+                     {GlueChain.getValue(1), A, B, C, GlueChain.getValue(2)},
+                     Flags);
 }
 
 SDValue SITargetLowering::LowerFDIV16(SDValue Op, SelectionDAG &DAG) const {
@@ -8015,6 +8022,13 @@ SDValue SITargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const {
   if (SDValue FastLowered = lowerFastUnsafeFDIV(Op, DAG))
     return FastLowered;
 
+  // The selection matcher assumes anything with a chain selecting to a
+  // mayRaiseFPException machine instruction. Since we're introducing a chain
+  // here, we need to explicitly report nofpexcept for the regular fdiv
+  // lowering.
+  SDNodeFlags Flags = Op->getFlags();
+  Flags.setNoFPExcept(true);
+
   SDLoc SL(Op);
   SDValue LHS = Op.getOperand(0);
   SDValue RHS = Op.getOperand(1);
@@ -8024,15 +8038,15 @@ SDValue SITargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const {
   SDVTList ScaleVT = DAG.getVTList(MVT::f32, MVT::i1);
 
   SDValue DenominatorScaled = DAG.getNode(AMDGPUISD::DIV_SCALE, SL, ScaleVT,
-                                          RHS, RHS, LHS);
+                                          {RHS, RHS, LHS}, Flags);
   SDValue NumeratorScaled = DAG.getNode(AMDGPUISD::DIV_SCALE, SL, ScaleVT,
-                                        LHS, RHS, LHS);
+                                        {LHS, RHS, LHS}, Flags);
 
   // Denominator is scaled to not be denormal, so using rcp is ok.
   SDValue ApproxRcp = DAG.getNode(AMDGPUISD::RCP, SL, MVT::f32,
-                                  DenominatorScaled);
+                                  DenominatorScaled, Flags);
   SDValue NegDivScale0 = DAG.getNode(ISD::FNEG, SL, MVT::f32,
-                                     DenominatorScaled);
+                                     DenominatorScaled, Flags);
 
   const unsigned Denorm32Reg = AMDGPU::Hwreg::ID_MODE |
                                (4 << AMDGPU::Hwreg::OFFSET_SHIFT_) |
@@ -8042,6 +8056,10 @@ SDValue SITargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const {
   const bool HasFP32Denormals = hasFP32Denormals(DAG.getMachineFunction());
 
   if (!HasFP32Denormals) {
+    // Note we can't use the STRICT_FMA/STRICT_FMUL for the non-strict FDIV
+    // lowering. The chain dependence is insufficient, and we need glue. We do
+    // not need the glue variants in a strictfp function.
+
     SDVTList BindParamVTs = DAG.getVTList(MVT::Other, MVT::Glue);
 
     SDNode *EnableDenorm;
@@ -8069,21 +8087,22 @@ SDValue SITargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const {
   }
 
   SDValue Fma0 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32, NegDivScale0,
-                             ApproxRcp, One, NegDivScale0);
+                             ApproxRcp, One, NegDivScale0, Flags);
 
   SDValue Fma1 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32, Fma0, ApproxRcp,
-                             ApproxRcp, Fma0);
+                             ApproxRcp, Fma0, Flags);
 
   SDValue Mul = getFPBinOp(DAG, ISD::FMUL, SL, MVT::f32, NumeratorScaled,
-                           Fma1, Fma1);
+                           Fma1, Fma1, Flags);
 
   SDValue Fma2 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32, NegDivScale0, Mul,
-                             NumeratorScaled, Mul);
+                             NumeratorScaled, Mul, Flags);
 
-  SDValue Fma3 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32, Fma2, Fma1, Mul, Fma2);
+  SDValue Fma3 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32,
+                             Fma2, Fma1, Mul, Fma2, Flags);
 
   SDValue Fma4 = getFPTernOp(DAG, ISD::FMA, SL, MVT::f32, NegDivScale0, Fma3,
-                             NumeratorScaled, Fma3);
+                             NumeratorScaled, Fma3, Flags);
 
   if (!HasFP32Denormals) {
     SDNode *DisableDenorm;
@@ -8110,9 +8129,9 @@ SDValue SITargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const {
 
   SDValue Scale = NumeratorScaled.getValue(1);
   SDValue Fmas = DAG.getNode(AMDGPUISD::DIV_FMAS, SL, MVT::f32,
-                             Fma4, Fma1, Fma3, Scale);
+                             {Fma4, Fma1, Fma3, Scale}, Flags);
 
-  return DAG.getNode(AMDGPUISD::DIV_FIXUP, SL, MVT::f32, Fmas, RHS, LHS);
+  return DAG.getNode(AMDGPUISD::DIV_FIXUP, SL, MVT::f32, Fmas, RHS, LHS, Flags);
 }
 
 SDValue SITargetLowering::LowerFDIV64(SDValue Op, SelectionDAG &DAG) const {
@@ -9605,17 +9624,13 @@ SDValue SITargetLowering::performCvtPkRTZCombine(SDNode *N,
 
 // Check if EXTRACT_VECTOR_ELT/INSERT_VECTOR_ELT (<n x e>, var-idx) should be
 // expanded into a set of cmp/select instructions.
-static bool shouldExpandVectorDynExt(SDNode *N) {
-  SDValue Idx = N->getOperand(N->getNumOperands() - 1);
-  if (UseDivergentRegisterIndexing || isa<ConstantSDNode>(Idx))
+bool SITargetLowering::shouldExpandVectorDynExt(unsigned EltSize,
+                                                unsigned NumElem,
+                                                bool IsDivergentIdx) {
+  if (UseDivergentRegisterIndexing)
     return false;
 
-  SDValue Vec = N->getOperand(0);
-  EVT VecVT = Vec.getValueType();
-  EVT EltVT = VecVT.getVectorElementType();
-  unsigned VecSize = VecVT.getSizeInBits();
-  unsigned EltSize = EltVT.getSizeInBits();
-  unsigned NumElem = VecVT.getVectorNumElements();
+  unsigned VecSize = EltSize * NumElem;
 
   // Sub-dword vectors of size 2 dword or less have better implementation.
   if (VecSize <= 64 && EltSize < 32)
@@ -9627,13 +9642,28 @@ static bool shouldExpandVectorDynExt(SDNode *N) {
     return true;
 
   // Always do this if var-idx is divergent, otherwise it will become a loop.
-  if (Idx->isDivergent())
+  if (IsDivergentIdx)
     return true;
 
   // Large vectors would yield too many compares and v_cndmask_b32 instructions.
   unsigned NumInsts = NumElem /* Number of compares */ +
                       ((EltSize + 31) / 32) * NumElem /* Number of cndmasks */;
   return NumInsts <= 16;
+}
+
+static bool shouldExpandVectorDynExt(SDNode *N) {
+  SDValue Idx = N->getOperand(N->getNumOperands() - 1);
+  if (isa<ConstantSDNode>(Idx))
+    return false;
+
+  SDValue Vec = N->getOperand(0);
+  EVT VecVT = Vec.getValueType();
+  EVT EltVT = VecVT.getVectorElementType();
+  unsigned EltSize = EltVT.getSizeInBits();
+  unsigned NumElem = VecVT.getVectorNumElements();
+
+  return SITargetLowering::shouldExpandVectorDynExt(EltSize, NumElem,
+                                                    Idx->isDivergent());
 }
 
 SDValue SITargetLowering::performExtractVectorEltCombine(
@@ -9697,7 +9727,7 @@ SDValue SITargetLowering::performExtractVectorEltCombine(
   unsigned EltSize = EltVT.getSizeInBits();
 
   // EXTRACT_VECTOR_ELT (<n x e>, var-idx) => n x select (e, const-idx)
-  if (shouldExpandVectorDynExt(N)) {
+  if (::shouldExpandVectorDynExt(N)) {
     SDLoc SL(N);
     SDValue Idx = N->getOperand(1);
     SDValue V;
@@ -9760,7 +9790,7 @@ SITargetLowering::performInsertVectorEltCombine(SDNode *N,
 
   // INSERT_VECTOR_ELT (<n x e>, var-idx)
   // => BUILD_VECTOR n x select (e, const-idx)
-  if (!shouldExpandVectorDynExt(N))
+  if (!::shouldExpandVectorDynExt(N))
     return SDValue();
 
   SelectionDAG &DAG = DCI.DAG;
@@ -11135,13 +11165,9 @@ void SITargetLowering::finalizeLowering(MachineFunction &MF) const {
     Info->reserveVGPRforSGPRSpills(MF);
 }
 
-void SITargetLowering::computeKnownBitsForFrameIndex(const SDValue Op,
-                                                     KnownBits &Known,
-                                                     const APInt &DemandedElts,
-                                                     const SelectionDAG &DAG,
-                                                     unsigned Depth) const {
-  TargetLowering::computeKnownBitsForFrameIndex(Op, Known, DemandedElts,
-                                                DAG, Depth);
+void SITargetLowering::computeKnownBitsForFrameIndex(
+  const int FI, KnownBits &Known, const MachineFunction &MF) const {
+  TargetLowering::computeKnownBitsForFrameIndex(FI, Known, MF);
 
   // Set the high bits to zero based on the maximum allowed scratch size per
   // wave. We can't use vaddr in MUBUF instructions if we don't know the address

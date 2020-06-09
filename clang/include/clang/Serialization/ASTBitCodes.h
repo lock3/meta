@@ -1057,8 +1057,14 @@ namespace serialization {
       /// The placeholder type for OpenMP iterator expression.
       PREDEF_TYPE_OMP_ITERATOR = 71,
 
+      /// A placeholder type for incomplete matrix index operations.
+      PREDEF_TYPE_INCOMPLETE_MATRIX_IDX = 72,
+
+      /// \brief The '__bf16' type
+      PREDEF_TYPE_BFLOAT16_ID = 73,
+
       /// \brief C++ meta::info type
-      PREDEF_TYPE_META_INFO_ID = 72,
+      PREDEF_TYPE_META_INFO_ID = 74,
 
       /// OpenCL image types with auto numeration
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
@@ -1611,6 +1617,9 @@ namespace serialization {
 
       /// An ArraySubscriptExpr record.
       EXPR_ARRAY_SUBSCRIPT,
+
+      /// An MatrixSubscriptExpr record.
+      EXPR_MATRIX_SUBSCRIPT,
 
       /// A CallExpr record.
       EXPR_CALL,

@@ -3540,6 +3540,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
 
   case ParenExprClass:
   case ArraySubscriptExprClass:
+  case MatrixSubscriptExprClass:
   case OMPArraySectionExprClass:
   case OMPArrayShapingExprClass:
   case OMPIteratorExprClass:

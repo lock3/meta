@@ -1478,8 +1478,8 @@ ABIArgInfo X86_32ABIInfo::classifyReturnType(QualType RetTy,
       // registers and we need to make sure to pick a type the LLVM
       // backend will like.
       if (Size == 128)
-        return ABIArgInfo::getDirect(llvm::VectorType::get(
-                  llvm::Type::getInt64Ty(getVMContext()), 2));
+        return ABIArgInfo::getDirect(llvm::FixedVectorType::get(
+            llvm::Type::getInt64Ty(getVMContext()), 2));
 
       // Always return in register if it fits in a general purpose
       // register, or if it is 64 bits and has a single element.
@@ -3122,8 +3122,8 @@ llvm::Type *X86_64ABIInfo::GetByteVectorType(QualType Ty) const {
         cast<llvm::VectorType>(IRType)->getElementType()->isIntegerTy(128)) {
       // Use a vXi64 vector.
       uint64_t Size = getContext().getTypeSize(Ty);
-      return llvm::VectorType::get(llvm::Type::getInt64Ty(getVMContext()),
-                                   Size / 64);
+      return llvm::FixedVectorType::get(llvm::Type::getInt64Ty(getVMContext()),
+                                        Size / 64);
     }
 
     return IRType;
@@ -3138,8 +3138,8 @@ llvm::Type *X86_64ABIInfo::GetByteVectorType(QualType Ty) const {
 
 
   // Return a LLVM IR vector type based on the size of 'Ty'.
-  return llvm::VectorType::get(llvm::Type::getDoubleTy(getVMContext()),
-                               Size / 64);
+  return llvm::FixedVectorType::get(llvm::Type::getDoubleTy(getVMContext()),
+                                    Size / 64);
 }
 
 /// BitsContainNoUserData - Return true if the specified [start,end) bit range
@@ -3273,7 +3273,8 @@ GetSSETypeAtOffset(llvm::Type *IRType, unsigned IROffset,
   // case.
   if (ContainsFloatAtOffset(IRType, IROffset, getDataLayout()) &&
       ContainsFloatAtOffset(IRType, IROffset+4, getDataLayout()))
-    return llvm::VectorType::get(llvm::Type::getFloatTy(getVMContext()), 2);
+    return llvm::FixedVectorType::get(llvm::Type::getFloatTy(getVMContext()),
+                                      2);
 
   return llvm::Type::getDoubleTy(getVMContext());
 }
@@ -4140,8 +4141,8 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
 
       // Mingw64 GCC returns i128 in XMM0. Coerce to v2i64 to handle that.
       // Clang matches them for compatibility.
-      return ABIArgInfo::getDirect(
-          llvm::VectorType::get(llvm::Type::getInt64Ty(getVMContext()), 2));
+      return ABIArgInfo::getDirect(llvm::FixedVectorType::get(
+          llvm::Type::getInt64Ty(getVMContext()), 2));
 
     default:
       break;
@@ -5374,6 +5375,10 @@ private:
 
   bool isLegalVectorTypeForSwift(CharUnits totalSize, llvm::Type *eltTy,
                                  unsigned elts) const override;
+
+  bool allowBFloatArgsAndRet() const override {
+    return getTarget().hasBFloat16Type();
+  }
 };
 
 class AArch64TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -5478,13 +5483,13 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
       return ABIArgInfo::getDirect(ResType);
     }
     if (Size == 64) {
-      llvm::Type *ResType =
-          llvm::VectorType::get(llvm::Type::getInt32Ty(getVMContext()), 2);
+      auto *ResType =
+          llvm::FixedVectorType::get(llvm::Type::getInt32Ty(getVMContext()), 2);
       return ABIArgInfo::getDirect(ResType);
     }
     if (Size == 128) {
-      llvm::Type *ResType =
-          llvm::VectorType::get(llvm::Type::getInt32Ty(getVMContext()), 4);
+      auto *ResType =
+          llvm::FixedVectorType::get(llvm::Type::getInt32Ty(getVMContext()), 4);
       return ABIArgInfo::getDirect(ResType);
     }
     return getNaturalAlignIndirect(Ty, /*ByVal=*/false);
@@ -5979,11 +5984,14 @@ public:
 
 private:
   ABIKind Kind;
+  bool IsFloatABISoftFP;
 
 public:
   ARMABIInfo(CodeGenTypes &CGT, ABIKind _Kind)
       : SwiftABIInfo(CGT), Kind(_Kind) {
     setCCs();
+    IsFloatABISoftFP = CGT.getCodeGenOpts().FloatABI == "softfp" ||
+        CGT.getCodeGenOpts().FloatABI == ""; // default
   }
 
   bool isEABI() const {
@@ -6013,6 +6021,10 @@ public:
   }
 
   ABIKind getABIKind() const { return Kind; }
+
+  bool allowBFloatArgsAndRet() const override {
+    return !IsFloatABISoftFP && getTarget().hasBFloat16Type();
+  }
 
 private:
   ABIArgInfo classifyReturnType(QualType RetTy, bool isVariadic,
@@ -6209,7 +6221,7 @@ ABIArgInfo ARMABIInfo::coerceIllegalVector(QualType Ty) const {
     return ABIArgInfo::getDirect(ResType);
   }
   if (Size == 64 || Size == 128) {
-    llvm::Type *ResType = llvm::VectorType::get(
+    auto *ResType = llvm::FixedVectorType::get(
         llvm::Type::getInt32Ty(getVMContext()), Size / 32);
     return ABIArgInfo::getDirect(ResType);
   }
@@ -6225,7 +6237,7 @@ ABIArgInfo ARMABIInfo::classifyHomogeneousAggregate(QualType Ty,
     // FP16 vectors should be converted to integer vectors
     if (!getTarget().hasLegalHalfType() && containsAnyFP16Vectors(Ty)) {
       uint64_t Size = getContext().getTypeSize(VT);
-      llvm::Type *NewVecTy = llvm::VectorType::get(
+      auto *NewVecTy = llvm::FixedVectorType::get(
           llvm::Type::getInt32Ty(getVMContext()), Size / 32);
       llvm::Type *Ty = llvm::ArrayType::get(NewVecTy, Members);
       return ABIArgInfo::getDirect(Ty, 0, nullptr, false);
@@ -6253,14 +6265,21 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
   if (isIllegalVectorType(Ty))
     return coerceIllegalVector(Ty);
 
-  // _Float16 and __fp16 get passed as if it were an int or float, but with
-  // the top 16 bits unspecified. This is not done for OpenCL as it handles the
-  // half type natively, and does not need to interwork with AAPCS code.
+  // _Float16 and __fp16 get passed as if it were an int or float, but
+  // with the top 16 bits unspecified. This is not done for OpenCL as it handles
+  // the half type natively, and does not need to interwork with AAPCS code.
   if ((Ty->isFloat16Type() || Ty->isHalfType()) &&
       !getContext().getLangOpts().NativeHalfArgsAndReturns) {
     llvm::Type *ResType = IsAAPCS_VFP ?
       llvm::Type::getFloatTy(getVMContext()) :
       llvm::Type::getInt32Ty(getVMContext());
+    return ABIArgInfo::getDirect(ResType);
+  }
+
+  // __bf16 gets passed using the bfloat IR type, or using i32 but
+  // with the top 16 bits unspecified.
+  if (Ty->isBFloat16Type() && IsFloatABISoftFP) {
+    llvm::Type *ResType = llvm::Type::getInt32Ty(getVMContext());
     return ABIArgInfo::getDirect(ResType);
   }
 
@@ -6457,10 +6476,13 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy, bool isVariadic,
     // Large vector types should be returned via memory.
     if (getContext().getTypeSize(RetTy) > 128)
       return getNaturalAlignIndirect(RetTy);
-    // FP16 vectors should be converted to integer vectors
-    if (!getTarget().hasLegalHalfType() &&
+    // TODO: FP16/BF16 vectors should be converted to integer vectors
+    // This check is similar  to isIllegalVectorType - refactor?
+    if ((!getTarget().hasLegalHalfType() &&
         (VT->getElementType()->isFloat16Type() ||
-         VT->getElementType()->isHalfType()))
+         VT->getElementType()->isHalfType())) ||
+        (IsFloatABISoftFP &&
+         VT->getElementType()->isBFloat16Type()))
       return coerceIllegalVector(RetTy);
   }
 
@@ -6471,6 +6493,15 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy, bool isVariadic,
       !getContext().getLangOpts().NativeHalfArgsAndReturns) {
     llvm::Type *ResType = IsAAPCS_VFP ?
       llvm::Type::getFloatTy(getVMContext()) :
+      llvm::Type::getInt32Ty(getVMContext());
+    return ABIArgInfo::getDirect(ResType);
+  }
+
+  // if we're using the softfp float abi, __bf16 get returned as if it were an
+  // int but with the top 16 bits unspecified.
+  if (RetTy->isBFloat16Type()) {
+    llvm::Type *ResType = IsAAPCS_VFP ?
+      llvm::Type::getBFloatTy(getVMContext()) :
       llvm::Type::getInt32Ty(getVMContext());
     return ABIArgInfo::getDirect(ResType);
   }
@@ -6561,12 +6592,17 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy, bool isVariadic,
 /// isIllegalVector - check whether Ty is an illegal vector type.
 bool ARMABIInfo::isIllegalVectorType(QualType Ty) const {
   if (const VectorType *VT = Ty->getAs<VectorType> ()) {
-    // On targets that don't support FP16, FP16 is expanded into float, and we
-    // don't want the ABI to depend on whether or not FP16 is supported in
-    // hardware. Thus return false to coerce FP16 vectors into integer vectors.
-    if (!getTarget().hasLegalHalfType() &&
+    // On targets that don't support half, fp16 or bfloat, they are expanded
+    // into float, and we don't want the ABI to depend on whether or not they
+    // are supported in hardware. Thus return false to coerce vectors of these
+    // types into integer vectors.
+    // We do not depend on hasLegalHalfType for bfloat as it is a
+    // separate IR type.
+    if ((!getTarget().hasLegalHalfType() &&
         (VT->getElementType()->isFloat16Type() ||
-         VT->getElementType()->isHalfType()))
+         VT->getElementType()->isHalfType())) ||
+        (IsFloatABISoftFP &&
+         VT->getElementType()->isBFloat16Type()))
       return true;
     if (isAndroid()) {
       // Android shipped using Clang 3.1, which supported a slightly different
@@ -6618,6 +6654,7 @@ bool ARMABIInfo::containsAnyFP16Vectors(QualType Ty) const {
   } else {
     if (const VectorType *VT = Ty->getAs<VectorType>())
       return (VT->getElementType()->isFloat16Type() ||
+              VT->getElementType()->isBFloat16Type() ||
               VT->getElementType()->isHalfType());
     return false;
   }
@@ -8812,9 +8849,13 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
       assert(Max == 0 && "Max must be zero");
   } else if (IsOpenCLKernel || IsHIPKernel) {
     // By default, restrict the maximum size to a value specified by
-    // --gpu-max-threads-per-block=n or its default value.
+    // --gpu-max-threads-per-block=n or its default value for HIP.
+    const unsigned OpenCLDefaultMaxWorkGroupSize = 256;
+    const unsigned DefaultMaxWorkGroupSize =
+        IsOpenCLKernel ? OpenCLDefaultMaxWorkGroupSize
+                       : M.getLangOpts().GPUMaxThreadsPerBlock;
     std::string AttrVal =
-        std::string("1,") + llvm::utostr(M.getLangOpts().GPUMaxThreadsPerBlock);
+        std::string("1,") + llvm::utostr(DefaultMaxWorkGroupSize);
     F->addFnAttr("amdgpu-flat-work-group-size", AttrVal);
   }
 

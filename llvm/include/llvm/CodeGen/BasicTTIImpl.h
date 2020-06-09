@@ -884,10 +884,15 @@ public:
                            TTI::TargetCostKind CostKind,
                            const Instruction *I = nullptr) {
     assert(!Src->isVoidTy() && "Invalid type");
+    // Assume types, such as structs, are expensive.
+    if (getTLI()->getValueType(DL, Src,  true) == MVT::Other)
+      return 4;
     std::pair<unsigned, MVT> LT = getTLI()->getTypeLegalizationCost(DL, Src);
 
     // Assuming that all loads of legal types cost 1.
     unsigned Cost = LT.first;
+    if (CostKind != TTI::TCK_RecipThroughput)
+      return Cost;
 
     if (Src->isVectorTy() &&
         Src->getPrimitiveSizeInBits() < LT.second.getSizeInBits()) {
