@@ -1863,10 +1863,9 @@ class LambdaExpr final : public Expr,
   /// Construct a lambda expression.
   LambdaExpr(QualType T, SourceRange IntroducerRange,
              LambdaCaptureDefault CaptureDefault,
-             SourceLocation CaptureDefaultLoc, ArrayRef<LambdaCapture> Captures,
-             bool ExplicitParams, bool ExplicitResultType,
-             ArrayRef<Expr *> CaptureInits, SourceLocation ClosingBrace,
-             bool ContainsUnexpandedParameterPack);
+             SourceLocation CaptureDefaultLoc, bool ExplicitParams,
+             bool ExplicitResultType, ArrayRef<Expr *> CaptureInits,
+             SourceLocation ClosingBrace, bool ContainsUnexpandedParameterPack);
 
   /// Construct an empty lambda expression.
   LambdaExpr(EmptyShell Empty, unsigned NumCaptures)
@@ -1889,9 +1888,9 @@ public:
   static LambdaExpr *
   Create(const ASTContext &C, CXXRecordDecl *Class, SourceRange IntroducerRange,
          LambdaCaptureDefault CaptureDefault, SourceLocation CaptureDefaultLoc,
-         ArrayRef<LambdaCapture> Captures, bool ExplicitParams,
-         bool ExplicitResultType, ArrayRef<Expr *> CaptureInits,
-         SourceLocation ClosingBrace, bool ContainsUnexpandedParameterPack);
+         bool ExplicitParams, bool ExplicitResultType,
+         ArrayRef<Expr *> CaptureInits, SourceLocation ClosingBrace,
+         bool ContainsUnexpandedParameterPack);
 
   /// Construct a new lambda expression that will be deserialized from
   /// an external source.

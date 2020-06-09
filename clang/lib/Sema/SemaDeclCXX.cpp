@@ -38,8 +38,9 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include <map>
 #include <set>
@@ -304,18 +305,22 @@ Sema::ActOnParamDefaultArgument(Decl *param, SourceLocation EqualLoc,
   ParmVarDecl *Param = cast<ParmVarDecl>(param);
   UnparsedDefaultArgLocs.erase(Param);
 
+  auto Fail = [&] {
+    Param->setInvalidDecl();
+    Param->setDefaultArg(new (Context) OpaqueValueExpr(
+        EqualLoc, Param->getType().getNonReferenceType(), VK_RValue));
+  };
+
   // Default arguments are only permitted in C++
   if (!getLangOpts().CPlusPlus) {
     Diag(EqualLoc, diag::err_param_default_argument)
       << DefaultArg->getSourceRange();
-    Param->setInvalidDecl();
-    return;
+    return Fail();
   }
 
   // Check for unexpanded parameter packs.
   if (DiagnoseUnexpandedParameterPack(DefaultArg, UPPC_DefaultArgument)) {
-    Param->setInvalidDecl();
-    return;
+    return Fail();
   }
 
   // C++11 [dcl.fct.default]p3
@@ -324,17 +329,18 @@ Sema::ActOnParamDefaultArgument(Decl *param, SourceLocation EqualLoc,
   if (Param->isParameterPack()) {
     Diag(EqualLoc, diag::err_param_default_argument_on_parameter_pack)
         << DefaultArg->getSourceRange();
+    // Recover by discarding the default argument.
+    Param->setDefaultArg(nullptr);
     return;
   }
 
   // Check that the default argument is well-formed
   CheckDefaultArgumentVisitor DefaultArgChecker(DefaultArg, this);
-  if (DefaultArgChecker.Visit(DefaultArg)) {
-    Param->setInvalidDecl();
-    return;
-  }
+  if (DefaultArgChecker.Visit(DefaultArg))
+    return Fail();
 
-  SetParamDefaultArgument(Param, DefaultArg, EqualLoc);
+  if (SetParamDefaultArgument(Param, DefaultArg, EqualLoc))
+    return Fail();
 }
 
 /// ActOnParamUnparsedDefaultArgument - We've seen a default
@@ -419,14 +425,9 @@ void Sema::CheckExtraCXXDefaultArguments(Declarator &D) {
 }
 
 static bool functionDeclHasDefaultArgument(const FunctionDecl *FD) {
-  for (unsigned NumParams = FD->getNumParams(); NumParams > 0; --NumParams) {
-    const ParmVarDecl *PVD = FD->getParamDecl(NumParams-1);
-    if (!PVD->hasDefaultArg())
-      return false;
-    if (!PVD->hasInheritedDefaultArg())
-      return true;
-  }
-  return false;
+  return std::any_of(FD->param_begin(), FD->param_end(), [](ParmVarDecl *P) {
+    return P->hasDefaultArg() && !P->hasInheritedDefaultArg();
+  });
 }
 
 /// MergeCXXFunctionDecl - Merge two declarations of the same C++
@@ -1100,16 +1101,17 @@ static QualType getTupleLikeElementType(Sema &S, SourceLocation Loc,
 }
 
 namespace {
-struct BindingDiagnosticTrap {
+struct InitializingBinding {
   Sema &S;
-  DiagnosticErrorTrap Trap;
-  BindingDecl *BD;
-
-  BindingDiagnosticTrap(Sema &S, BindingDecl *BD)
-      : S(S), Trap(S.Diags), BD(BD) {}
-  ~BindingDiagnosticTrap() {
-    if (Trap.hasErrorOccurred())
-      S.Diag(BD->getLocation(), diag::note_in_binding_decl_init) << BD;
+  InitializingBinding(Sema &S, BindingDecl *BD) : S(S) {
+    Sema::CodeSynthesisContext Ctx;
+    Ctx.Kind = Sema::CodeSynthesisContext::InitializingStructuredBinding;
+    Ctx.PointOfInstantiation = BD->getLocation();
+    Ctx.Entity = BD;
+    S.pushCodeSynthesisContext(Ctx);
+  }
+  ~InitializingBinding() {
+    S.popCodeSynthesisContext();
   }
 };
 }
@@ -1158,7 +1160,7 @@ static bool checkTupleLikeDecomposition(Sema &S,
 
   unsigned I = 0;
   for (auto *B : Bindings) {
-    BindingDiagnosticTrap Trap(S, B);
+    InitializingBinding InitContext(S, B);
     SourceLocation Loc = B->getLocation();
 
     ExprResult E = S.BuildDeclRefExpr(Src, DecompType, VK_LValue, Loc);
@@ -1526,25 +1528,34 @@ void Sema::MergeVarDeclExceptionSpecs(VarDecl *New, VarDecl *Old) {
 /// [dcl.fct.default].
 void Sema::CheckCXXDefaultArguments(FunctionDecl *FD) {
   unsigned NumParams = FD->getNumParams();
-  unsigned p;
+  unsigned ParamIdx = 0;
+
+  // This checking doesn't make sense for explicit specializations; their
+  // default arguments are determined by the declaration we're specializing,
+  // not by FD.
+  if (FD->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+    return;
+  if (auto *FTD = FD->getDescribedFunctionTemplate())
+    if (FTD->isMemberSpecialization())
+      return;
 
   // Find first parameter with a default argument
-  for (p = 0; p < NumParams; ++p) {
-    ParmVarDecl *Param = FD->getParamDecl(p);
+  for (; ParamIdx < NumParams; ++ParamIdx) {
+    ParmVarDecl *Param = FD->getParamDecl(ParamIdx);
     if (Param->hasDefaultArg())
       break;
   }
 
-  // C++11 [dcl.fct.default]p4:
+  // C++20 [dcl.fct.default]p4:
   //   In a given function declaration, each parameter subsequent to a parameter
   //   with a default argument shall have a default argument supplied in this or
-  //   a previous declaration or shall be a function parameter pack. A default
-  //   argument shall not be redefined by a later declaration (not even to the
-  //   same value).
-  unsigned LastMissingDefaultArg = 0;
-  for (; p < NumParams; ++p) {
-    ParmVarDecl *Param = FD->getParamDecl(p);
-    if (!Param->hasDefaultArg() && !Param->isParameterPack()) {
+  //   a previous declaration, unless the parameter was expanded from a
+  //   parameter pack, or shall be a function parameter pack.
+  for (; ParamIdx < NumParams; ++ParamIdx) {
+    ParmVarDecl *Param = FD->getParamDecl(ParamIdx);
+    if (!Param->hasDefaultArg() && !Param->isParameterPack() &&
+        !(CurrentInstantiationScope &&
+          CurrentInstantiationScope->isLocalPackExpansion(Param))) {
       if (Param->isInvalidDecl())
         /* We already complained about this parameter. */;
       else if (Param->getIdentifier())
@@ -1554,21 +1565,6 @@ void Sema::CheckCXXDefaultArguments(FunctionDecl *FD) {
       else
         Diag(Param->getLocation(),
              diag::err_param_default_argument_missing);
-
-      LastMissingDefaultArg = p;
-    }
-  }
-
-  if (LastMissingDefaultArg > 0) {
-    // Some default arguments were missing. Clear out all of the
-    // default arguments up to (and including) the last missing
-    // default argument, so that we leave the function parameters
-    // in a semantically valid state.
-    for (p = 0; p <= LastMissingDefaultArg; ++p) {
-      ParmVarDecl *Param = FD->getParamDecl(p);
-      if (Param->hasDefaultArg()) {
-        Param->setDefaultArg(nullptr);
-      }
     }
   }
 }
@@ -5843,6 +5839,23 @@ static void ReferenceDllExportedMembers(Sema &S, CXXRecordDecl *Class) {
     // declaration.
     return;
 
+  // Add a context note to explain how we got to any diagnostics produced below.
+  struct MarkingClassDllexported {
+    Sema &S;
+    MarkingClassDllexported(Sema &S, CXXRecordDecl *Class,
+                            SourceLocation AttrLoc)
+        : S(S) {
+      Sema::CodeSynthesisContext Ctx;
+      Ctx.Kind = Sema::CodeSynthesisContext::MarkingClassDllexported;
+      Ctx.PointOfInstantiation = AttrLoc;
+      Ctx.Entity = Class;
+      S.pushCodeSynthesisContext(Ctx);
+    }
+    ~MarkingClassDllexported() {
+      S.popCodeSynthesisContext();
+    }
+  } MarkingDllexportedContext(S, Class, ClassAttr->getLocation());
+
   if (S.Context.getTargetInfo().getTriple().isWindowsGNUEnvironment())
     S.MarkVTableUsed(Class->getLocation(), Class, true);
 
@@ -5878,13 +5891,7 @@ static void ReferenceDllExportedMembers(Sema &S, CXXRecordDecl *Class) {
         // defaulted methods, and the copy and move assignment operators. The
         // latter are exported even if they are trivial, because the address of
         // an operator can be taken and should compare equal across libraries.
-        DiagnosticErrorTrap Trap(S.Diags);
         S.MarkFunctionReferenced(Class->getLocation(), MD);
-        if (Trap.hasErrorOccurred()) {
-          S.Diag(ClassAttr->getLocation(), diag::note_due_to_dllexported_class)
-              << Class << !S.getLangOpts().CPlusPlus11;
-          break;
-        }
 
         // There is no later point when we will see the definition of this
         // function, so pass it to the consumer now.
@@ -10014,11 +10021,6 @@ void Sema::ActOnDelayedCXXMethodParameter(Scope *S, Decl *ParamD) {
 
   ParmVarDecl *Param = cast<ParmVarDecl>(ParamD);
 
-  // If this parameter has an unparsed default argument, clear it out
-  // to make way for the parsed default argument.
-  if (Param->hasUnparsedDefaultArg())
-    Param->setDefaultArg(nullptr);
-
   S->AddDecl(Param);
   if (Param->getDeclName())
     IdResolver->AddDecl(Param);
@@ -10152,11 +10154,9 @@ void Sema::CheckConstructor(CXXConstructorDecl *Constructor) {
   //   either there are no other parameters or else all other
   //   parameters have default arguments.
   if (!Constructor->isInvalidDecl() &&
-      ((Constructor->getNumParams() == 1) ||
-       (Constructor->getNumParams() > 1 &&
-        Constructor->getParamDecl(1)->hasDefaultArg())) &&
-      Constructor->getTemplateSpecializationKind()
-                                              != TSK_ImplicitInstantiation) {
+      Constructor->hasOneParamOrDefaultArgs() &&
+      Constructor->getTemplateSpecializationKind() !=
+          TSK_ImplicitInstantiation) {
     QualType ParamType = Constructor->getParamDecl(0)->getType();
     QualType ClassTy = Context.getTagDeclType(ClassDecl);
     if (Context.getCanonicalType(ParamType).getUnqualifiedType() == ClassTy) {
@@ -11216,8 +11216,7 @@ bool Sema::isInitListConstructor(const FunctionDecl *Ctor) {
   //   is of type std::initializer_list<E> or reference to possibly cv-qualified
   //   std::initializer_list<E> for some type E, and either there are no other
   //   parameters or else all other parameters have default arguments.
-  if (Ctor->getNumParams() < 1 ||
-      (Ctor->getNumParams() > 1 && !Ctor->getParamDecl(1)->hasDefaultArg()))
+  if (!Ctor->hasOneParamOrDefaultArgs())
     return false;
 
   QualType ArgType = Ctor->getParamDecl(0)->getType();
@@ -13880,8 +13879,10 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, CopyAssignment);
 
-  if (ShouldDeleteSpecialMember(CopyAssignment, CXXCopyAssignment))
+  if (ShouldDeleteSpecialMember(CopyAssignment, CXXCopyAssignment)) {
+    ClassDecl->setImplicitCopyAssignmentIsDeleted();
     SetDeclDeleted(CopyAssignment, ClassLoc);
+  }
 
   if (S)
     PushOnScopeChains(CopyAssignment, S, false);

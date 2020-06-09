@@ -300,6 +300,8 @@ static llvm::Type *getTypeForFormat(llvm::LLVMContext &VMContext,
     else
       return llvm::Type::getInt16Ty(VMContext);
   }
+  if (&format == &llvm::APFloat::BFloat())
+    return llvm::Type::getBFloatTy(VMContext);
   if (&format == &llvm::APFloat::IEEEsingle())
     return llvm::Type::getFloatTy(VMContext);
   if (&format == &llvm::APFloat::IEEEdouble())
@@ -498,6 +500,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
           Context.getLangOpts().NativeHalfType ||
               !Context.getTargetInfo().useFP16ConversionIntrinsics());
       break;
+    case BuiltinType::BFloat16:
     case BuiltinType::Float:
     case BuiltinType::Double:
     case BuiltinType::LongDouble:
@@ -654,14 +657,15 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::ExtVector:
   case Type::Vector: {
     const VectorType *VT = cast<VectorType>(Ty);
-    ResultType = llvm::VectorType::get(ConvertType(VT->getElementType()),
-                                       VT->getNumElements());
+    ResultType = llvm::FixedVectorType::get(ConvertType(VT->getElementType()),
+                                            VT->getNumElements());
     break;
   }
   case Type::ConstantMatrix: {
     const ConstantMatrixType *MT = cast<ConstantMatrixType>(Ty);
-    ResultType = llvm::VectorType::get(ConvertType(MT->getElementType()),
-                                       MT->getNumRows() * MT->getNumColumns());
+    ResultType =
+        llvm::FixedVectorType::get(ConvertType(MT->getElementType()),
+                                   MT->getNumRows() * MT->getNumColumns());
     break;
   }
   case Type::FunctionNoProto:

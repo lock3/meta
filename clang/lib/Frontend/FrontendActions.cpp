@@ -436,6 +436,10 @@ private:
       return "RequirementInstantiation";
     case CodeSynthesisContext::NestedRequirementConstraintsCheck:
       return "NestedRequirementConstraintsCheck";
+    case CodeSynthesisContext::InitializingStructuredBinding:
+      return "InitializingStructuredBinding";
+    case CodeSynthesisContext::MarkingClassDllexported:
+      return "MarkingClassDllexported";
     }
     return "";
   }

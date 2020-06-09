@@ -138,6 +138,7 @@ bool Sema::isSimpleTypeSpecifier(tok::TokenKind Kind) const {
   case tok::kw_half:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw___bf16:
   case tok::kw__Float16:
   case tok::kw___float128:
   case tok::kw_wchar_t:
@@ -2599,6 +2600,10 @@ static bool mergeDeclAttribute(Sema &S, NamedDecl *D,
     NewAttr = S.mergeSpeculativeLoadHardeningAttr(D, *SLHA);
   else if (const auto *SLHA = dyn_cast<NoSpeculativeLoadHardeningAttr>(Attr))
     NewAttr = S.mergeNoSpeculativeLoadHardeningAttr(D, *SLHA);
+  else if (const auto *IMA = dyn_cast<WebAssemblyImportModuleAttr>(Attr))
+    NewAttr = S.mergeImportModuleAttr(D, *IMA);
+  else if (const auto *INA = dyn_cast<WebAssemblyImportNameAttr>(Attr))
+    NewAttr = S.mergeImportNameAttr(D, *INA);
   else if (Attr->shouldInheritEvenIfAlreadyPresent() || !DeclHasAttr(D, Attr))
     NewAttr = cast<InheritableAttr>(Attr->clone(S.Context));
 
@@ -7117,6 +7122,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
 
   case CSK_constexpr:
     NewVD->setConstexpr(true);
+    MaybeAddCUDAConstantAttr(NewVD);
     // C++1z [dcl.spec.constexpr]p1:
     //   A static data member declared with the constexpr specifier is
     //   implicitly an inline variable.
@@ -12331,7 +12337,7 @@ void Sema::ActOnInitializerError(Decl *D) {
       BD->setInvalidDecl();
 
   // Auto types are meaningless if we can't make sense of the initializer.
-  if (ParsingInitForAutoVars.count(D)) {
+  if (VD->getType()->isUndeducedType()) {
     D->setInvalidDecl();
     return;
   }
@@ -14421,7 +14427,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     // If any errors have occurred, clear out any temporaries that may have
     // been leftover. This ensures that these temporaries won't be picked up for
     // deletion in some later function.
-    if (getDiagnostics().hasErrorOccurred() ||
+    if (getDiagnostics().hasUncompilableErrorOccurred() ||
         getDiagnostics().getSuppressAllDiagnostics()) {
       DiscardCleanupsInEvaluationContext();
     }
@@ -14483,7 +14489,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   // If any errors have occurred, clear out any temporaries that may have
   // been leftover. This ensures that these temporaries won't be picked up for
   // deletion in some later function.
-  if (getDiagnostics().hasErrorOccurred()) {
+  if (getDiagnostics().hasUncompilableErrorOccurred()) {
     DiscardCleanupsInEvaluationContext();
   }
 
