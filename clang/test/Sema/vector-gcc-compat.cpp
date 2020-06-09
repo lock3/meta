@@ -105,7 +105,7 @@ void logicTest(void) {
   v2i64_r = v2i64_a << 1;
   v2i64_r = v2i64_a >> 1;
 
-  v2i64_r = 1 << v2i64_a;
+  v2i64_r = 1 << v2i64_a; // expected-warning {{unsafe cast disables lifetime analysis}}
   v2i64_r = 1 >> v2i64_a;
 
   v2i64_a <<= 1;
