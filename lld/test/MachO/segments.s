@@ -1,6 +1,6 @@
 # REQUIRES: x86
 # RUN: llvm-mc -filetype=obj -triple=x86_64-apple-darwin %s -o %t.o
-# RUN: lld -flavor darwinnew -o %t %t.o
+# RUN: lld -flavor darwinnew -arch x86_64 -o %t %t.o
 # RUN: llvm-readobj --macho-segment %t | FileCheck %s
 
 ## These two segments must always be present at the start of an executable.
@@ -9,8 +9,8 @@
 # CHECK:        Cmd: LC_SEGMENT_64
 # CHECK:        Name: __PAGEZERO
 # CHECK:        Size: 72
-# CHECK:        vmaddr:
-# CHECK:        vmsize:
+# CHECK:        vmaddr: 0x0
+# CHECK:        vmsize: 0x100000000
 # CHECK:        fileoff: 0
 # CHECK:        filesize: 0
 ## The kernel won't execute a binary with the wrong protections for __PAGEZERO.
@@ -23,7 +23,7 @@
 # CHECK:        Cmd: LC_SEGMENT_64
 # CHECK:        Name: __TEXT
 # CHECK:        Size: 152
-# CHECK:        vmaddr:
+# CHECK:        vmaddr: 0x100000000
 # CHECK:        vmsize:
 ## dyld3 assumes that the __TEXT segment starts from the file header
 # CHECK:        fileoff: 0

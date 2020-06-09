@@ -3063,6 +3063,10 @@ public:
                                                 const InternalLinkageAttr &AL);
   CommonAttr *mergeCommonAttr(Decl *D, const ParsedAttr &AL);
   CommonAttr *mergeCommonAttr(Decl *D, const CommonAttr &AL);
+  WebAssemblyImportNameAttr *mergeImportNameAttr(
+      Decl *D, const WebAssemblyImportNameAttr &AL);
+  WebAssemblyImportModuleAttr *mergeImportModuleAttr(
+      Decl *D, const WebAssemblyImportModuleAttr &AL);
 
   void mergeDeclAttributes(NamedDecl *New, Decl *Old,
                            AvailabilityMergeKind AMK = AMK_Redeclaration);
@@ -3768,7 +3772,7 @@ private:
   /// Creates a new TypoExpr AST node.
   TypoExpr *createDelayedTypo(std::unique_ptr<TypoCorrectionConsumer> TCC,
                               TypoDiagnosticGenerator TDG,
-                              TypoRecoveryCallback TRC);
+                              TypoRecoveryCallback TRC, SourceLocation TypoLoc);
 
   // The set of known/encountered (unique, canonicalized) NamespaceDecls.
   //
@@ -5011,6 +5015,11 @@ public:
                                      Expr *Idx, SourceLocation RLoc);
   ExprResult CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
                                              Expr *Idx, SourceLocation RLoc);
+
+  ExprResult CreateBuiltinMatrixSubscriptExpr(Expr *Base, Expr *RowIdx,
+                                              Expr *ColumnIdx,
+                                              SourceLocation RBLoc);
+
   ExprResult ActOnOMPArraySectionExpr(Expr *Base, SourceLocation LBLoc,
                                       Expr *LowerBound, SourceLocation ColonLoc,
                                       Expr *Length, SourceLocation RBLoc);
@@ -8465,6 +8474,12 @@ public:
       /// We are rewriting a comparison operator in terms of an operator<=>.
       RewritingOperatorAsSpaceship,
 
+      /// We are initializing a structured binding.
+      InitializingStructuredBinding,
+
+      /// We are marking a class as __dllexport.
+      MarkingClassDllexported,
+
       /// Added for Template instantiation observation.
       /// Memoization means we are _not_ instantiating a template because
       /// it is already instantiated (but we entered a context where we
@@ -11797,6 +11812,8 @@ public:
   QualType CheckMatrixElementwiseOperands(ExprResult &LHS, ExprResult &RHS,
                                           SourceLocation Loc,
                                           bool IsCompAssign);
+  QualType CheckMatrixMultiplyOperands(ExprResult &LHS, ExprResult &RHS,
+                                       SourceLocation Loc, bool IsCompAssign);
 
   bool areLaxCompatibleVectorTypes(QualType srcType, QualType destType);
   bool isLaxVectorConversion(QualType srcType, QualType destType);
@@ -12363,6 +12380,8 @@ public:
     return IdentifyCUDATarget(dyn_cast<FunctionDecl>(CurContext));
   }
 
+  static bool IsCUDAImplicitHostDeviceFunction(const FunctionDecl *D);
+
   // CUDA function call preference. Must be ordered numerically from
   // worst to best.
   enum CUDAFunctionPreference {
@@ -12400,6 +12419,10 @@ public:
   /// depending on FD and the current compilation settings.
   void maybeAddCUDAHostDeviceAttrs(FunctionDecl *FD,
                                    const LookupResult &Previous);
+
+  /// May add implicit CUDAConstantAttr attribute to VD, depending on VD
+  /// and current compilation settings.
+  void MaybeAddCUDAConstantAttr(VarDecl *VD);
 
 public:
   /// Check whether we're allowed to call Callee from the current context.

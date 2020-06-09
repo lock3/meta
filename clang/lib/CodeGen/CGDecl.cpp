@@ -1692,9 +1692,13 @@ void CodeGenFunction::emitZeroOrPatternForAutoVarInit(QualType type,
     case LangOptions::TrivialAutoVarInitKind::Uninitialized:
       llvm_unreachable("Uninitialized handled by caller");
     case LangOptions::TrivialAutoVarInitKind::Zero:
+      if (CGM.stopAutoInit())
+        return;
       emitStoresForZeroInit(CGM, D, Loc, isVolatile, Builder);
       break;
     case LangOptions::TrivialAutoVarInitKind::Pattern:
+      if (CGM.stopAutoInit())
+        return;
       emitStoresForPatternInit(CGM, D, Loc, isVolatile, Builder);
       break;
     }
@@ -1717,6 +1721,8 @@ void CodeGenFunction::emitZeroOrPatternForAutoVarInit(QualType type,
     llvm_unreachable("Uninitialized handled by caller");
 
   case LangOptions::TrivialAutoVarInitKind::Zero:
+    if (CGM.stopAutoInit())
+      return;
     if (!EltSize.isOne())
       SizeVal = Builder.CreateNUWMul(SizeVal, CGM.getSize(EltSize));
     Builder.CreateMemSet(Loc, llvm::ConstantInt::get(Int8Ty, 0), SizeVal,
@@ -1724,6 +1730,8 @@ void CodeGenFunction::emitZeroOrPatternForAutoVarInit(QualType type,
     break;
 
   case LangOptions::TrivialAutoVarInitKind::Pattern: {
+    if (CGM.stopAutoInit())
+      return;
     llvm::Type *ElTy = Loc.getElementType();
     llvm::Constant *Constant = constWithPadding(
         CGM, IsPattern::Yes, initializationPatternFor(CGM, ElTy));
