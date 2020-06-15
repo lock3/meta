@@ -17,6 +17,7 @@
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
 using namespace mlir;
@@ -112,7 +113,7 @@ static bool isTopLevelValue(Value value, Region *region) {
 }
 
 /// Returns the closest region enclosing `op` that is held by an operation with
-/// trait `AffineScope`.
+/// trait `AffineScope`; `nullptr` if there is no such region.
 //  TODO: getAffineScope should be publicly exposed for affine passes/utilities.
 static Region *getAffineScope(Operation *op) {
   auto *curOp = op;
@@ -121,7 +122,7 @@ static Region *getAffineScope(Operation *op) {
       return curOp->getParentRegion();
     curOp = parentOp;
   }
-  llvm_unreachable("op doesn't have an enclosing polyhedral scope");
+  return nullptr;
 }
 
 // A Value can be used as a dimension id iff it meets one of the following
@@ -173,7 +174,7 @@ bool mlir::isValidDim(Value value, Region *region) {
   // The dim op is okay if its operand memref/tensor is defined at the top
   // level.
   if (auto dimOp = dyn_cast<DimOp>(op))
-    return isTopLevelValue(dimOp.getOperand());
+    return isTopLevelValue(dimOp.memrefOrTensor());
   return false;
 }
 
@@ -197,19 +198,19 @@ static bool isMemRefSizeValidSymbol(AnyMemRefDefOp memrefDefOp, unsigned index,
 static bool isDimOpValidSymbol(DimOp dimOp, Region *region) {
   // The dim op is okay if its operand memref/tensor is defined at the top
   // level.
-  if (isTopLevelValue(dimOp.getOperand()))
+  if (isTopLevelValue(dimOp.memrefOrTensor()))
     return true;
 
   // The dim op is also okay if its operand memref/tensor is a view/subview
   // whose corresponding size is a valid symbol.
-  unsigned index = dimOp.getIndex();
-  if (auto viewOp = dyn_cast<ViewOp>(dimOp.getOperand().getDefiningOp()))
-    return isMemRefSizeValidSymbol<ViewOp>(viewOp, index, region);
-  if (auto subViewOp = dyn_cast<SubViewOp>(dimOp.getOperand().getDefiningOp()))
-    return isMemRefSizeValidSymbol<SubViewOp>(subViewOp, index, region);
-  if (auto allocOp = dyn_cast<AllocOp>(dimOp.getOperand().getDefiningOp()))
-    return isMemRefSizeValidSymbol<AllocOp>(allocOp, index, region);
-  return false;
+  Optional<int64_t> index = dimOp.getConstantIndex();
+  assert(index.hasValue() &&
+         "expect only `dim` operations with a constant index");
+  int64_t i = index.getValue();
+  return TypeSwitch<Operation *, bool>(dimOp.memrefOrTensor().getDefiningOp())
+      .Case<ViewOp, SubViewOp, AllocOp>(
+          [&](auto op) { return isMemRefSizeValidSymbol(op, i, region); })
+      .Default([](Operation *) { return false; });
 }
 
 // A value can be used as a symbol (at all its use sites) iff it meets one of
@@ -235,28 +236,31 @@ bool mlir::isValidSymbol(Value value) {
   return false;
 }
 
-// A value can be used as a symbol for `region` iff it meets onf of the the
-// following conditions:
-// *) It is a constant.
-// *) It is defined at the top level of 'region' or is its argument.
-// *) It dominates `region`'s parent op.
-// *) It is the result of an affine apply operation with symbol arguments.
-// *) It is a result of the dim op on a memref whose corresponding size is
-//    a valid symbol.
+/// A value can be used as a symbol for `region` iff it meets onf of the the
+/// following conditions:
+/// *) It is a constant.
+/// *) It is the result of an affine apply operation with symbol arguments.
+/// *) It is a result of the dim op on a memref whose corresponding size is
+///    a valid symbol.
+/// *) It is defined at the top level of 'region' or is its argument.
+/// *) It dominates `region`'s parent op.
+/// If `region` is null, conservatively assume the symbol definition scope does
+/// not exist and only accept the values that would be symbols regardless of
+/// the surrounding region structure, i.e. the first three cases above.
 bool mlir::isValidSymbol(Value value, Region *region) {
   // The value must be an index type.
   if (!value.getType().isIndex())
     return false;
 
   // A top-level value is a valid symbol.
-  if (::isTopLevelValue(value, region))
+  if (region && ::isTopLevelValue(value, region))
     return true;
 
   auto *defOp = value.getDefiningOp();
   if (!defOp) {
     // A block argument that is not a top-level value is a valid symbol if it
     // dominates region's parent op.
-    if (!region->getParentOp()->isKnownIsolatedFromAbove())
+    if (region && !region->getParentOp()->isKnownIsolatedFromAbove())
       if (auto *parentOpRegion = region->getParentOp()->getParentRegion())
         return isValidSymbol(value, parentOpRegion);
     return false;
@@ -276,7 +280,7 @@ bool mlir::isValidSymbol(Value value, Region *region) {
     return isDimOpValidSymbol(dimOp, region);
 
   // Check for values dominating `region`'s parent op.
-  if (!region->getParentOp()->isKnownIsolatedFromAbove())
+  if (region && !region->getParentOp()->isKnownIsolatedFromAbove())
     if (auto *parentRegion = region->getParentOp()->getParentRegion())
       return isValidSymbol(value, parentRegion);
 
@@ -1172,9 +1176,10 @@ LogicalResult AffineDmaWaitOp::fold(ArrayRef<Attribute> cstOperands,
 // AffineForOp
 //===----------------------------------------------------------------------===//
 
-void AffineForOp::build(OpBuilder &builder, OperationState &result,
-                        ValueRange lbOperands, AffineMap lbMap,
-                        ValueRange ubOperands, AffineMap ubMap, int64_t step) {
+void AffineForOp::build(
+    OpBuilder &builder, OperationState &result, ValueRange lbOperands,
+    AffineMap lbMap, ValueRange ubOperands, AffineMap ubMap, int64_t step,
+    function_ref<void(OpBuilder &, Location, Value)> bodyBuilder) {
   assert(((!lbMap && lbOperands.empty()) ||
           lbOperands.size() == lbMap.getNumInputs()) &&
          "lower bound operand count does not match the affine map");
@@ -1198,17 +1203,25 @@ void AffineForOp::build(OpBuilder &builder, OperationState &result,
   // Create a region and a block for the body.  The argument of the region is
   // the loop induction variable.
   Region *bodyRegion = result.addRegion();
-  Block *body = new Block();
-  body->addArgument(IndexType::get(builder.getContext()));
+  Block *body = new Block;
+  Value inductionVar = body->addArgument(IndexType::get(builder.getContext()));
   bodyRegion->push_back(body);
-  ensureTerminator(*bodyRegion, builder, result.location);
+  if (bodyBuilder) {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(body);
+    bodyBuilder(builder, result.location, inductionVar);
+  } else {
+    ensureTerminator(*bodyRegion, builder, result.location);
+  }
 }
 
-void AffineForOp::build(OpBuilder &builder, OperationState &result, int64_t lb,
-                        int64_t ub, int64_t step) {
+void AffineForOp::build(
+    OpBuilder &builder, OperationState &result, int64_t lb, int64_t ub,
+    int64_t step,
+    function_ref<void(OpBuilder &, Location, Value)> bodyBuilder) {
   auto lbMap = AffineMap::getConstantMap(lb, builder.getContext());
   auto ubMap = AffineMap::getConstantMap(ub, builder.getContext());
-  return build(builder, result, {}, lbMap, {}, ubMap, step);
+  return build(builder, result, {}, lbMap, {}, ubMap, step, bodyBuilder);
 }
 
 static LogicalResult verify(AffineForOp op) {

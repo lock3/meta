@@ -2436,7 +2436,12 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
       if (NewArg.isUsable()) {
         // It would be nice if we still had this.
         SourceLocation EqualLoc = NewArg.get()->getBeginLoc();
-        SetParamDefaultArgument(NewParm, NewArg.get(), EqualLoc);
+        ExprResult Result =
+            ConvertParamDefaultArgument(NewParm, NewArg.get(), EqualLoc);
+        if (Result.isInvalid())
+          return nullptr;
+
+        SetParamDefaultArgument(NewParm, Result.getAs<Expr>(), EqualLoc);
       }
     } else {
       // FIXME: if we non-lazily instantiated non-dependent default args for
@@ -3643,13 +3648,16 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
   if (isa<EnumDecl>(D))
     return nullptr;
 
-  // Handle forward references to a label declaration.
-  if (isa<LabelDecl>(D))
+  // Materialized typedefs/type alias for implicit deduction guides may require
+  // instantiation.
+  if (isa<TypedefNameDecl>(D) &&
+      isa<CXXDeductionGuideDecl>(D->getDeclContext()))
     return nullptr;
 
-  // If we reach this point, and we're not allowing uninstantiated decls,
-  // then we have a sema bug.
-  assert(AllowUninstantiated && "declaration not instantiated in this scope");
+  // If we didn't find the decl, then we either have a sema bug, or we have a
+  // forward reference to a label declaration.  Return null to indicate that
+  // we have an uninstantiated label.
+  assert(isa<LabelDecl>(D) && "declaration not instantiated in this scope");
   return nullptr;
 }
 

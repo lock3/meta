@@ -20,6 +20,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgTypes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/StandardOps/EDSC/Intrinsics.h"
+#include "mlir/Dialect/StandardOps/Transforms/Passes.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Attributes.h"
@@ -140,7 +141,7 @@ public:
     edsc::ScopedContext context(rewriter, op->getLoc());
 
     // Fill in an aggregate value of the descriptor.
-    RangeOpOperandAdaptor adaptor(operands);
+    RangeOpAdaptor adaptor(operands);
     Value desc = llvm_undef(rangeDescriptorTy);
     desc = llvm_insertvalue(desc, adaptor.min(), rewriter.getI64ArrayAttr(0));
     desc = llvm_insertvalue(desc, adaptor.max(), rewriter.getI64ArrayAttr(1));
@@ -178,7 +179,7 @@ public:
       return failure();
 
     edsc::ScopedContext context(rewriter, op->getLoc());
-    ReshapeOpOperandAdaptor adaptor(operands);
+    ReshapeOpAdaptor adaptor(operands);
     BaseViewConversionHelper baseDesc(adaptor.src());
     BaseViewConversionHelper desc(typeConverter.convertType(dstType));
     desc.setAllocatedPtr(baseDesc.allocatedPtr());
@@ -208,7 +209,7 @@ public:
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     edsc::ScopedContext context(rewriter, op->getLoc());
-    SliceOpOperandAdaptor adaptor(operands);
+    SliceOpAdaptor adaptor(operands);
     BaseViewConversionHelper baseDesc(adaptor.view());
 
     auto sliceOp = cast<SliceOp>(op);
@@ -302,7 +303,7 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     // Initialize the common boilerplate and alloca at the top of the FuncOp.
     edsc::ScopedContext context(rewriter, op->getLoc());
-    TransposeOpOperandAdaptor adaptor(operands);
+    TransposeOpAdaptor adaptor(operands);
     BaseViewConversionHelper baseDesc(adaptor.view());
 
     auto transposeOp = cast<TransposeOp>(op);
@@ -377,6 +378,7 @@ void ConvertLinalgToLLVMPass::runOnOperation() {
   populateAffineToStdConversionPatterns(patterns, &getContext());
   populateLoopToStdConversionPatterns(patterns, &getContext());
   populateStdToLLVMConversionPatterns(converter, patterns);
+  populateExpandTanhPattern(patterns, &getContext());
   populateVectorToSCFConversionPatterns(patterns, &getContext());
   populateVectorToLLVMMatrixConversionPatterns(converter, patterns);
   populateVectorToLLVMConversionPatterns(converter, patterns);

@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// RUN: mlir-edsc-builder-api-test | FileCheck %s -dump-input-on-failure
+// RUN: mlir-edsc-builder-api-test | FileCheck %s
 
 #include "mlir/Dialect/Affine/EDSC/Intrinsics.h"
 #include "mlir/Dialect/Linalg/EDSC/Builders.h"
@@ -67,16 +67,16 @@ TEST_FUNC(builder_dynamic_for_func_args) {
 
   OpBuilder builder(f.getBody());
   ScopedContext scope(builder, f.getLoc());
-  Value i, j, lb(f.getArgument(0)), ub(f.getArgument(1));
+  Value lb(f.getArgument(0)), ub(f.getArgument(1));
   Value f7(std_constant_float(llvm::APFloat(7.0f), f32Type));
   Value f13(std_constant_float(llvm::APFloat(13.0f), f32Type));
   Value i7(std_constant_int(7, 32));
   Value i13(std_constant_int(13, 32));
-  AffineLoopNestBuilder(&i, lb, ub, 3)([&] {
+  affineLoopBuilder(lb, ub, 3, [&](Value i) {
     using namespace edsc::op;
     lb *std_constant_index(3) + ub;
     lb + std_constant_index(3);
-    AffineLoopNestBuilder(&j, lb, ub, 2)([&] {
+    affineLoopBuilder(lb, ub, 2, [&](Value j) {
       ceilDiv(std_constant_index(31) * floorDiv(i + j * std_constant_index(3),
                                                 std_constant_index(32)),
               std_constant_index(32));
@@ -120,7 +120,7 @@ TEST_FUNC(builder_dynamic_for) {
   Value i, a(f.getArgument(0)), b(f.getArgument(1)), c(f.getArgument(2)),
       d(f.getArgument(3));
   using namespace edsc::op;
-  AffineLoopNestBuilder(&i, a - b, c + d, 2)();
+  affineLoopBuilder(a - b, c + d, 2);
 
   // clang-format off
   // CHECK-LABEL: func @builder_dynamic_for(%{{.*}}: index, %{{.*}}: index, %{{.*}}: index, %{{.*}}: index) {
@@ -161,9 +161,9 @@ TEST_FUNC(builder_max_min_for) {
 
   OpBuilder builder(f.getBody());
   ScopedContext scope(builder, f.getLoc());
-  Value i, lb1(f.getArgument(0)), lb2(f.getArgument(1)), ub1(f.getArgument(2)),
+  Value lb1(f.getArgument(0)), lb2(f.getArgument(1)), ub1(f.getArgument(2)),
       ub2(f.getArgument(3));
-  AffineLoopNestBuilder(&i, {lb1, lb2}, {ub1, ub2}, 1)();
+  affineLoopBuilder({lb1, lb2}, {ub1, ub2}, 1);
   std_ret();
 
   // clang-format off
@@ -386,20 +386,20 @@ TEST_FUNC(builder_helpers) {
   MemRefBoundsCapture vA(f.getArgument(0)), vB(f.getArgument(1)),
       vC(f.getArgument(2));
   AffineIndexedValue A(f.getArgument(0)), B(f.getArgument(1)), C(f.getArgument(2));
-  Value ivs[2];
-  Value &i = ivs[0], &j = ivs[1];
-  Value k1, k2, lb0, lb1, lb2, ub0, ub1, ub2;
+  Value lb0, lb1, lb2, ub0, ub1, ub2;
   int64_t step0, step1, step2;
   std::tie(lb0, ub0, step0) = vA.range(0);
   std::tie(lb1, ub1, step1) = vA.range(1);
   lb2 = vA.lb(2);
   ub2 = vA.ub(2);
   step2 = vA.step(2);
-  AffineLoopNestBuilder(ivs, {lb0, lb1}, {ub0, ub1}, {step0, step1})([&]{
-    AffineLoopNestBuilder(&k1, lb2, ub2, step2)([&]{
+  affineLoopNestBuilder({lb0, lb1}, {ub0, ub1}, {step0, step1}, [&](ValueRange ivs) {
+    Value i = ivs[0];
+    Value j = ivs[1];
+    affineLoopBuilder(lb2, ub2, step2, [&](Value k1){
       C(i, j, k1) = f7 + A(i, j, k1) + B(i, j, k1);
     });
-    AffineLoopNestBuilder(&k2, lb2, ub2, step2)([&]{
+    affineLoopBuilder(lb2, ub2, step2, [&](Value k2){
       C(i, j, k2) += A(i, j, k2) + B(i, j, k2);
     });
   });
@@ -525,16 +525,14 @@ TEST_FUNC(select_op_i32) {
 
   OpBuilder builder(f.getBody());
   ScopedContext scope(builder, f.getLoc());
-  // clang-format off
   Value zero = std_constant_index(0), one = std_constant_index(1);
   MemRefBoundsCapture vA(f.getArgument(0));
   AffineIndexedValue A(f.getArgument(0));
-  Value ivs[2];
-  Value &i = ivs[0], &j = ivs[1];
-  AffineLoopNestBuilder(ivs, {zero, zero}, {one, one}, {1, 1})([&]{
-    std_select(eq(i, zero), A(zero, zero), A(i, j));
+  affineLoopNestBuilder({zero, zero}, {one, one}, {1, 1}, [&](ValueRange ivs) {
+    std_select(eq(ivs[0], zero), A(zero, zero), A(ivs[0], ivs[1]));
   });
 
+  // clang-format off
   // CHECK-LABEL: @select_op
   //      CHECK: affine.for %{{.*}} = 0 to 1 {
   // CHECK-NEXT:   affine.for %{{.*}} = 0 to 1 {
@@ -559,10 +557,9 @@ TEST_FUNC(select_op_f32) {
   Value zero = std_constant_index(0), one = std_constant_index(1);
   MemRefBoundsCapture vA(f.getArgument(0)), vB(f.getArgument(1));
   AffineIndexedValue A(f.getArgument(0)), B(f.getArgument(1));
-  Value ivs[2];
-  Value &i = ivs[0], &j = ivs[1];
-  AffineLoopNestBuilder(ivs, {zero, zero}, {one, one}, {1, 1})([&]{
+  affineLoopNestBuilder({zero, zero}, {one, one}, {1, 1}, [&](ValueRange ivs) {
     using namespace edsc::op;
+    Value i = ivs[0], j = ivs[1];
     std_select(eq(B(i, j), B(i + one, j)), A(zero, zero), A(i, j));
     std_select(ne(B(i, j), B(i + one, j)), A(zero, zero), A(i, j));
     std_select(B(i, j) >= B(i + one, j), A(zero, zero), A(i, j));
@@ -637,18 +634,20 @@ TEST_FUNC(tile_2d) {
       vC(f.getArgument(2));
   AffineIndexedValue A(f.getArgument(0)), B(f.getArgument(1)),
       C(f.getArgument(2));
-  Value ivs[2];
-  Value &i = ivs[0], &j = ivs[1];
-  Value k1, k2;
+  Value i, j, k1, k2;
   Value M(vC.ub(0)), N(vC.ub(1)), O(vC.ub(2));
 
   // clang-format off
   using namespace edsc::op;
-  AffineLoopNestBuilder(ivs, {zero, zero}, {M, N}, {1, 1})([&]{
-    AffineLoopNestBuilder(&k1, zero, O, 1)([&]{
+  affineLoopNestBuilder({zero, zero}, {M, N}, {1, 1}, [&](ValueRange ivs) {
+    i = ivs[0];
+    j = ivs[1];
+    affineLoopBuilder(zero, O, 1, [&](Value k) {
+      k1 = k;
       C(i, j, k1) = A(i, j, k1) + B(i, j, k1);
     });
-    AffineLoopNestBuilder(&k2, zero, O, 1)([&]{
+    affineLoopBuilder(zero, O, 1, [&](Value k) {
+      k2 = k;
       C(i, j, k2) = A(i, j, k2) + B(i, j, k2);
     });
   });
@@ -663,9 +662,9 @@ TEST_FUNC(tile_2d) {
   // clang-format off
   // CHECK-LABEL: func @tile_2d
   //       CHECK: %[[ZERO:.*]] = constant 0 : index
-  //       CHECK: %[[M:[0-9]+]] = dim %arg2, 0 : memref<?x?x?xf32>
-  //  CHECK-NEXT: %[[N:[0-9]+]] = dim %arg2, 1 : memref<?x?x?xf32>
-  //  CHECK-NEXT: %[[P:[0-9]+]] = dim %arg2, 2 : memref<?x?x?xf32>
+  //       CHECK: %[[M:[0-9]+]] = dim %arg2, %c0{{[_0-9]*}} : memref<?x?x?xf32>
+  //       CHECK: %[[N:[0-9]+]] = dim %arg2, %c1{{[_0-9]*}} : memref<?x?x?xf32>
+  //       CHECK: %[[P:[0-9]+]] = dim %arg2, %c2{{[_0-9]*}} : memref<?x?x?xf32>
   //       CHECK:   affine.for %{{.*}} = affine_map<(d0) -> (d0)>(%[[ZERO]]) to affine_map<(d0) -> (d0)>(%[[M]]) step 512 {
   //  CHECK-NEXT:     affine.for %{{.*}} = affine_map<(d0) -> (d0)>(%[[ZERO]]) to affine_map<(d0) -> (d0)>(%[[N]]) step 1024 {
   //  CHECK-NEXT:       affine.for %{{.*}} = affine_map<(d0) -> (d0)>(%[[ZERO]]) to affine_map<(d0) -> (d0)>(%[[P]]) {
@@ -708,10 +707,10 @@ TEST_FUNC(indirect_access) {
   MemRefBoundsCapture vC(f.getArgument(2));
   AffineIndexedValue B(f.getArgument(1)), D(f.getArgument(3));
   StdIndexedValue A(f.getArgument(0)), C(f.getArgument(2));
-  Value i, N(vC.ub(0));
+  Value N(vC.ub(0));
 
   // clang-format off
-  AffineLoopNestBuilder(&i, zero, N, 1)([&]{
+  affineLoopBuilder(zero, N, 1, [&](Value i) {
       C((Value)D(i)) = A((Value)B(i));
   });
   // clang-format on
@@ -743,8 +742,7 @@ TEST_FUNC(empty_map_load_store) {
   AffineIndexedValue input(f.getArgument(0)), res(f.getArgument(1));
 
   // clang-format off
-  Value iv;
-  AffineLoopNestBuilder(&iv, zero, one, 1)([&]{
+  affineLoopBuilder(zero, one, 1, [&](Value) {
       res() = input();
   });
   // clang-format on
@@ -941,6 +939,8 @@ TEST_FUNC(linalg_generic_dilated_conv_nhwc) {
 //       CHECK: linalg.reshape {{.*}} [affine_map<(d0, d1, d2) -> (d0, d1)>, affine_map<(d0, d1, d2) -> (d2)>] : memref<32x16xf32> into memref<4x8x16xf32>
 // clang-format on
 TEST_FUNC(linalg_metadata_ops) {
+  using linalg::ReassociationExprs;
+
   auto f32Type = FloatType::getF32(&globalContext());
   auto memrefType = MemRefType::get({4, 8, 16}, f32Type, {}, 0);
   auto f = makeFunction("linalg_metadata_ops", {}, {memrefType});
@@ -950,9 +950,10 @@ TEST_FUNC(linalg_metadata_ops) {
   AffineExpr i, j, k;
   bindDims(&globalContext(), i, j, k);
   Value v(f.getArgument(0));
-  auto reshaped = linalg_reshape(v, ArrayRef<ArrayRef<AffineExpr>>{{i, j}, k});
-  linalg_reshape(memrefType, reshaped,
-                 ArrayRef<ArrayRef<AffineExpr>>{{i, j}, k});
+  SmallVector<ReassociationExprs, 2> maps = {ReassociationExprs({i, j}),
+                                             ReassociationExprs({k})};
+  auto reshaped = linalg_reshape(v, maps);
+  linalg_reshape(memrefType, reshaped, maps);
 
   f.print(llvm::outs());
   f.erase();

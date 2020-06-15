@@ -2338,7 +2338,7 @@ private:
                           AccessSpecifier AS, DeclSpecContext DSC);
   void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
   void ParseStructUnionBody(SourceLocation StartLoc, DeclSpec::TST TagType,
-                            Decl *TagDecl);
+                            RecordDecl *TagDecl);
 
   void ParseStructDeclaration(
       ParsingDeclSpec &DS,
