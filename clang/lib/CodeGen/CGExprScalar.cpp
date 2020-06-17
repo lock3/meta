@@ -419,13 +419,18 @@ public:
   Value *VisitExpr(Expr *S);
 
   Value *VisitConstantExpr(ConstantExpr *E) {
+    bool IsNonVoidType = !E->getType()->isVoidType();
+
     if (Value *Result = ConstantEmitter(CGF).tryEmitConstantExpr(E)) {
       if (E->isGLValue())
         return CGF.Builder.CreateLoad(Address(
             Result, CGF.getContext().getTypeAlignInChars(E->getType())));
       return Result;
+    } else if (IsNonVoidType) {
+      return Visit(E->getSubExpr());
+    } else {
+      return nullptr;
     }
-    return Visit(E->getSubExpr());
   }
   Value *VisitParenExpr(ParenExpr *PE) {
     return Visit(PE->getSubExpr());
