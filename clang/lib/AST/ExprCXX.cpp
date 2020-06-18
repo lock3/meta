@@ -1349,7 +1349,7 @@ CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
     : Expr(CXXDependentScopeMemberExprClass, Ctx.DependentTy, VK_LValue,
            OK_Ordinary),
       Base(Base), BaseType(BaseType), QualifierLoc(QualifierLoc),
-      MemberNameInfo(MemberNameInfo), IdExpr(nullptr) {
+      MemberNameInfo(MemberNameInfo) {
   CXXDependentScopeMemberExprBits.IsArrow = IsArrow;
   CXXDependentScopeMemberExprBits.HasTemplateKWAndArgsInfo =
       (TemplateArgs != nullptr) || TemplateKWLoc.isValid();
@@ -1373,23 +1373,9 @@ CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
 }
 
 CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
-    const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
-    SourceLocation OperatorLoc, Expr *IdExpr)
-    : Expr(CXXDependentScopeMemberExprClass, C.DependentTy, VK_LValue,
-           OK_Ordinary),
-      Base(Base), BaseType(BaseType), IdExpr(IdExpr) {
-  CXXDependentScopeMemberExprBits.IsArrow = IsArrow;
-  CXXDependentScopeMemberExprBits.HasTemplateKWAndArgsInfo = false;
-  // FIXME: Is this right?
-  CXXDependentScopeMemberExprBits.HasFirstQualifierFoundInScope = false;
-  CXXDependentScopeMemberExprBits.OperatorLoc = OperatorLoc;
-  setDependence(computeDependence(this));
-}
-
-CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
     EmptyShell Empty, bool HasTemplateKWAndArgsInfo,
     bool HasFirstQualifierFoundInScope)
-    : Expr(CXXDependentScopeMemberExprClass, Empty), IdExpr(nullptr) {
+    : Expr(CXXDependentScopeMemberExprClass, Empty) {
   CXXDependentScopeMemberExprBits.HasTemplateKWAndArgsInfo =
       HasTemplateKWAndArgsInfo;
   CXXDependentScopeMemberExprBits.HasFirstQualifierFoundInScope =
@@ -1415,15 +1401,6 @@ CXXDependentScopeMemberExpr *CXXDependentScopeMemberExpr::Create(
   return new (Mem) CXXDependentScopeMemberExpr(
       Ctx, Base, BaseType, IsArrow, OperatorLoc, QualifierLoc, TemplateKWLoc,
       FirstQualifierFoundInScope, MemberNameInfo, TemplateArgs);
-}
-
-CXXDependentScopeMemberExpr *
-CXXDependentScopeMemberExpr::Create(const ASTContext &C,
-                                Expr *Base, QualType BaseType, bool IsArrow,
-                                SourceLocation OperatorLoc,
-                                Expr *IdExpr) {
-  return new (C) CXXDependentScopeMemberExpr(C, Base, BaseType, IsArrow,
-                                             OperatorLoc, IdExpr);
 }
 
 CXXDependentScopeMemberExpr *CXXDependentScopeMemberExpr::CreateEmpty(
@@ -1868,6 +1845,57 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::Create(const ASTContext &C,
 CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
                                                         EmptyShell Empty) {
   return new (C) CXXCompilerErrorExpr(Empty);
+}
+
+CXXIdExprExpr *CXXIdExprExpr::Create(
+    const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
+    SourceLocation LParenLoc, SourceLocation RParenLoc) {
+  return new (C) CXXIdExprExpr(
+      C.DependentTy, Reflection, KeywordLoc, LParenLoc, RParenLoc);
+}
+
+CXXIdExprExpr *CXXIdExprExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXIdExprExpr(EmptyShell());
+}
+
+CXXMemberIdExprExpr::CXXMemberIdExprExpr(
+    QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
+    SourceLocation OpLoc, SourceLocation TemplateKWLoc,
+    SourceLocation LParenLoc, SourceLocation RParenLoc,
+    const TemplateArgumentListInfo *Args)
+    : Expr(CXXMemberIdExprExprClass, T, VK_RValue, OK_Ordinary),
+      Base(Base), Reflection(Reflection), IsArrow(IsArrow),
+      HasTemplateKWAndArgsInfo(Args != nullptr || TemplateKWLoc.isValid()),
+      OpLoc(OpLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+  if (Args) {
+    auto Deps = TemplateArgumentDependence::None;
+    getTrailingObjects<ASTTemplateKWAndArgsInfo>()->initializeFrom(
+        TemplateKWLoc, *Args, getTrailingObjects<TemplateArgumentLoc>(), Deps);
+  } else if (TemplateKWLoc.isValid()) {
+    getTrailingObjects<ASTTemplateKWAndArgsInfo>()->initializeFrom(
+        TemplateKWLoc);
+  }
+
+  setDependence(computeDependence(this));
+}
+
+CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
+    const ASTContext &C, Expr *Base, Expr *Reflection,
+    bool IsArrow, SourceLocation OpLoc, SourceLocation TemplateKWLoc,
+    SourceLocation LParenLoc, SourceLocation RParenLoc,
+    const TemplateArgumentListInfo *Args) {
+  bool HasTemplateKWAndArgsInfo = Args || TemplateKWLoc.isValid();
+  std::size_t Size =
+      totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
+          HasTemplateKWAndArgsInfo, Args ? Args->size() : 0);
+  void *Mem = C.Allocate(Size);
+  return new (Mem) CXXMemberIdExprExpr(
+      C.DependentTy, Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
+      LParenLoc, RParenLoc, Args);
+}
+
+CXXMemberIdExprExpr *CXXMemberIdExprExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXMemberIdExprExpr(EmptyShell());
 }
 
 // Assume that the name is an ordinary lvalue for now.

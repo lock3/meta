@@ -2542,7 +2542,22 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
 }
 
 void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
-  OS << "idexpr(...)"; // TODO Finish this
+  OS << "idexpr(";
+  PrintExpr(E->getReflection());
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+  PrintExpr(E->getBase());
+
+  if (E->isArrow())
+    OS << "->";
+  else
+    OS << ".";
+
+  OS << "idexpr(";
+  PrintExpr(E->getReflection());
+  OS << ")";
 }
 
 void StmtPrinter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *Node) {

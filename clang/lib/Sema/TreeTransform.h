@@ -1592,6 +1592,25 @@ public:
                                                    LParenLoc, RParenLoc);
   }
 
+  /// Build a new idexpr expression.
+  ExprResult RebuildCXXIdExprExpr(
+      Expr *Reflection, SourceLocation KeywordLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc) {
+    return getSema().ActOnCXXIdExprExpr(
+        KeywordLoc, Reflection, LParenLoc, RParenLoc);
+  }
+
+  /// Build a new member idexpr expression.
+  ExprResult RebuildCXXMemberIdExprExpr(
+      Expr *Base, Expr *Reflection, bool IsArrow, SourceLocation OpLoc,
+      SourceLocation TemplateKWLoc,
+      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      TemplateArgumentListInfo *TemplateArgs) {
+    return getSema().ActOnCXXMemberIdExprExpr(
+        Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
+        LParenLoc, RParenLoc, TemplateArgs);
+  }
+
   /// Build a new concatenation expression.
   ExprResult RebuildCXXConcatenateExpr(SourceLocation Loc,
                                        SmallVectorImpl<Expr *> &Parts) {
@@ -3378,20 +3397,6 @@ public:
                                             FirstQualifierInScope,
                                             MemberNameInfo,
                                             TemplateArgs, /*S*/nullptr);
-  }
-
-  /// Build a new reflected member reference expression.
-  ///
-  /// By default, performs semantic analysis to build the new expression.
-  /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXDependentScopeMemberExpr(Expr *BaseE,
-                                                QualType BaseType,
-                                                bool IsArrow,
-                                                SourceLocation OperatorLoc,
-                                                Expr *IdExpr) {
-    return SemaRef.BuildMemberReferenceExpr(BaseE, BaseType,
-                                            OperatorLoc, IsArrow,
-                                            IdExpr);
   }
 
   /// Build a new member reference expression.
@@ -8378,8 +8383,41 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
   if (Refl.isInvalid())
     return ExprError();
 
-  return getSema().ActOnCXXIdExprExpr(E->getKeywordLoc(), Refl.get(),
-                                      E->getLParenLoc(), E->getRParenLoc());
+  return getDerived().RebuildCXXIdExprExpr(
+      Refl.get(), E->getKeywordLoc(), E->getLParenLoc(), E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+  ExprResult Base = getDerived().TransformExpr(E->getBase());
+  if (Base.isInvalid())
+    return ExprError();
+
+  ExprResult Refl = getDerived().TransformExpr(E->getReflection());
+  if (Refl.isInvalid())
+    return ExprError();
+
+  TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
+
+  SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
+
+  if (E->hasExplicitTemplateArgs()) {
+    TemplateArgs.setLAngleLoc(E->getLAngleLoc());
+    TemplateArgs.setRAngleLoc(E->getRAngleLoc());
+
+    if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                E->getNumTemplateArgs(),
+                                                TemplateArgs))
+      return ExprError();
+
+    TemplateArgsPtr = &TemplateArgs;
+  }
+
+  return getDerived().RebuildCXXMemberIdExprExpr(
+      Base.get(), Refl.get(), E->isArrow(), E->getOperatorLoc(),
+      TemplateKWLoc, E->getLParenLoc(), E->getRParenLoc(),
+      TemplateArgsPtr);
 }
 
 template<typename Derived>
@@ -13786,17 +13824,6 @@ TreeTransform<Derived>::TransformCXXDependentScopeMemberExpr(
     OldBase = nullptr;
     BaseType = getDerived().TransformType(E->getBaseType());
     ObjectType = BaseType->castAs<PointerType>()->getPointeeType();
-  }
-
-  // Handle reflection case
-  if (E->getIdExpr()) {
-    ExprResult IdExpr = getDerived().TransformExpr(E->getIdExpr());
-
-    if (IdExpr.isInvalid())
-      return ExprError();
-
-    return getDerived().RebuildCXXDependentScopeMemberExpr(Base.get(),
-        BaseType, E->isArrow(), E->getOperatorLoc(), IdExpr.get());
   }
 
   // Transform the first part of the nested-name-specifier that qualifies

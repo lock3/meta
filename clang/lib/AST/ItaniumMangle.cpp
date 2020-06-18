@@ -3866,6 +3866,7 @@ recurse:
   case Expr::OMPIteratorExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXIdExprExprClass:
+  case Expr::CXXMemberIdExprExprClass:
   case Expr::CXXReflectedIdExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
