@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -freflection -Wno-deprecated-fragment -std=c++2a %s
 
 class ArrayDestructure {
-  consteval {
+  consteval { // expected-error {{consteval function never produces a constant expression}} expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
     auto lambda = [](auto a_ptr) // expected-error {{invalid deduced capture; 'int *' cannot be captured by a fragment}}
       consteval {
       -> __fragment struct {
@@ -28,7 +28,7 @@ class ArrayDestructure {
         return a_ptr; // expected-error {{reference to local variable 'a_ptr' declared in enclosing function 'ArrayDestructure::__constexpr_decl'}}
       }
     };
-    lambda(a_ptr); // expected-note {{in instantiation of function template specialization}}
+    lambda(a_ptr); // expected-note {{in instantiation of function template specialization}} expected-note {{subexpression not valid in a constant expression}} expected-note {{subexpression not valid in a constant expression}}
   }
 };
 
