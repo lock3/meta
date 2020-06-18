@@ -2085,9 +2085,13 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       //
       // If the next token is idexpr process this as a special
       // expression
-      if (NextToken().is(tok::kw_idexpr) ||
-          (NextToken().is(tok::kw_template) &&
-           GetLookAheadToken(2).is(tok::kw_idexpr))) {
+
+      if (NextToken().is(tok::kw_idexpr)) {
+        // The template case isn't in p1240, leave it off for now.
+        //
+        // (NextToken().is(tok::kw_template) &&
+        //    GetLookAheadToken(2).is(tok::kw_idexpr))) {
+
         // FIXME: How does this happen? Does this happen?
         // if (LHS.isInvalid())
         //  break;

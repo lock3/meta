@@ -19,10 +19,10 @@ struct foo {
     this->idexpr(F)(arg);
   }
 
-  template<auto F, typename A>
-  void delegate(A arg) {
-    this->template idexpr(F)<A, A>(arg);
-  }
+  // template<auto F, typename A>
+  // void delegate(A arg) {
+  //   this->template idexpr(F)<A, A>(arg);
+  // }
 };
 
 struct bar {
@@ -41,7 +41,7 @@ void test() {
   f.call<reflexpr(foo::a), int>(10);
   f.call<reflexpr(foo::b), int>(10);
   f.call<reflexpr(foo::c), int>(10);
-  f.delegate<reflexpr(foo::d), int>(10);
+  // f.delegate<reflexpr(foo::d), int>(10);
 
   f.call<reflexpr(bar::a), int>(10); // expected-note {{in instantiation}}
   f.call<reflexpr(a), int>(10);
