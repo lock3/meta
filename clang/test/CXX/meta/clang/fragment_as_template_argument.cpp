@@ -14,7 +14,7 @@ consteval auto get_frag() {
 
 int main() {
   constexpr int i = test<get_frag()>(); // expected-error {{no matching function for call to 'test'}}
-  static_assert(i == 10); // expected-error {{static_assert expression is not an integral constant expression}}
+  static_assert(i == 10);
 
   return 0;
 }

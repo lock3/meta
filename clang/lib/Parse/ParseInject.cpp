@@ -391,7 +391,7 @@ StmtResult Parser::ParseCXXInjectionStatement() {
     return StmtError();
 
   Operand = Actions.CorrectDelayedTyposInExpr(Operand);
-  if (Operand.isInvalid())
+  if (Operand.isInvalid() || Operand.get()->containsErrors())
     return StmtError();
 
   return Actions.ActOnCXXInjectionStmt(Loc, ICS, Operand.get());

@@ -22,8 +22,7 @@ class ArrayDestructure {
   }
 
   consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
-    auto lambda = [](auto a_ptr)
-      consteval {
+    auto lambda = [](auto a_ptr) consteval {
       -> fragment struct {
         constexpr auto val_a_ptr() {
           return %{a_ptr}; // expected-note {{pointer to 'a' is not a constant expression}}

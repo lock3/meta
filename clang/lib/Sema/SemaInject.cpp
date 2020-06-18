@@ -2836,7 +2836,7 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
   ExprResult CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
                                              Params, SourceLocation());
 
-  if (CallRes.isInvalid()) {
+  if (CallRes.isInvalid() || !isa<CallExpr>(CallRes.get())) {
     SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
       << "required declarator.";
     return true;
