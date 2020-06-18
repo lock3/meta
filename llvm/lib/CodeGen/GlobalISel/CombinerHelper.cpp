@@ -867,8 +867,7 @@ static bool findGISelOptimalMemOpLowering(std::vector<LLT> &MemOps,
     Ty = LLT::scalar(64);
     if (Op.isFixedDstAlign())
       while (Op.getDstAlign() < Ty.getSizeInBytes() &&
-             !TLI.allowsMisalignedMemoryAccesses(Ty, DstAS,
-                                                 Op.getDstAlign().value()))
+             !TLI.allowsMisalignedMemoryAccesses(Ty, DstAS, Op.getDstAlign()))
         Ty = LLT::scalar(Ty.getSizeInBytes());
     assert(Ty.getSizeInBits() > 0 && "Could not find valid type");
     // FIXME: check for the largest legal type we can load/store to.
@@ -1668,6 +1667,38 @@ bool CombinerHelper::replaceInstWithUndef(MachineInstr &MI) {
   assert(MI.getNumDefs() == 1 && "Expected only one def?");
   Builder.setInstr(MI);
   Builder.buildUndef(MI.getOperand(0));
+  MI.eraseFromParent();
+  return true;
+}
+
+bool CombinerHelper::matchSimplifyAddToSub(
+    MachineInstr &MI, std::tuple<Register, Register> &MatchInfo) {
+  Register LHS = MI.getOperand(1).getReg();
+  Register RHS = MI.getOperand(2).getReg();
+  Register &NewLHS = std::get<0>(MatchInfo);
+  Register &NewRHS = std::get<1>(MatchInfo);
+
+  // Helper lambda to check for opportunities for
+  // ((0-A) + B) -> B - A
+  // (A + (0-B)) -> A - B
+  auto CheckFold = [&](Register &MaybeSub, Register &MaybeNewLHS) {
+    int64_t Cst;
+    if (!mi_match(MaybeSub, MRI, m_GSub(m_ICst(Cst), m_Reg(NewRHS))) ||
+        Cst != 0)
+      return false;
+    NewLHS = MaybeNewLHS;
+    return true;
+  };
+
+  return CheckFold(LHS, RHS) || CheckFold(RHS, LHS);
+}
+
+bool CombinerHelper::applySimplifyAddToSub(
+    MachineInstr &MI, std::tuple<Register, Register> &MatchInfo) {
+  Builder.setInstr(MI);
+  Register SubLHS, SubRHS;
+  std::tie(SubLHS, SubRHS) = MatchInfo;
+  Builder.buildSub(MI.getOperand(0).getReg(), SubLHS, SubRHS);
   MI.eraseFromParent();
   return true;
 }

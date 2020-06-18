@@ -1306,17 +1306,12 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitDeclRefLValue(cast<DeclRefExpr>(E));
   case Expr::ConstantExprClass: {
     const ConstantExpr *CE = cast<ConstantExpr>(E);
-
-    if (CE->hasAPValueResult()) {
-      QualType T = getContext().getPointerType(CE->getType());
-      llvm::Constant *C = ConstantEmitter(*this).emitAbstract(
-          CE->getLocation(), CE->getAPValueResult(), T);
-      ConstantAddress Addr(C, getContext().getTypeAlignInChars(T));
-      LValueBaseInfo BI;
-      return LValue::MakeAddr(Addr, T, getContext(), BI, TBAAAccessInfo());
+    if (llvm::Value *Result = ConstantEmitter(*this).tryEmitConstantExpr(CE)) {
+      QualType RetType = cast<CallExpr>(CE->getSubExpr()->IgnoreImplicit())
+                             ->getCallReturnType(getContext());
+      return MakeNaturalAlignAddrLValue(Result, RetType);
     }
-
-    return EmitLValue(CE->getSubExpr());
+    return EmitLValue(cast<ConstantExpr>(E)->getSubExpr());
   }
   case Expr::ParenExprClass:
     return EmitLValue(cast<ParenExpr>(E)->getSubExpr());
@@ -1344,7 +1339,6 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
 
   case Expr::ExprWithCleanupsClass: {
     const auto *cleanups = cast<ExprWithCleanups>(E);
-    enterFullExpression(cleanups);
     RunCleanupsScope Scope(*this);
     LValue LV = EmitLValue(cleanups->getSubExpr());
     if (LV.isSimple()) {

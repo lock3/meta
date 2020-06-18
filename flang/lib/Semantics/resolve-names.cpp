@@ -287,7 +287,7 @@ protected:
     case parser::AccessSpec::Kind::Private:
       return Attr::PRIVATE;
     }
-    common::die("unreachable"); // suppress g++ warning
+    llvm_unreachable("Switch covers all cases"); // suppress g++ warning
   }
   Attr IntentSpecToAttr(const parser::IntentSpec &x) {
     switch (x.v) {
@@ -298,7 +298,7 @@ protected:
     case parser::IntentSpec::Intent::InOut:
       return Attr::INTENT_INOUT;
     }
-    common::die("unreachable"); // suppress g++ warning
+    llvm_unreachable("Switch covers all cases"); // suppress g++ warning
   }
 
 private:
@@ -455,6 +455,8 @@ public:
   // TODO: Will return the scope of a FORALL or implied DO loop; is this ok?
   // If not, should call FindProgramUnitContaining() instead.
   Scope &InclusiveScope();
+  // The enclosing scope, skipping derived types.
+  Scope &NonDerivedTypeScope();
 
   // Create a new scope and push it on the scope stack.
   void PushScope(Scope::Kind kind, Symbol *symbol);
@@ -1396,13 +1398,27 @@ public:
   void Post(const parser::AssignedGotoStmt &);
 
   // These nodes should never be reached: they are handled in ProgramUnit
-  bool Pre(const parser::MainProgram &) { DIE("unreachable"); }
-  bool Pre(const parser::FunctionSubprogram &) { DIE("unreachable"); }
-  bool Pre(const parser::SubroutineSubprogram &) { DIE("unreachable"); }
-  bool Pre(const parser::SeparateModuleSubprogram &) { DIE("unreachable"); }
-  bool Pre(const parser::Module &) { DIE("unreachable"); }
-  bool Pre(const parser::Submodule &) { DIE("unreachable"); }
-  bool Pre(const parser::BlockData &) { DIE("unreachable"); }
+  bool Pre(const parser::MainProgram &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::FunctionSubprogram &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::SubroutineSubprogram &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::SeparateModuleSubprogram &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::Module &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::Submodule &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
+  bool Pre(const parser::BlockData &) {
+    llvm_unreachable("This node is handled in ProgramUnit");
+  }
 
   void NoteExecutablePartCall(Symbol::Flag, const parser::Call &);
 
@@ -1997,6 +2013,10 @@ Scope &ScopeHandler::InclusiveScope() {
     }
   }
   DIE("inclusive scope not found");
+}
+
+Scope &ScopeHandler::NonDerivedTypeScope() {
+  return currScope_->IsDerivedType() ? currScope_->parent() : *currScope_;
 }
 
 void ScopeHandler::PushScope(Scope::Kind kind, Symbol *symbol) {
@@ -3294,9 +3314,7 @@ void DeclarationVisitor::Post(const parser::EnumDef &) {
 
 bool DeclarationVisitor::Pre(const parser::AccessSpec &x) {
   Attr attr{AccessSpecToAttr(x)};
-  const Scope &scope{
-      currScope().IsDerivedType() ? currScope().parent() : currScope()};
-  if (!scope.IsModule()) { // C817
+  if (!NonDerivedTypeScope().IsModule()) { // C817
     Say(currStmtSource().value(),
         "%s attribute may only appear in the specification part of a module"_err_en_US,
         EnumToString(attr));
@@ -4725,7 +4743,7 @@ void DeclarationVisitor::SetType(
 
 std::optional<DerivedTypeSpec> DeclarationVisitor::ResolveDerivedType(
     const parser::Name &name) {
-  Symbol *symbol{FindSymbol(name)};
+  Symbol *symbol{FindSymbol(NonDerivedTypeScope(), name)};
   if (!symbol || symbol->has<UnknownDetails>()) {
     if (allowForwardReferenceToDerivedType()) {
       if (!symbol) {
@@ -5143,6 +5161,12 @@ void ConstructVisitor::Post(const parser::SelectTypeStmt &x) {
     // This isn't a name in the current scope, it is in each TypeGuardStmt
     MakePlaceholder(*name, MiscDetails::Kind::SelectTypeAssociateName);
     association.name = &*name;
+    auto exprType{association.selector.expr->GetType()};
+    if (exprType && !exprType->IsPolymorphic()) { // C1159
+      Say(association.selector.source,
+          "Selector '%s' in SELECT TYPE statement must be "
+          "polymorphic"_err_en_US);
+    }
   } else {
     if (const Symbol *
         whole{UnwrapWholeSymbolDataRef(association.selector.expr)}) {
@@ -5151,6 +5175,13 @@ void ConstructVisitor::Post(const parser::SelectTypeStmt &x) {
         Say(association.selector.source, // C901
             "Selector is not a variable"_err_en_US);
         association = {};
+      }
+      if (const DeclTypeSpec * type{whole->GetType()}) {
+        if (!type->IsPolymorphic()) { // C1159
+          Say(association.selector.source,
+              "Selector '%s' in SELECT TYPE statement must be "
+              "polymorphic"_err_en_US);
+        }
       }
     } else {
       Say(association.selector.source, // C1157
@@ -5769,7 +5800,7 @@ void ResolveNamesVisitor::HandleCall(
 void ResolveNamesVisitor::HandleProcedureName(
     Symbol::Flag flag, const parser::Name &name) {
   CHECK(flag == Symbol::Flag::Function || flag == Symbol::Flag::Subroutine);
-  auto *symbol{FindSymbol(name)};
+  auto *symbol{FindSymbol(NonDerivedTypeScope(), name)};
   if (!symbol) {
     if (context().intrinsics().IsIntrinsic(name.source.ToString())) {
       symbol =

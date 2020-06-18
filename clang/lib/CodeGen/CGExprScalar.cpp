@@ -215,23 +215,6 @@ static bool CanElideOverflowCheck(const ASTContext &Ctx, const BinOpInfo &Op) {
          (2 * Ctx.getTypeSize(RHSTy)) < PromotedSize;
 }
 
-static void setBuilderFlagsFromFPFeatures(CGBuilderTy &Builder,
-                                          CodeGenFunction &CGF,
-                                          FPOptions FPFeatures) {
-  auto NewRoundingBehavior = FPFeatures.getRoundingMode();
-  Builder.setDefaultConstrainedRounding(NewRoundingBehavior);
-  auto NewExceptionBehavior =
-      ToConstrainedExceptMD(FPFeatures.getExceptionMode());
-  Builder.setDefaultConstrainedExcept(NewExceptionBehavior);
-  CGF.SetFastMathFlags(FPFeatures);
-  assert((CGF.CurFuncDecl == nullptr || Builder.getIsFPConstrained() ||
-          isa<CXXConstructorDecl>(CGF.CurFuncDecl) ||
-          isa<CXXDestructorDecl>(CGF.CurFuncDecl) ||
-          (NewExceptionBehavior == llvm::fp::ebIgnore &&
-           NewRoundingBehavior == llvm::RoundingMode::NearestTiesToEven)) &&
-         "FPConstrained should be enabled on entire function");
-}
-
 class ScalarExprEmitter
   : public StmtVisitor<ScalarExprEmitter, Value*> {
   CodeGenFunction &CGF;
@@ -436,17 +419,13 @@ public:
   Value *VisitExpr(Expr *S);
 
   Value *VisitConstantExpr(ConstantExpr *E) {
-    bool IsNonVoidType = !E->getType()->isVoidType();
-
-    if (E->hasAPValueResult()) {
-      assert(IsNonVoidType);
-      return ConstantEmitter(CGF).emitAbstract(
-          E->getLocation(), E->getAPValueResult(), E->getType());
-    } else if (IsNonVoidType) {
-      return Visit(E->getSubExpr());
-    } else {
-      return nullptr;
+    if (Value *Result = ConstantEmitter(CGF).tryEmitConstantExpr(E)) {
+      if (E->isGLValue())
+        return CGF.Builder.CreateLoad(Address(
+            Result, CGF.getContext().getTypeAlignInChars(E->getType())));
+      return Result;
     }
+    return Visit(E->getSubExpr());
   }
   Value *VisitParenExpr(ParenExpr *PE) {
     return Visit(PE->getSubExpr());
@@ -785,8 +764,7 @@ public:
 
     if (Ops.LHS->getType()->isFPOrFPVectorTy()) {
       //  Preserve the old values
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF, Ops.FPFeatures);
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(CGF, Ops.FPFeatures);
       return Builder.CreateFMul(Ops.LHS, Ops.RHS, "mul");
     }
     if (Ops.isFixedPointOp())
@@ -2112,11 +2090,15 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
       }
     }
 
-    // Update heapallocsite metadata when there is an explicit cast.
-    if (llvm::CallInst *CI = dyn_cast<llvm::CallInst>(Src))
-      if (CI->getMetadata("heapallocsite") && isa<ExplicitCastExpr>(CE))
-          CGF.getDebugInfo()->
-              addHeapAllocSiteMetadata(CI, CE->getType(), CE->getExprLoc());
+    // Update heapallocsite metadata when there is an explicit pointer cast.
+    if (auto *CI = dyn_cast<llvm::CallBase>(Src)) {
+      if (CI->getMetadata("heapallocsite") && isa<ExplicitCastExpr>(CE)) {
+        QualType PointeeType = DestTy->getPointeeType();
+        if (!PointeeType.isNull())
+          CGF.getDebugInfo()->addHeapAllocSiteMetadata(CI, PointeeType,
+                                                       CE->getExprLoc());
+      }
+    }
 
     return Builder.CreateBitCast(Src, DstTy);
   }
@@ -2391,7 +2373,6 @@ Value *ScalarExprEmitter::VisitStmtExpr(const StmtExpr *E) {
 }
 
 Value *ScalarExprEmitter::VisitExprWithCleanups(ExprWithCleanups *E) {
-  CGF.enterFullExpression(E);
   CodeGenFunction::RunCleanupsScope Scope(CGF);
   Value *V = Visit(E->getSubExpr());
   // Defend against dominance problems caused by jumps out of expression
@@ -2800,9 +2781,8 @@ Value *ScalarExprEmitter::VisitUnaryLNot(const UnaryOperator *E) {
     Value *Zero = llvm::Constant::getNullValue(Oper->getType());
     Value *Result;
     if (Oper->getType()->isFPOrFPVectorTy()) {
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF,
-                                    E->getFPFeatures(CGF.getLangOpts()));
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(
+          CGF, E->getFPFeatures(CGF.getLangOpts()));
       Result = Builder.CreateFCmp(llvm::CmpInst::FCMP_OEQ, Oper, Zero, "cmp");
     } else
       Result = Builder.CreateICmp(llvm::CmpInst::ICMP_EQ, Oper, Zero, "cmp");
@@ -3216,8 +3196,7 @@ Value *ScalarExprEmitter::EmitDiv(const BinOpInfo &Ops) {
 
   if (Ops.LHS->getType()->isFPOrFPVectorTy()) {
     llvm::Value *Val;
-    llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-    setBuilderFlagsFromFPFeatures(Builder, CGF, Ops.FPFeatures);
+    CodeGenFunction::CGFPOptionsRAII FPOptsRAII(CGF, Ops.FPFeatures);
     Val = Builder.CreateFDiv(Ops.LHS, Ops.RHS, "div");
     if (CGF.getLangOpts().OpenCL &&
         !CGF.CGM.getCodeGenOpts().CorrectlyRoundedDivSqrt) {
@@ -3595,8 +3574,7 @@ Value *ScalarExprEmitter::EmitAdd(const BinOpInfo &op) {
     return EmitOverflowCheckedBinOp(op);
 
   if (op.LHS->getType()->isFPOrFPVectorTy()) {
-    llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-    setBuilderFlagsFromFPFeatures(Builder, CGF, op.FPFeatures);
+    CodeGenFunction::CGFPOptionsRAII FPOptsRAII(CGF, op.FPFeatures);
     // Try to form an fmuladd.
     if (Value *FMulAdd = tryEmitFMulAdd(op, CGF, Builder))
       return FMulAdd;
@@ -3783,8 +3761,7 @@ Value *ScalarExprEmitter::EmitSub(const BinOpInfo &op) {
       return EmitOverflowCheckedBinOp(op);
 
     if (op.LHS->getType()->isFPOrFPVectorTy()) {
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF, op.FPFeatures);
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(CGF, op.FPFeatures);
       // Try to form an fmuladd.
       if (Value *FMulAdd = tryEmitFMulAdd(op, CGF, Builder, true))
         return FMulAdd;
@@ -4110,8 +4087,7 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,
     if (BOInfo.isFixedPointOp()) {
       Result = EmitFixedPointBinOp(BOInfo);
     } else if (LHS->getType()->isFPOrFPVectorTy()) {
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF, BOInfo.FPFeatures);
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(CGF, BOInfo.FPFeatures);
       if (!IsSignaling)
         Result = Builder.CreateFCmp(FCmpOpc, LHS, RHS, "cmp");
       else
@@ -4264,9 +4240,8 @@ Value *ScalarExprEmitter::VisitBinLAnd(const BinaryOperator *E) {
     Value *RHS = Visit(E->getRHS());
     Value *Zero = llvm::ConstantAggregateZero::get(LHS->getType());
     if (LHS->getType()->isFPOrFPVectorTy()) {
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF,
-                                    E->getFPFeatures(CGF.getLangOpts()));
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(
+          CGF, E->getFPFeatures(CGF.getLangOpts()));
       LHS = Builder.CreateFCmp(llvm::CmpInst::FCMP_UNE, LHS, Zero, "cmp");
       RHS = Builder.CreateFCmp(llvm::CmpInst::FCMP_UNE, RHS, Zero, "cmp");
     } else {
@@ -4351,9 +4326,8 @@ Value *ScalarExprEmitter::VisitBinLOr(const BinaryOperator *E) {
     Value *RHS = Visit(E->getRHS());
     Value *Zero = llvm::ConstantAggregateZero::get(LHS->getType());
     if (LHS->getType()->isFPOrFPVectorTy()) {
-      llvm::IRBuilder<>::FastMathFlagGuard FMFG(Builder);
-      setBuilderFlagsFromFPFeatures(Builder, CGF,
-                                    E->getFPFeatures(CGF.getLangOpts()));
+      CodeGenFunction::CGFPOptionsRAII FPOptsRAII(
+          CGF, E->getFPFeatures(CGF.getLangOpts()));
       LHS = Builder.CreateFCmp(llvm::CmpInst::FCMP_UNE, LHS, Zero, "cmp");
       RHS = Builder.CreateFCmp(llvm::CmpInst::FCMP_UNE, RHS, Zero, "cmp");
     } else {
