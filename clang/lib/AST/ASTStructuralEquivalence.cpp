@@ -153,11 +153,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return IsStructurallyEquivalent(Name1.getCXXLiteralIdentifier(),
                                     Name2.getCXXLiteralIdentifier());
 
-  case DeclarationName::CXXReflectedIdName:
-    return IsStructurallyEquivalent(Context,
-                                    Name1.getCXXReflectedIdArguments(),
-                                    Name2.getCXXReflectedIdArguments());
-
   case DeclarationName::CXXUsingDirective:
     return true; // FIXME When do we consider two using directives equal?
 

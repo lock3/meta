@@ -5642,12 +5642,14 @@ public:
   }
 };
 
-/// Represents a reflected id-expression of the form '(. args .)'.
-/// Some of the arguments in args are dependent.
-class CXXReflectedIdExpr final
+/// Represents a dependent identifier splice, i.e.
+///
+///   'unqualid' '(' expression-list ')'
+///
+class CXXDependentSpliceIdExpr final
     : public Expr,
       private llvm::TrailingObjects<
-          CXXReflectedIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
+          CXXDependentSpliceIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
   friend TrailingObjects;
 
   DeclarationNameInfo NameInfo;
@@ -5667,24 +5669,23 @@ class CXXReflectedIdExpr final
     return HasTemplateKWAndArgsInfo ? 1 : 0;
   }
 
-  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
-                     const CXXScopeSpec &SS,
-                     NestedNameSpecifierLoc QualifierLoc,
-                     SourceLocation TemplateKWLoc,
-                     bool TrailingLParen, bool AddressOfOperand,
-                     const TemplateArgumentListInfo *TemplateArgs);
+  CXXDependentSpliceIdExpr(
+      DeclarationNameInfo DNI, QualType T, const CXXScopeSpec &SS,
+      NestedNameSpecifierLoc QualifierLoc, SourceLocation TemplateKWLoc,
+      bool TrailingLParen, bool AddressOfOperand,
+      const TemplateArgumentListInfo *TemplateArgs);
 
-  CXXReflectedIdExpr(EmptyShell Empty)
-    : Expr(CXXReflectedIdExprClass, Empty) { }
+  CXXDependentSpliceIdExpr(EmptyShell Empty)
+    : Expr(CXXDependentSpliceIdExprClass, Empty) { }
 
 public:
-  static CXXReflectedIdExpr *Create(
-      const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+  static CXXDependentSpliceIdExpr *Create(
+      const ASTContext &C, DeclarationNameInfo DNI,
       const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
       SourceLocation TemplateKWLoc, bool TrailingLParen,
       bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
 
-  static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
+  static CXXDependentSpliceIdExpr *CreateEmpty(const ASTContext &C,
                                          EmptyShell Empty);
 
   /// Returns the evaluated expression.
@@ -5700,30 +5701,57 @@ public:
 
   bool IsAddressOfOperand() const { return AddressOfOperand; }
 
+  /// Return the optional template keyword and arguments info.
   ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() {
-    if (!HasTemplateKWAndArgsInfo)
+    if (!hasTemplateKWAndArgsInfo())
       return nullptr;
 
     return getTrailingObjects<ASTTemplateKWAndArgsInfo>();
   }
 
+  const ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() const {
+    return const_cast<CXXDependentSpliceIdExpr *>(this)
+        ->getTrailingASTTemplateKWAndArgsInfo();
+  }
+
+  /// Return the optional template arguments.
   TemplateArgumentLoc *getTrailingTemplateArgumentLoc() {
     return getTrailingObjects<TemplateArgumentLoc>();
+  }
+  const TemplateArgumentLoc *getTrailingTemplateArgumentLoc() const {
+    return const_cast<CXXDependentSpliceIdExpr *>(this)
+        ->getTrailingTemplateArgumentLoc();
+  }
+
+  bool hasTemplateKWAndArgsInfo() const {
+    return HasTemplateKWAndArgsInfo;
+  }
+
+  /// Retrieve the location of the template keyword preceding
+  /// this name, if any.
+  SourceLocation getTemplateKeywordLoc() const {
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingASTTemplateKWAndArgsInfo()->TemplateKWLoc;
   }
 
   /// Retrieve the location of the left angle bracket starting the
   /// explicit template argument list following the member name, if any.
   SourceLocation getLAngleLoc() const {
-    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+    if (!hasTemplateKWAndArgsInfo())
+      return SourceLocation();
+    return getTrailingASTTemplateKWAndArgsInfo()->LAngleLoc;
   }
 
   /// Retrieve the location of the right angle bracket ending the
   /// explicit template argument list following the member name, if any.
   SourceLocation getRAngleLoc() const {
     if (!HasTemplateKWAndArgsInfo) return SourceLocation();
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+    return getTrailingASTTemplateKWAndArgsInfo()->RAngleLoc;
   }
+
+  /// Determines whether the name was preceded by the template keyword.
+  bool hasTemplateKeyword() const { return getTemplateKeywordLoc().isValid(); }
 
   /// Determines whether this member expression actually had a C++
   /// template argument list explicitly specified, e.g., x.f<int>.
@@ -5735,7 +5763,7 @@ public:
     if (!hasExplicitTemplateArgs())
       return nullptr;
 
-    return getTrailingObjects<TemplateArgumentLoc>();
+    return getTrailingTemplateArgumentLoc();
   }
 
   /// Retrieve the number of template arguments provided as part of this
@@ -5744,15 +5772,11 @@ public:
     if (!hasExplicitTemplateArgs())
       return 0;
 
-    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
+    return getTrailingASTTemplateKWAndArgsInfo()->NumTemplateArgs;
   }
 
-  SourceRange getSourceRange() const {
-    return NameInfo.getCXXReflectedIdNameRange();
-  }
-
-  SourceLocation getBeginLoc() const { return getSourceRange().getBegin(); }
-  SourceLocation getEndLoc() const { return getSourceRange().getEnd(); }
+  SourceLocation getBeginLoc() const { return NameInfo.getLoc(); }
+  SourceLocation getEndLoc() const { return getBeginLoc(); }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
@@ -5763,7 +5787,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXReflectedIdExprClass;
+    return T->getStmtClass() == CXXDependentSpliceIdExprClass;
   }
 };
 

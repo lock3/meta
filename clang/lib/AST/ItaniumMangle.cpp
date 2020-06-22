@@ -1252,8 +1252,6 @@ void CXXNameMangler::mangleUnresolvedName(
       llvm_unreachable("Can't mangle a using directive name!");
     case DeclarationName::CXXDeductionGuideName:
       llvm_unreachable("Can't mangle a deduction guide name!");
-    case DeclarationName::CXXReflectedIdName:
-      llvm_unreachable("Can't mangle a reflected-id name!");
     case DeclarationName::ObjCMultiArgSelector:
     case DeclarationName::ObjCOneArgSelector:
     case DeclarationName::ObjCZeroArgSelector:
@@ -1511,9 +1509,6 @@ void CXXNameMangler::mangleUnqualifiedName(GlobalDecl GD,
 
   case DeclarationName::CXXDeductionGuideName:
     llvm_unreachable("Can't mangle a deduction guide name!");
-
-  case DeclarationName::CXXReflectedIdName:
-    llvm_unreachable("Can't mangle an reflected-id name!");
 
   case DeclarationName::CXXUsingDirective:
     llvm_unreachable("Can't mangle a using directive name!");
@@ -2228,7 +2223,6 @@ void CXXNameMangler::mangleOperatorName(DeclarationName Name, unsigned Arity) {
   case DeclarationName::CXXConstructorName:
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXDeductionGuideName:
-  case DeclarationName::CXXReflectedIdName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::Identifier:
   case DeclarationName::ObjCMultiArgSelector:
@@ -3864,7 +3858,7 @@ recurse:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXMemberIdExprExprClass:
-  case Expr::CXXReflectedIdExprClass:
+  case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:

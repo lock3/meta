@@ -2499,7 +2499,7 @@ void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
   OS << ")";
 }
 
-void StmtPrinter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *Node) {
+void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {
   OS << "(. " << Node->getNameInfo() << " .)";
 }
 

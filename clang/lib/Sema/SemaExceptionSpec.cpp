@@ -1410,7 +1410,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXMemberIdExprExprClass:
-  case Expr::CXXReflectedIdExprClass:
+  case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:

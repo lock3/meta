@@ -2754,6 +2754,56 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
   return false;
 }
 
+bool Parser::ParseUnqualifiedId(
+    CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
+    bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
+    bool AllowDeductionGuide, bool TemplateSpecified,
+    SourceLocation *TemplateKWLoc, IdentifierInfo *Id, SourceLocation IdLoc,
+    UnqualifiedId &Result) {
+  if (!getLangOpts().CPlusPlus) {
+    // If we're not in C++, only identifiers matter. Record the
+    // identifier and return.
+    Result.setIdentifier(Id, IdLoc);
+    return false;
+  }
+
+  ParsedTemplateTy TemplateName;
+  if (AllowConstructorName &&
+      Actions.isCurrentClassName(*Id, getCurScope(), &SS)) {
+    // We have parsed a constructor name.
+    ParsedType Ty = Actions.getConstructorName(*Id, IdLoc, getCurScope(), SS,
+                                               EnteringContext);
+    if (!Ty)
+      return true;
+    Result.setConstructorName(Ty, IdLoc, IdLoc);
+  } else if (getLangOpts().CPlusPlus17 &&
+             AllowDeductionGuide && SS.isEmpty() &&
+             Actions.isDeductionGuideName(getCurScope(), *Id, IdLoc,
+                                          &TemplateName)) {
+    // We have parsed a template-name naming a deduction guide.
+    Result.setDeductionGuideName(TemplateName, IdLoc);
+  } else {
+    // We have parsed an identifier.
+    Result.setIdentifier(Id, IdLoc);
+  }
+
+  // If the next token is a '<', we may have a template.
+  TemplateTy Template;
+  if (Tok.is(tok::less))
+    return ParseUnqualifiedIdTemplateId(
+        SS, ObjectType, ObjectHadErrors,
+        TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
+        EnteringContext, Result, TemplateSpecified);
+  else if (TemplateSpecified &&
+           Actions.ActOnTemplateName(
+               getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
+               EnteringContext, Template,
+               /*AllowInjectedClassName*/ true) == TNK_Non_template)
+    return true;
+
+  return false;
+}
+
 /// Parse a C++ unqualified-id (or a C identifier), which describes the
 /// name of an entity.
 ///
@@ -2823,48 +2873,10 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();
 
-    if (!getLangOpts().CPlusPlus) {
-      // If we're not in C++, only identifiers matter. Record the
-      // identifier and return.
-      Result.setIdentifier(Id, IdLoc);
-      return false;
-    }
-
-    ParsedTemplateTy TemplateName;
-    if (AllowConstructorName &&
-        Actions.isCurrentClassName(*Id, getCurScope(), &SS)) {
-      // We have parsed a constructor name.
-      ParsedType Ty = Actions.getConstructorName(*Id, IdLoc, getCurScope(), SS,
-                                                 EnteringContext);
-      if (!Ty)
-        return true;
-      Result.setConstructorName(Ty, IdLoc, IdLoc);
-    } else if (getLangOpts().CPlusPlus17 &&
-               AllowDeductionGuide && SS.isEmpty() &&
-               Actions.isDeductionGuideName(getCurScope(), *Id, IdLoc,
-                                            &TemplateName)) {
-      // We have parsed a template-name naming a deduction guide.
-      Result.setDeductionGuideName(TemplateName, IdLoc);
-    } else {
-      // We have parsed an identifier.
-      Result.setIdentifier(Id, IdLoc);
-    }
-
-    // If the next token is a '<', we may have a template.
-    TemplateTy Template;
-    if (Tok.is(tok::less))
-      return ParseUnqualifiedIdTemplateId(
-          SS, ObjectType, ObjectHadErrors,
-          TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
-          EnteringContext, Result, TemplateSpecified);
-    else if (TemplateSpecified &&
-             Actions.ActOnTemplateName(
-                 getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
-                 EnteringContext, Template,
-                 /*AllowInjectedClassName*/ true) == TNK_Non_template)
-      return true;
-
-    return false;
+    return ParseUnqualifiedId(
+        SS, ObjectType, ObjectHadErrors, EnteringContext, AllowDestructorName,
+        AllowConstructorName, AllowDeductionGuide, TemplateSpecified,
+        TemplateKWLoc, Id, IdLoc, Result);
   }
 
   // unqualified-id:
@@ -2955,9 +2967,17 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
 
   // unqualified-id:
   //   'unqualid' '(' reflection ')'
-  if (Tok.is(tok::kw_unqualid))
-    return ParseCXXReflectedId(SS,
-                     TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Result);
+  if (Tok.is(tok::kw_unqualid)) {
+    IdentifierInfo *Id;
+    SourceLocation IdLoc;
+    if (ParseCXXIdentifierSplice(Id, IdLoc))
+      return true;
+
+    return ParseUnqualifiedId(
+        SS, ObjectType, ObjectHadErrors, EnteringContext, AllowDestructorName,
+        AllowConstructorName, AllowDeductionGuide, TemplateSpecified,
+        TemplateKWLoc, Id, IdLoc, Result);
+  }
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

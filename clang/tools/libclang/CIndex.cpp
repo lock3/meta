@@ -1310,7 +1310,6 @@ bool CursorVisitor::VisitDeclarationNameInfo(DeclarationNameInfo Name) {
   case clang::DeclarationName::CXXDeductionGuideName:
   case clang::DeclarationName::CXXOperatorName:
   case clang::DeclarationName::CXXUsingDirective:
-  case clang::DeclarationName::CXXReflectedIdName:
     return false;
 
   case clang::DeclarationName::CXXConstructorName:

@@ -1129,8 +1129,6 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXUsingDirective:
     Data = 0;
     break;
-  case DeclarationName::CXXReflectedIdName:
-    llvm_unreachable("unimplemented");
   }
 
   return DeclarationNameKey(Kind, Data);
@@ -8746,13 +8744,6 @@ ASTRecordReader::readDeclarationNameLoc(DeclarationName Name) {
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
-    break;
-
-  case DeclarationName::CXXReflectedIdName:
-    DNLoc.CXXOperatorName.BeginOpNameLoc
-      = readSourceLocation().getRawEncoding();
-    DNLoc.CXXOperatorName.EndOpNameLoc
-      = readSourceLocation().getRawEncoding();
     break;
   }
   return DNLoc;

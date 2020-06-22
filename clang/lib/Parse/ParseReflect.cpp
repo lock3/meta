@@ -405,11 +405,9 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
-                                 SourceLocation TemplateKWLoc,
-                                 UnqualifiedId &Result) {
+bool Parser::ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc) {
   assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
-  SourceLocation KWLoc = ConsumeToken();
+  IdLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
@@ -429,47 +427,11 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
   if (T.consumeClose())
     return true;
 
-  DeclarationNameInfo NameInfo;
-  if (Actions.BuildReflectedIdName(KWLoc, Parts,
-                                   T.getCloseLocation(), NameInfo))
+  ArrayRef<Expr *> FinalParts(Parts.data(), Parts.size());
+  if (Actions.ActOnCXXIdentifierSplice(FinalParts, Id))
     return true;
 
-  TemplateNameKind TNK;
-  TemplateTy Template;
-  if (Actions.BuildInitialDeclnameId(KWLoc, SS, NameInfo.getName(),
-                                     TemplateKWLoc, TNK, Template, Result))
-    return true;
-
-  // FIXME: This should also workn if the built decl name is non dependent.
-  //
-  // Prioritize template parsing, represents whether we should treat the next
-  // '<' token as introducing a template argument list, or a less than operator.
-  bool PrioritizeTemplateParsing =
-      (TNK != TNK_Non_template && TNK != TNK_Undeclared_template)
-      || !TemplateKWLoc.isInvalid();
-
-  if (Tok.is(tok::less) && PrioritizeTemplateParsing) {
-    SourceLocation LAngleLoc;
-    TemplateArgList TemplateArgs;
-    SourceLocation RAngleLoc;
-
-    if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
-                                         LAngleLoc, TemplateArgs, RAngleLoc))
-      return true;
-
-    ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
-    return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(),
-                                      TemplateKWLoc, TNK, Template, LAngleLoc,
-                                      TemplateArgsPtr, RAngleLoc, TemplateIds,
-                                      Result, RAngleLoc);
-  }
-
-  return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(), TemplateKWLoc,
-                                    TNK, Template,
-                                    /*LAngleLoc=*/SourceLocation(),
-                                    /*TemplateArgsPtr=*/ASTTemplateArgsPtr(),
-                                    /*RAngleLoc=*/SourceLocation(),
-                                    TemplateIds, Result, T.getCloseLocation());
+  return false;
 }
 
 /// Parse a type reflection specifier.

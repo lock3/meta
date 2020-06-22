@@ -1899,11 +1899,12 @@ CXXMemberIdExprExpr *CXXMemberIdExprExpr::CreateEmpty(const ASTContext &C) {
 }
 
 // Assume that the name is an ordinary lvalue for now.
-CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
-      const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
-      SourceLocation TemplateKWLoc, bool TrailingLParen, bool AddressOfOperand,
-                                   const TemplateArgumentListInfo *TemplateArgs)
-  : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary),
+CXXDependentSpliceIdExpr::CXXDependentSpliceIdExpr(
+    DeclarationNameInfo DNI, QualType T, const CXXScopeSpec &SS,
+    NestedNameSpecifierLoc QualifierLoc, SourceLocation TemplateKWLoc,
+    bool TrailingLParen, bool AddressOfOperand,
+    const TemplateArgumentListInfo *TemplateArgs)
+  : Expr(CXXDependentSpliceIdExprClass, T, VK_LValue, OK_Ordinary),
     NameInfo(DNI),
     // FIXME: This allocation is an explicit memory leak to get around
     // APValues not being trivially destructible.
@@ -1924,8 +1925,8 @@ CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
   setDependence(computeDependence(this));
 }
 
-CXXReflectedIdExpr *CXXReflectedIdExpr::Create(
-    const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+CXXDependentSpliceIdExpr *CXXDependentSpliceIdExpr::Create(
+    const ASTContext &C, DeclarationNameInfo DNI,
     const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
     SourceLocation TemplateKWLoc, bool TrailingLParen, bool AddressOfOperand,
     const TemplateArgumentListInfo *TemplateArgs) {
@@ -1934,15 +1935,15 @@ CXXReflectedIdExpr *CXXReflectedIdExpr::Create(
     totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
         HasTemplateKWAndArgsInfo, TemplateArgs ? TemplateArgs->size() : 0);
 
-  void *Mem = C.Allocate(Size, alignof(CXXReflectedIdExpr));
-  return new (Mem) CXXReflectedIdExpr(DNI, T, SS, QualifierLoc, TemplateKWLoc,
-                                      TrailingLParen, AddressOfOperand,
-                                      TemplateArgs);
+  void *Mem = C.Allocate(Size, alignof(CXXDependentSpliceIdExpr));
+  return new (Mem) CXXDependentSpliceIdExpr(
+      DNI, C.DependentTy, SS, QualifierLoc, TemplateKWLoc, TrailingLParen,
+      AddressOfOperand, TemplateArgs);
 }
 
-CXXReflectedIdExpr *CXXReflectedIdExpr::CreateEmpty(const ASTContext &C,
+CXXDependentSpliceIdExpr *CXXDependentSpliceIdExpr::CreateEmpty(const ASTContext &C,
                                                     EmptyShell Empty) {
-  return new (C) CXXReflectedIdExpr(Empty);
+  return new (C) CXXDependentSpliceIdExpr(Empty);
 }
 
 CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,

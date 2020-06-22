@@ -3061,8 +3061,7 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 
-  bool ParseCXXReflectedId(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
-                           UnqualifiedId &Result);
+  bool ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc);
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
@@ -3288,11 +3287,19 @@ public:
   bool ParseOpenMPVarList(OpenMPDirectiveKind DKind, OpenMPClauseKind Kind,
                           SmallVectorImpl<Expr *> &Vars,
                           OpenMPVarListDataTy &Data);
-  bool ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
-                          bool ObjectHadErrors, bool EnteringContext,
-                          bool AllowDestructorName, bool AllowConstructorName,
-                          bool AllowDeductionGuide,
-                          SourceLocation *TemplateKWLoc, UnqualifiedId &Result);
+private:
+  bool ParseUnqualifiedId(
+      CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
+      bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
+      bool AllowDeductionGuide, bool TemplateSpecified,
+      SourceLocation *TemplateKWLoc, IdentifierInfo *Id, SourceLocation IdLoc,
+      UnqualifiedId &Result);
+public:
+  bool ParseUnqualifiedId(
+      CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
+      bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
+      bool AllowDeductionGuide, SourceLocation *TemplateKWLoc,
+      UnqualifiedId &Result);
 
   /// Parses the mapper modifier in map, to, and from clauses.
   bool parseMapperModifier(OpenMPVarListDataTy &Data);

@@ -426,7 +426,7 @@ void ASTStmtWriter::VisitCXXDependentVariadicReifierExpr(
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+void ASTStmtWriter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
   llvm_unreachable("unimplemented");
 }
 

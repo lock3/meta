@@ -109,9 +109,6 @@ int DeclarationName::compare(DeclarationName LHS, DeclarationName RHS) {
     return LHS.getCXXLiteralIdentifier()->getName().compare(
         RHS.getCXXLiteralIdentifier()->getName());
 
-  case DeclarationName::CXXReflectedIdName:
-    llvm_unreachable("reflected-id names not comparable\n");
-
   case DeclarationName::CXXUsingDirective:
     return 0;
   }
@@ -191,20 +188,6 @@ void DeclarationName::print(raw_ostream &OS,
     OS << "operator\"\"" << getCXXLiteralIdentifier()->getName();
     return;
 
-  case DeclarationName::CXXReflectedIdName: {
-    llvm::ArrayRef<Expr *> Args = getCXXReflectedIdArguments();
-    OS << "(.";
-    for (std::size_t I = 0; I < Args.size(); ++I) {
-      if (I != 0)
-        OS << ", ";
-
-      Expr *E = Args[I];
-      E->printPretty(OS, nullptr, Policy);
-    }
-    OS << ".)";
-    return;
-  }
-
   case DeclarationName::CXXConversionFunctionName: {
     OS << "operator ";
     QualType Type = getCXXNameType();
@@ -270,8 +253,6 @@ void *DeclarationName::getFETokenInfoSlow() const {
     return castAsCXXDeductionGuideNameExtra()->FETokenInfo;
   case CXXLiteralOperatorName:
     return castAsCXXLiteralOperatorIdName()->FETokenInfo;
-  case CXXReflectedIdName:
-    return castAsCXXReflectedIdNameExtra()->FETokenInfo;
 
   default:
     llvm_unreachable("DeclarationName has no FETokenInfo!");
@@ -296,9 +277,6 @@ void DeclarationName::setFETokenInfoSlow(void *T) {
   case CXXLiteralOperatorName:
     castAsCXXLiteralOperatorIdName()->FETokenInfo = T;
     break;
-  case CXXReflectedIdName:
-    castAsCXXReflectedIdNameExtra()->FETokenInfo = T;
-    break;
 
   default:
     llvm_unreachable("DeclarationName has no FETokenInfo!");
@@ -307,12 +285,6 @@ void DeclarationName::setFETokenInfoSlow(void *T) {
 
 LLVM_DUMP_METHOD void DeclarationName::dump() const {
   llvm::errs() << *this << '\n';
-}
-
-void detail::CXXReflectedIdNameExtra::Profile(llvm::FoldingSetNodeID &ID) {
-  ID.AddInteger(NumArgs);
-  for (std::size_t I = 0; I < NumArgs; ++I)
-    Args[I]->Profile(ID, *Ctx, true);
 }
 
 DeclarationNameTable::DeclarationNameTable(const ASTContext &C) : Ctx(C) {
@@ -414,32 +386,6 @@ DeclarationNameTable::getCXXLiteralOperatorName(IdentifierInfo *II) {
   return DeclarationName(LiteralName);
 }
 
-DeclarationName
-DeclarationNameTable::getCXXReflectedIdName(std::size_t NumArgs, Expr **Args) {
-  llvm::FoldingSet<detail::CXXReflectedIdNameExtra> &Names =
-                                                            CXXReflectedIdNames;
-
-  llvm::FoldingSetNodeID ID;
-  ID.AddInteger(NumArgs);
-  for (std::size_t I = 0; I < NumArgs; ++I)
-    Args[I]->Profile(ID, Ctx, true);
-
-  void *InsertPos;
-  if (detail::CXXReflectedIdNameExtra *Name
-                                     = Names.FindNodeOrInsertPos(ID, InsertPos))
-    return DeclarationName (Name);
-
-  detail::CXXReflectedIdNameExtra *Name
-                                  = new (Ctx) detail::CXXReflectedIdNameExtra();
-  Name->Ctx = &Ctx;
-  Name->NumArgs = NumArgs;
-  Name->Args = new (Ctx) Expr *[NumArgs];
-  std::copy(Args, Args + NumArgs, Name->Args);
-  Name->FETokenInfo = nullptr;
-  Names.InsertNode(Name, InsertPos);
-  return DeclarationName(Name);
-}
-
 DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
@@ -456,11 +402,6 @@ DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
     break;
   case DeclarationName::CXXLiteralOperatorName:
     CXXLiteralOperatorName.OpNameLoc = SourceLocation().getRawEncoding();
-    break;
-  case DeclarationName::CXXReflectedIdName:
-    // Reuse the operator name structure for the begin/end pair.
-    CXXOperatorName.BeginOpNameLoc = SourceLocation().getRawEncoding();
-    CXXOperatorName.EndOpNameLoc = SourceLocation().getRawEncoding();
     break;
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
@@ -492,12 +433,6 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
 
     return Name.getCXXNameType()->containsUnexpandedParameterPack();
 
-  case DeclarationName::CXXReflectedIdName: {
-    llvm::ArrayRef<Expr *> Args = Name.getCXXReflectedIdArguments();
-    return std::any_of(Args.begin(), Args.end(), [](const Expr * E) {
-      return E->containsUnexpandedParameterPack();
-    });
-  }
   }
   llvm_unreachable("All name kinds handled.");
 }
@@ -522,12 +457,6 @@ bool DeclarationNameInfo::isInstantiationDependent() const {
 
     return Name.getCXXNameType()->isInstantiationDependentType();
 
-  case DeclarationName::CXXReflectedIdName: {
-    llvm::ArrayRef<Expr *> Args = Name.getCXXReflectedIdArguments();
-    return std::any_of(Args.begin(), Args.end(), [](const Expr * E) {
-      return E->isInstantiationDependent();
-    });
-  }
   }
   llvm_unreachable("All name kinds handled.");
 }
@@ -555,7 +484,6 @@ void DeclarationNameInfo::printName(raw_ostream &OS, PrintingPolicy Policy) cons
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
-  case DeclarationName::CXXReflectedIdName:
     Name.print(OS, Policy);
     return;
 
@@ -589,8 +517,7 @@ SourceLocation DeclarationNameInfo::getEndLocPrivate() const {
     return SourceLocation::getFromRawEncoding(raw);
   }
 
-  case DeclarationName::CXXLiteralOperatorName:
-  case DeclarationName::CXXReflectedIdName: {
+  case DeclarationName::CXXLiteralOperatorName: {
     unsigned raw = LocInfo.CXXLiteralOperatorName.OpNameLoc;
     return SourceLocation::getFromRawEncoding(raw);
   }

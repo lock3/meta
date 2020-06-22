@@ -2023,17 +2023,6 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
     SourceLocation TNameLoc = Id.TemplateId->TemplateNameLoc;
     NameInfo = Context.getNameForTemplate(TName, TNameLoc);
     TemplateArgs = &Buffer;
-  } else if (Id.getKind() == UnqualifiedIdKind::IK_ReflectedId) {
-    ReflectedIdentifierInfo *RII = Id.ReflectedIdentifier;
-
-    Buffer.setLAngleLoc(RII->getLAngleLoc());
-    Buffer.setRAngleLoc(RII->getRAngleLoc());
-
-    ASTTemplateArgsPtr TemplateArgsPtr = RII->getTemplateArgs();
-    translateTemplateArguments(TemplateArgsPtr, Buffer);
-
-    NameInfo = GetNameFromUnqualifiedId(Id);
-    TemplateArgs = &Buffer;
   } else {
     NameInfo = GetNameFromUnqualifiedId(Id);
     TemplateArgs = nullptr;
@@ -2360,6 +2349,12 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     return ExprError();
   }
 
+  if (II && II->isSplice()) {
+    return ActOnCXXDependentSpliceIdExpression(
+        SS, TemplateKWLoc, NameInfo, TemplateArgs,
+        HasTrailingLParen, IsAddressOfOperand);
+  }
+
   // C++ [temp.dep.expr]p3:
   //   An id-expression is type-dependent if it contains:
   //     -- an identifier that was declared with a dependent type,
@@ -2369,14 +2364,11 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   //     -- a conversion-function-id that specifies a dependent type,
   //     -- a nested-name-specifier that contains a class-name that
   //        names a dependent type.
-  //     -- a unresolved reified name.
   // Determine whether this is a member of an unknown specialization;
   // we need to handle these differently.
   bool DependentID = false;
   if (Name.getNameKind() == DeclarationName::CXXConversionFunctionName &&
       Name.getCXXNameType()->isDependentType()) {
-    DependentID = true;
-  } else if (Name.getNameKind() == DeclarationName::CXXReflectedIdName) {
     DependentID = true;
   } else if (SS.isSet()) {
     if (DeclContext *DC = computeDeclContext(SS, false)) {
@@ -2389,7 +2381,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
 
   if (DependentID)
     return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
+                                      IsAddressOfOperand, TemplateArgs);
 
   // Perform the required lookup.
   bool IsImplicitSelfParam = IdKind == UnqualifiedIdKind::IK_ImplicitSelfParam;
@@ -2413,7 +2405,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     if (MemberOfUnknownSpecialization ||
         (R.getResultKind() == LookupResult::NotFoundInCurrentInstantiation))
       return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
+                                        IsAddressOfOperand, TemplateArgs);
   } else {
     bool IvarLookupFollowUp = II && !SS.isSet() && getCurMethodDecl();
     LookupParsedName(R, S, &SS, !IvarLookupFollowUp);
@@ -2422,7 +2414,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     // id-expression.
     if (R.getResultKind() == LookupResult::NotFoundInCurrentInstantiation)
       return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
+                                        IsAddressOfOperand, TemplateArgs);
 
     // If this reference is in an Objective-C method, then we need to do
     // some special Objective-C lookup, too.

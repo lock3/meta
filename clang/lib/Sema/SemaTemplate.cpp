@@ -720,17 +720,10 @@ void Sema::diagnoseExprIntendedAsTemplateName(Scope *S, ExprResult TemplateName,
 /// specifier naming a dependent type.
 ExprResult
 Sema::ActOnDependentIdExpression(const CXXScopeSpec &SS,
-        SourceLocation TemplateKWLoc, const DeclarationNameInfo &NameInfo,
-        bool HasTrailingLParen, bool isAddressOfOperand,
-        const TemplateArgumentListInfo *TemplateArgs) {
-  // If the name is a CXXReflectedIdName, then one or more of the
-  // operands is dependent, and we cannot form an identifier. Simply preserve
-  // the name as it is.
-  if (NameInfo.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
-    return CXXReflectedIdExpr::Create(Context, NameInfo, Context.DependentTy,
-        SS, SS.getWithLocInContext(Context), TemplateKWLoc, HasTrailingLParen,
-        isAddressOfOperand, TemplateArgs);
-
+                                 SourceLocation TemplateKWLoc,
+                                 const DeclarationNameInfo &NameInfo,
+                                 bool isAddressOfOperand,
+                           const TemplateArgumentListInfo *TemplateArgs) {
   DeclContext *DC = getFunctionLevelDeclContext();
 
   // C++11 [expr.prim.general]p12:

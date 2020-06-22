@@ -740,11 +740,6 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclarationNameInfo(
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
-  case DeclarationName::CXXReflectedIdName: {
-    for (Expr *E : NameInfo.getName().getCXXReflectedIdArguments())
-      TRY_TO(TraverseStmt(E));
-    break;
-  }
   case DeclarationName::CXXUsingDirective:
     break;
   }
@@ -2717,7 +2712,7 @@ DEF_TRAVERSE_STMT(CXXReflectDumpReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXCompilerErrorExpr, {})
 DEF_TRAVERSE_STMT(CXXIdExprExpr, {})
 DEF_TRAVERSE_STMT(CXXMemberIdExprExpr, {})
-DEF_TRAVERSE_STMT(CXXReflectedIdExpr, {})
+DEF_TRAVERSE_STMT(CXXDependentSpliceIdExpr, {})
 DEF_TRAVERSE_STMT(CXXValueOfExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
