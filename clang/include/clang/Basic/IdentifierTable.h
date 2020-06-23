@@ -457,7 +457,7 @@ class alignas(IdentifierInfoAlignment) SplicedIdentifierInfo final
   }
 
 public:
-  llvm::ArrayRef<Expr *> getExprs() {
+  llvm::ArrayRef<Expr *> getExprs() const {
     return { getTrailingObjects<Expr *>(), NumTrailingExprs };
   }
 };

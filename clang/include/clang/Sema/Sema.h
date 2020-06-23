@@ -9200,6 +9200,9 @@ public:
   DeclarationNameInfo
   SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
                            const MultiLevelTemplateArgumentList &TemplateArgs);
+  IdentifierInfo *
+  SubstIdentifierInfo(IdentifierInfo *II,
+                      const MultiLevelTemplateArgumentList &TemplateArgs);
   TemplateName
   SubstTemplateName(NestedNameSpecifierLoc QualifierLoc, TemplateName Name,
                     SourceLocation Loc,
