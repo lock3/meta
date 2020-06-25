@@ -1630,9 +1630,14 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   IdentifierInfo *Name = nullptr;
   SourceLocation NameLoc;
   TemplateIdAnnotation *TemplateId = nullptr;
-  if (Tok.is(tok::identifier)) {
-    Name = Tok.getIdentifierInfo();
-    NameLoc = ConsumeToken();
+  if (Tok.is(tok::identifier) || Tok.is(tok::kw_unqualid)) {
+    if (Tok.is(tok::identifier)) {
+      Name = Tok.getIdentifierInfo();
+      NameLoc = ConsumeToken();
+    } else if (Tok.is(tok::kw_unqualid)) {
+      if (ParseCXXIdentifierSplice(Name, NameLoc))
+        return;
+    }
 
     if (Tok.is(tok::less) && getLangOpts().CPlusPlus) {
       // The name was supposed to refer to a template, but didn't.
