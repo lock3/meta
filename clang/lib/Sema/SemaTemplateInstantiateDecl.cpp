@@ -925,6 +925,9 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
   if (D->isLocalExternDecl())
     SemaRef.adjustContextForLocalExternDecl(DC);
 
+  IdentifierInfo *II = SemaRef.SubstIdentifierInfo(
+      D->getIdentifier(), TemplateArgs);
+
   // Build the instantiated declaration.
   VarDecl *Var;
   if (Bindings)
