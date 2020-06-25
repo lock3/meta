@@ -4691,17 +4691,27 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
+    IdentifierInfo *Ident;
+    SourceLocation IdentLoc;
+
     // Parse enumerator. If failed, try skipping till the start of the next
     // enumerator definition.
-    if (Tok.isNot(tok::identifier)) {
+    if (Tok.is(tok::identifier)) {
+      Ident = Tok.getIdentifierInfo();
+      IdentLoc = ConsumeToken();
+    } else if (Tok.is(tok::kw_unqualid)) {
+      if (ParseCXXIdentifierSplice(Ident, IdentLoc)) {
+        if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
+            TryConsumeToken(tok::comma))
+          break;
+      }
+    } else {
       Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
       if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
           TryConsumeToken(tok::comma))
         continue;
       break;
     }
-    IdentifierInfo *Ident = Tok.getIdentifierInfo();
-    SourceLocation IdentLoc = ConsumeToken();
 
     // If attributes exist after the enumerator, parse them.
     ParsedAttributesWithRange attrs(AttrFactory);
