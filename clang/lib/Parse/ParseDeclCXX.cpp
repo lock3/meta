@@ -84,11 +84,18 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
     ParseCXX11Attributes(attrs);
   }
 
-  if (Tok.is(tok::identifier)) {
-    Ident = Tok.getIdentifierInfo();
-    IdentLoc = ConsumeToken();  // eat the identifier.
+  if (Tok.is(tok::identifier) || Tok.is(tok::kw_unqualid)) {
+    if (Tok.is(tok::identifier)) {
+      Ident = Tok.getIdentifierInfo();
+      IdentLoc = ConsumeToken();  // eat the identifier.
+    } else {
+      // ignore failure in attempt to get better diagnostics.
+      ParseCXXIdentifierSplice(Ident, IdentLoc);
+    }
+
     while (Tok.is(tok::coloncolon) &&
            (NextToken().is(tok::identifier) ||
+            NextToken().is(tok::kw_unqualid) ||
             (NextToken().is(tok::kw_inline) &&
              GetLookAheadToken(2).is(tok::identifier)))) {
 
@@ -101,8 +108,14 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
           FirstNestedInlineLoc = Info.InlineLoc;
       }
 
-      Info.Ident = Tok.getIdentifierInfo();
-      Info.IdentLoc = ConsumeToken();
+      if (Tok.is(tok::kw_unqualid)) {
+        // ignore failure similar to above, to try and improve
+        // diagnostics.
+        ParseCXXIdentifierSplice(Info.Ident, Info.IdentLoc);
+      } else {
+        Info.Ident = Tok.getIdentifierInfo();
+        Info.IdentLoc = ConsumeToken();
+      }
 
       ExtraNSs.push_back(Info);
     }
