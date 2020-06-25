@@ -1461,7 +1461,7 @@ bool Sema::BuildCXXIdentifierSplice(
     ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
   // If any components are dependent, we can't compute the name.
   if (HasDependentParts(Parts)) {
-    Result = &Context.Idents.get(Parts);
+    Result = &Context.Idents.get(Context, Parts);
     return false;
   }
 

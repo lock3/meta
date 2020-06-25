@@ -933,7 +933,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
                                     D->getStorageClass(), *Bindings);
   else
     Var = VarDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
-                          D->getLocation(), D->getIdentifier(), DI->getType(),
+                          D->getLocation(), II, DI->getType(),
                           DI, D->getStorageClass());
 
   // In ARC, infer 'retaining' for variables of retainable type.

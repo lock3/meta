@@ -383,6 +383,8 @@ public:
   /// Convenience method for determining if this is an incomplete
   /// identifier splice.
   bool isIdentifierSplice() const {
+    // FIXME: We probably want to embed this into the pointer to at
+    // least maintain locality even if we do need this branch.
     if (auto *II = getAsIdentifierInfo())
       return II->isSplice();
 
@@ -513,14 +515,28 @@ public:
       setFETokenInfoSlow(T);
   }
 
+private:
+  static bool areSplicesCanonicallyEqual(
+      SplicedIdentifierInfo *LHS, SplicedIdentifierInfo *RHS);
+
+public:
   /// Determine whether the specified names are identical.
   friend bool operator==(DeclarationName LHS, DeclarationName RHS) {
+    if (LHS.isIdentifierSplice() && RHS.isIdentifierSplice()) {
+      using SII = SplicedIdentifierInfo;
+
+      auto *LHSII = static_cast<SII *>(LHS.castAsIdentifierInfo());
+      auto *RHSII = static_cast<SII *>(RHS.castAsIdentifierInfo());
+
+      return areSplicesCanonicallyEqual(LHSII, RHSII);
+    }
+
     return LHS.Ptr == RHS.Ptr;
   }
 
   /// Determine whether the specified names are different.
   friend bool operator!=(DeclarationName LHS, DeclarationName RHS) {
-    return LHS.Ptr != RHS.Ptr;
+    return !(LHS == RHS);
   }
 
   static DeclarationName getEmptyMarker() {
@@ -856,8 +872,19 @@ struct DenseMapInfo<clang::DeclarationName> {
     return clang::DeclarationName::getTombstoneMarker();
   }
 
+  static unsigned getHashValue(clang::SplicedIdentifierInfo *II);
+
   static unsigned getHashValue(clang::DeclarationName Name) {
-    return DenseMapInfo<void*>::getHashValue(Name.getAsOpaquePtr());
+    // Apply a custom hash for spliced identifiers.
+    //
+    // This custom hash ensures that spliced identifiers collide in a
+    // compatible way based on their contained expressions.
+    if (Name.isIdentifierSplice()) {
+      using SII = clang::SplicedIdentifierInfo;
+      return getHashValue(static_cast<SII *>(Name.getAsIdentifierInfo()));
+    }
+
+    return DenseMapInfo<void *>::getHashValue(Name.getAsOpaquePtr());
   }
 
   static inline bool

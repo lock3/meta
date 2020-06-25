@@ -19,6 +19,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TokenKinds.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -35,6 +36,7 @@
 
 namespace clang {
 
+class ASTContext;
 class DeclarationName;
 class DeclarationNameTable;
 class Expr;
@@ -449,14 +451,19 @@ class alignas(IdentifierInfoAlignment) SplicedIdentifierInfo final
   friend class IdentifierTable;
   friend TrailingObjects;
 
+  ASTContext &C;
   unsigned NumTrailingExprs;
 
-  SplicedIdentifierInfo(unsigned NumTrailingExprs)
-      : IdentifierInfo(), NumTrailingExprs(NumTrailingExprs) {
+  SplicedIdentifierInfo(ASTContext &C, unsigned NumTrailingExprs)
+      : IdentifierInfo(), C(C), NumTrailingExprs(NumTrailingExprs) {
     IsSplice = true;
   }
 
 public:
+  ASTContext &getASTContext() const {
+    return C;
+  }
+
   llvm::ArrayRef<Expr *> getExprs() const {
     return { getTrailingObjects<Expr *>(), NumTrailingExprs };
   }
@@ -634,19 +641,22 @@ public:
     return *II;
   }
 
-  IdentifierInfo &get(llvm::ArrayRef<Expr *> &Args) {
+  // FIXME: This is kind of a hack due to the compiler architecture.
+  // This should be reconsidered.
+  IdentifierInfo &get(ASTContext &C, llvm::ArrayRef<Expr *> &Args) {
     unsigned SizeOfTrailingExprs = sizeof(Expr *) * Args.size();
     unsigned SizeOfMem = sizeof(SplicedIdentifierInfo) + SizeOfTrailingExprs;
 
     void *Mem = SplicedIdInfoAlloc.Allocate(
         SizeOfMem, alignof(SplicedIdentifierInfo));
 
-    auto *CII = new (Mem) SplicedIdentifierInfo(Args.size());
+    auto *CII = new (Mem) SplicedIdentifierInfo(C, Args.size());
 
     std::uninitialized_copy_n(
         Args.data(), Args.size(), CII->getTrailingObjects<Expr *>());
 
-    auto &Entry = *HashTable.insert(std::make_pair("__identifier_splice", nullptr)).first;
+    auto &Entry = *HashTable.insert(
+        std::make_pair("__identifier_splice", nullptr)).first;
     CII->Entry = &Entry;
 
     return *CII;

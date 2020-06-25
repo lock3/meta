@@ -17,6 +17,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/OpenMPClause.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Type.h"
@@ -283,6 +284,24 @@ void DeclarationName::setFETokenInfoSlow(void *T) {
   }
 }
 
+static llvm::FoldingSetNodeID Profile(SplicedIdentifierInfo *II) {
+  llvm::FoldingSetNodeID ID;
+  ASTContext &C = II->getASTContext();
+  for (Expr *E : II->getExprs()) {
+    E->Profile(ID, C, /*Canonical=*/true);
+  }
+  return ID;
+}
+
+bool DeclarationName::areSplicesCanonicallyEqual(
+    SplicedIdentifierInfo *LHS, SplicedIdentifierInfo *RHS) {
+  ASTContext &LHSCtx = LHS->getASTContext();
+  ASTContext &RHSCtx = RHS->getASTContext();
+  assert(&LHSCtx == &RHSCtx);
+
+  return Profile(LHS) == Profile(RHS);
+}
+
 LLVM_DUMP_METHOD void DeclarationName::dump() const {
   llvm::errs() << *this << '\n';
 }
@@ -538,4 +557,9 @@ SourceLocation DeclarationNameInfo::getEndLocPrivate() const {
     return NameLoc;
   }
   llvm_unreachable("Unexpected declaration name kind");
+}
+
+unsigned llvm::DenseMapInfo<clang::DeclarationName>::getHashValue(
+    clang::SplicedIdentifierInfo *II) {
+  return Profile(II).ComputeHash();
 }
