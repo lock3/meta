@@ -4367,7 +4367,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
 
   // Must have either 'enum name' or 'enum {...}' or (rarely) 'enum : T { ... }'.
   if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace) &&
-      Tok.isNot(tok::colon)) {
+      Tok.isNot(tok::colon) && Tok.isNot(tok::kw_unqualid)) {
     Diag(Tok, diag::err_expected_either) << tok::identifier << tok::l_brace;
 
     // Skip the rest of this declarator, up until the comma or semicolon.
@@ -4381,6 +4381,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   if (Tok.is(tok::identifier)) {
     Name = Tok.getIdentifierInfo();
     NameLoc = ConsumeToken();
+  } else if (Tok.is(tok::kw_unqualid)) {
+    // Ignore failure in an attempt to get better diagnostics.
+    ParseCXXIdentifierSplice(Name, NameLoc);
   }
 
   if (!Name && ScopedEnumKWLoc.isValid()) {

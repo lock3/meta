@@ -1,6 +1,20 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 // expected-no-diagnostics
 
+namespace enums {
+
+enum unqualid("enum_t") { };
+
+enum class unqualid("enum_class_t");
+enum class unqualid("enum_class_t") { };
+
+void test() {
+  enum_t et;
+  enum_class_t ect;
+}
+
+} // end namespace enums
+
 namespace classes {
 
 struct unqualid("struct_t");
