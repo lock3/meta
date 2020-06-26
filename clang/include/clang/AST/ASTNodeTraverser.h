@@ -352,8 +352,6 @@ public:
   void VisitTemplateSpecializationType(const TemplateSpecializationType *T) {
     for (const auto &Arg : *T)
       Visit(Arg);
-    if (T->isTypeAlias())
-      Visit(T->getAliasedType());
   }
   void VisitObjCObjectPointerType(const ObjCObjectPointerType *T) {
     Visit(T->getPointeeType());
@@ -702,6 +700,15 @@ public:
         Visit(A);
   }
 
+  void VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E) {
+    Visit(E->getParameter());
+  }
+  void VisitSubstNonTypeTemplateParmPackExpr(
+      const SubstNonTypeTemplateParmPackExpr *E) {
+    Visit(E->getParameterPack());
+    Visit(E->getArgumentPack());
+  }
+
   void VisitObjCAtCatchStmt(const ObjCAtCatchStmt *Node) {
     if (const VarDecl *CatchParam = Node->getCatchParamDecl())
       Visit(CatchParam);
@@ -710,6 +717,11 @@ public:
   void VisitExpressionTemplateArgument(const TemplateArgument &TA) {
     Visit(TA.getAsExpr());
   }
+
+  void VisitTypeTemplateArgument(const TemplateArgument &TA) {
+    Visit(TA.getAsType());
+  }
+
   void VisitPackTemplateArgument(const TemplateArgument &TA) {
     for (const auto &TArg : TA.pack_elements())
       Visit(TArg);

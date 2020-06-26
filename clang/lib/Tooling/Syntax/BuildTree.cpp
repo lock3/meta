@@ -608,10 +608,77 @@ public:
     return true;
   }
 
+  syntax::NestedNameSpecifier *
+  BuildNestedNameSpecifier(NestedNameSpecifierLoc QualifierLoc) {
+    if (!QualifierLoc)
+      return nullptr;
+    for (auto it = QualifierLoc; it; it = it.getPrefix()) {
+      auto *NS = new (allocator()) syntax::NameSpecifier;
+      Builder.foldNode(Builder.getRange(it.getLocalSourceRange()), NS, nullptr);
+      Builder.markChild(NS, syntax::NodeRole::NestedNameSpecifier_specifier);
+    }
+    auto *NNS = new (allocator()) syntax::NestedNameSpecifier;
+    Builder.foldNode(Builder.getRange(QualifierLoc.getSourceRange()), NNS,
+                     nullptr);
+    return NNS;
+  }
+
+  bool WalkUpFromDeclRefExpr(DeclRefExpr *S) {
+    if (auto *NNS = BuildNestedNameSpecifier(S->getQualifierLoc()))
+      Builder.markChild(NNS, syntax::NodeRole::IdExpression_qualifier);
+
+    auto *unqualifiedId = new (allocator()) syntax::UnqualifiedId;
+    // Get `UnqualifiedId` from `DeclRefExpr`.
+    // FIXME: Extract this logic so that it can be used by `MemberExpr`,
+    // and other semantic constructs, now it is tied to `DeclRefExpr`.
+    if (!S->hasExplicitTemplateArgs()) {
+      Builder.foldNode(Builder.getRange(S->getNameInfo().getSourceRange()),
+                       unqualifiedId, nullptr);
+    } else {
+      auto templateIdSourceRange =
+          SourceRange(S->getNameInfo().getBeginLoc(), S->getRAngleLoc());
+      Builder.foldNode(Builder.getRange(templateIdSourceRange), unqualifiedId,
+                       nullptr);
+    }
+    Builder.markChild(unqualifiedId, syntax::NodeRole::IdExpression_id);
+
+    Builder.foldNode(Builder.getExprRange(S),
+                     new (allocator()) syntax::IdExpression, S);
+    return true;
+  }
+
   bool WalkUpFromIntegerLiteral(IntegerLiteral *S) {
     Builder.markChildToken(S->getLocation(), syntax::NodeRole::LiteralToken);
     Builder.foldNode(Builder.getExprRange(S),
                      new (allocator()) syntax::IntegerLiteralExpression, S);
+    return true;
+  }
+
+  bool WalkUpFromCharacterLiteral(CharacterLiteral *S) {
+    Builder.markChildToken(S->getLocation(), syntax::NodeRole::LiteralToken);
+    Builder.foldNode(Builder.getExprRange(S),
+                     new (allocator()) syntax::CharacterLiteralExpression, S);
+    return true;
+  }
+
+  bool WalkUpFromFloatingLiteral(FloatingLiteral *S) {
+    Builder.markChildToken(S->getLocation(), syntax::NodeRole::LiteralToken);
+    Builder.foldNode(Builder.getExprRange(S),
+                     new (allocator()) syntax::FloatingLiteralExpression, S);
+    return true;
+  }
+
+  bool WalkUpFromStringLiteral(StringLiteral *S) {
+    Builder.markChildToken(S->getBeginLoc(), syntax::NodeRole::LiteralToken);
+    Builder.foldNode(Builder.getExprRange(S),
+                     new (allocator()) syntax::StringLiteralExpression, S);
+    return true;
+  }
+
+  bool WalkUpFromCXXBoolLiteralExpr(CXXBoolLiteralExpr *S) {
+    Builder.markChildToken(S->getLocation(), syntax::NodeRole::LiteralToken);
+    Builder.foldNode(Builder.getExprRange(S),
+                     new (allocator()) syntax::BoolLiteralExpression, S);
     return true;
   }
 

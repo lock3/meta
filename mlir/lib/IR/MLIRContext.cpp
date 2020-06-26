@@ -554,16 +554,16 @@ bool MLIRContext::isOperationRegistered(StringRef name) {
 }
 
 void Dialect::addOperation(AbstractOperation opInfo) {
-  assert((getNamespace().empty() ||
-          opInfo.name.split('.').first == getNamespace()) &&
+  assert((getNamespace().empty() || opInfo.dialect.name == getNamespace()) &&
          "op name doesn't start with dialect namespace");
   assert(&opInfo.dialect == this && "Dialect object mismatch");
   auto &impl = context->getImpl();
 
   // Lock access to the context registry.
+  StringRef opName = opInfo.name;
   ScopedWriterLock registryLock(impl.contextMutex, impl.threadingIsEnabled);
-  if (!impl.registeredOperations.insert({opInfo.name, opInfo}).second) {
-    llvm::errs() << "error: operation named '" << opInfo.name
+  if (!impl.registeredOperations.insert({opName, std::move(opInfo)}).second) {
+    llvm::errs() << "error: operation named '" << opName
                  << "' is already registered.\n";
     abort();
   }

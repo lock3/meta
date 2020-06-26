@@ -43,6 +43,17 @@ class TypedefNameDecl;
 class TypeSourceInfo;
 class VarDecl;
 
+/// The kind of template substitution being performed.
+enum class TemplateSubstitutionKind : char {
+  /// We are substituting template parameters for template arguments in order
+  /// to form a template specialization.
+  Specialization,
+  /// We are substituting template parameters for (typically) other template
+  /// parameters in order to rewrite a declaration as a different declaration
+  /// (for example, when forming a deduction guide from a constructor).
+  Rewrite,
+};
+
   /// Data structure that captures multiple levels of template argument
   /// lists for use in template instantiation.
   ///
@@ -76,6 +87,9 @@ class VarDecl;
     /// being substituted.
     unsigned NumRetainedOuterLevels = 0;
 
+    /// The kind of substitution described by this argument list.
+    TemplateSubstitutionKind Kind = TemplateSubstitutionKind::Specialization;
+
   public:
     /// Construct an empty set of template argument lists.
     MultiLevelTemplateArgumentList() = default;
@@ -84,6 +98,18 @@ class VarDecl;
     explicit
     MultiLevelTemplateArgumentList(const TemplateArgumentList &TemplateArgs) {
       addOuterTemplateArguments(&TemplateArgs);
+    }
+
+    void setKind(TemplateSubstitutionKind K) { Kind = K; }
+
+    /// Determine the kind of template substitution being performed.
+    TemplateSubstitutionKind getKind() const { return Kind; }
+
+    /// Determine whether we are rewriting template parameters rather than
+    /// substituting for them. If so, we should not leave references to the
+    /// original template parameters behind.
+    bool isRewrite() const {
+      return Kind == TemplateSubstitutionKind::Rewrite;
     }
 
     /// Determine the number of levels in this template argument
@@ -96,6 +122,10 @@ class VarDecl;
     /// argument list.
     unsigned getNumSubstitutedLevels() const {
       return TemplateArgumentLists.size();
+    }
+
+    unsigned getNumRetainedOuterLevels() const {
+      return NumRetainedOuterLevels;
     }
 
     /// Determine how many of the \p OldDepth outermost template parameter
@@ -161,6 +191,9 @@ class VarDecl;
     /// template parameters that we instantiate.
     void addOuterRetainedLevel() {
       ++NumRetainedOuterLevels;
+    }
+    void addOuterRetainedLevels(unsigned Num) {
+      NumRetainedOuterLevels += Num;
     }
 
     /// Retrieve the innermost template argument list.
