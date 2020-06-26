@@ -15,7 +15,6 @@
 
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/ExprCXX.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/Stmt.h"
 #include "llvm/Support/Compiler.h"
@@ -27,6 +26,7 @@ class CXXMethodDecl;
 class CXXRecordDecl;
 class TemplateParameterList;
 class NonTypeTemplateParmDecl;
+class SizeOfPackExpr;
 
 /// CXXCatchStmt - This represents a C++ catch block.
 ///

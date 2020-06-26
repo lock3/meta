@@ -161,8 +161,9 @@ public:
     DiagnosticOptions *m_options = new DiagnosticOptions(opts);
     m_options->ShowPresumedLoc = true;
     m_options->ShowLevel = false;
-    m_os.reset(new llvm::raw_string_ostream(m_output));
-    m_passthrough.reset(new clang::TextDiagnosticPrinter(*m_os, m_options));
+    m_os = std::make_shared<llvm::raw_string_ostream>(m_output);
+    m_passthrough =
+        std::make_shared<clang::TextDiagnosticPrinter>(*m_os, m_options);
   }
 
   void ResetManager(DiagnosticManager *manager = nullptr) {
@@ -330,7 +331,7 @@ ClangExpressionParser::ClangExpressionParser(
   }
 
   // 1. Create a new compiler instance.
-  m_compiler.reset(new CompilerInstance());
+  m_compiler = std::make_unique<CompilerInstance>();
 
   // When capturing a reproducer, hook up the file collector with clang to
   // collector modules and headers.
@@ -640,12 +641,12 @@ ClangExpressionParser::ClangExpressionParser(
   m_compiler->createASTContext();
   clang::ASTContext &ast_context = m_compiler->getASTContext();
 
-  m_ast_context.reset(new TypeSystemClang(
-      "Expression ASTContext for '" + m_filename + "'", ast_context));
+  m_ast_context = std::make_unique<TypeSystemClang>(
+      "Expression ASTContext for '" + m_filename + "'", ast_context);
 
   std::string module_name("$__lldb_module");
 
-  m_llvm_context.reset(new LLVMContext());
+  m_llvm_context = std::make_unique<LLVMContext>();
   m_code_generator.reset(CreateLLVMCodeGen(
       m_compiler->getDiagnostics(), module_name,
       m_compiler->getHeaderSearchOpts(), m_compiler->getPreprocessorOpts(),
@@ -1046,11 +1047,11 @@ ClangExpressionParser::ParseInternal(DiagnosticManager &diagnostic_manager,
 
   std::unique_ptr<clang::ASTConsumer> Consumer;
   if (ast_transformer) {
-    Consumer.reset(new ASTConsumerForwarder(ast_transformer));
+    Consumer = std::make_unique<ASTConsumerForwarder>(ast_transformer);
   } else if (m_code_generator) {
-    Consumer.reset(new ASTConsumerForwarder(m_code_generator.get()));
+    Consumer = std::make_unique<ASTConsumerForwarder>(m_code_generator.get());
   } else {
-    Consumer.reset(new ASTConsumer());
+    Consumer = std::make_unique<ASTConsumer>();
   }
 
   clang::ASTContext &ast_context = m_compiler->getASTContext();

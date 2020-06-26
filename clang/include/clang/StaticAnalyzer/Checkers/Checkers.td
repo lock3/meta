@@ -1373,6 +1373,12 @@ def AnalysisOrderChecker : Checker<"AnalysisOrder">,
                   Released,
                   Hide>,
     CmdLineOption<Boolean,
+                  "EvalCall",
+                  "",
+                  "false",
+                  Released,
+                  Hide>,
+    CmdLineOption<Boolean,
                   "PreCall",
                   "",
                   "false",
@@ -1625,7 +1631,16 @@ def RefCntblBaseVirtualDtorChecker : Checker<"RefCntblBaseVirtualDtor">,
   HelpText<"Check for any ref-countable base class having virtual destructor.">,
   Documentation<HasDocumentation>;
 
-def WebKitNoUncountedMemberChecker : Checker<"WebKitNoUncountedMemberChecker">,
+def NoUncountedMemberChecker : Checker<"NoUncountedMemberChecker">,
   HelpText<"Check for no uncounted member variables.">,
   Documentation<HasDocumentation>;
+
 } // end webkit
+
+let ParentPackage = WebKitAlpha in {
+
+def UncountedCallArgsChecker : Checker<"UncountedCallArgsChecker">,
+  HelpText<"Check uncounted call arguments.">,
+  Documentation<HasDocumentation>;
+
+} // end alpha.webkit

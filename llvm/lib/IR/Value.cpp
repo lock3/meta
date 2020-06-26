@@ -515,8 +515,12 @@ enum PointerStripKind {
   PSK_InBounds
 };
 
+template <PointerStripKind StripKind> static void NoopCallback(const Value *) {}
+
 template <PointerStripKind StripKind>
-static const Value *stripPointerCastsAndOffsets(const Value *V) {
+static const Value *stripPointerCastsAndOffsets(
+    const Value *V,
+    function_ref<void(const Value *)> Func = NoopCallback<StripKind>) {
   if (!V->getType()->isPointerTy())
     return V;
 
@@ -526,6 +530,7 @@ static const Value *stripPointerCastsAndOffsets(const Value *V) {
 
   Visited.insert(V);
   do {
+    Func(V);
     if (auto *GEP = dyn_cast<GEPOperator>(V)) {
       switch (StripKind) {
       case PSK_ZeroIndices:
@@ -547,6 +552,8 @@ static const Value *stripPointerCastsAndOffsets(const Value *V) {
       V = GEP->getPointerOperand();
     } else if (Operator::getOpcode(V) == Instruction::BitCast) {
       V = cast<Operator>(V)->getOperand(0);
+      if (!V->getType()->isPointerTy())
+        return V;
     } else if (StripKind != PSK_ZeroIndicesSameRepresentation &&
                Operator::getOpcode(V) == Instruction::AddrSpaceCast) {
       // TODO: If we know an address space cast will not change the
@@ -667,8 +674,9 @@ const Value *Value::stripAndAccumulateConstantOffsets(
   return V;
 }
 
-const Value *Value::stripInBoundsOffsets() const {
-  return stripPointerCastsAndOffsets<PSK_InBounds>(this);
+const Value *
+Value::stripInBoundsOffsets(function_ref<void(const Value *)> Func) const {
+  return stripPointerCastsAndOffsets<PSK_InBounds>(this, Func);
 }
 
 uint64_t Value::getPointerDereferenceableBytes(const DataLayout &DL,

@@ -57,13 +57,13 @@ bool ARMTTIImpl::areInlineCompatible(const Function *Caller,
   const FeatureBitset &CalleeBits =
       TM.getSubtargetImpl(*Callee)->getFeatureBits();
 
-  // To inline a callee, all features not in the whitelist must match exactly.
-  bool MatchExact = (CallerBits & ~InlineFeatureWhitelist) ==
-                    (CalleeBits & ~InlineFeatureWhitelist);
-  // For features in the whitelist, the callee's features must be a subset of
+  // To inline a callee, all features not in the allowed list must match exactly.
+  bool MatchExact = (CallerBits & ~InlineFeaturesAllowed) ==
+                    (CalleeBits & ~InlineFeaturesAllowed);
+  // For features in the allowed list, the callee's features must be a subset of
   // the callers'.
-  bool MatchSubset = ((CallerBits & CalleeBits) & InlineFeatureWhitelist) ==
-                     (CalleeBits & InlineFeatureWhitelist);
+  bool MatchSubset = ((CallerBits & CalleeBits) & InlineFeaturesAllowed) ==
+                     (CalleeBits & InlineFeaturesAllowed);
   return MatchExact && MatchSubset;
 }
 
@@ -580,7 +580,7 @@ bool ARMTTIImpl::isProfitableLSRChainElement(Instruction *I) {
   return false;
 }
 
-bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy, MaybeAlign Alignment) {
+bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy, Align Alignment) {
   if (!EnableMaskedLoadStores || !ST->hasMVEIntegerOps())
     return false;
 
@@ -596,12 +596,11 @@ bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy, MaybeAlign Alignment) {
   }
 
   unsigned EltWidth = DataTy->getScalarSizeInBits();
-  return (EltWidth == 32 && (!Alignment || *Alignment >= 4)) ||
-         (EltWidth == 16 && (!Alignment || *Alignment >= 2)) ||
-         (EltWidth == 8);
+  return (EltWidth == 32 && Alignment >= 4) ||
+         (EltWidth == 16 && Alignment >= 2) || (EltWidth == 8);
 }
 
-bool ARMTTIImpl::isLegalMaskedGather(Type *Ty, MaybeAlign Alignment) {
+bool ARMTTIImpl::isLegalMaskedGather(Type *Ty, Align Alignment) {
   if (!EnableMaskedGatherScatters || !ST->hasMVEIntegerOps())
     return false;
 
@@ -618,8 +617,8 @@ bool ARMTTIImpl::isLegalMaskedGather(Type *Ty, MaybeAlign Alignment) {
     return false;
 
   unsigned EltWidth = Ty->getScalarSizeInBits();
-  return ((EltWidth == 32 && (!Alignment || *Alignment >= 4)) ||
-          (EltWidth == 16 && (!Alignment || *Alignment >= 2)) || EltWidth == 8);
+  return ((EltWidth == 32 && Alignment >= 4) ||
+          (EltWidth == 16 && Alignment >= 2) || EltWidth == 8);
 }
 
 int ARMTTIImpl::getMemcpyCost(const Instruction *I) {
@@ -914,8 +913,7 @@ int ARMTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
 
 int ARMTTIImpl::getInterleavedMemoryOpCost(
     unsigned Opcode, Type *VecTy, unsigned Factor, ArrayRef<unsigned> Indices,
-    unsigned Alignment, unsigned AddressSpace,
-    TTI::TargetCostKind CostKind,
+    Align Alignment, unsigned AddressSpace, TTI::TargetCostKind CostKind,
     bool UseMaskForCond, bool UseMaskForGaps) {
   assert(Factor >= 2 && "Invalid interleave factor");
   assert(isa<VectorType>(VecTy) && "Expect a vector type");
@@ -953,8 +951,8 @@ int ARMTTIImpl::getInterleavedMemoryOpCost(
 }
 
 unsigned ARMTTIImpl::getGatherScatterOpCost(unsigned Opcode, Type *DataTy,
-                                            Value *Ptr, bool VariableMask,
-                                            unsigned Alignment,
+                                            const Value *Ptr, bool VariableMask,
+                                            Align Alignment,
                                             TTI::TargetCostKind CostKind,
                                             const Instruction *I) {
   using namespace PatternMatch;
@@ -1032,9 +1030,9 @@ unsigned ARMTTIImpl::getGatherScatterOpCost(unsigned Opcode, Type *DataTy,
   if (ExtSize != 8 && ExtSize != 16)
     return ScalarCost;
 
-  if (auto BC = dyn_cast<BitCastInst>(Ptr))
+  if (const auto *BC = dyn_cast<BitCastInst>(Ptr))
     Ptr = BC->getOperand(0);
-  if (auto *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
+  if (const auto *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
     if (GEP->getNumOperands() != 2)
       return ScalarCost;
     unsigned Scale = DL.getTypeAllocSize(GEP->getResultElementType());
@@ -1042,7 +1040,7 @@ unsigned ARMTTIImpl::getGatherScatterOpCost(unsigned Opcode, Type *DataTy,
     if (Scale != 1 && Scale * 8 != ExtSize)
       return ScalarCost;
     // And we need to zext (not sext) the indexes from a small enough type.
-    if (auto ZExt = dyn_cast<ZExtInst>(GEP->getOperand(1))) {
+    if (const auto *ZExt = dyn_cast<ZExtInst>(GEP->getOperand(1))) {
       if (ZExt->getOperand(0)->getType()->getScalarSizeInBits() <= ExtSize)
         return VectorCost;
     }
@@ -1412,13 +1410,15 @@ bool ARMTTIImpl::preferPredicateOverEpilogue(Loop *L, LoopInfo *LI,
   return canTailPredicateLoop(L, LI, SE, DL, LAI);
 }
 
-bool ARMTTIImpl::emitGetActiveLaneMask(Loop *L, LoopInfo *LI,
-    ScalarEvolution &SE, bool TailFolded) const {
-  // TODO: if this loop is tail-folded, we want to emit the
-  // llvm.get.active.lane.mask intrinsic so that this can be picked up in the
-  // MVETailPredication pass that needs to know the number of elements
-  // processed by this vector loop.
-  return false;
+bool ARMTTIImpl::emitGetActiveLaneMask() const {
+  if (!ST->hasMVEIntegerOps() || DisableTailPredication)
+    return false;
+
+  // Intrinsic @llvm.get.active.lane.mask is supported.
+  // It is used in the MVETailPredication pass, which requires the number of
+  // elements processed by this vector loop to setup the tail-predicated
+  // loop.
+  return true;
 }
 void ARMTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                          TTI::UnrollingPreferences &UP) {
