@@ -41,6 +41,7 @@ add_unittest(ClangdUnitTests ClangdTests
   CollectMacrosTests.cpp
   CompileCommandsTests.cpp
   CompilerTests.cpp
+  ConfigYAMLTests.cpp
   DexTests.cpp
   DiagnosticsTests.cpp
   DraftStoreTests.cpp
@@ -120,7 +121,6 @@ target_link_libraries(ClangdTests
   clangDaemon
   clangdSupport
   clangTidy
-  LLVMSupport
   LLVMTestingSupport
   )
 

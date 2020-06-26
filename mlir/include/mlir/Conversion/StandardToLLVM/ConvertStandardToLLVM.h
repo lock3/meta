@@ -129,6 +129,9 @@ public:
   /// Gets the bitwidth of the index type when converted to LLVM.
   unsigned getIndexTypeBitwidth() { return customizations.indexBitwidth; }
 
+  /// Gets the pointer bitwidth.
+  unsigned getPointerBitwidth(unsigned addressSpace = 0);
+
 protected:
   /// LLVM IR module used to parse/create types.
   llvm::Module *module;
@@ -278,6 +281,7 @@ public:
 
   /// Builds IR extracting the pos-th size from the descriptor.
   Value size(OpBuilder &builder, Location loc, unsigned pos);
+  Value size(OpBuilder &builder, Location loc, Value pos, int64_t rank);
 
   /// Builds IR inserting the pos-th size into the descriptor
   void setSize(OpBuilder &builder, Location loc, unsigned pos, Value size);
@@ -385,6 +389,13 @@ public:
   /// Returns the number of non-aggregate values that would be produced by
   /// `unpack`.
   static unsigned getNumUnpackedValues() { return 2; }
+
+  /// Builds IR computing the sizes in bytes (suitable for opaque allocation)
+  /// and appends the corresponding values into `sizes`.
+  static void computeSizes(OpBuilder &builder, Location loc,
+                           LLVMTypeConverter &typeConverter,
+                           ArrayRef<UnrankedMemRefDescriptor> values,
+                           SmallVectorImpl<Value> &sizes);
 };
 
 /// Base class for operation conversions targeting the LLVM IR dialect. Provides

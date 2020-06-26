@@ -80,6 +80,13 @@ public:
 
   static bool isWave64(const llvm::opt::ArgList &DriverArgs,
                        llvm::AMDGPU::GPUKind Kind);
+  /// Needed for using lto.
+  bool HasNativeLLVMSupport() const override {
+    return true;
+  }
+
+  /// Needed for translating LTO options.
+  const char *getDefaultLinker() const override { return "ld.lld"; }
 };
 
 class LLVM_LIBRARY_VISIBILITY ROCMToolChain : public AMDGPUToolChain {

@@ -358,6 +358,9 @@ def note_injection_outside_constexpr_decl : Note<
 def warn_integer_constant_overflow : Warning<
   "overflow in expression; result is %0 with type %1">,
   InGroup<DiagGroup<"integer-overflow">>;
+def warn_fixedpoint_constant_overflow : Warning<
+  "overflow in expression; result is %0 with type %1">,
+  InGroup<DiagGroup<"fixed-point-overflow">>;
 
 def err_injecting_non_decl_reflection : Error<
   "cannot inject a reflection which does not reflect a declaration">;

@@ -928,11 +928,10 @@ def HasRTM       : Predicate<"Subtarget->hasRTM()">;
 def HasADX       : Predicate<"Subtarget->hasADX()">;
 def HasSHA       : Predicate<"Subtarget->hasSHA()">;
 def HasSGX       : Predicate<"Subtarget->hasSGX()">;
-def HasPRFCHW    : Predicate<"Subtarget->hasPRFCHW()">;
 def HasRDSEED    : Predicate<"Subtarget->hasRDSEED()">;
 def HasSSEPrefetch : Predicate<"Subtarget->hasSSEPrefetch()">;
 def NoSSEPrefetch : Predicate<"!Subtarget->hasSSEPrefetch()">;
-def HasPrefetchW : Predicate<"Subtarget->hasPRFCHW()">;
+def HasPrefetchW : Predicate<"Subtarget->hasPrefetchW()">;
 def HasPREFETCHWT1 : Predicate<"Subtarget->hasPREFETCHWT1()">;
 def HasLAHFSAHF  : Predicate<"Subtarget->hasLAHFSAHF()">;
 def HasMWAITX    : Predicate<"Subtarget->hasMWAITX()">;
@@ -3166,6 +3165,9 @@ def : MnemonicAlias<"smovl", "movsl", "att">;
 def : MnemonicAlias<"smovq", "movsq", "att">;
 
 def : MnemonicAlias<"ud2a",  "ud2",  "att">;
+def : MnemonicAlias<"ud2bw", "ud1w", "att">;
+def : MnemonicAlias<"ud2bl", "ud1l", "att">;
+def : MnemonicAlias<"ud2bq", "ud1q", "att">;
 def : MnemonicAlias<"verrw", "verr", "att">;
 
 // MS recognizes 'xacquire'/'xrelease' as 'acquire'/'release'
