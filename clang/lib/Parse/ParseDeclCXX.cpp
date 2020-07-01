@@ -84,22 +84,17 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
     ParseCXX11Attributes(attrs);
   }
 
-  if (Tok.is(tok::identifier) || Tok.is(tok::kw_unqualid)) {
-    if (Tok.is(tok::identifier)) {
-      Ident = Tok.getIdentifierInfo();
-      IdentLoc = ConsumeToken();  // eat the identifier.
-    } else {
-      // ignore failure in attempt to get better diagnostics.
-      ParseCXXIdentifierSplice(Ident, IdentLoc);
-    }
+  if (isIdentifier()) {
+    Ident = Tok.getIdentifierInfo();
+    IdentLoc = ConsumeIdentifier();
 
     while (Tok.is(tok::coloncolon) &&
-           (NextToken().is(tok::identifier) ||
-            NextToken().is(tok::kw_unqualid) ||
+           (NextToken().isIdentifier() ||
             (NextToken().is(tok::kw_inline) &&
-             GetLookAheadToken(2).is(tok::identifier)))) {
+             GetLookAheadToken(2).isIdentifier()))) {
 
       InnerNamespaceInfo Info;
+
       Info.NamespaceLoc = ConsumeToken();
 
       if (Tok.is(tok::kw_inline)) {
@@ -108,14 +103,11 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
           FirstNestedInlineLoc = Info.InlineLoc;
       }
 
-      if (Tok.is(tok::kw_unqualid)) {
-        // ignore failure similar to above, to try and improve
-        // diagnostics.
-        ParseCXXIdentifierSplice(Info.Ident, Info.IdentLoc);
-      } else {
-        Info.Ident = Tok.getIdentifierInfo();
-        Info.IdentLoc = ConsumeToken();
-      }
+      if (TryAnnotateIdentifierSplice())
+        return nullptr;
+
+      Info.Ident = Tok.getIdentifierInfo();
+      Info.IdentLoc = ConsumeIdentifier();
 
       ExtraNSs.push_back(Info);
     }
@@ -311,7 +303,7 @@ Decl *Parser::ParseNamespaceAlias(SourceLocation NamespaceLoc,
                                  /*LastII=*/nullptr,
                                  /*OnlyNamespace=*/true);
 
-  if (Tok.isNot(tok::identifier)) {
+  if (!isIdentifier()) {
     Diag(Tok, diag::err_expected_namespace_name);
     // Skip to end of the definition and eat the ';'.
     SkipUntil(tok::semi);
@@ -327,7 +319,7 @@ Decl *Parser::ParseNamespaceAlias(SourceLocation NamespaceLoc,
 
   // Parse identifier.
   IdentifierInfo *Ident = Tok.getIdentifierInfo();
-  SourceLocation IdentLoc = ConsumeToken();
+  SourceLocation IdentLoc = ConsumeIdentifier();
 
   // Eat the ';'.
   DeclEnd = Tok.getLocation();
@@ -557,7 +549,7 @@ Decl *Parser::ParseUsingDirective(DeclaratorContext Context,
   SourceLocation IdentLoc = SourceLocation();
 
   // Parse namespace-name.
-  if (Tok.isNot(tok::identifier)) {
+  if (!isIdentifier()) {
     Diag(Tok, diag::err_expected_namespace_name);
     // If there was invalid namespace name, skip to end of decl, and eat ';'.
     SkipUntil(tok::semi);
@@ -574,7 +566,7 @@ Decl *Parser::ParseUsingDirective(DeclaratorContext Context,
 
   // Parse identifier.
   NamespcName = Tok.getIdentifierInfo();
-  IdentLoc = ConsumeToken();
+  IdentLoc = ConsumeIdentifier();
 
   // Parse (optional) attributes (most likely GNU strong-using extension).
   bool GNUAttr = false;
@@ -614,7 +606,7 @@ Decl *Parser::ParseNamespaceName(CXXScopeSpec &SS, SourceLocation &IdentLoc) {
                                  /*OnlyNamespace=*/false);
 
   // Parse namespace-name.
-  if (Tok.isNot(tok::identifier)) {
+  if (!isIdentifier()) {
     // FIXME: If we're parsing a reflexpr(), then we mustn't diagnose
     // errors. Just fail early so the tentative parse can reset and try
     // the next match.
@@ -622,7 +614,7 @@ Decl *Parser::ParseNamespaceName(CXXScopeSpec &SS, SourceLocation &IdentLoc) {
   }
 
   IdentifierInfo *Ident = Tok.getIdentifierInfo();
-  IdentLoc = ConsumeToken();
+  IdentLoc = ConsumeIdentifier();
 
   return Actions.ActOnNamespaceName(getCurScope(), SS, Ident, IdentLoc);
 }
@@ -672,13 +664,13 @@ bool Parser::ParseUsingDeclarator(DeclaratorContext Context,
   //   constructor.
   if (getLangOpts().CPlusPlus11 &&
       Context == DeclaratorContext::MemberContext &&
-      Tok.is(tok::identifier) &&
+      isIdentifier() &&
       (NextToken().is(tok::semi) || NextToken().is(tok::comma) ||
        NextToken().is(tok::ellipsis)) &&
       D.SS.isNotEmpty() && LastII == Tok.getIdentifierInfo() &&
       !D.SS.getScopeRep()->getAsNamespace() &&
       !D.SS.getScopeRep()->getAsNamespaceAlias()) {
-    SourceLocation IdLoc = ConsumeToken();
+    SourceLocation IdLoc = ConsumeIdentifier();
     ParsedType Type =
         Actions.getInheritingConstructorName(D.SS, IdLoc, *LastII);
     D.Name.setConstructorName(Type, IdLoc, IdLoc);
@@ -688,7 +680,7 @@ bool Parser::ParseUsingDeclarator(DeclaratorContext Context,
             /*ObjectHadErrors=*/false, /*EnteringContext=*/false,
             /*AllowDestructorName=*/true,
             /*AllowConstructorName=*/
-            !(Tok.is(tok::identifier) && NextToken().is(tok::equal)),
+            !(isIdentifier() && NextToken().is(tok::equal)),
             /*AllowDeductionGuide=*/false, nullptr, D.Name))
       return true;
   }
@@ -1002,7 +994,7 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
     if (Tok.getIdentifierInfo()->isStr("decltype"))
       Diag(Tok, diag::warn_cxx98_compat_decltype);
 
-    ConsumeToken();
+    ConsumeAsIdentifier();
 
     BalancedDelimiterTracker T(*this, tok::l_paren);
     if (T.expectAndConsume(diag::err_expected_lparen_after,
@@ -1206,13 +1198,13 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
     // Fall through to produce an error below.
   }
 
-  if (Tok.isNot(tok::identifier)) {
+  if (!isIdentifier()) {
     Diag(Tok, diag::err_expected_class_name);
     return true;
   }
 
   IdentifierInfo *Id = Tok.getIdentifierInfo();
-  SourceLocation IdLoc = ConsumeToken();
+  SourceLocation IdLoc = ConsumeIdentifier();
 
   if (Tok.is(tok::less)) {
     // It looks the user intended to write a template-id here, but the
@@ -1493,7 +1485,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   SourceLocation AttrFixitLoc = Tok.getLocation();
 
   if (TagType == DeclSpec::TST_struct &&
-      Tok.isNot(tok::identifier) &&
+      !isIdentifier() &&
       !Tok.isAnnotation() &&
       Tok.getIdentifierInfo() &&
       Tok.isOneOf(tok::kw___is_abstract,
@@ -1599,7 +1591,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
       HasValidSpec = false;
     }
     if (Spec.isSet())
-      if (Tok.isNot(tok::identifier) && Tok.isNot(tok::annot_template_id)) {
+      if (!isIdentifier() && Tok.isNot(tok::annot_template_id)) {
         Diag(Tok, diag::err_expected) << tok::identifier;
         HasValidSpec = false;
       }
@@ -1643,14 +1635,9 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   IdentifierInfo *Name = nullptr;
   SourceLocation NameLoc;
   TemplateIdAnnotation *TemplateId = nullptr;
-  if (Tok.is(tok::identifier) || Tok.is(tok::kw_unqualid)) {
-    if (Tok.is(tok::identifier)) {
-      Name = Tok.getIdentifierInfo();
-      NameLoc = ConsumeToken();
-    } else if (Tok.is(tok::kw_unqualid)) {
-      if (ParseCXXIdentifierSplice(Name, NameLoc))
-        return;
-    }
+  if (isIdentifier()) {
+    Name = Tok.getIdentifierInfo();
+    NameLoc = ConsumeIdentifier();
 
     if (Tok.is(tok::less) && getLangOpts().CPlusPlus) {
       // The name was supposed to refer to a template, but didn't.
@@ -1760,7 +1747,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     TentativeParsingAction PA(*this);
 
     // Skip the 'final' keyword.
-    ConsumeToken();
+    ConsumeIdentifier();
 
     // Skip C++11 attribute specifiers.
     while (true) {
@@ -2329,7 +2316,7 @@ void Parser::HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
 ///         final
 ///         __final
 VirtSpecifiers::Specifier Parser::isCXX11VirtSpecifier(const Token &Tok) const {
-  if (!getLangOpts().CPlusPlus || Tok.isNot(tok::identifier))
+  if (!getLangOpts().CPlusPlus || !Tok.isIdentifier())
     return VirtSpecifiers::VS_None;
 
   IdentifierInfo *II = Tok.getIdentifierInfo();
@@ -2377,7 +2364,7 @@ void Parser::ParseOptionalCXX11VirtSpecifierSeq(VirtSpecifiers &VS,
         << VirtSpecifiers::getSpecifierName(Specifier)
         << FixItHint::CreateRemoval(Tok.getLocation())
         << SourceRange(FriendLoc, FriendLoc);
-      ConsumeToken();
+      ConsumeAsIdentifier();
       continue;
     }
 
@@ -2404,7 +2391,7 @@ void Parser::ParseOptionalCXX11VirtSpecifierSeq(VirtSpecifiers &VS,
                : diag::ext_override_control_keyword)
           << VirtSpecifiers::getSpecifierName(Specifier);
     }
-    ConsumeToken();
+    ConsumeIdentifier();
   }
 }
 
@@ -2609,14 +2596,14 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   // Access declarations.
   bool MalformedTypeSpec = false;
   if (!TemplateInfo.Kind &&
-      Tok.isOneOf(tok::identifier, tok::coloncolon, tok::kw___super)) {
+      (isIdentifier() || Tok.isOneOf(tok::coloncolon, tok::kw___super))) {
     if (TryAnnotateCXXScopeToken())
       MalformedTypeSpec = true;
 
     bool isAccessDecl;
     if (Tok.isNot(tok::annot_cxxscope))
       isAccessDecl = false;
-    else if (NextToken().is(tok::identifier))
+    else if (NextToken().isIdentifier())
       isAccessDecl = GetLookAheadToken(2).is(tok::semi);
     else
       isAccessDecl = NextToken().is(tok::kw_operator);
@@ -3143,7 +3130,7 @@ void Parser::SkipCXXMemberSpecification(SourceLocation RecordLoc,
                                         SourceLocation AttrFixitLoc,
                                         unsigned TagType, Decl *TagDecl) {
   // Skip the optional 'final' keyword.
-  if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
+  if (getLangOpts().CPlusPlus && isIdentifier()) {
     assert(isCXX11FinalKeyword() && "not a class definition");
     ConsumeToken();
 
@@ -3362,13 +3349,13 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   bool IsFinalSpelledSealed = false;
 
   // Parse the optional 'final' keyword.
-  if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
+  if (getLangOpts().CPlusPlus && isIdentifier()) {
     VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier(Tok);
     assert((Specifier == VirtSpecifiers::VS_Final ||
             Specifier == VirtSpecifiers::VS_GNU_Final ||
             Specifier == VirtSpecifiers::VS_Sealed) &&
            "not a class definition");
-    FinalLoc = ConsumeToken();
+    FinalLoc = ConsumeIdentifier();
     IsFinalSpelledSealed = Specifier == VirtSpecifiers::VS_Sealed;
 
     if (TagType == DeclSpec::TST_interface)
@@ -3672,11 +3659,11 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
   // : typename(...base_range)
   llvm::SmallVector<QualType, 4> BaseIds;
 
-  if (Tok.is(tok::identifier) && !isVariadicReifier()) {
+  if (isIdentifier() && !isVariadicReifier()) {
     // Get the identifier. This may be a member name or a class name,
     // but we'll let the semantic analysis determine which it is.
     II = Tok.getIdentifierInfo();
-    ConsumeToken();
+    ConsumeIdentifier();
   } else if (Tok.is(tok::annot_decltype)) {
     // Get the decltype expression, if there is one.
     // Uses of decltype will already have been converted to annot_decltype by
@@ -4159,9 +4146,9 @@ IdentifierInfo *Parser::TryParseCXX11AttributeIdentifier(SourceLocation &Loc) {
   switch (Tok.getKind()) {
   default:
     // Identifiers and keywords have identifier info attached.
-    if (!Tok.isAnnotation()) {
+    if (isIdentifier() || !Tok.isAnnotation()) {
       if (IdentifierInfo *II = Tok.getIdentifierInfo()) {
-        Loc = ConsumeToken();
+        Loc = ConsumeAsIdentifier();
         return II;
       }
     }
@@ -4510,12 +4497,12 @@ SourceLocation Parser::SkipCXX11Attributes() {
 
 /// Parse uuid() attribute when it appears in a [] Microsoft attribute.
 void Parser::ParseMicrosoftUuidAttributeArgs(ParsedAttributes &Attrs) {
-  assert(Tok.is(tok::identifier) && "Not a Microsoft attribute list");
+  assert(isIdentifier() && "Not a Microsoft attribute list");
   IdentifierInfo *UuidIdent = Tok.getIdentifierInfo();
   assert(UuidIdent->getName() == "uuid" && "Not a Microsoft attribute list");
 
   SourceLocation UuidLoc = Tok.getLocation();
-  ConsumeToken();
+  ConsumeIdentifier();
 
   // Ignore the left paren location for now.
   BalancedDelimiterTracker T(*this, tok::l_paren);
@@ -4613,12 +4600,12 @@ void Parser::ParseMicrosoftAttributes(ParsedAttributes &attrs,
     // Skip most ms attributes except for a specific list.
     while (true) {
       SkipUntil(tok::r_square, tok::identifier, StopAtSemi | StopBeforeMatch);
-      if (Tok.isNot(tok::identifier)) // ']', but also eof
+      if (!isIdentifier()) // ']', but also eof
         break;
       if (Tok.getIdentifierInfo()->getName() == "uuid")
         ParseMicrosoftUuidAttributeArgs(attrs);
       else
-        ConsumeToken();
+        ConsumeIdentifier();
     }
 
     T.consumeClose();

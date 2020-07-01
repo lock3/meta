@@ -6872,7 +6872,7 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
         CXTok.int_data[0] = CXToken_Keyword;
       } else {
         CXTok.int_data[0] =
-            Tok.is(tok::identifier) ? CXToken_Identifier : CXToken_Keyword;
+            Tok.isIdentifier() ? CXToken_Identifier : CXToken_Keyword;
       }
       CXTok.ptr_data = II;
     } else if (Tok.is(tok::comment)) {

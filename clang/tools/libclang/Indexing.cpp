@@ -265,7 +265,7 @@ public:
                           StringRef SearchPath, StringRef RelativePath,
                           const Module *Imported,
                           SrcMgr::CharacteristicKind FileType) override {
-    bool isImport = (IncludeTok.is(tok::identifier) &&
+    bool isImport = (IncludeTok.isIdentifier() &&
             IncludeTok.getIdentifierInfo()->getPPKeywordID() == tok::pp_import);
     DataConsumer.ppIncludedFile(HashLoc, FileName, File, isImport, IsAngled,
                             Imported);

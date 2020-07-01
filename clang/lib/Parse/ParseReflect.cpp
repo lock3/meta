@@ -398,6 +398,39 @@ ExprResult Parser::ParseCXXValueOfExpression() {
   return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
 }
 
+bool Parser::AnnotateIdentifierSplice() {
+  assert(Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis));
+
+  // Attempt to reinterpret an identifier splice as a normal
+  // identifier.
+  IdentifierInfo *II;
+  SourceLocation IIBeginLoc;
+  SourceLocation IIEndLoc;
+  if (ParseCXXIdentifierSplice(II, IIBeginLoc, IIEndLoc))
+    return true;
+
+  Token AnnotTok;
+  AnnotTok.startToken();
+  AnnotTok.setKind(tok::annot_identifier_splice);
+  AnnotTok.setAnnotationValue(reinterpret_cast<void *>(II));
+  AnnotTok.setLocation(IIBeginLoc);
+  AnnotTok.setAnnotationEndLoc(IIEndLoc);
+  UnconsumeToken(AnnotTok);
+  return false;
+}
+
+bool Parser::TryAnnotateIdentifierSplice() {
+  if (Tok.isNot(tok::kw_unqualid) || GetLookAheadToken(2).is(tok::ellipsis))
+    return false;
+
+  return AnnotateIdentifierSplice();
+}
+
+bool Parser::ParseCXXIdentifierSplice(
+    IdentifierInfo *&Id, SourceLocation &IdBeginLoc) {
+  SourceLocation IdEndLoc;
+  return ParseCXXIdentifierSplice(Id, IdBeginLoc, IdEndLoc);
+}
 
 /// Parse a reflected id
 ///
@@ -405,9 +438,10 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc) {
+bool Parser::ParseCXXIdentifierSplice(
+    IdentifierInfo *&Id, SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc) {
   assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
-  IdLoc = ConsumeToken();
+  IdBeginLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
@@ -416,8 +450,10 @@ bool Parser::ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc
   SmallVector<Expr *, 4> Parts;
   while (true) {
     ExprResult Result = ParseConstantExpression();
-    if (Result.isInvalid())
+    if (Result.isInvalid()) {
+      SkipUntil(tok::r_paren);
       return true;
+    }
     Parts.push_back(Result.get());
     if (Tok.is(tok::r_paren))
       break;
@@ -426,6 +462,8 @@ bool Parser::ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc
   }
   if (T.consumeClose())
     return true;
+
+  IdEndLoc = T.getCloseLocation();
 
   ArrayRef<Expr *> FinalParts(Parts.data(), Parts.size());
   if (Actions.ActOnCXXIdentifierSplice(FinalParts, Id))

@@ -473,7 +473,7 @@ void html::SyntaxHighlight(Rewriter &R, FileID FID, const Preprocessor &PP) {
       PP.LookUpIdentifierInfo(Tok);
 
       // If this is a pp-identifier, for a keyword, highlight it as such.
-      if (Tok.isNot(tok::identifier))
+      if (!Tok.isIdentifier())
         HighlightRange(RB, TokOffs, TokOffs+TokLen, BufferStart,
                        "<span class='keyword'>", "</span>");
       break;

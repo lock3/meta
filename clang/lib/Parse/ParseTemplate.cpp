@@ -710,7 +710,7 @@ bool Parser::TryAnnotateTypeConstraint() {
                                      /*OnlyNamespace=*/false))
     return true;
 
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     UnqualifiedId PossibleConceptName;
     PossibleConceptName.setIdentifier(Tok.getIdentifierInfo(),
                                       Tok.getLocation());
@@ -798,9 +798,9 @@ NamedDecl *Parser::ParseTypeParameter(unsigned Depth, unsigned Position) {
   // Grab the template parameter name (if given)
   SourceLocation NameLoc = Tok.getLocation();
   IdentifierInfo *ParamName = nullptr;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     ParamName = Tok.getIdentifierInfo();
-    ConsumeToken();
+    ConsumeIdentifier();
   } else if (Tok.isOneOf(tok::equal, tok::comma, tok::greater,
                          tok::greatergreater)) {
     // Unnamed template parameter. Don't have to do anything here, just
@@ -907,9 +907,9 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
   // Get the identifier, if given.
   SourceLocation NameLoc = Tok.getLocation();
   IdentifierInfo *ParamName = nullptr;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     ParamName = Tok.getIdentifierInfo();
-    ConsumeToken();
+    ConsumeIdentifier();
   } else if (Tok.isOneOf(tok::equal, tok::comma, tok::greater,
                          tok::greatergreater)) {
     // Unnamed template parameter. Don't have to do anything here, just
@@ -1428,7 +1428,7 @@ static bool isEndOfTemplateArgument(Token Tok) {
 
 /// Parse a C++ template template argument.
 ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
-  if (!Tok.is(tok::identifier) && !Tok.is(tok::coloncolon) &&
+  if (!isIdentifier() && !Tok.is(tok::coloncolon) &&
       !Tok.is(tok::annot_cxxscope))
     return ParsedTemplateArgument();
 
@@ -1455,11 +1455,11 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
     // nested-name-specifier.
     SourceLocation TemplateKWLoc = ConsumeToken();
 
-    if (Tok.is(tok::identifier)) {
+    if (isIdentifier()) {
       // We appear to have a dependent template name.
       UnqualifiedId Name;
       Name.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
-      ConsumeToken(); // the identifier
+      ConsumeIdentifier();
 
       TryConsumeToken(tok::ellipsis, EllipsisLoc);
 
@@ -1473,12 +1473,12 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
                                     /*EnteringContext=*/false, Template))
         Result = ParsedTemplateArgument(SS, Template, Name.StartLocation);
     }
-  } else if (Tok.is(tok::identifier)) {
+  } else if (isIdentifier()) {
     // We may have a (non-dependent) template name.
     TemplateTy Template;
     UnqualifiedId Name;
     Name.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
-    ConsumeToken(); // the identifier
+    ConsumeIdentifier();
 
     TryConsumeToken(tok::ellipsis, EllipsisLoc);
 

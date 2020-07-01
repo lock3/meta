@@ -11,7 +11,7 @@ int idexpr_test() {
 }
 
 int unqualid_test() {
-  return unqualid(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{subexpression not valid in a constant expression}}
+  return unqualid(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{subexpression not valid in a constant expression}} expected-error {{expected unqualified-id}}
 }
 
 using ReflectedType = typename(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{subexpression not valid in a constant expression}}

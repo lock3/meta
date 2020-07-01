@@ -497,6 +497,51 @@ public:
     return true;
   }
 
+  bool AnnotateIdentifierSplice();
+  bool TryAnnotateIdentifierSplice();
+
+  bool isIdentifier() {
+    if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
+      if (AnnotateIdentifierSplice())
+        return false;
+
+      return true;
+    }
+
+    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice);
+  }
+
+  // FIXME: This should probably be private similar to the other
+  // special token methods. However, this causes problems for
+  // some static functions for parser implementation details.
+  SourceLocation ConsumeIdentifier() {
+    assert(isIdentifier() && "wrong consume method");
+    SourceLocation Loc = Tok.getLocation();
+
+    // FIXME: This is a bit strange, ConsumeToken
+    // sets PrevTokLocation to the beginning of the token
+    // and ConsumeAnnotationToken sets PrevTokLocation to
+    // the end of the token.
+    //
+    // Both return the current location of the token.
+    if (Tok.isAnnotation()) {
+      PrevTokLocation = Tok.getAnnotationEndLoc();
+    } else {
+      PrevTokLocation = Loc;
+    }
+
+    PP.Lex(Tok);
+    return Loc;
+  }
+
+  SourceLocation ConsumeAsIdentifier() {
+    if (isIdentifier())
+      return ConsumeIdentifier();
+
+    assert(Tok.getIdentifierInfo());
+    return ConsumeToken();
+  }
+
   /// ConsumeAnyToken - Dispatch to the right Consume* method based on the
   /// current token type.  This should only be used in cases where the type of
   /// the token really isn't known, e.g. in error recovery.
@@ -512,6 +557,8 @@ public:
     if (Tok.is(tok::code_completion))
       return ConsumeCodeCompletionTok ? ConsumeCodeCompletionToken()
                                       : handleUnexpectedCodeCompletionToken();
+    if (Tok.isOneOf(tok::identifier, tok::annot_identifier_splice))
+      return ConsumeIdentifier();
     if (Tok.isAnnotation())
       return ConsumeAnnotationToken();
     return ConsumeToken();
@@ -551,8 +598,9 @@ private:
   }
   /// isTokenSpecial - True if this token requires special consumption methods.
   bool isTokenSpecial() const {
-    return isTokenStringLiteral() || isTokenParen() || isTokenBracket() ||
-           isTokenBrace() || Tok.is(tok::code_completion) || Tok.isAnnotation();
+    return isTokenStringLiteral() || /*Tok.isIdentifier ||*/ isTokenParen() ||
+           isTokenBracket() || isTokenBrace() || Tok.is(tok::code_completion) ||
+           Tok.isAnnotation() || Tok.isOneOf(tok::identifier, tok::annot_identifier_splice);
   }
 
   /// Returns true if the current token is '=' or is a type of '='.
@@ -838,7 +886,7 @@ public:
   bool TryAnnotateCXXScopeToken(bool EnteringContext = false);
 
   bool MightBeCXXScopeToken() {
-    return Tok.is(tok::identifier) || Tok.is(tok::coloncolon) ||
+    return isIdentifier() || Tok.is(tok::coloncolon) ||
            (Tok.is(tok::annot_template_id) &&
             NextToken().is(tok::coloncolon)) ||
            Tok.is(tok::kw_decltype) || Tok.is(tok::kw___super);
@@ -3061,7 +3109,12 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 
-  bool ParseCXXIdentifierSplice(IdentifierInfo *&Id, SourceLocation &IdLoc);
+  bool ParseCXXIdentifierSplice(
+      IdentifierInfo *&Id,
+      SourceLocation &IdBeginLoc);
+  bool ParseCXXIdentifierSplice(
+      IdentifierInfo *&Id,
+      SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
