@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Regex.h"
@@ -255,7 +256,7 @@ static SmallVector<BindArgument, 4>
 buildBindArguments(const MatchFinder::MatchResult &Result,
                    const CallableInfo &Callable) {
   SmallVector<BindArgument, 4> BindArguments;
-  llvm::Regex MatchPlaceholder("^_([0-9]+)$");
+  static llvm::Regex MatchPlaceholder("^_([0-9]+)$");
 
   const auto *BindCall = Result.Nodes.getNodeAs<CallExpr>("bind");
 
@@ -644,8 +645,7 @@ void AvoidBindCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 void AvoidBindCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       callExpr(
-          callee(namedDecl(
-              anyOf(hasName("::boost::bind"), hasName("::std::bind")))),
+          callee(namedDecl(hasAnyName("::boost::bind", "::std::bind"))),
           hasArgument(
               0, anyOf(expr(hasType(memberPointerType())).bind("ref"),
                        expr(hasParent(materializeTemporaryExpr().bind("ref"))),

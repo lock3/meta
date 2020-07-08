@@ -219,8 +219,9 @@ static RValue EmitBinaryAtomicPost(CodeGenFunction &CGF,
       Kind, Args[0], Args[1], llvm::AtomicOrdering::SequentiallyConsistent);
   Result = CGF.Builder.CreateBinOp(Op, Result, Args[1]);
   if (Invert)
-    Result = CGF.Builder.CreateBinOp(llvm::Instruction::Xor, Result,
-                                     llvm::ConstantInt::get(IntType, -1));
+    Result =
+        CGF.Builder.CreateBinOp(llvm::Instruction::Xor, Result,
+                                llvm::ConstantInt::getAllOnesValue(IntType));
   Result = EmitFromInt(CGF, Result, T, ValueType);
   return RValue::get(Result);
 }
@@ -8408,6 +8409,7 @@ Value *CodeGenFunction::EmitAArch64SVEBuiltinExpr(unsigned BuiltinID,
   case SVE::BI__builtin_sve_svdupq_n_s64:
   case SVE::BI__builtin_sve_svdupq_n_u16:
   case SVE::BI__builtin_sve_svdupq_n_f16:
+  case SVE::BI__builtin_sve_svdupq_n_bf16:
   case SVE::BI__builtin_sve_svdupq_n_s16:
   case SVE::BI__builtin_sve_svdupq_n_u32:
   case SVE::BI__builtin_sve_svdupq_n_f32:
@@ -11712,7 +11714,7 @@ CodeGenFunction::GetX86CpuSupportsMask(ArrayRef<StringRef> FeatureStrs) {
   for (const StringRef &FeatureStr : FeatureStrs) {
     unsigned Feature =
         StringSwitch<unsigned>(FeatureStr)
-#define X86_FEATURE_COMPAT(ENUM, STR) .Case(STR, llvm::X86::ENUM)
+#define X86_FEATURE_COMPAT(ENUM, STR) .Case(STR, llvm::X86::FEATURE_##ENUM)
 #include "llvm/Support/X86TargetParser.def"
         ;
     FeaturesMask |= (1ULL << Feature);
@@ -14728,6 +14730,10 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
   case AMDGPU::BI__builtin_amdgcn_rcpf:
   case AMDGPU::BI__builtin_amdgcn_rcph:
     return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_rcp);
+  case AMDGPU::BI__builtin_amdgcn_sqrt:
+  case AMDGPU::BI__builtin_amdgcn_sqrtf:
+  case AMDGPU::BI__builtin_amdgcn_sqrth:
+    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_sqrt);
   case AMDGPU::BI__builtin_amdgcn_rsq:
   case AMDGPU::BI__builtin_amdgcn_rsqf:
   case AMDGPU::BI__builtin_amdgcn_rsqh:
@@ -16127,32 +16133,6 @@ Value *CodeGenFunction::EmitWebAssemblyBuiltinExpr(unsigned BuiltinID,
     };
     Function *Callee = CGM.getIntrinsic(Intrinsic::wasm_memory_grow, ResultType);
     return Builder.CreateCall(Callee, Args);
-  }
-  case WebAssembly::BI__builtin_wasm_memory_init: {
-    llvm::APSInt SegConst;
-    Expr::EvalContext EvalCtx(getContext(), nullptr);
-    if (!E->getArg(0)->isIntegerConstantExpr(SegConst, EvalCtx))
-      llvm_unreachable("Constant arg isn't actually constant?");
-    llvm::APSInt MemConst;
-    if (!E->getArg(1)->isIntegerConstantExpr(MemConst, EvalCtx))
-      llvm_unreachable("Constant arg isn't actually constant?");
-    if (!MemConst.isNullValue())
-      ErrorUnsupported(E, "non-zero memory index");
-    Value *Args[] = {llvm::ConstantInt::get(getLLVMContext(), SegConst),
-                     llvm::ConstantInt::get(getLLVMContext(), MemConst),
-                     EmitScalarExpr(E->getArg(2)), EmitScalarExpr(E->getArg(3)),
-                     EmitScalarExpr(E->getArg(4))};
-    Function *Callee = CGM.getIntrinsic(Intrinsic::wasm_memory_init);
-    return Builder.CreateCall(Callee, Args);
-  }
-  case WebAssembly::BI__builtin_wasm_data_drop: {
-    llvm::APSInt SegConst;
-    Expr::EvalContext EvalCtx(getContext(), nullptr);
-    if (!E->getArg(0)->isIntegerConstantExpr(SegConst, EvalCtx))
-      llvm_unreachable("Constant arg isn't actually constant?");
-    Value *Arg = llvm::ConstantInt::get(getLLVMContext(), SegConst);
-    Function *Callee = CGM.getIntrinsic(Intrinsic::wasm_data_drop);
-    return Builder.CreateCall(Callee, {Arg});
   }
   case WebAssembly::BI__builtin_wasm_tls_size: {
     llvm::Type *ResultType = ConvertType(E->getType());
