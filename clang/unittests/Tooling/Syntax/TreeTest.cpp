@@ -18,6 +18,7 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Testing/CommandLineArgs.h"
+#include "clang/Testing/TestClangConfig.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "clang/Tooling/Syntax/BuildTree.h"
 #include "clang/Tooling/Syntax/Mutations.h"
@@ -46,83 +47,6 @@ static llvm::ArrayRef<syntax::Token> tokens(syntax::Node *N) {
   return llvm::makeArrayRef(T->firstLeaf()->token(),
                             T->lastLeaf()->token() + 1);
 }
-
-struct TestClangConfig {
-  TestLanguage Language;
-  std::string Target;
-
-  bool isC99OrLater() const { return Language == Lang_C99; }
-
-  bool isC() const { return Language == Lang_C89 || Language == Lang_C99; }
-
-  bool isCXX() const {
-    return Language == Lang_CXX03 || Language == Lang_CXX11 ||
-           Language == Lang_CXX14 || Language == Lang_CXX17 ||
-           Language == Lang_CXX20;
-  }
-
-  bool isCXX11OrLater() const {
-    return Language == Lang_CXX11 || Language == Lang_CXX14 ||
-           Language == Lang_CXX17 || Language == Lang_CXX20;
-  }
-
-  bool isCXX14OrLater() const {
-    return Language == Lang_CXX14 || Language == Lang_CXX17 ||
-           Language == Lang_CXX20;
-  }
-
-  bool isCXX17OrLater() const {
-    return Language == Lang_CXX17 || Language == Lang_CXX20;
-  }
-
-  bool supportsCXXDynamicExceptionSpecification() const {
-    return Language == Lang_CXX03 || Language == Lang_CXX11 ||
-           Language == Lang_CXX14;
-  }
-
-  bool hasDelayedTemplateParsing() const {
-    return Target == "x86_64-pc-win32-msvc";
-  }
-
-  std::vector<std::string> getCommandLineArgs() const {
-    std::vector<std::string> Result = getCommandLineArgsForTesting(Language);
-    Result.push_back("-target");
-    Result.push_back(Target);
-    return Result;
-  }
-
-  std::string toString() const {
-    std::string Result;
-    llvm::raw_string_ostream OS(Result);
-    OS << "{ Language=" << Language << ", Target=" << Target << " }";
-    return OS.str();
-  }
-
-  friend std::ostream &operator<<(std::ostream &OS,
-                                  const TestClangConfig &ClangConfig) {
-    return OS << ClangConfig.toString();
-  }
-
-  static std::vector<TestClangConfig> &allConfigs() {
-    static std::vector<TestClangConfig> all_configs = []() {
-      std::vector<TestClangConfig> all_configs;
-      for (TestLanguage lang : {Lang_C89, Lang_C99, Lang_CXX03, Lang_CXX11,
-                                Lang_CXX14, Lang_CXX17, Lang_CXX20}) {
-        TestClangConfig config;
-        config.Language = lang;
-        config.Target = "x86_64-pc-linux-gnu";
-        all_configs.push_back(config);
-
-        // Windows target is interesting to test because it enables
-        // `-fdelayed-template-parsing`.
-        config.Target = "x86_64-pc-win32-msvc";
-        all_configs.push_back(config);
-      }
-      return all_configs;
-    }();
-    return all_configs;
-  }
-};
 
 class SyntaxTreeTest : public ::testing::Test,
                        public ::testing::WithParamInterface<TestClangConfig> {
@@ -1205,6 +1129,61 @@ void test(S s) {
 )txt"));
 }
 
+TEST_P(SyntaxTreeTest, ParenExpr) {
+  EXPECT_TRUE(treeDumpEqual(
+      R"cpp(
+void test() {
+  (1);
+  ((1));
+  (1 + (2));
+}
+)cpp",
+      R"txt(
+*: TranslationUnit
+`-SimpleDeclaration
+  |-void
+  |-SimpleDeclarator
+  | |-test
+  | `-ParametersAndQualifiers
+  |   |-(
+  |   `-)
+  `-CompoundStatement
+    |-{
+    |-ExpressionStatement
+    | |-ParenExpression
+    | | |-(
+    | | |-IntegerLiteralExpression
+    | | | `-1
+    | | `-)
+    | `-;
+    |-ExpressionStatement
+    | |-ParenExpression
+    | | |-(
+    | | |-ParenExpression
+    | | | |-(
+    | | | |-IntegerLiteralExpression
+    | | | | `-1
+    | | | `-)
+    | | `-)
+    | `-;
+    |-ExpressionStatement
+    | |-ParenExpression
+    | | |-(
+    | | |-BinaryOperatorExpression
+    | | | |-IntegerLiteralExpression
+    | | | | `-1
+    | | | |-+
+    | | | `-ParenExpression
+    | | |   |-(
+    | | |   |-IntegerLiteralExpression
+    | | |   | `-2
+    | | |   `-)
+    | | `-)
+    | `-;
+    `-}
+)txt"));
+}
+
 TEST_P(SyntaxTreeTest, IntegerLiteral) {
   EXPECT_TRUE(treeDumpEqual(
       R"cpp(
@@ -2116,7 +2095,7 @@ void test(int a, int b) {
     |-{
     |-ExpressionStatement
     | |-BinaryOperatorExpression
-    | | |-UnknownExpression
+    | | |-ParenExpression
     | | | |-(
     | | | |-BinaryOperatorExpression
     | | | | |-IntegerLiteralExpression
@@ -2126,7 +2105,7 @@ void test(int a, int b) {
     | | | |   `-2
     | | | `-)
     | | |-*
-    | | `-UnknownExpression
+    | | `-ParenExpression
     | |   |-(
     | |   |-BinaryOperatorExpression
     | |   | |-IntegerLiteralExpression
@@ -2214,11 +2193,18 @@ struct X {
   X& operator=(const X&);
   friend X operator+(X, const X&);
   friend bool operator<(const X&, const X&);
+  friend X operator<<(X&, const X&);
+  X operator,(X&);
+  // TODO: Fix crash on member function pointer and add a test for `->*`
+  // TODO: Unbox operators in syntax tree. 
+  // Represent operators by `+` instead of `IdExpression-UnqualifiedId-+`
 };
 void test(X x, X y) {
   x = y;
   x + y;
   x < y;
+  x << y;
+  x, y;
 }
 )cpp",
       R"txt(
@@ -2283,6 +2269,40 @@ void test(X x, X y) {
 | |   |   |   `-&
 | |   |   `-)
 | |   `-;
+| |-UnknownDeclaration
+| | `-SimpleDeclaration
+| |   |-friend
+| |   |-X
+| |   |-SimpleDeclarator
+| |   | |-operator
+| |   | |-<<
+| |   | `-ParametersAndQualifiers
+| |   |   |-(
+| |   |   |-SimpleDeclaration
+| |   |   | |-X
+| |   |   | `-SimpleDeclarator
+| |   |   |   `-&
+| |   |   |-,
+| |   |   |-SimpleDeclaration
+| |   |   | |-const
+| |   |   | |-X
+| |   |   | `-SimpleDeclarator
+| |   |   |   `-&
+| |   |   `-)
+| |   `-;
+| |-SimpleDeclaration
+| | |-X
+| | |-SimpleDeclarator
+| | | |-operator
+| | | |-,
+| | | `-ParametersAndQualifiers
+| | |   |-(
+| | |   |-SimpleDeclaration
+| | |   | |-X
+| | |   | `-SimpleDeclarator
+| | |   |   `-&
+| | |   `-)
+| | `-;
 | |-}
 | `-;
 `-SimpleDeclaration
@@ -2339,6 +2359,185 @@ void test(X x, X y) {
     | | `-IdExpression
     | |   `-UnqualifiedId
     | |     `-y
+    | `-;
+    |-ExpressionStatement
+    | |-BinaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-x
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-<<
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-y
+    | `-;
+    |-ExpressionStatement
+    | |-BinaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-x
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-,
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-y
+    | `-;
+    `-}
+)txt"));
+}
+
+TEST_P(SyntaxTreeTest, UserDefinedUnaryPrefixOperator) {
+  if (!GetParam().isCXX()) {
+    return;
+  }
+  EXPECT_TRUE(treeDumpEqual(
+      R"cpp(
+struct X {
+  X operator++();
+  bool operator!();
+  X* operator&();
+};
+void test(X x) {
+  ++x;
+  !x;
+  &x;
+}
+)cpp",
+      R"txt(
+*: TranslationUnit
+|-SimpleDeclaration
+| |-struct
+| |-X
+| |-{
+| |-SimpleDeclaration
+| | |-X
+| | |-SimpleDeclarator
+| | | |-operator
+| | | |-++
+| | | `-ParametersAndQualifiers
+| | |   |-(
+| | |   `-)
+| | `-;
+| |-SimpleDeclaration
+| | |-bool
+| | |-SimpleDeclarator
+| | | |-operator
+| | | |-!
+| | | `-ParametersAndQualifiers
+| | |   |-(
+| | |   `-)
+| | `-;
+| |-SimpleDeclaration
+| | |-X
+| | |-SimpleDeclarator
+| | | |-*
+| | | |-operator
+| | | |-&
+| | | `-ParametersAndQualifiers
+| | |   |-(
+| | |   `-)
+| | `-;
+| |-}
+| `-;
+`-SimpleDeclaration
+  |-void
+  |-SimpleDeclarator
+  | |-test
+  | `-ParametersAndQualifiers
+  |   |-(
+  |   |-SimpleDeclaration
+  |   | |-X
+  |   | `-SimpleDeclarator
+  |   |   `-x
+  |   `-)
+  `-CompoundStatement
+    |-{
+    |-ExpressionStatement
+    | |-PrefixUnaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-++
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-x
+    | `-;
+    |-ExpressionStatement
+    | |-PrefixUnaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-!
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-x
+    | `-;
+    |-ExpressionStatement
+    | |-PrefixUnaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-&
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-x
+    | `-;
+    `-}
+)txt"));
+}
+
+TEST_P(SyntaxTreeTest, UserDefinedUnaryPostfixOperator) {
+  if (!GetParam().isCXX()) {
+    return;
+  }
+  EXPECT_TRUE(treeDumpEqual(
+      R"cpp(
+struct X {
+  X operator++(int);
+};
+void test(X x) {
+  x++;
+}
+)cpp",
+      R"txt(
+*: TranslationUnit
+|-SimpleDeclaration
+| |-struct
+| |-X
+| |-{
+| |-SimpleDeclaration
+| | |-X
+| | |-SimpleDeclarator
+| | | |-operator
+| | | |-++
+| | | `-ParametersAndQualifiers
+| | |   |-(
+| | |   |-SimpleDeclaration
+| | |   | `-int
+| | |   `-)
+| | `-;
+| |-}
+| `-;
+`-SimpleDeclaration
+  |-void
+  |-SimpleDeclarator
+  | |-test
+  | `-ParametersAndQualifiers
+  |   |-(
+  |   |-SimpleDeclaration
+  |   | |-X
+  |   | `-SimpleDeclarator
+  |   |   `-x
+  |   `-)
+  `-CompoundStatement
+    |-{
+    |-ExpressionStatement
+    | |-PostfixUnaryOperatorExpression
+    | | |-IdExpression
+    | | | `-UnqualifiedId
+    | | |   `-x
+    | | `-IdExpression
+    | |   `-UnqualifiedId
+    | |     `-++
     | `-;
     `-}
 )txt"));
@@ -3893,7 +4092,24 @@ TEST_P(SyntaxTreeTest, SynthesizedNodes) {
   EXPECT_TRUE(S->isDetached());
 }
 
+static std::vector<TestClangConfig> allTestClangConfigs() {
+  std::vector<TestClangConfig> all_configs;
+  for (TestLanguage lang : {Lang_C89, Lang_C99, Lang_CXX03, Lang_CXX11,
+                            Lang_CXX14, Lang_CXX17, Lang_CXX20}) {
+    TestClangConfig config;
+    config.Language = lang;
+    config.Target = "x86_64-pc-linux-gnu";
+    all_configs.push_back(config);
+
+    // Windows target is interesting to test because it enables
+    // `-fdelayed-template-parsing`.
+    config.Target = "x86_64-pc-win32-msvc";
+    all_configs.push_back(config);
+  }
+  return all_configs;
+}
+
 INSTANTIATE_TEST_CASE_P(SyntaxTreeTests, SyntaxTreeTest,
-                        testing::ValuesIn(TestClangConfig::allConfigs()), );
+                        testing::ValuesIn(allTestClangConfigs()), );
 
 } // namespace

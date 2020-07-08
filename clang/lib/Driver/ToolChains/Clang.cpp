@@ -2966,7 +2966,8 @@ static void RenderSCPOptions(const ToolChain &TC, const ArgList &Args,
   if (!EffectiveTriple.isOSLinux())
     return;
 
-  if (!EffectiveTriple.isX86() && !EffectiveTriple.isSystemZ())
+  if (!EffectiveTriple.isX86() && !EffectiveTriple.isSystemZ() &&
+      !EffectiveTriple.isPPC64())
     return;
 
   if (Args.hasFlag(options::OPT_fstack_clash_protection,
@@ -3747,10 +3748,9 @@ static void RenderDebugOptions(const ToolChain &TC, const Driver &D,
   // not to include any column info.
   if (const Arg *A = Args.getLastArg(options::OPT_gcolumn_info))
     (void)checkDebugInfoOption(A, Args, D, TC);
-  if (Args.hasFlag(options::OPT_gcolumn_info, options::OPT_gno_column_info,
-                   /*Default=*/!EmitCodeView &&
-                       DebuggerTuning != llvm::DebuggerKind::SCE))
-    CmdArgs.push_back("-dwarf-column-info");
+  if (!Args.hasFlag(options::OPT_gcolumn_info, options::OPT_gno_column_info,
+                    !EmitCodeView && DebuggerTuning != llvm::DebuggerKind::SCE))
+    CmdArgs.push_back("-gno-column-info");
 
   // FIXME: Move backend command line options to the module.
   // If -gline-tables-only or -gline-directives-only is the last option it wins.
@@ -4041,9 +4041,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Triple.isOSWindows() && (Triple.getArch() == llvm::Triple::arm ||
                                Triple.getArch() == llvm::Triple::thumb)) {
     unsigned Offset = Triple.getArch() == llvm::Triple::arm ? 4 : 6;
-    unsigned Version;
-    Triple.getArchName().substr(Offset).getAsInteger(10, Version);
-    if (Version < 7)
+    unsigned Version = 0;
+    bool Failure =
+        Triple.getArchName().substr(Offset).consumeInteger(10, Version);
+    if (Failure || Version < 7)
       D.Diag(diag::err_target_unsupported_arch) << Triple.getArchName()
                                                 << TripleStr;
   }
@@ -4296,8 +4297,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
         II.getInputArg().renderAsInput(Args, CmdArgs);
     }
 
-    C.addCommand(std::make_unique<Command>(JA, *this, D.getClangProgramPath(),
-                                            CmdArgs, Inputs));
+    C.addCommand(
+        std::make_unique<Command>(JA, *this, ResponseFileSupport::AtFileUTF8(),
+                                  D.getClangProgramPath(), CmdArgs, Inputs));
     return;
   }
 
@@ -4553,8 +4555,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(FPKeepKindStr);
 
   if (!Args.hasFlag(options::OPT_fzero_initialized_in_bss,
-                    options::OPT_fno_zero_initialized_in_bss))
-    CmdArgs.push_back("-mno-zero-initialized-in-bss");
+                    options::OPT_fno_zero_initialized_in_bss, true))
+    CmdArgs.push_back("-fno-zero-initialized-in-bss");
 
   bool OFastEnabled = isOptimizationLevelFast(Args);
   // If -Ofast is the optimization level, then -fstrict-aliasing should be
@@ -6220,19 +6222,21 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     auto CLCommand =
         getCLFallback()->GetCommand(C, JA, Output, Inputs, Args, LinkingOutput);
     C.addCommand(std::make_unique<FallbackCommand>(
-        JA, *this, Exec, CmdArgs, Inputs, std::move(CLCommand)));
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        std::move(CLCommand)));
   } else if (Args.hasArg(options::OPT__SLASH_fallback) &&
              isa<PrecompileJobAction>(JA)) {
     // In /fallback builds, run the main compilation even if the pch generation
     // fails, so that the main compilation's fallback to cl.exe runs.
-    C.addCommand(std::make_unique<ForceSuccessCommand>(JA, *this, Exec,
-                                                        CmdArgs, Inputs));
+    C.addCommand(std::make_unique<ForceSuccessCommand>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs));
   } else if (D.CC1Main && !D.CCGenDiagnostics) {
     // Invoke the CC1 directly in this process
-    C.addCommand(
-        std::make_unique<CC1Command>(JA, *this, Exec, CmdArgs, Inputs));
+    C.addCommand(std::make_unique<CC1Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs));
   } else {
-    C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs));
   }
 
   // Make the compile command echo its inputs for /showFilenames.
@@ -6267,7 +6271,7 @@ Clang::Clang(const ToolChain &TC)
     // CAUTION! The first constructor argument ("clang") is not arbitrary,
     // as it is for other tools. Some operations on a Tool actually test
     // whether that tool is Clang based on the Tool's Name as a string.
-    : Tool("clang", "clang frontend", TC, RF_Full) {}
+    : Tool("clang", "clang frontend", TC) {}
 
 Clang::~Clang() {}
 
@@ -6970,7 +6974,8 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(Input.getFilename());
 
   const char *Exec = getToolChain().getDriver().getClangProgramPath();
-  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(
+      JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs));
 }
 
 // Begin OffloadBundler
@@ -7054,7 +7059,7 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
 
   // All the inputs are encoded as commands.
   C.addCommand(std::make_unique<Command>(
-      JA, *this,
+      JA, *this, ResponseFileSupport::None(),
       TCArgs.MakeArgString(getToolChain().GetProgramPath(getShortName())),
       CmdArgs, None));
 }
@@ -7120,7 +7125,7 @@ void OffloadBundler::ConstructJobMultipleOutputs(
 
   // All the inputs are encoded as commands.
   C.addCommand(std::make_unique<Command>(
-      JA, *this,
+      JA, *this, ResponseFileSupport::None(),
       TCArgs.MakeArgString(getToolChain().GetProgramPath(getShortName())),
       CmdArgs, None));
 }
@@ -7150,7 +7155,7 @@ void OffloadWrapper::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   C.addCommand(std::make_unique<Command>(
-      JA, *this,
+      JA, *this, ResponseFileSupport::None(),
       Args.MakeArgString(getToolChain().GetProgramPath(getShortName())),
       CmdArgs, Inputs));
 }

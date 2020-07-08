@@ -43,7 +43,7 @@
 #include "ToolChains/RISCVToolchain.h"
 #include "ToolChains/Solaris.h"
 #include "ToolChains/TCE.h"
-#include "ToolChains/VE.h"
+#include "ToolChains/VEToolchain.h"
 #include "ToolChains/WebAssembly.h"
 #include "ToolChains/XCore.h"
 #include "clang/Basic/Version.h"
@@ -1456,7 +1456,8 @@ void Driver::setUpResponseFiles(Compilation &C, Command &Cmd) {
   // capacity if the tool does not support response files, there is a chance/
   // that things will just work without a response file, so we silently just
   // skip it.
-  if (Cmd.getCreator().getResponseFilesSupport() == Tool::RF_None ||
+  if (Cmd.getResponseFileSupport().ResponseKind ==
+          ResponseFileSupport::RF_None ||
       llvm::sys::commandLineFitsWithinSystemLimits(Cmd.getExecutable(),
                                                    Cmd.getArguments()))
     return;
