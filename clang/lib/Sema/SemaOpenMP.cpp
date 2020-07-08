@@ -4050,6 +4050,7 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   case OMPD_end_declare_variant:
     llvm_unreachable("OpenMP Directive is not allowed");
   case OMPD_unknown:
+  default:
     llvm_unreachable("Unknown OpenMP directive");
   }
 }
@@ -5335,6 +5336,7 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
   case OMPD_end_declare_variant:
     llvm_unreachable("OpenMP Directive is not allowed");
   case OMPD_unknown:
+  default:
     llvm_unreachable("Unknown OpenMP directive");
   }
 
@@ -5437,6 +5439,7 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
       case OMPC_atomic_default_mem_order:
       case OMPC_device_type:
       case OMPC_match:
+      default:
         llvm_unreachable("Unexpected clause");
       }
       for (Stmt *CC : C->children()) {
@@ -11700,6 +11703,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_exclusive:
   case OMPC_uses_allocators:
   case OMPC_affinity:
+  default:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -11854,6 +11858,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with if-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -11932,6 +11937,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with num_threads-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12008,6 +12014,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with num_teams-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12084,6 +12091,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with thread_limit-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12160,6 +12168,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with schedule clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12236,6 +12245,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with schedule clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12312,6 +12322,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with num_teams-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12390,6 +12401,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
     case OMPD_requires:
       llvm_unreachable("Unexpected OpenMP directive with grainsize-clause");
     case OMPD_unknown:
+    default:
       llvm_unreachable("Unknown OpenMP directive");
     }
     break;
@@ -12456,6 +12468,7 @@ static OpenMPDirectiveKind getOpenMPCaptureRegionForClause(
   case OMPC_exclusive:
   case OMPC_uses_allocators:
   case OMPC_affinity:
+  default:
     llvm_unreachable("Unexpected OpenMP clause.");
   }
   return CaptureRegion;
@@ -12899,6 +12912,7 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
   case OMPC_exclusive:
   case OMPC_uses_allocators:
   case OMPC_affinity:
+  default:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -13127,6 +13141,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprWithArgClause(
   case OMPC_exclusive:
   case OMPC_uses_allocators:
   case OMPC_affinity:
+  default:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -13365,6 +13380,7 @@ OMPClause *Sema::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_exclusive:
   case OMPC_uses_allocators:
   case OMPC_affinity:
+  default:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -13638,6 +13654,7 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
   case OMPC_destroy:
   case OMPC_detach:
   case OMPC_uses_allocators:
+  default:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;

@@ -717,7 +717,7 @@ static Expr *DeclRefExprToValueExpr(Sema &S, DeclRefExpr *Ref) {
     Ty = S.Context.getMemberPointerType(Ty, Cls);
     return UnaryOperator::Create(
         S.Context, Ref, UO_AddrOf, Ty, VK_RValue, OK_Ordinary,
-        Ref->getExprLoc(), /*CanOverflow=*/false, S.CurFPFeatures);
+        Ref->getExprLoc(), /*CanOverflow=*/false, S.CurFPFeatureOverrides());
   }
 
   return Ref;

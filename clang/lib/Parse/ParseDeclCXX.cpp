@@ -2816,6 +2816,11 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
           DefinitionKind = FDK_Defaulted;
         else if (KW.is(tok::kw_delete))
           DefinitionKind = FDK_Deleted;
+        else if (KW.is(tok::code_completion)) {
+          Actions.CodeCompleteAfterFunctionEquals(DeclaratorInfo);
+          cutOffParsing();
+          return nullptr;
+        }
       }
     }
     DeclaratorInfo.setFunctionDefinitionKind(DefinitionKind);
@@ -3483,8 +3488,10 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     // to the levels specified on the command line.  Previous level
     // will be restored when the RAII object is destroyed.
     Sema::FPFeaturesStateRAII SaveFPFeaturesState(Actions);
-    FPOptions fpOptions(getLangOpts());
-    Actions.CurFPFeatures.getFromOpaqueInt(fpOptions.getAsOpaqueInt());
+    FPOptionsOverride NewOverrides;
+    Actions.CurFPFeatures = NewOverrides.applyOverrides(getLangOpts());
+    Actions.FpPragmaStack.Act(Tok.getLocation(), Sema::PSK_Reset, StringRef(),
+                              0 /*unused*/);
 
     SourceLocation SavedPrevTokLocation = PrevTokLocation;
     ParseLexedPragmas(getCurrentClass());
