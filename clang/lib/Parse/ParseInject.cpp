@@ -26,9 +26,9 @@ Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
   SourceLocation NamespaceLoc = ConsumeToken();
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     Id = Tok.getIdentifierInfo();
-    IdLoc = ConsumeToken();
+    IdLoc = ConsumeIdentifier();
   }
 
   BalancedDelimiterTracker T(*this, tok::l_brace);
@@ -80,7 +80,7 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   // FIXME: We could accept an idexpr here, except that those names aren't
   // exported. They're really only meant to be used for self-references
   // within the fragment.
-  if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
+  if (!isIdentifier() && Tok.isNot(tok::l_brace)) {
     Diag(Tok, diag::err_expected) << "class-fragment";
     Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
     return nullptr;
@@ -88,9 +88,9 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
 
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     Id = Tok.getIdentifierInfo();
-    IdLoc = ConsumeToken();
+    IdLoc = ConsumeIdentifier();
   }
 
   // Build a tag type for the injected class.
@@ -130,7 +130,7 @@ Decl *Parser::ParseCXXEnumFragment(Decl *Fragment) {
   // FIXME: We could accept an idexpr here, except that those names aren't
   // exported. They're really only meant to be used for self-references
   // within the fragment.
-  if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
+  if (!isIdentifier() && Tok.isNot(tok::l_brace)) {
     Diag(Tok, diag::err_expected) << "enum-fragment";
     Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
     return nullptr;
@@ -138,9 +138,9 @@ Decl *Parser::ParseCXXEnumFragment(Decl *Fragment) {
 
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     Id = Tok.getIdentifierInfo();
-    IdLoc = ConsumeToken();
+    IdLoc = ConsumeIdentifier();
   }
 
   // Build a tag type for the injected class.
@@ -587,16 +587,16 @@ Parser::ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc) {
   // Match the identifier.
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     Id = Tok.getIdentifierInfo();
-    IdLoc = ConsumeToken();
+    IdLoc = ConsumeIdentifier();
   } else {
     Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
     return DeclGroupPtrTy();
   }
 
   // Match the context keyword "as".
-  if (Tok.isNot(tok::identifier)) {
+  if (!isIdentifier()) {
     Diag(Tok.getLocation(), diag::err_expected) << "as";
     return DeclGroupPtrTy();
   }
@@ -605,7 +605,7 @@ Parser::ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc) {
     Diag(Tok.getLocation(), diag::err_expected) << "as";
     return DeclGroupPtrTy();
   }
-  ConsumeToken();
+  ConsumeIdentifier();
 
   ExprResult Generator = ParseCXXIdExpression();
   if (Generator.isInvalid())

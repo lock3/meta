@@ -121,6 +121,13 @@ public:
     return tok::isAnnotation(getKind());
   }
 
+  /// Return true if this token produces an identifier, either
+  /// tok::identifier or tok::annot_identifier_splice.
+  bool isIdentifier() const {
+    return isOneOf(
+        tok::identifier, tok::annot_identifier_splice, tok::kw_unqualid);
+  }
+
   /// Return a source location identifier for the specified
   /// offset in the current file.
   SourceLocation getLocation() const {
@@ -179,14 +186,22 @@ public:
   IdentifierInfo *getIdentifierInfo() const {
     assert(isNot(tok::raw_identifier) &&
            "getIdentifierInfo() on a tok::raw_identifier token!");
-    assert(!isAnnotation() &&
-           "getIdentifierInfo() on an annotation token!");
+    if (isAnnotation())
+      return getAnnotationIdentifierInfo();
+
     if (isLiteral()) return nullptr;
     if (is(tok::eof)) return nullptr;
     return (IdentifierInfo*) PtrData;
   }
   void setIdentifierInfo(IdentifierInfo *II) {
     PtrData = (void*) II;
+  }
+
+  IdentifierInfo *getAnnotationIdentifierInfo() const {
+    assert(isAnnotation() && "Used AnnotVal on non-annotation token");
+    assert(is(tok::annot_identifier_splice) &&
+           "getAnnotationIdentifierInfo only supported for identifier splices");
+    return (IdentifierInfo*) PtrData;
   }
 
   const void *getEofData() const {

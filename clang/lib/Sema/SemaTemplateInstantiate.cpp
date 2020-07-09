@@ -3662,6 +3662,14 @@ Sema::SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
   return Instantiator.TransformDeclarationNameInfo(NameInfo);
 }
 
+IdentifierInfo *
+Sema::SubstIdentifierInfo(IdentifierInfo *II,
+                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+  TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
+                                    DeclarationName());
+  return Instantiator.TransformIdentifierInfo(II);
+}
+
 TemplateName
 Sema::SubstTemplateName(NestedNameSpecifierLoc QualifierLoc,
                         TemplateName Name, SourceLocation Loc,

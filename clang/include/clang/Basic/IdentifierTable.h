@@ -19,11 +19,13 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TokenKinds.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
+#include "llvm/Support/TrailingObjects.h"
 #include "llvm/Support/type_traits.h"
 #include <cassert>
 #include <cstddef>
@@ -34,10 +36,12 @@
 
 namespace clang {
 
+class ASTContext;
 class DeclarationName;
 class DeclarationNameTable;
 class Expr;
 class IdentifierInfo;
+class SplicedIdentifierInfo;
 class LangOptions;
 class MultiKeywordSelector;
 class ParsedTemplateArgument;
@@ -60,6 +64,7 @@ static constexpr int ObjCOrBuiltinIDBits = 15;
 /// It is aligned to 8 bytes because DeclarationName needs the lower 3 bits.
 class alignas(IdentifierInfoAlignment) IdentifierInfo {
   friend class IdentifierTable;
+  friend class SplicedIdentifierInfo;
 
   // Front-end token ID or tok::identifier.
   unsigned TokenID : 9;
@@ -115,7 +120,10 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
   // True if this is a mangled OpenMP variant name.
   unsigned IsMangledOpenMPVariantName : 1;
 
-  // 27 bits left in a 64-bit word.
+  // True if this identifier is an incomplete identifier splice.
+  unsigned IsSplice : 1;
+
+  // 26 bits left in a 64-bit word.
 
   // Managed by the language front-end.
   void *FETokenInfo = nullptr;
@@ -128,7 +136,8 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
         IsPoisoned(false), IsCPPOperatorKeyword(false),
         NeedsHandleIdentifier(false), IsFromAST(false), ChangedAfterLoad(false),
         FEChangedAfterLoad(false), RevertedTokenID(false), OutOfDate(false),
-        IsModulesImport(false), IsMangledOpenMPVariantName(false) {}
+        IsModulesImport(false), IsMangledOpenMPVariantName(false),
+        IsSplice(false) {}
 
 public:
   IdentifierInfo(const IdentifierInfo &) = delete;
@@ -315,6 +324,10 @@ public:
 
   bool isReifierKeyword(const LangOptions &LangOpts) const;
 
+  // Return true if this identifier is an incomplete identifier
+  // splice.
+  bool isSplice() const { return IsSplice; }
+
   /// Get and set FETokenInfo. The language front-end is allowed to associate
   /// arbitrary metadata with this token.
   void *getFETokenInfo() const { return FETokenInfo; }
@@ -432,54 +445,27 @@ private:
   }
 };
 
-class ReflectedIdentifierInfo {
-  using ASTTemplateArgsPtr = MutableArrayRef<ParsedTemplateArgument>;
+class alignas(IdentifierInfoAlignment) SplicedIdentifierInfo final
+    : public IdentifierInfo,
+      private llvm::TrailingObjects<SplicedIdentifierInfo, Expr *> {
+  friend class IdentifierTable;
+  friend TrailingObjects;
 
-  ASTTemplateArgsPtr TemplateArgs = { };
+  ASTContext &C;
+  unsigned NumTrailingExprs;
 
-  SourceLocation TemplateKWLoc, LAngleLoc, RAngleLoc;
+  SplicedIdentifierInfo(ASTContext &C, unsigned NumTrailingExprs)
+      : IdentifierInfo(), C(C), NumTrailingExprs(NumTrailingExprs) {
+    IsSplice = true;
+  }
 
-  /// Memory for this array is allocated by the context.
-  llvm::ArrayRef<Expr *> NameComponents = { };
 public:
-  void setTemplateArgs(ASTTemplateArgsPtr TemplateArgs) {
-    this->TemplateArgs = TemplateArgs;
+  ASTContext &getASTContext() const {
+    return C;
   }
 
-  ASTTemplateArgsPtr getTemplateArgs() const {
-    return TemplateArgs;
-  }
-
-  void setTemplateKWLoc(SourceLocation TemplateKWLoc) {
-    this->TemplateKWLoc = TemplateKWLoc;
-  }
-
-  SourceLocation getTemplateKWLoc() const {
-    return TemplateKWLoc;
-  }
-
-  void setLAngleLoc(SourceLocation LAngleLoc) {
-    this->LAngleLoc = LAngleLoc;
-  }
-
-  SourceLocation getLAngleLoc() const {
-    return LAngleLoc;
-  }
-
-  void setRAngleLoc(SourceLocation RAngleLoc) {
-    this->RAngleLoc = RAngleLoc;
-  }
-
-  SourceLocation getRAngleLoc() const {
-    return RAngleLoc;
-  }
-
-  void setNameComponents(llvm::ArrayRef<Expr *> NameComponents) {
-    this->NameComponents = NameComponents;
-  }
-
-  llvm::ArrayRef<Expr *> getNameComponents() const {
-    return NameComponents;
+  llvm::ArrayRef<Expr *> getExprs() const {
+    return { getTrailingObjects<Expr *>(), NumTrailingExprs };
   }
 };
 
@@ -567,6 +553,7 @@ class IdentifierTable {
   // BumpPtrAllocator!
   using HashTableTy = llvm::StringMap<IdentifierInfo *, llvm::BumpPtrAllocator>;
   HashTableTy HashTable;
+  llvm::BumpPtrAllocator SplicedIdInfoAlloc;
 
   IdentifierInfoLookup* ExternalLookup;
 
@@ -652,6 +639,27 @@ public:
       II->setModulesImport(true);
 
     return *II;
+  }
+
+  // FIXME: This is kind of a hack due to the compiler architecture.
+  // This should be reconsidered.
+  IdentifierInfo &get(ASTContext &C, llvm::ArrayRef<Expr *> &Args) {
+    unsigned SizeOfTrailingExprs = sizeof(Expr *) * Args.size();
+    unsigned SizeOfMem = sizeof(SplicedIdentifierInfo) + SizeOfTrailingExprs;
+
+    void *Mem = SplicedIdInfoAlloc.Allocate(
+        SizeOfMem, alignof(SplicedIdentifierInfo));
+
+    auto *CII = new (Mem) SplicedIdentifierInfo(C, Args.size());
+
+    std::uninitialized_copy_n(
+        Args.data(), Args.size(), CII->getTrailingObjects<Expr *>());
+
+    auto &Entry = *HashTable.insert(
+        std::make_pair("__identifier_splice", nullptr)).first;
+    CII->Entry = &Entry;
+
+    return *CII;
   }
 
   using iterator = HashTableTy::const_iterator;
@@ -965,7 +973,6 @@ protected:
     CXXDeductionGuideName,
     CXXLiteralOperatorName,
     CXXUsingDirective,
-    CXXReflectedIdName,
     ObjCMultiArgSelector
   };
 

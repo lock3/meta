@@ -524,6 +524,8 @@ public:
                                   QualType ObjectType = QualType(),
                                   NamedDecl *FirstQualifierInScope = nullptr);
 
+  IdentifierInfo *TransformIdentifierInfo(IdentifierInfo *II);
+
   /// Transform the given declaration name.
   ///
   /// By default, transforms the types of conversion function, constructor,
@@ -1519,6 +1521,22 @@ public:
 
   StmtResult RebuildCoroutineBodyStmt(CoroutineBodyStmt::CtorArgs Args) {
     return getSema().BuildCoroutineBodyStmt(Args);
+  }
+
+  IdentifierInfo *RebuildCXXIdentifierSplice(llvm::ArrayRef<Expr *> Exprs) {
+    IdentifierInfo *II;
+    if (getSema().BuildCXXIdentifierSplice(Exprs, II))
+      return nullptr;
+    return II;
+  }
+
+  ExprResult RebuildCXXDependentSpliceIdExpression(
+    CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+    DeclarationNameInfo NameInfo, const TemplateArgumentListInfo *TemplateArgs,
+    bool HasTrailingLParen, bool IsAddressOfOperand) {
+    return getSema().BuildCXXDependentSpliceIdExpression(
+        SS, TemplateKWLoc, NameInfo, TemplateArgs,
+        HasTrailingLParen, IsAddressOfOperand);
   }
 
   /// Build a new \c __invalid_reflection expression.
@@ -4266,6 +4284,32 @@ TreeTransform<Derived>::TransformNestedNameSpecifierLoc(
 }
 
 template<typename Derived>
+IdentifierInfo *TreeTransform<Derived>::TransformIdentifierInfo(
+    IdentifierInfo *II) {
+  if (II && II->isSplice()) {
+    auto *SII = static_cast<SplicedIdentifierInfo *>(II);
+    ArrayRef<Expr *> SrcExprs = SII->getExprs();
+
+    // Transform the exprs currently composing this identifier splice
+    SmallVector<Expr *, 4> TransformedExprs;
+    TransformedExprs.reserve(SrcExprs.size());
+    for (Expr *E : SrcExprs) {
+      ExprResult Result = TransformExpr(E);
+      if (Result.isInvalid())
+        return nullptr;
+
+      TransformedExprs.push_back(Result.get());
+    }
+
+    ArrayRef<Expr *> TransformedExprsArr(
+        TransformedExprs.data(), TransformedExprs.size());
+    return getDerived().RebuildCXXIdentifierSplice(TransformedExprsArr);
+  }
+
+  return II;
+}
+
+template<typename Derived>
 DeclarationNameInfo
 TreeTransform<Derived>
 ::TransformDeclarationNameInfo(const DeclarationNameInfo &NameInfo) {
@@ -4274,7 +4318,13 @@ TreeTransform<Derived>
     return DeclarationNameInfo(DeclarationName(), NameInfo.getLoc());
 
   switch (Name.getNameKind()) {
-  case DeclarationName::Identifier:
+  case DeclarationName::Identifier: {
+    if (auto *II = TransformIdentifierInfo(Name.getAsIdentifierInfo()))
+      return DeclarationNameInfo(II, NameInfo.getLoc());
+
+    return DeclarationNameInfo();
+  }
+
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
@@ -4323,24 +4373,6 @@ TreeTransform<Derived>
     NewNameInfo.setName(NewName);
     NewNameInfo.setNamedTypeInfo(NewTInfo);
     return NewNameInfo;
-  }
-  case DeclarationName::CXXReflectedIdName: {
-    llvm::ArrayRef<Expr *> OldArgs = Name.getCXXReflectedIdArguments();
-    SmallVector<Expr *, 4> NewArgs(OldArgs.size());
-    for (std::size_t I = 0; I < OldArgs.size(); ++I) {
-      ExprResult E = getDerived().TransformExpr(OldArgs[I]);
-      if (E.isInvalid())
-        return DeclarationNameInfo();
-      NewArgs[I] = E.get();
-    }
-
-    SourceRange Range = NameInfo.getCXXReflectedIdNameRange();
-    DeclarationNameInfo DNI;
-    if (getSema().BuildReflectedIdName(Range.getBegin(), NewArgs,
-                                       Range.getEnd(), DNI))
-      return DeclarationNameInfo();
-
-    return DNI;
   }
   }
 
@@ -8423,7 +8455,7 @@ TreeTransform<Derived>::TransformCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+TreeTransform<Derived>::TransformCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
   DeclarationNameInfo DNI = TransformDeclarationNameInfo(E->getNameInfo());
   if (!DNI.getName())
     return ExprError();
@@ -8454,16 +8486,15 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
   }
 
   // Some components are still dependent.
-  if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
-    return CXXReflectedIdExpr::Create(
-       getSema().Context, DNI, E->getType(), NewSS,
-       NewSS.getWithLocInContext(SemaRef.Context), TemplateKWLoc,
-       E->HasTrailingLParen(), E->IsAddressOfOperand(), TemplateArgsPtr);
+  if (DNI.getName().isIdentifierSplice())
+    return getDerived().RebuildCXXDependentSpliceIdExpression(
+       NewSS, TemplateKWLoc, DNI, TemplateArgsPtr,
+       E->HasTrailingLParen(), E->IsAddressOfOperand());
 
   ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
   return getSema().ActOnIdExpression(ParserLookup.getCurScope(), NewSS,
                                      TemplateKWLoc, DNI, TemplateArgsPtr,
-                                     UnqualifiedIdKind::IK_ReflectedId,
+                                     UnqualifiedIdKind::IK_Identifier,
                                      /*TemplateId=*/nullptr,
                                      E->HasTrailingLParen(),
                                      E->IsAddressOfOperand(),

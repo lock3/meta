@@ -3208,7 +3208,6 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
   case UnqualifiedIdKind::IK_Identifier:
   case UnqualifiedIdKind::IK_LiteralOperatorId:
   case UnqualifiedIdKind::IK_TemplateId:
-  case UnqualifiedIdKind::IK_ReflectedId:
     T = ConvertDeclSpecToType(state);
 
     if (!D.isInvalidType() && D.getDeclSpec().isTypeSpecOwned()) {

@@ -775,9 +775,7 @@ enum class UnqualifiedIdKind {
   /// An implicit 'self' parameter
   IK_ImplicitSelfParam,
   /// A deduction-guide name (a template-name)
-  IK_DeductionGuideName,
-  /// A reflected-id
-  IK_ReflectedId
+  IK_DeductionGuideName
 };
 
 /// Represents a C++ unqualified-id that has been parsed.
@@ -834,9 +832,6 @@ public:
     /// the template-id annotation that contains the template name and
     /// template arguments.
     TemplateIdAnnotation *TemplateId;
-
-    /// When Kind == IK_ReflectedId.
-    ReflectedIdentifierInfo *ReflectedIdentifier;
   };
 
   /// The location of the first token that describes this unqualified-id,
@@ -981,20 +976,6 @@ public:
     Kind = UnqualifiedIdKind::IK_DeductionGuideName;
     TemplateName = Template;
     StartLocation = EndLocation = TemplateLoc;
-  }
-
-  /// Specify that this unqualified-id was parsed an an
-  /// reflected-id.
-  ///
-  /// \param BeginLoc The location of the starting token.
-  /// \param Args The array of arguments for the reflected id.
-  /// \param EndLoc The location of the ending token.
-  void setReflectedId(SourceLocation BeginLoc, ReflectedIdentifierInfo *ReflectedId,
-                      SourceLocation EndLoc) {
-    Kind = UnqualifiedIdKind::IK_ReflectedId;
-    ReflectedIdentifier = ReflectedId;
-    StartLocation = BeginLoc;
-    EndLocation = EndLoc;
   }
 
   /// Return the source range that covers this unqualified-id.

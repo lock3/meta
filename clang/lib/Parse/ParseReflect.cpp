@@ -432,6 +432,39 @@ ExprResult Parser::ParseCXXValueOfExpression() {
   return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
 }
 
+bool Parser::AnnotateIdentifierSplice() {
+  assert(Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis));
+
+  // Attempt to reinterpret an identifier splice as a normal
+  // identifier.
+  IdentifierInfo *II;
+  SourceLocation IIBeginLoc;
+  SourceLocation IIEndLoc;
+  if (ParseCXXIdentifierSplice(II, IIBeginLoc, IIEndLoc))
+    return true;
+
+  Token AnnotTok;
+  AnnotTok.startToken();
+  AnnotTok.setKind(tok::annot_identifier_splice);
+  AnnotTok.setAnnotationValue(reinterpret_cast<void *>(II));
+  AnnotTok.setLocation(IIBeginLoc);
+  AnnotTok.setAnnotationEndLoc(IIEndLoc);
+  UnconsumeToken(AnnotTok);
+  return false;
+}
+
+bool Parser::TryAnnotateIdentifierSplice() {
+  if (Tok.isNot(tok::kw_unqualid) || GetLookAheadToken(2).is(tok::ellipsis))
+    return false;
+
+  return AnnotateIdentifierSplice();
+}
+
+bool Parser::ParseCXXIdentifierSplice(
+    IdentifierInfo *&Id, SourceLocation &IdBeginLoc) {
+  SourceLocation IdEndLoc;
+  return ParseCXXIdentifierSplice(Id, IdBeginLoc, IdEndLoc);
+}
 
 /// Parse a reflected id
 ///
@@ -439,11 +472,10 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
-                                 SourceLocation TemplateKWLoc,
-                                 UnqualifiedId &Result) {
+bool Parser::ParseCXXIdentifierSplice(
+    IdentifierInfo *&Id, SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc) {
   assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
-  SourceLocation KWLoc = ConsumeToken();
+  IdBeginLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
@@ -452,8 +484,10 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
   SmallVector<Expr *, 4> Parts;
   while (true) {
     ExprResult Result = ParseConstantExpression();
-    if (Result.isInvalid())
+    if (Result.isInvalid()) {
+      SkipUntil(tok::r_paren);
       return true;
+    }
     Parts.push_back(Result.get());
     if (Tok.is(tok::r_paren))
       break;
@@ -463,47 +497,13 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
   if (T.consumeClose())
     return true;
 
-  DeclarationNameInfo NameInfo;
-  if (Actions.BuildReflectedIdName(KWLoc, Parts,
-                                   T.getCloseLocation(), NameInfo))
+  IdEndLoc = T.getCloseLocation();
+
+  ArrayRef<Expr *> FinalParts(Parts.data(), Parts.size());
+  if (Actions.ActOnCXXIdentifierSplice(FinalParts, Id))
     return true;
 
-  TemplateNameKind TNK;
-  TemplateTy Template;
-  if (Actions.BuildInitialDeclnameId(KWLoc, SS, NameInfo.getName(),
-                                     TemplateKWLoc, TNK, Template, Result))
-    return true;
-
-  // FIXME: This should also workn if the built decl name is non dependent.
-  //
-  // Prioritize template parsing, represents whether we should treat the next
-  // '<' token as introducing a template argument list, or a less than operator.
-  bool PrioritizeTemplateParsing =
-      (TNK != TNK_Non_template && TNK != TNK_Undeclared_template)
-      || !TemplateKWLoc.isInvalid();
-
-  if (Tok.is(tok::less) && PrioritizeTemplateParsing) {
-    SourceLocation LAngleLoc;
-    TemplateArgList TemplateArgs;
-    SourceLocation RAngleLoc;
-
-    if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
-                                         LAngleLoc, TemplateArgs, RAngleLoc))
-      return true;
-
-    ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
-    return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(),
-                                      TemplateKWLoc, TNK, Template, LAngleLoc,
-                                      TemplateArgsPtr, RAngleLoc, TemplateIds,
-                                      Result, RAngleLoc);
-  }
-
-  return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(), TemplateKWLoc,
-                                    TNK, Template,
-                                    /*LAngleLoc=*/SourceLocation(),
-                                    /*TemplateArgsPtr=*/ASTTemplateArgsPtr(),
-                                    /*RAngleLoc=*/SourceLocation(),
-                                    TemplateIds, Result, T.getCloseLocation());
+  return false;
 }
 
 /// Parse a type reflection specifier.

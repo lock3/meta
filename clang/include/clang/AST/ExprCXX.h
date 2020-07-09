@@ -5726,12 +5726,14 @@ public:
   }
 };
 
-/// Represents a reflected id-expression of the form '(. args .)'.
-/// Some of the arguments in args are dependent.
-class CXXReflectedIdExpr final
+/// Represents a dependent identifier splice, i.e.
+///
+///   'unqualid' '(' expression-list ')'
+///
+class CXXDependentSpliceIdExpr final
     : public Expr,
       private llvm::TrailingObjects<
-          CXXReflectedIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
+          CXXDependentSpliceIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
   friend TrailingObjects;
 
   DeclarationNameInfo NameInfo;
@@ -5751,24 +5753,23 @@ class CXXReflectedIdExpr final
     return HasTemplateKWAndArgsInfo ? 1 : 0;
   }
 
-  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
-                     const CXXScopeSpec &SS,
-                     NestedNameSpecifierLoc QualifierLoc,
-                     SourceLocation TemplateKWLoc,
-                     bool TrailingLParen, bool AddressOfOperand,
-                     const TemplateArgumentListInfo *TemplateArgs);
+  CXXDependentSpliceIdExpr(
+      DeclarationNameInfo DNI, QualType T, const CXXScopeSpec &SS,
+      NestedNameSpecifierLoc QualifierLoc, SourceLocation TemplateKWLoc,
+      bool TrailingLParen, bool AddressOfOperand,
+      const TemplateArgumentListInfo *TemplateArgs);
 
-  CXXReflectedIdExpr(EmptyShell Empty)
-    : Expr(CXXReflectedIdExprClass, Empty) { }
+  CXXDependentSpliceIdExpr(EmptyShell Empty)
+    : Expr(CXXDependentSpliceIdExprClass, Empty) { }
 
 public:
-  static CXXReflectedIdExpr *Create(
-      const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+  static CXXDependentSpliceIdExpr *Create(
+      const ASTContext &C, DeclarationNameInfo DNI,
       const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
       SourceLocation TemplateKWLoc, bool TrailingLParen,
       bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
 
-  static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
+  static CXXDependentSpliceIdExpr *CreateEmpty(const ASTContext &C,
                                          EmptyShell Empty);
 
   /// Returns the evaluated expression.
@@ -5793,7 +5794,7 @@ public:
   }
 
   const ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() const {
-    return const_cast<CXXReflectedIdExpr *>(this)
+    return const_cast<CXXDependentSpliceIdExpr *>(this)
         ->getTrailingASTTemplateKWAndArgsInfo();
   }
 
@@ -5802,7 +5803,7 @@ public:
     return getTrailingObjects<TemplateArgumentLoc>();
   }
   const TemplateArgumentLoc *getTrailingTemplateArgumentLoc() const {
-    return const_cast<CXXReflectedIdExpr *>(this)
+    return const_cast<CXXDependentSpliceIdExpr *>(this)
         ->getTrailingTemplateArgumentLoc();
   }
 
@@ -5858,12 +5859,8 @@ public:
     return getTrailingASTTemplateKWAndArgsInfo()->NumTemplateArgs;
   }
 
-  SourceRange getSourceRange() const {
-    return NameInfo.getCXXReflectedIdNameRange();
-  }
-
-  SourceLocation getBeginLoc() const { return getSourceRange().getBegin(); }
-  SourceLocation getEndLoc() const { return getSourceRange().getEnd(); }
+  SourceLocation getBeginLoc() const { return NameInfo.getLoc(); }
+  SourceLocation getEndLoc() const { return getBeginLoc(); }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
@@ -5874,7 +5871,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXReflectedIdExprClass;
+    return T->getStmtClass() == CXXDependentSpliceIdExprClass;
   }
 };
 

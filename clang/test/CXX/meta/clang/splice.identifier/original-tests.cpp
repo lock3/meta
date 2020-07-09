@@ -114,7 +114,7 @@ void test_bad() {
 
   S foo_bar_fin  = S();
   int int_x = foo_bar_fin.unqualid("get_nothing")(); // expected-error {{no member named 'get_nothing' in 'S'}}
-  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}}
+  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}} expected-error {{expected unqualified-id}}
   template_bad_local_var_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_function<1>' requested here}}
   template_bad_local_var_in_caller_calling_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_in_caller_calling_function<1>' requested here}}
 }

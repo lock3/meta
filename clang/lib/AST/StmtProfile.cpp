@@ -2143,7 +2143,7 @@ void StmtProfiler::VisitCXXMemberIdExprExpr(const CXXMemberIdExprExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXReflectedIdExpr(const CXXReflectedIdExpr *E) {
+void StmtProfiler::VisitCXXDependentSpliceIdExpr(const CXXDependentSpliceIdExpr *E) {
   VisitName(E->getNameInfo().getName());
 }
 

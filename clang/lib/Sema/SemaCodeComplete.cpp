@@ -3189,7 +3189,6 @@ static void AddTypedNameChunk(ASTContext &Context, const PrintingPolicy &Policy,
     break;
 
   case DeclarationName::CXXDeductionGuideName:
-  case DeclarationName::CXXReflectedIdName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:

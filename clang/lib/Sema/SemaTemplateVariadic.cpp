@@ -441,10 +441,6 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
   case DeclarationName::CXXDeductionGuideName:
     return false;
 
-  case DeclarationName::CXXReflectedIdName:
-    // FIXME: This is a likely place to allow pack expansion.
-    return false;
-
   case DeclarationName::CXXConstructorName:
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXConversionFunctionName:

@@ -949,7 +949,7 @@ bool Preprocessor::LexOnOffSwitch(tok::OnOffSwitch &Result) {
   Token Tok;
   LexUnexpandedToken(Tok);
 
-  if (Tok.isNot(tok::identifier)) {
+  if (!Tok.isIdentifier()) {
     Diag(Tok, diag::ext_on_off_switch_syntax);
     return true;
   }
@@ -1034,7 +1034,7 @@ struct PragmaDebugHandler : public PragmaHandler {
                     Token &DebugToken) override {
     Token Tok;
     PP.LexUnexpandedToken(Tok);
-    if (Tok.isNot(tok::identifier)) {
+    if (!Tok.isIdentifier()) {
       PP.Diag(Tok, diag::warn_pragma_diagnostic_invalid);
       return;
     }
@@ -1180,7 +1180,7 @@ public:
     SourceLocation DiagLoc = DiagToken.getLocation();
     Token Tok;
     PP.LexUnexpandedToken(Tok);
-    if (Tok.isNot(tok::identifier)) {
+    if (!Tok.isIdentifier()) {
       PP.Diag(Tok, diag::warn_pragma_diagnostic_invalid);
       return;
     }

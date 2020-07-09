@@ -1219,10 +1219,9 @@ Sema::ActOnNameClassifiedAsDependentNonType(const CXXScopeSpec &SS,
                                             SourceLocation NameLoc,
                                             bool IsAddressOfOperand) {
   DeclarationNameInfo NameInfo(Name, NameLoc);
-  return ActOnDependentIdExpression(
-      SS, /*TemplateKWLoc=*/SourceLocation(), NameInfo,
-      /*HasTrailingLParen=*/false, IsAddressOfOperand,
-      /*TemplateArgs=*/nullptr);
+  return ActOnDependentIdExpression(SS, /*TemplateKWLoc=*/SourceLocation(),
+                                    NameInfo, IsAddressOfOperand,
+                                    /*TemplateArgs=*/nullptr);
 }
 
 ExprResult Sema::ActOnNameClassifiedAsNonType(Scope *S, const CXXScopeSpec &SS,
@@ -5421,19 +5420,6 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
     return Context.getNameForTemplate(TName, TNameLoc);
   }
 
-  case UnqualifiedIdKind::IK_ReflectedId: {
-    // FIXME: This is a little wonky. We get the unqualified id from a
-    // declaration name (meaning canonical). Then, we try to reconstruct it.
-    // We should just store the internal bit of the name in the UnqualifiedId
-    // instead of the arguments.
-    llvm::ArrayRef<Expr *> Args = Name.ReflectedIdentifier->getNameComponents();
-    NameInfo.setName(Context.DeclarationNames.getCXXReflectedIdName(Args.size(),
-                                              const_cast<Expr **>(&Args[0])));
-    SourceRange Range(Name.StartLocation, Name.EndLocation);
-    NameInfo.setCXXReflectedIdNameRange(Range);
-    return NameInfo;
-  }
-
   } // switch (Name.getKind())
 
   llvm_unreachable("Unknown name kind");
@@ -6809,22 +6795,17 @@ NamedDecl *Sema::ActOnVariableDeclarator(
   QualType R = TInfo->getType();
   DeclarationName Name = GetNameForDeclarator(D).getName();
 
-  bool IsReflectionName
-      = Name.getNameKind() == DeclarationName::CXXReflectedIdName;
-  if (!IsReflectionName) {
-    if (D.isDecompositionDeclarator()) {
-      // Take the name of the first declarator as our name for diagnostic
-      // purposes.
-      auto &Decomp = D.getDecompositionDeclarator();
-      if (!Decomp.bindings().empty()) {
-        Name = Decomp.bindings()[0].Name;
-      }
-    } else if (!Name.getAsIdentifierInfo()) {
-      Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
-      return nullptr;
+  if (D.isDecompositionDeclarator()) {
+    // Take the name of the first declarator as our name for diagnostic
+    // purposes.
+    auto &Decomp = D.getDecompositionDeclarator();
+    if (!Decomp.bindings().empty()) {
+      Name = Decomp.bindings()[0].Name;
     }
+  } else if (!Name.getAsIdentifierInfo()) {
+    Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
+    return nullptr;
   }
-
 
   DeclSpec::SCS SCSpec = D.getDeclSpec().getStorageClassSpec();
   StorageClass SC = StorageClassSpecToVarDeclStorageClass(D.getDeclSpec());
@@ -13384,7 +13365,6 @@ void Sema::CheckFunctionOrTemplateParamDeclarator(Scope *S, Declarator &D) {
   // simple identifier except [...irrelevant cases...].
   switch (D.getName().getKind()) {
   case UnqualifiedIdKind::IK_Identifier:
-  case UnqualifiedIdKind::IK_ReflectedId:
     break;
 
   case UnqualifiedIdKind::IK_OperatorFunctionId:
@@ -16420,8 +16400,7 @@ ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
   if (ZeroWidth)
     *ZeroWidth = true;
 
-  bool NameIsIdentifying = FieldName.getAsIdentifierInfo() ||
-      FieldName.isReflectedIdentifier();
+  bool NameIsIdentifying = FieldName.getAsIdentifierInfo();
 
   // C99 6.7.2.1p4 - verify the field type.
   // C++ 9.6p3: A bit-field shall have integral or enumeration type.
@@ -16534,7 +16513,7 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
   DeclarationNameInfo NameInfo = GetNameFromUnqualifiedId(D.getName());
   DeclarationName Name = NameInfo.getName();
   SourceLocation Loc = DeclStart;
-  if (Name.getAsIdentifierInfo() || Name.isReflectedIdentifier())
+  if (Name.getAsIdentifierInfo())
     Loc = NameInfo.getLoc();
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
@@ -16687,8 +16666,7 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
 
   // Anonymous bit-fields cannot be cv-qualified (CWG 2229).
   IdentifierInfo *II = Name.getAsIdentifierInfo();
-  bool NameIsNonIdentifying = (!II && !Name.isReflectedIdentifier());
-  if (!InvalidDecl && getLangOpts().CPlusPlus && NameIsNonIdentifying &&
+  if (!InvalidDecl && getLangOpts().CPlusPlus && !II &&
       BitWidth && T.hasQualifiers()) {
     InvalidDecl = true;
     Diag(Loc, diag::err_anon_bitfield_qualifiers);
