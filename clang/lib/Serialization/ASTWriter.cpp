@@ -5506,12 +5506,6 @@ void ASTRecordWriter::AddDeclarationNameLoc(const DeclarationNameLoc &DNLoc,
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
     break;
-  case DeclarationName::CXXReflectedIdName:
-    AddSourceLocation(SourceLocation::getFromRawEncoding(
-        DNLoc.CXXOperatorName.BeginOpNameLoc));
-    AddSourceLocation(SourceLocation::getFromRawEncoding(
-        DNLoc.CXXOperatorName.EndOpNameLoc));
-    break;
   }
 }
 

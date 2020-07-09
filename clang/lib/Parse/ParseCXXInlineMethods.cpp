@@ -949,9 +949,9 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         }
       }
 
-      if (Tok.is(tok::identifier)) {
+      if (isIdentifier()) {
         Toks.push_back(Tok);
-        ConsumeToken();
+        ConsumeIdentifier();
       } else {
         break;
       }
@@ -998,10 +998,10 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
                                /*ConsumeFinalToken=*/true)){
         return Diag(Tok.getLocation(), diag::err_expected) << tok::ellipsis;
       }
-      if (!Tok.is(tok::identifier))
+      if (!isIdentifier())
         return Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
       Toks.push_back(Tok);
-      ConsumeToken();
+      ConsumeIdentifier();
 
       // if(!Tok.is(tok::r_paren))
       //   return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
@@ -1283,9 +1283,10 @@ bool Parser::ConsumeAndStoreInitializer(CachedTokens &Toks,
       // FIXME: Support all forms of 'template' unqualified-id '<'.
       Toks.push_back(Tok);
       ConsumeToken();
-      if (Tok.is(tok::identifier)) {
+
+      if (isIdentifier()) {
         Toks.push_back(Tok);
-        ConsumeToken();
+        ConsumeIdentifier();
         if (Tok.is(tok::less)) {
           ++AngleCount;
           ++KnownTemplateCount;
@@ -1373,6 +1374,11 @@ bool Parser::ConsumeAndStoreInitializer(CachedTokens &Toks,
     case tok::utf32_string_literal:
       Toks.push_back(Tok);
       ConsumeStringToken();
+      break;
+    case tok::identifier:
+    case tok::annot_identifier_splice:
+      Toks.push_back(Tok);
+      ConsumeIdentifier();
       break;
     case tok::semi:
       if (CIK == CIK_DefaultInitializer)

@@ -15244,7 +15244,7 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXMemberIdExprExprClass:
-  case Expr::CXXReflectedIdExprClass:
+  case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXValueOfExprClass:
     return NoDiag();
 

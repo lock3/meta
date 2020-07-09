@@ -4907,7 +4907,6 @@ public:
   ExprResult ActOnDependentIdExpression(const CXXScopeSpec &SS,
                                         SourceLocation TemplateKWLoc,
                                         const DeclarationNameInfo &NameInfo,
-                                        bool HasTrailingLParen,
                                         bool isAddressOfOperand,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
@@ -9285,6 +9284,9 @@ public:
   DeclarationNameInfo
   SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
                            const MultiLevelTemplateArgumentList &TemplateArgs);
+  IdentifierInfo *
+  SubstIdentifierInfo(IdentifierInfo *II,
+                      const MultiLevelTemplateArgumentList &TemplateArgs);
   TemplateName
   SubstTemplateName(NestedNameSpecifierLoc QualifierLoc, TemplateName Name,
                     SourceLocation Loc,
@@ -10295,26 +10297,24 @@ public:
                                                   SourceLocation EllipsisLoc,
                                                   SourceLocation RParenLoc);
 
-  bool BuildReflectedIdName(SourceLocation OpLoc,
-                            SmallVectorImpl<Expr *> &Parts,
-                            SourceLocation EndLoc,
-                            DeclarationNameInfo &Result);
+  bool ActOnCXXIdentifierSplice(
+      ArrayRef<Expr *> Parts, IdentifierInfo *&Result);
+  bool BuildCXXIdentifierSplice(
+      ArrayRef<Expr *> Parts, IdentifierInfo *&Result);
 
-  bool BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
-                              const DeclarationName &Name,
-                              SourceLocation TemplateKWLoc,
-                              TemplateNameKind &TNK,
-                              TemplateTy &Template,
-                              UnqualifiedId &Result);
+  ExprResult ActOnCXXDependentSpliceIdExpression(
+      CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+      DeclarationNameInfo NameInfo,
+      const TemplateArgumentListInfo *TemplateArgs,
+      bool HasTrailingLParen, bool IsAddressOfOperand);
+  ExprResult BuildCXXDependentSpliceIdExpression(
+      CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+      DeclarationNameInfo NameInfo,
+      const TemplateArgumentListInfo *TemplateArgs,
+      bool HasTrailingLParen, bool IsAddressOfOperand);
 
-  bool CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
-                          const DeclarationName &Name,
-                          SourceLocation TemplateKWLoc, TemplateNameKind TNK,
-                          TemplateTy Template, SourceLocation LAngleLoc,
-                          ASTTemplateArgsPtr TemplateArgs,
-                          SourceLocation RAngleLoc,
-                          SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
-                          UnqualifiedId &Result, SourceLocation EndLoc);
+
+  bool ActOnCXXDependentSpliceIdExpression();
 
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);

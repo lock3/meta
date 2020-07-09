@@ -1164,7 +1164,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
   if (!PP.isParsingIfOrElifDirective()) {
     PP.Diag(LParenLoc, diag::err_pp_directive_required) << II;
     // Return a valid identifier token.
-    assert(Tok.is(tok::identifier));
+    assert(Tok.isIdentifier());
     Tok.setIdentifierInfo(II);
     return false;
   }
@@ -1679,7 +1679,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
   } else if (II == Ident__is_identifier) {
     EvaluateFeatureLikeBuiltinMacro(OS, Tok, II, *this,
       [](Token &Tok, bool &HasLexedNextToken) -> int {
-        return Tok.is(tok::identifier);
+        return Tok.isIdentifier();
       });
   } else if (II == Ident__has_attribute) {
     EvaluateFeatureLikeBuiltinMacro(OS, Tok, II, *this,

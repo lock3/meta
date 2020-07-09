@@ -1041,7 +1041,7 @@ struct AdditionalKeywords {
     case tok::kw_while:
       return true;
     default:
-      return Tok.is(tok::identifier) &&
+      return Tok.Tok.isIdentifier() &&
              CSharpExtraKeywords.find(Tok.Tok.getIdentifierInfo()) ==
                  CSharpExtraKeywords.end();
     }

@@ -1725,7 +1725,7 @@ private:
   /// This is a heuristic based on whether \p Tok is an identifier following
   /// something that is likely a type.
   bool isStartOfName(const FormatToken &Tok) {
-    if (Tok.isNot(tok::identifier) || !Tok.Previous)
+    if (!Tok.Tok.isIdentifier() || !Tok.Previous)
       return false;
 
     if (Tok.Previous->isOneOf(TT_LeadingJavaAnnotation, Keywords.kw_instanceof,
@@ -3165,7 +3165,7 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
          // (e.g. as "const x of y" in a for loop), or after a destructuring
          // operation (const [x, y] of z, const {a, b} of c).
          (Left.is(Keywords.kw_of) && Left.Previous &&
-          (Left.Previous->Tok.is(tok::identifier) ||
+          (Left.Previous->Tok.isIdentifier() ||
            Left.Previous->isOneOf(tok::r_square, tok::r_brace)))) &&
         (!Left.Previous || !Left.Previous->is(tok::period)))
       return true;

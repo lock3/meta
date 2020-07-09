@@ -431,7 +431,7 @@ ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
   return D;
 }
 
-ExprDependence clang::computeDependence(CXXReflectedIdExpr *E) {
+ExprDependence clang::computeDependence(CXXDependentSpliceIdExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 

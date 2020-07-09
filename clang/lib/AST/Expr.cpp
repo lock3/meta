@@ -3481,7 +3481,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXIdExprExprClass:
   case CXXMemberIdExprExprClass:
   case CXXValueOfExprClass:
-  case CXXReflectedIdExprClass:
+  case CXXDependentSpliceIdExprClass:
   case CXXConcatenateExprClass:
   case CXXDependentVariadicReifierExprClass:
   case CXXFragmentExprClass:

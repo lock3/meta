@@ -213,7 +213,7 @@ void Parser::ConsumeExtraSemi(ExtraSemiKind Kind, DeclSpec::TST TST) {
 }
 
 bool Parser::expectIdentifier() {
-  if (Tok.is(tok::identifier))
+  if (isIdentifier())
     return false;
   if (const auto *II = Tok.getIdentifierInfo()) {
     if (II->isCPlusPlusKeyword(getLangOpts())) {
@@ -943,7 +943,7 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
   default:
   dont_know:
     if (Tok.isEditorPlaceholder()) {
-      ConsumeToken();
+      ConsumeAsIdentifier();
       return nullptr;
     }
     // We can't tell whether this is a function-definition or declaration yet.
@@ -1602,7 +1602,7 @@ void Parser::AnnotateScopeToken(CXXScopeSpec &SS, bool IsNewAnnotation) {
 ///        no typo correction will be performed.
 Parser::AnnotatedNameKind
 Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
-  assert(Tok.is(tok::identifier) || Tok.is(tok::annot_cxxscope));
+  assert(isIdentifier() || Tok.is(tok::annot_cxxscope));
 
   const bool EnteringContext = false;
   const bool WasScopeAnnotation = Tok.is(tok::annot_cxxscope);
@@ -1614,7 +1614,7 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
                                      EnteringContext))
     return ANK_Error;
 
-  if (Tok.isNot(tok::identifier) || SS.isInvalid()) {
+  if (!isIdentifier() || SS.isInvalid()) {
     if (TryAnnotateTypeOrScopeTokenAfterScopeSpec(SS, !WasScopeAnnotation))
       return ANK_Error;
     return ANK_Unresolved;
@@ -1686,7 +1686,7 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
         (Ty.get()->isObjCObjectType() ||
          Ty.get()->isObjCObjectPointerType())) {
       // Consume the name.
-      SourceLocation IdentifierLoc = ConsumeToken();
+      SourceLocation IdentifierLoc = ConsumeIdentifier();
       SourceLocation NewEndLoc;
       TypeResult NewType
           = parseObjCTypeArgsAndProtocolQualifiers(IdentifierLoc, Ty,
@@ -1783,7 +1783,7 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
 }
 
 bool Parser::TryKeywordIdentFallback(bool DisableKeyword) {
-  assert(Tok.isNot(tok::identifier));
+  assert(!isIdentifier());
   Diag(Tok, diag::ext_keyword_as_ident)
     << PP.getSpelling(Tok)
     << DisableKeyword;
@@ -1816,7 +1816,7 @@ bool Parser::TryKeywordIdentFallback(bool DisableKeyword) {
 /// Note that this routine emits an error if you call it with ::new or ::delete
 /// as the current tokens, so only call it in contexts where these are invalid.
 bool Parser::TryAnnotateTypeOrScopeToken() {
-  assert((Tok.is(tok::identifier) || Tok.is(tok::coloncolon) ||
+  assert((isIdentifier() || Tok.is(tok::coloncolon) ||
           Tok.is(tok::kw_typename) || Tok.is(tok::annot_cxxscope) ||
           Tok.is(tok::kw_decltype) || Tok.is(tok::annot_template_id) ||
           Tok.is(tok::kw___super)) &&
@@ -1869,7 +1869,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                                        /*IsTypename*/ true))
       return true;
     if (SS.isEmpty()) {
-      if (Tok.is(tok::identifier) || Tok.is(tok::annot_template_id) ||
+      if (isIdentifier() || Tok.is(tok::annot_template_id) ||
           Tok.is(tok::annot_decltype)) {
         // Attempt to recover by skipping the invalid 'typename'
         if (Tok.is(tok::annot_decltype) ||
@@ -1891,7 +1891,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     }
 
     TypeResult Ty;
-    if (Tok.is(tok::identifier)) {
+    if (isIdentifier()) {
       // FIXME: check whether the next token is '<', first!
       Ty = Actions.ActOnTypenameType(getCurScope(), TypenameLoc, SS,
                                      *Tok.getIdentifierInfo(),
@@ -1977,7 +1977,7 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
     return false;
   }
 
-  if (Tok.is(tok::identifier)) {
+  if (isIdentifier()) {
     // Determine whether the identifier is a type name.
     if (ParsedType Ty = Actions.getTypeName(
             *Tok.getIdentifierInfo(), Tok.getLocation(), getCurScope(), &SS,
@@ -1995,7 +1995,7 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
           (Ty.get()->isObjCObjectType() ||
            Ty.get()->isObjCObjectPointerType())) {
         // Consume the name.
-        SourceLocation IdentifierLoc = ConsumeToken();
+        SourceLocation IdentifierLoc = ConsumeIdentifier();
         SourceLocation NewEndLoc;
         TypeResult NewType
           = parseObjCTypeArgsAndProtocolQualifiers(IdentifierLoc, Ty,
@@ -2044,8 +2044,7 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
         // following tokens have the form of a template argument list.
         if (TNK != TNK_Undeclared_template ||
             isTemplateArgumentList(1) != TPResult::False) {
-          // Consume the identifier.
-          ConsumeToken();
+          ConsumeIdentifier();
           if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
                                       TemplateName)) {
             // If an unrecoverable error occurred, we need to return true here,
@@ -2312,9 +2311,9 @@ Parser::DeclGroupPtrTy Parser::ParseModuleDecl(bool IsFirstDecl) {
 
   assert(
       (Tok.is(tok::kw_module) ||
-       (Tok.is(tok::identifier) && Tok.getIdentifierInfo() == Ident_module)) &&
+       (isIdentifier() && Tok.getIdentifierInfo() == Ident_module)) &&
       "not a module declaration");
-  SourceLocation ModuleLoc = ConsumeToken();
+  SourceLocation ModuleLoc = ConsumeAsIdentifier();
 
   // Attributes appear after the module name, not before.
   // FIXME: Suggest moving the attributes later with a fixit.
@@ -2401,7 +2400,7 @@ Decl *Parser::ParseModuleImport(SourceLocation AtLoc) {
                             : Tok.isObjCAtKeyword(tok::objc_import)) &&
          "Improper start to module import");
   bool IsObjCAtImport = Tok.isObjCAtKeyword(tok::objc_import);
-  SourceLocation ImportLoc = ConsumeToken();
+  SourceLocation ImportLoc = ConsumeAsIdentifier();
 
   SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> Path;
   Module *HeaderUnit = nullptr;
@@ -2476,7 +2475,7 @@ bool Parser::ParseModuleName(
     bool IsImport) {
   // Parse the module path.
   while (true) {
-    if (!Tok.is(tok::identifier)) {
+    if (!isIdentifier()) {
       if (Tok.is(tok::code_completion)) {
         Actions.CodeCompleteModuleImport(UseLoc, Path);
         cutOffParsing();
@@ -2490,7 +2489,7 @@ bool Parser::ParseModuleName(
 
     // Record this part of the module path.
     Path.push_back(std::make_pair(Tok.getIdentifierInfo(), Tok.getLocation()));
-    ConsumeToken();
+    ConsumeIdentifier();
 
     if (Tok.isNot(tok::period))
       return false;

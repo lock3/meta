@@ -1706,18 +1706,6 @@ FinishIdentifier:
 
   C = getCharAndSize(CurPtr, Size);
 
-  if (C == '!') {
-    if (LangOpts.Reflection) {
-      if (strncmp(BufferPtr, "constexpr", 9) == 0
-	  && LangOpts.CPlusPlus17) {
-	CurPtr = ConsumeChar(CurPtr, Size, Result);
-	C = getCharAndSize(CurPtr, Size);
-      }
-    }
-
-    goto FinishIdentifier;
-  }
-
   while (true) {
     if (C == '$') {
       // If we hit a $ and they are not supported in identifiers, we are done.

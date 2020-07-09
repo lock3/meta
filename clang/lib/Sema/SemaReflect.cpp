@@ -449,7 +449,8 @@ ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
                                                    KWLoc, LParenLoc, RParenLoc);
 }
 
-static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
+template<template<typename> class Collection>
+static bool HasDependentParts(Collection<Expr *>& Parts) {
  return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
    return E->isTypeDependent() || E->isValueDependent();
  });
@@ -1047,38 +1048,31 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 }
 
 static ExprResult
-getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
+getAsCXXIdentifierSplice(Sema &SemaRef, Expr *Expression)
 {
   SourceLocation &&Loc = Expression->getExprLoc();
 
-  llvm::SmallVector<Expr *, 1> Parts = {Expression};
+  ArrayRef<Expr *> Parts(&Expression, 1);
 
-  DeclarationNameInfo DNI;
-  if (SemaRef.BuildReflectedIdName(Loc, Parts, Loc, DNI))
+  IdentifierInfo *II;
+  if (SemaRef.ActOnCXXIdentifierSplice(Parts, II))
     return ExprError();
 
-  UnqualifiedId Result;
-  TemplateNameKind TNK;
-  OpaquePtr<TemplateName> Template;
-  CXXScopeSpec TempSS;
-  if (SemaRef.BuildInitialDeclnameId(Loc, TempSS, DNI.getName(),
-                                     SourceLocation(), TNK, Template, Result))
-    return ExprError();
-
-  SmallVector<TemplateIdAnnotation *, 1> TemplateIds;
-  if (SemaRef.CompleteDeclnameId(Loc, TempSS, DNI.getName(),
-                                 SourceLocation(), TNK, Template,
-                                 Loc, ASTTemplateArgsPtr(),
-                                 Loc, TemplateIds, Result,
-                                 Loc))
-    return ExprError();
+  CXXScopeSpec NewSS;
+  DeclarationNameInfo DNI(II, Loc);
 
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   ExprResult BuiltExpr =
-    SemaRef.ActOnIdExpression(ParserLookup.getCurScope(), TempSS,
-                              SourceLocation(), Result,
+    SemaRef.ActOnIdExpression(ParserLookup.getCurScope(), NewSS,
+                              SourceLocation(), DNI,
+                              /*TemplateArgsPtr=*/nullptr,
+                              UnqualifiedIdKind::IK_Identifier,
+                              /*TemplateID=*/nullptr,
                               /*HasTrailingLParen=*/false,
-                              /*IsAddresOfOperand=*/false);
+                              /*IsAddresOfOperand=*/false,
+                              /*CCC=*/nullptr,
+                              /*IsInlineAsmIdentifier=*/false,
+                              /*KeywordReplacement=*/nullptr);
 
   return BuiltExpr.isInvalid() ? ExprError() : BuiltExpr;
 }
@@ -1124,7 +1118,7 @@ bool Sema::ActOnVariadicReifier(
       C = getAsCXXIdExprExpr(*this, *Traverser);
       break;
     case tok::kw_unqualid:
-      C = getAsCXXReflectedDeclname(*this, *Traverser);
+      C = getAsCXXIdentifierSplice(*this, *Traverser);
       break;
     case tok::kw_typename:
       Diag(KWLoc, diag::err_invalid_reifier_context) << 3 << 0;
@@ -1401,21 +1395,19 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   llvm_unreachable("Unsupported reflection type");
 }
 
+bool Sema::ActOnCXXIdentifierSplice(
+    ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
+  return BuildCXXIdentifierSplice(Parts, Result);
+}
+
 /// Constructs a new identifier from the expressions in Parts.
 ///
 /// Returns true upon error.
-bool Sema::BuildReflectedIdName(SourceLocation BeginLoc,
-                                SmallVectorImpl<Expr *> &Parts,
-                                SourceLocation EndLoc,
-                                DeclarationNameInfo &Result) {
-
+bool Sema::BuildCXXIdentifierSplice(
+    ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
   // If any components are dependent, we can't compute the name.
   if (HasDependentParts(Parts)) {
-    DeclarationName Name
-      = Context.DeclarationNames.getCXXReflectedIdName(Parts.size(), &Parts[0]);
-    DeclarationNameInfo NameInfo(Name, BeginLoc);
-    NameInfo.setCXXReflectedIdNameRange({BeginLoc, EndLoc});
-    Result = NameInfo;
+    Result = &Context.Idents.get(Context, Parts);
     return false;
   }
 
@@ -1461,72 +1453,26 @@ bool Sema::BuildReflectedIdName(SourceLocation BeginLoc,
     }
   }
 
-  // FIXME: Should we always return a declaration name?
-  IdentifierInfo *Id = &PP.getIdentifierTable().get(Buf);
-  DeclarationName Name = Context.DeclarationNames.getIdentifier(Id);
-  Result = DeclarationNameInfo(Name, BeginLoc);
+  Result = &Context.Idents.get(Buf);
   return false;
 }
 
-/// Handle construction of non-dependent identifiers, and test to
-/// see if the identifier is a template.
-bool Sema::BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
-                                  const DeclarationName &Name,
-                                  SourceLocation TemplateKWLoc,
-                                  TemplateNameKind &TNK,
-                                  TemplateTy &Template,
-                                  UnqualifiedId &Result) {
-  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName)
-    return false;
-
-  Result.setIdentifier(Name.getAsIdentifierInfo(), BeginLoc);
-
-  bool MemberOfUnknownSpecialization;
-
-  TNK = isTemplateName(getCurScope(), SS, TemplateKWLoc.isValid(),
-                       Result,
-                       /*ObjectType=*/nullptr, // FIXME: This is most likely wrong
-                       /*EnteringContext=*/false, Template,
-                       MemberOfUnknownSpecialization);
-
-  return false;
+ExprResult Sema::ActOnCXXDependentSpliceIdExpression(
+    CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+    DeclarationNameInfo NameInfo, const TemplateArgumentListInfo *TemplateArgs,
+    bool HasTrailingLParen, bool IsAddressOfOperand) {
+  return BuildCXXDependentSpliceIdExpression(
+      SS, TemplateKWLoc, NameInfo, TemplateArgs, HasTrailingLParen,
+      IsAddressOfOperand);
 }
 
-/// Handle construction of dependent identifiers, and additionally complete
-/// template identifiers.
-bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
-                              const DeclarationName &Name,
-                              SourceLocation TemplateKWLoc,
-                              TemplateNameKind TNK, TemplateTy Template,
-                              SourceLocation LAngleLoc,
-                              ASTTemplateArgsPtr TemplateArgsPtr,
-                              SourceLocation RAngleLoc,
-                           SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
-                              UnqualifiedId &Result, SourceLocation EndLoc) {
-  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName) {
-    auto *ReflectedId = new (Context) ReflectedIdentifierInfo();
-    ReflectedId->setNameComponents(Name.getCXXReflectedIdArguments());
-
-    if (LAngleLoc.isValid()) {
-      ReflectedId->setTemplateKWLoc(TemplateKWLoc);
-      ReflectedId->setLAngleLoc(LAngleLoc);
-      ReflectedId->setTemplateArgs(TemplateArgsPtr);
-      ReflectedId->setRAngleLoc(RAngleLoc);
-    }
-
-    Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
-  } else if (TNK != TNK_Non_template && TNK != TNK_Undeclared_template) {
-    TemplateIdAnnotation *TemplateIdAnnotation = TemplateIdAnnotation::Create(
-          TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
-          Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
-          /*OpaqueTemplateName=*/Template, /*TemplateKind=*/TNK,
-          /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc,
-          /*TemplateArgs=*/TemplateArgsPtr, /*ArgsInvalid=*/false, CleanupList);
-
-    Result.setTemplateId(TemplateIdAnnotation);
-  }
-
-  return false;
+ExprResult Sema::BuildCXXDependentSpliceIdExpression(
+    CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+    DeclarationNameInfo NameInfo, const TemplateArgumentListInfo *TemplateArgs,
+    bool HasTrailingLParen, bool IsAddressOfOperand) {
+  return CXXDependentSpliceIdExpr::Create(Context, NameInfo,
+      SS, SS.getWithLocInContext(Context), TemplateKWLoc, HasTrailingLParen,
+      IsAddressOfOperand, TemplateArgs);
 }
 
 /// Evaluates the given expression and yields the computed type.
