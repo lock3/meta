@@ -4,7 +4,7 @@ This repository contains a modified version of the clang compiler for
 reflection (feature/reflect) and metaprogramming (feature/metaprogramming).
 
 To find our more information, including build instructions, please consult
-our wiki: https://gitlab.com/lock3/clang/wikis/home
+our wiki: https://github.com/lock3/meta/wiki
 
 # The LLVM Compiler Infrastructure
 
