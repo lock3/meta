@@ -3055,7 +3055,7 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
       << MD->getDeclName();
 }
 
-void Sema::DiagnoseAbsenceOfOverrideControl(NamedDecl *D) {
+void Sema::DiagnoseAbsenceOfOverrideControl(NamedDecl *D, bool Inconsistent) {
   if (D->isInvalidDecl() || D->hasAttr<OverrideAttr>())
     return;
   CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D);
@@ -3071,12 +3071,22 @@ void Sema::DiagnoseAbsenceOfOverrideControl(NamedDecl *D) {
       return;
 
   if (MD->size_overridden_methods() > 0) {
-    unsigned DiagID = isa<CXXDestructorDecl>(MD)
-                          ? diag::warn_destructor_marked_not_override_overriding
-                          : diag::warn_function_marked_not_override_overriding;
-    Diag(MD->getLocation(), DiagID) << MD->getDeclName();
-    const CXXMethodDecl *OMD = *MD->begin_overridden_methods();
-    Diag(OMD->getLocation(), diag::note_overridden_virtual_function);
+    auto EmitDiag = [&](unsigned DiagInconsistent, unsigned DiagSuggest) {
+      unsigned DiagID =
+          Inconsistent && !Diags.isIgnored(DiagInconsistent, MD->getLocation())
+              ? DiagInconsistent
+              : DiagSuggest;
+      Diag(MD->getLocation(), DiagID) << MD->getDeclName();
+      const CXXMethodDecl *OMD = *MD->begin_overridden_methods();
+      Diag(OMD->getLocation(), diag::note_overridden_virtual_function);
+    };
+    if (isa<CXXDestructorDecl>(MD))
+      EmitDiag(
+          diag::warn_inconsistent_destructor_marked_not_override_overriding,
+          diag::warn_suggest_destructor_marked_not_override_overriding);
+    else
+      EmitDiag(diag::warn_inconsistent_function_marked_not_override_overriding,
+               diag::warn_suggest_function_marked_not_override_overriding);
   }
 }
 
@@ -6791,13 +6801,10 @@ void Sema::CheckCompletedCXXClass(Scope *S, CXXRecordDecl *Record) {
     }
   }
 
-  if (HasMethodWithOverrideControl &&
-      HasOverridingMethodWithoutOverrideControl) {
-    // At least one method has the 'override' control declared.
-    // Diagnose all other overridden methods which do not have 'override'
-    // specified on them.
+  if (HasOverridingMethodWithoutOverrideControl) {
+    bool HasInconsistentOverrideControl = HasMethodWithOverrideControl;
     for (auto *M : Record->methods())
-      DiagnoseAbsenceOfOverrideControl(M);
+      DiagnoseAbsenceOfOverrideControl(M, HasInconsistentOverrideControl);
   }
 
   // Check the defaulted secondary comparisons after any other member functions.
@@ -15288,12 +15295,6 @@ CheckOperatorNewDeleteTypes(Sema &SemaRef, const FunctionDecl *FnDecl,
   QualType ResultType =
       FnDecl->getType()->castAs<FunctionType>()->getReturnType();
 
-  // Check that the result type is not dependent.
-  if (ResultType->isDependentType())
-    return SemaRef.Diag(FnDecl->getLocation(),
-                        diag::err_operator_new_delete_dependent_result_type)
-    << FnDecl->getDeclName() << ExpectedResultType;
-
   // The operator is valid on any address space for OpenCL.
   if (SemaRef.getLangOpts().OpenCLCPlusPlus) {
     if (auto *PtrTy = ResultType->getAs<PointerType>()) {
@@ -15302,10 +15303,16 @@ CheckOperatorNewDeleteTypes(Sema &SemaRef, const FunctionDecl *FnDecl,
   }
 
   // Check that the result type is what we expect.
-  if (SemaRef.Context.getCanonicalType(ResultType) != ExpectedResultType)
-    return SemaRef.Diag(FnDecl->getLocation(),
-                        diag::err_operator_new_delete_invalid_result_type)
-    << FnDecl->getDeclName() << ExpectedResultType;
+  if (SemaRef.Context.getCanonicalType(ResultType) != ExpectedResultType) {
+    // Reject even if the type is dependent; an operator delete function is
+    // required to have a non-dependent result type.
+    return SemaRef.Diag(
+               FnDecl->getLocation(),
+               ResultType->isDependentType()
+                   ? diag::err_operator_new_delete_dependent_result_type
+                   : diag::err_operator_new_delete_invalid_result_type)
+           << FnDecl->getDeclName() << ExpectedResultType;
+  }
 
   // A function template must have at least 2 parameters.
   if (FnDecl->getDescribedFunctionTemplate() && FnDecl->getNumParams() < 2)
@@ -15319,13 +15326,7 @@ CheckOperatorNewDeleteTypes(Sema &SemaRef, const FunctionDecl *FnDecl,
                         diag::err_operator_new_delete_too_few_parameters)
       << FnDecl->getDeclName();
 
-  // Check the first parameter type is not dependent.
   QualType FirstParamType = FnDecl->getParamDecl(0)->getType();
-  if (FirstParamType->isDependentType())
-    return SemaRef.Diag(FnDecl->getLocation(), DependentParamTypeDiag)
-      << FnDecl->getDeclName() << ExpectedFirstParamType;
-
-  // Check that the first parameter type is what we expect.
   if (SemaRef.getLangOpts().OpenCLCPlusPlus) {
     // The operator is valid on any address space for OpenCL.
     if (auto *PtrTy =
@@ -15333,10 +15334,18 @@ CheckOperatorNewDeleteTypes(Sema &SemaRef, const FunctionDecl *FnDecl,
       FirstParamType = RemoveAddressSpaceFromPtr(SemaRef, PtrTy);
     }
   }
+
+  // Check that the first parameter type is what we expect.
   if (SemaRef.Context.getCanonicalType(FirstParamType).getUnqualifiedType() !=
-      ExpectedFirstParamType)
-    return SemaRef.Diag(FnDecl->getLocation(), InvalidParamTypeDiag)
-    << FnDecl->getDeclName() << ExpectedFirstParamType;
+      ExpectedFirstParamType) {
+    // The first parameter type is not allowed to be dependent. As a tentative
+    // DR resolution, we allow a dependent parameter type if it is the right
+    // type anyway, to allow destroying operator delete in class templates.
+    return SemaRef.Diag(FnDecl->getLocation(), FirstParamType->isDependentType()
+                                                   ? DependentParamTypeDiag
+                                                   : InvalidParamTypeDiag)
+           << FnDecl->getDeclName() << ExpectedFirstParamType;
+  }
 
   return false;
 }

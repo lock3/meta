@@ -18,6 +18,7 @@
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Function.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
@@ -571,16 +572,100 @@ static LogicalResult verify(vector::ExtractOp op) {
   return success();
 }
 
-static SmallVector<unsigned, 4> extractUnsignedVector(ArrayAttr arrayAttr) {
+template <typename IntType>
+static SmallVector<IntType, 4> extractVector(ArrayAttr arrayAttr) {
   return llvm::to_vector<4>(llvm::map_range(
       arrayAttr.getAsRange<IntegerAttr>(),
-      [](IntegerAttr attr) { return static_cast<unsigned>(attr.getInt()); }));
+      [](IntegerAttr attr) { return static_cast<IntType>(attr.getInt()); }));
 }
 
-static Value foldExtractOp(ExtractOp extractOp) {
+/// Fold the result of chains of ExtractOp in place by simply concatenating the
+/// positions.
+static LogicalResult foldExtractOpFromExtractChain(ExtractOp extractOp) {
+  if (!extractOp.vector().getDefiningOp<ExtractOp>())
+    return failure();
+
+  SmallVector<int64_t, 4> globalPosition;
+  ExtractOp currentOp = extractOp;
+  auto extractedPos = extractVector<int64_t>(currentOp.position());
+  globalPosition.append(extractedPos.rbegin(), extractedPos.rend());
+  while (ExtractOp nextOp = currentOp.vector().getDefiningOp<ExtractOp>()) {
+    currentOp = nextOp;
+    auto extractedPos = extractVector<int64_t>(currentOp.position());
+    globalPosition.append(extractedPos.rbegin(), extractedPos.rend());
+  }
+  extractOp.setOperand(currentOp.vector());
+  // OpBuilder is only used as a helper to build an I64ArrayAttr.
+  OpBuilder b(extractOp.getContext());
+  std::reverse(globalPosition.begin(), globalPosition.end());
+  extractOp.setAttr(ExtractOp::getPositionAttrName(),
+                    b.getI64ArrayAttr(globalPosition));
+  return success();
+}
+
+/// Fold the result of an ExtractOp in place when it comes from a TransposeOp.
+static LogicalResult foldExtractOpFromTranspose(ExtractOp extractOp) {
+  auto transposeOp = extractOp.vector().getDefiningOp<TransposeOp>();
+  if (!transposeOp)
+    return failure();
+
+  auto permutation = extractVector<unsigned>(transposeOp.transp());
+  auto extractedPos = extractVector<int64_t>(extractOp.position());
+
+  // If transposition permutation is larger than the ExtractOp, all minor
+  // dimensions must be an identity for folding to occur. If not, individual
+  // elements within the extracted value are transposed and this is not just a
+  // simple folding.
+  unsigned minorRank = permutation.size() - extractedPos.size();
+  MLIRContext *ctx = extractOp.getContext();
+  AffineMap permutationMap = AffineMap::getPermutationMap(permutation, ctx);
+  AffineMap minorMap = permutationMap.getMinorSubMap(minorRank);
+  if (minorMap && !minorMap.isMinorIdentity())
+    return failure();
+
+  //   %1 = transpose %0[x, y, z] : vector<axbxcxf32>
+  //   %2 = extract %1[u, v] : vector<..xf32>
+  // may turn into:
+  //   %2 = extract %0[w, x] : vector<..xf32>
+  // iff z == 2 and [w, x] = [x, y]^-1 o [u, v] here o denotes composition and
+  // -1 denotes the inverse.
+  permutationMap = permutationMap.getMajorSubMap(extractedPos.size());
+  // The major submap has fewer results but the same number of dims. To compose
+  // cleanly, we need to drop dims to form a "square matrix". This is possible
+  // because:
+  //   (a) this is a permutation map and
+  //   (b) the minor map has already been checked to be identity.
+  // Therefore, the major map cannot contain dims of position greater or equal
+  // than the number of results.
+  assert(llvm::all_of(permutationMap.getResults(),
+                      [&](AffineExpr e) {
+                        auto dim = e.dyn_cast<AffineDimExpr>();
+                        return dim && dim.getPosition() <
+                                          permutationMap.getNumResults();
+                      }) &&
+         "Unexpected map results depend on higher rank positions");
+  // Project on the first domain dimensions to allow composition.
+  permutationMap = AffineMap::get(permutationMap.getNumResults(), 0,
+                                  permutationMap.getResults(), ctx);
+
+  extractOp.setOperand(transposeOp.vector());
+  // Compose the inverse permutation map with the extractedPos.
+  auto newExtractedPos =
+      inversePermutation(permutationMap).compose(extractedPos);
+  // OpBuilder is only used as a helper to build an I64ArrayAttr.
+  OpBuilder b(extractOp.getContext());
+  extractOp.setAttr(ExtractOp::getPositionAttrName(),
+                    b.getI64ArrayAttr(newExtractedPos));
+
+  return success();
+}
+
+/// Fold an ExtractOp that is fed by a chain of InsertOps and TransposeOps. The
+/// result is always the input to some InsertOp.
+static Value foldExtractOpFromInsertChainAndTranspose(ExtractOp extractOp) {
   MLIRContext *context = extractOp.getContext();
   AffineMap permutationMap;
-  auto extractedPos = extractUnsignedVector(extractOp.position());
+  auto extractedPos = extractVector<unsigned>(extractOp.position());
   // Walk back a chain of InsertOp/TransposeOp until we hit a match.
   // Compose TransposeOp permutations as we walk back.
   auto insertOp = extractOp.vector().getDefiningOp<vector::InsertOp>();
@@ -588,7 +673,7 @@ static Value foldExtractOp(ExtractOp extractOp) {
   while (insertOp || transposeOp) {
     if (transposeOp) {
       // If it is transposed, compose the map and iterate.
-      auto permutation = extractUnsignedVector(transposeOp.transp());
+      auto permutation = extractVector<unsigned>(transposeOp.transp());
       AffineMap newMap = AffineMap::getPermutationMap(permutation, context);
       if (!permutationMap)
         permutationMap = newMap;
@@ -610,7 +695,7 @@ static Value foldExtractOp(ExtractOp extractOp) {
     // InsertOp/TransposeOp. This is because `vector.insert %scalar, %vector`
     // produces a new vector with 1 modified value/slice in exactly the static
     // position we need to match.
-    auto insertedPos = extractUnsignedVector(insertOp.position());
+    auto insertedPos = extractVector<unsigned>(insertOp.position());
     // Trivial permutations are solved with position equality checks.
     if (!permutationMap || permutationMap.isIdentity()) {
       if (extractedPos == insertedPos)
@@ -645,7 +730,7 @@ static Value foldExtractOp(ExtractOp extractOp) {
         unsigned minorRank =
             permutationMap.getNumResults() - insertedPos.size();
         AffineMap minorMap = permutationMap.getMinorSubMap(minorRank);
-        if (!minorMap || AffineMap::isMinorIdentity(minorMap))
+        if (!minorMap || minorMap.isMinorIdentity())
           return insertOp.source();
       }
     }
@@ -660,7 +745,11 @@ static Value foldExtractOp(ExtractOp extractOp) {
 }
 
 OpFoldResult ExtractOp::fold(ArrayRef<Attribute>) {
-  if (auto val = foldExtractOp(*this))
+  if (succeeded(foldExtractOpFromExtractChain(*this)))
+    return getResult();
+  if (succeeded(foldExtractOpFromTranspose(*this)))
+    return getResult();
+  if (auto val = foldExtractOpFromInsertChainAndTranspose(*this))
     return val;
   return OpFoldResult();
 }
@@ -1114,10 +1203,13 @@ static ParseResult parseOuterProductOp(OpAsmParser &parser,
                             "expected at least 2 operands");
   VectorType vLHS = tLHS.dyn_cast<VectorType>();
   VectorType vRHS = tRHS.dyn_cast<VectorType>();
-  if (!vLHS || !vRHS)
-    return parser.emitError(parser.getNameLoc(), "expected 2 vector types");
-  VectorType resType = VectorType::get({vLHS.getDimSize(0), vRHS.getDimSize(0)},
-                                       vLHS.getElementType());
+  if (!vLHS)
+    return parser.emitError(parser.getNameLoc(),
+                            "expected vector type for operand #1");
+  VectorType resType =
+      vRHS ? VectorType::get({vLHS.getDimSize(0), vRHS.getDimSize(0)},
+                             vLHS.getElementType())
+           : VectorType::get({vLHS.getDimSize(0)}, vLHS.getElementType());
   return failure(
       parser.resolveOperand(operandsInfo[0], tLHS, result.operands) ||
       parser.resolveOperand(operandsInfo[1], tRHS, result.operands) ||
@@ -1127,19 +1219,32 @@ static ParseResult parseOuterProductOp(OpAsmParser &parser,
 }
 
 static LogicalResult verify(OuterProductOp op) {
+  Type tRHS = op.getOperandTypeRHS();
   VectorType vLHS = op.getOperandVectorTypeLHS(),
-             vRHS = op.getOperandVectorTypeRHS(),
+             vRHS = tRHS.dyn_cast<VectorType>(),
              vACC = op.getOperandVectorTypeACC(), vRES = op.getVectorType();
+
   if (vLHS.getRank() != 1)
     return op.emitOpError("expected 1-d vector for operand #1");
-  if (vRHS.getRank() != 1)
-    return op.emitOpError("expected 1-d vector for operand #2");
-  if (vRES.getRank() != 2)
-    return op.emitOpError("expected 2-d vector result");
-  if (vLHS.getDimSize(0) != vRES.getDimSize(0))
-    return op.emitOpError("expected #1 operand dim to match result dim #1");
-  if (vRHS.getDimSize(0) != vRES.getDimSize(1))
-    return op.emitOpError("expected #2 operand dim to match result dim #2");
+
+  if (vRHS) {
+    // Proper OUTER operation.
+    if (vRHS.getRank() != 1)
+      return op.emitOpError("expected 1-d vector for operand #2");
+    if (vRES.getRank() != 2)
+      return op.emitOpError("expected 2-d vector result");
+    if (vLHS.getDimSize(0) != vRES.getDimSize(0))
+      return op.emitOpError("expected #1 operand dim to match result dim #1");
+    if (vRHS.getDimSize(0) != vRES.getDimSize(1))
+      return op.emitOpError("expected #2 operand dim to match result dim #2");
+  } else {
+    // An AXPY operation.
+    if (vRES.getRank() != 1)
+      return op.emitOpError("expected 1-d vector result");
+    if (vLHS.getDimSize(0) != vRES.getDimSize(0))
+      return op.emitOpError("expected #1 operand dim to match result dim #1");
+  }
+
   if (vACC && vACC != vRES)
     return op.emitOpError("expected operand #3 of same type as result type");
   return success();
@@ -1615,8 +1720,68 @@ static LogicalResult foldMemRefCast(Operation *op) {
   return success(folded);
 }
 
+template <typename TransferOp>
+static bool isInBounds(TransferOp op, int64_t resultIdx, int64_t indicesIdx) {
+  // TODO: support more aggressive createOrFold on:
+  // `op.indices()[indicesIdx] + vectorType < dim(op.memref(), indicesIdx)`
+  if (op.getMemRefType().isDynamicDim(indicesIdx))
+    return false;
+  Value index = op.indices()[indicesIdx];
+  auto cstOp = index.getDefiningOp<ConstantIndexOp>();
+  if (!cstOp)
+    return false;
+
+  int64_t memrefSize = op.getMemRefType().getDimSize(indicesIdx);
+  int64_t vectorSize = op.getVectorType().getDimSize(resultIdx);
+  return cstOp.getValue() + vectorSize <= memrefSize;
+}
+
+template <typename TransferOp>
+static LogicalResult foldTransferMaskAttribute(TransferOp op) {
+  AffineMap permutationMap = op.permutation_map();
+  if (!permutationMap.isMinorIdentity())
+    return failure();
+  bool changed = false;
+  SmallVector<bool, 4> isMasked;
+  isMasked.reserve(op.getTransferRank());
+  // `permutationMap` results and `op.indices` sizes may not match and may not
+  // be aligned. The first `indicesIdx` may just be indexed and not transferred
+  // from/into the vector.
+  // For example:
+  //  vector.transfer %0[%i, %j, %k, %c0] : memref<?x?x?x?xf32>, vector<2x4xf32>
+  // with `permutation_map = (d0, d1, d2, d3) -> (d2, d3)`.
+  // The `permutationMap` results and `op.indices` are however aligned when
+  // iterating in reverse until we exhaust `permutationMap` results.
+  // As a consequence we iterate with 2 running indices: `resultIdx` and
+  // `indicesIdx`, until `resultIdx` reaches 0.
+  for (int64_t resultIdx = permutationMap.getNumResults() - 1,
+               indicesIdx = op.indices().size() - 1;
+       resultIdx >= 0; --resultIdx, --indicesIdx) {
+    // Already marked unmasked, nothing to see here.
+    if (!op.isMaskedDim(resultIdx)) {
+      isMasked.push_back(false);
+      continue;
+    }
+    // Currently masked, check whether we can statically determine it is
+    // inBounds.
+    auto inBounds = isInBounds(op, resultIdx, indicesIdx);
+    isMasked.push_back(!inBounds);
+    // We commit the pattern if it is "more inbounds".
+    changed |= inBounds;
+  }
+  if (!changed)
+    return failure();
+  // OpBuilder is only used as a helper to build an I64ArrayAttr.
+  OpBuilder b(op.getContext());
+  std::reverse(isMasked.begin(), isMasked.end());
+  op.setAttr(TransferOp::getMaskedAttrName(), b.getBoolArrayAttr(isMasked));
+  return success();
+}
+
 OpFoldResult TransferReadOp::fold(ArrayRef<Attribute>) {
   /// transfer_read(memrefcast) -> transfer_read
+  if (succeeded(foldTransferMaskAttribute(*this)))
+    return getResult();
   if (succeeded(foldMemRefCast(*this)))
     return getResult();
   return OpFoldResult();
@@ -1714,6 +1879,8 @@ static LogicalResult verify(TransferWriteOp op) {
 
 LogicalResult TransferWriteOp::fold(ArrayRef<Attribute>,
                                     SmallVectorImpl<OpFoldResult> &) {
+  if (succeeded(foldTransferMaskAttribute(*this)))
+    return success();
   return foldMemRefCast(*this);
 }
 

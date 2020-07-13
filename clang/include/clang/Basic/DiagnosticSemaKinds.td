@@ -2367,12 +2367,22 @@ def override_keyword_hides_virtual_member_function : Error<
   "%select{function|functions}1">;
 def err_function_marked_override_not_overriding : Error<
   "%0 marked 'override' but does not override any member functions">;
-def warn_destructor_marked_not_override_overriding : Warning <
-  "%0 overrides a destructor but is not marked 'override'">,
-  InGroup<CXX11WarnOverrideDestructor>, DefaultIgnore;
-def warn_function_marked_not_override_overriding : Warning <
-  "%0 overrides a member function but is not marked 'override'">,
-  InGroup<CXX11WarnOverrideMethod>;
+def warn_destructor_marked_not_override_overriding : TextSubstitution <
+  "%0 overrides a destructor but is not marked 'override'">;
+def warn_function_marked_not_override_overriding : TextSubstitution <
+  "%0 overrides a member function but is not marked 'override'">;
+def warn_inconsistent_destructor_marked_not_override_overriding : Warning <
+  "%sub{warn_destructor_marked_not_override_overriding}0">,
+  InGroup<CXX11WarnInconsistentOverrideDestructor>, DefaultIgnore;
+def warn_inconsistent_function_marked_not_override_overriding : Warning <
+  "%sub{warn_function_marked_not_override_overriding}0">,
+  InGroup<CXX11WarnInconsistentOverrideMethod>;
+def warn_suggest_destructor_marked_not_override_overriding : Warning <
+  "%sub{warn_destructor_marked_not_override_overriding}0">,
+  InGroup<CXX11WarnSuggestOverrideDestructor>, DefaultIgnore;
+def warn_suggest_function_marked_not_override_overriding : Warning <
+  "%sub{warn_function_marked_not_override_overriding}0">,
+  InGroup<CXX11WarnSuggestOverride>, DefaultIgnore;
 def err_class_marked_final_used_as_base : Error<
   "base %0 is marked '%select{final|sealed}1'">;
 def warn_abstract_final_class : Warning<
@@ -5492,9 +5502,6 @@ def ext_typecheck_zero_array_size : Extension<
   "zero size arrays are an extension">, InGroup<ZeroLengthArray>;
 def err_typecheck_zero_array_size : Error<
   "zero-length arrays are not permitted in C++">;
-def warn_typecheck_zero_static_array_size : Warning<
-  "'static' has no effect on zero-length arrays">,
-  InGroup<ArrayBounds>;
 def err_array_size_non_int : Error<"size of array has non-integer type %0">;
 def err_init_element_not_constant : Error<
   "initializer element is not a compile-time constant">;
@@ -10161,6 +10168,8 @@ def err_omp_section_not_subset_of_array : Error<
   "array section must be a subset of the original array">;
 def err_omp_section_length_negative : Error<
   "section length is evaluated to a negative value %0">;
+def err_omp_section_stride_non_positive : Error<
+  "section stride is evaluated to a non-positive value %0">;
 def err_omp_section_length_undefined : Error<
   "section length is unspecified and cannot be inferred because subscripted value is %select{not an array|an array of unknown bound}0">;
 def err_omp_wrong_linear_modifier : Error<

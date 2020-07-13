@@ -481,7 +481,7 @@ public:
 /// ```
 /// is converted to:
 /// ```
-///  llvm.intr.fma %va, %va, %va:
+///  llvm.intr.fmuladd %va, %va, %va:
 ///    (!llvm<"<8 x float>">, !llvm<"<8 x float>">, !llvm<"<8 x float>">)
 ///    -> !llvm<"<8 x float>">
 /// ```
@@ -500,8 +500,8 @@ public:
     VectorType vType = fmaOp.getVectorType();
     if (vType.getRank() != 1)
       return failure();
-    rewriter.replaceOpWithNewOp<LLVM::FMAOp>(op, adaptor.lhs(), adaptor.rhs(),
-                                             adaptor.acc());
+    rewriter.replaceOpWithNewOp<LLVM::FMulAddOp>(op, adaptor.lhs(),
+                                                 adaptor.rhs(), adaptor.acc());
     return success();
   }
 };
@@ -1180,6 +1180,9 @@ void mlir::populateVectorToLLVMMatrixConversionPatterns(
 namespace {
 struct LowerVectorToLLVMPass
     : public ConvertVectorToLLVMBase<LowerVectorToLLVMPass> {
+  LowerVectorToLLVMPass(const LowerVectorToLLVMOptions &options) {
+    this->reassociateFPReductions = options.reassociateFPReductions;
+  }
   void runOnOperation() override;
 };
 } // namespace
@@ -1210,6 +1213,7 @@ void LowerVectorToLLVMPass::runOnOperation() {
   }
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> mlir::createConvertVectorToLLVMPass() {
-  return std::make_unique<LowerVectorToLLVMPass>();
+std::unique_ptr<OperationPass<ModuleOp>>
+mlir::createConvertVectorToLLVMPass(const LowerVectorToLLVMOptions &options) {
+  return std::make_unique<LowerVectorToLLVMPass>(options);
 }

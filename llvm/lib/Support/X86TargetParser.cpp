@@ -38,6 +38,7 @@ public:
   }
 
   constexpr FeatureBitset &set(unsigned I) {
+    // GCC <6.2 crashes if this is written in a single statement.
     uint32_t NewBits = Bits[I / 32] | (uint32_t(1) << (I % 32));
     Bits[I / 32] = NewBits;
     return *this;
@@ -50,6 +51,7 @@ public:
 
   constexpr FeatureBitset &operator&=(const FeatureBitset &RHS) {
     for (unsigned I = 0, E = array_lengthof(Bits); I != E; ++I) {
+      // GCC <6.2 crashes if this is written in a single statement.
       uint32_t NewBits = Bits[I] & RHS.Bits[I];
       Bits[I] = NewBits;
     }
@@ -58,21 +60,26 @@ public:
 
   constexpr FeatureBitset &operator|=(const FeatureBitset &RHS) {
     for (unsigned I = 0, E = array_lengthof(Bits); I != E; ++I) {
+      // GCC <6.2 crashes if this is written in a single statement.
       uint32_t NewBits = Bits[I] | RHS.Bits[I];
       Bits[I] = NewBits;
     }
     return *this;
   }
 
+  // gcc 5.3 miscompiles this if we try to write this using operator&=.
   constexpr FeatureBitset operator&(const FeatureBitset &RHS) const {
-    FeatureBitset Result = *this;
-    Result &= RHS;
+    FeatureBitset Result;
+    for (unsigned I = 0, E = array_lengthof(Bits); I != E; ++I)
+      Result.Bits[I] = Bits[I] & RHS.Bits[I];
     return Result;
   }
 
+  // gcc 5.3 miscompiles this if we try to write this using operator&=.
   constexpr FeatureBitset operator|(const FeatureBitset &RHS) const {
-    FeatureBitset Result = *this;
-    Result |= RHS;
+    FeatureBitset Result;
+    for (unsigned I = 0, E = array_lengthof(Bits); I != E; ++I)
+      Result.Bits[I] = Bits[I] | RHS.Bits[I];
     return Result;
   }
 

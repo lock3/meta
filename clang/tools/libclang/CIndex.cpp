@@ -3286,7 +3286,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
       }
       // Visit init captures
       for (auto InitExpr : E->capture_inits()) {
-        if (Visit(InitExpr))
+        if (InitExpr && Visit(InitExpr))
           return true;
       }
 

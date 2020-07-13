@@ -7179,7 +7179,7 @@ private:
       // If there is no length associated with the expression and lower bound is
       // not specified too, that means we are using the whole length of the
       // base.
-      if (!OAE->getLength() && OAE->getColonLoc().isValid() &&
+      if (!OAE->getLength() && OAE->getColonLocFirst().isValid() &&
           !OAE->getLowerBound())
         return CGF.getTypeSize(BaseTy);
 
@@ -7194,7 +7194,7 @@ private:
 
       // If we don't have a length at this point, that is because we have an
       // array section with a single element.
-      if (!OAE->getLength() && OAE->getColonLoc().isInvalid())
+      if (!OAE->getLength() && OAE->getColonLocFirst().isInvalid())
         return ElemSize;
 
       if (const Expr *LenExpr = OAE->getLength()) {
@@ -7204,7 +7204,7 @@ private:
                                              LenExpr->getExprLoc());
         return CGF.Builder.CreateNUWMul(LengthVal, ElemSize);
       }
-      assert(!OAE->getLength() && OAE->getColonLoc().isValid() &&
+      assert(!OAE->getLength() && OAE->getColonLocFirst().isValid() &&
              OAE->getLowerBound() && "expected array_section[lb:].");
       // Size = sizetype - lb * elemtype;
       llvm::Value *LengthVal = CGF.getTypeSize(BaseTy);
@@ -7277,7 +7277,7 @@ private:
       return false;
 
     // An array section with no colon always refer to a single element.
-    if (OASE->getColonLoc().isInvalid())
+    if (OASE->getColonLocFirst().isInvalid())
       return false;
 
     const Expr *Length = OASE->getLength();
