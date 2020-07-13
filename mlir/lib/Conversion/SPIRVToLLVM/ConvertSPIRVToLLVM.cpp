@@ -71,7 +71,7 @@ static unsigned getLLVMTypeBitWidth(LLVM::LLVMType type) {
 }
 
 /// Creates `IntegerAttribute` with all bits set for given type
-IntegerAttr minusOneIntegerAttribute(Type type, Builder builder) {
+static IntegerAttr minusOneIntegerAttribute(Type type, Builder builder) {
   if (auto vecType = type.dyn_cast<VectorType>()) {
     auto integerType = vecType.getElementType().cast<IntegerType>();
     return builder.getIntegerAttr(integerType, -1);
@@ -163,6 +163,65 @@ static Value processCountOrOffset(Location loc, Value value, Type srcType,
   Value broadcasted =
       optionallyBroadcast(loc, value, srcType, converter, rewriter);
   return optionallyTruncateOrExtend(loc, broadcasted, dstType, rewriter);
+}
+
+/// Converts SPIR-V struct with no offset to packed LLVM struct.
+static Type convertStructTypePacked(spirv::StructType type,
+                                    LLVMTypeConverter &converter) {
+  auto elementsVector = llvm::to_vector<8>(
+      llvm::map_range(type.getElementTypes(), [&](Type elementType) {
+        return converter.convertType(elementType).cast<LLVM::LLVMType>();
+      }));
+  return LLVM::LLVMType::getStructTy(converter.getDialect(), elementsVector,
+                                     /*isPacked=*/true);
+}
+
+//===----------------------------------------------------------------------===//
+// Type conversion
+//===----------------------------------------------------------------------===//
+
+/// Converts SPIR-V array type to LLVM array. There is no modelling of array
+/// stride at the moment.
+static Optional<Type> convertArrayType(spirv::ArrayType type,
+                                       TypeConverter &converter) {
+  if (type.getArrayStride() != 0)
+    return llvm::None;
+  auto elementType =
+      converter.convertType(type.getElementType()).cast<LLVM::LLVMType>();
+  unsigned numElements = type.getNumElements();
+  return LLVM::LLVMType::getArrayTy(elementType, numElements);
+}
+
+/// Converts SPIR-V pointer type to LLVM pointer. Pointer's storage class is not
+/// modelled at the moment.
+static Type convertPointerType(spirv::PointerType type,
+                               TypeConverter &converter) {
+  auto pointeeType =
+      converter.convertType(type.getPointeeType()).cast<LLVM::LLVMType>();
+  return pointeeType.getPointerTo();
+}
+
+/// Converts SPIR-V runtime array to LLVM array. Since LLVM allows indexing over
+/// the bounds, the runtime array is converted to a 0-sized LLVM array. There is
+/// no modelling of array stride at the moment.
+static Optional<Type> convertRuntimeArrayType(spirv::RuntimeArrayType type,
+                                              TypeConverter &converter) {
+  if (type.getArrayStride() != 0)
+    return llvm::None;
+  auto elementType =
+      converter.convertType(type.getElementType()).cast<LLVM::LLVMType>();
+  return LLVM::LLVMType::getArrayTy(elementType, 0);
+}
+
+/// Converts SPIR-V struct to LLVM struct. There is no support of structs with
+/// member decorations or with offset.
+static Optional<Type> convertStructType(spirv::StructType type,
+                                        LLVMTypeConverter &converter) {
+  SmallVector<spirv::StructType::MemberDecorationInfo, 4> memberDecorations;
+  type.getMemberDecorations(memberDecorations);
+  if (type.hasOffset() || !memberDecorations.empty())
+    return llvm::None;
+  return convertStructTypePacked(type, converter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -581,6 +640,8 @@ public:
         funcType.getNumInputs());
     auto llvmType = this->typeConverter.convertFunctionSignature(
         funcOp.getType(), /*isVariadic=*/false, signatureConverter);
+    if (!llvmType)
+      return failure();
 
     // Create a new `LLVMFuncOp`
     Location loc = funcOp.getLoc();
@@ -661,6 +722,21 @@ public:
 //===----------------------------------------------------------------------===//
 // Pattern population
 //===----------------------------------------------------------------------===//
+
+void mlir::populateSPIRVToLLVMTypeConversion(LLVMTypeConverter &typeConverter) {
+  typeConverter.addConversion([&](spirv::ArrayType type) {
+    return convertArrayType(type, typeConverter);
+  });
+  typeConverter.addConversion([&](spirv::PointerType type) {
+    return convertPointerType(type, typeConverter);
+  });
+  typeConverter.addConversion([&](spirv::RuntimeArrayType type) {
+    return convertRuntimeArrayType(type, typeConverter);
+  });
+  typeConverter.addConversion([&](spirv::StructType type) {
+    return convertStructType(type, typeConverter);
+  });
+}
 
 void mlir::populateSPIRVToLLVMConversionPatterns(
     MLIRContext *context, LLVMTypeConverter &typeConverter,

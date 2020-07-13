@@ -707,10 +707,36 @@ namespace {
         SmallVectorImpl<MemOpLink> &StoreNodes, unsigned NumStores,
         SDNode *RootNode);
 
+    /// This is a helper function for mergeConsecutiveStores. Given a list of
+    /// store candidates, find the first N that are consecutive in memory.
+    /// Returns 0 if there are not at least 2 consecutive stores to try merging.
+    unsigned getConsecutiveStores(SmallVectorImpl<MemOpLink> &StoreNodes,
+                                  int64_t ElementSizeBytes) const;
+
+    /// This is a helper function for mergeConsecutiveStores. It is used for
+    /// store chains that are composed entirely of constant values.
+    bool tryStoreMergeOfConstants(SmallVectorImpl<MemOpLink> &StoreNodes,
+                                  unsigned NumConsecutiveStores,
+                                  EVT MemVT, SDNode *Root, bool AllowVectors);
+
+    /// This is a helper function for mergeConsecutiveStores. It is used for
+    /// store chains that are composed entirely of extracted vector elements.
+    /// When extracting multiple vector elements, try to store them in one
+    /// vector store rather than a sequence of scalar stores.
+    bool tryStoreMergeOfExtracts(SmallVectorImpl<MemOpLink> &StoreNodes,
+                                 unsigned NumConsecutiveStores, EVT MemVT,
+                                 SDNode *Root);
+
+    /// This is a helper function for mergeConsecutiveStores. It is used for
+    /// store chains that are composed entirely of loaded values.
+    bool tryStoreMergeOfLoads(SmallVectorImpl<MemOpLink> &StoreNodes,
+                              unsigned NumConsecutiveStores, EVT MemVT,
+                              SDNode *Root, bool AllowVectors,
+                              bool IsNonTemporalStore, bool IsNonTemporalLoad);
+
     /// Merge consecutive store operations into a wide store.
     /// This optimization uses wide integers or vectors when possible.
-    /// \return number of stores that were merged into a merged store (the
-    /// affected nodes are stored as a prefix in \p StoreNodes).
+    /// \return true if stores were merged.
     bool mergeConsecutiveStores(StoreSDNode *St);
 
     /// Try to transform a truncation where C is a constant:
@@ -7668,6 +7694,12 @@ SDValue DAGCombiner::visitRotate(SDNode *N) {
       return DAG.getNode(N->getOpcode(), dl, VT, N0, Amt);
   }
 
+  // rot i16 X, 8 --> bswap X
+  auto *RotAmtC = isConstOrConstSplat(N1);
+  if (RotAmtC && RotAmtC->getAPIntValue() == 8 &&
+      VT.getScalarSizeInBits() == 16 && hasOperation(ISD::BSWAP, VT))
+    return DAG.getNode(ISD::BSWAP, dl, VT, N0);
+
   // Simplify the operands using demanded-bits information.
   if (SimplifyDemandedBits(SDValue(N, 0)))
     return SDValue(N, 0);
@@ -11960,6 +11992,8 @@ SDValue DAGCombiner::visitFADDForFMACombine(SDNode *N) {
 
   SDNodeFlags Flags = N->getFlags();
   bool CanFuse = Options.UnsafeFPMath || isContractable(N);
+  bool CanReassociate =
+      Options.UnsafeFPMath || N->getFlags().hasAllowReassociation();
   bool AllowFusionGlobally = (Options.AllowFPOpFusion == FPOpFusion::Fast ||
                               CanFuse || HasFMAD);
   // If the addition is not contractable, do not combine.
@@ -12002,13 +12036,14 @@ SDValue DAGCombiner::visitFADDForFMACombine(SDNode *N) {
 
   // fadd (fma A, B, (fmul C, D)), E --> fma A, B, (fma C, D, E)
   // fadd E, (fma A, B, (fmul C, D)) --> fma A, B, (fma C, D, E)
+  // This requires reassociation because it changes the order of operations.
   SDValue FMA, E;
-  if (CanFuse && N0.getOpcode() == PreferredFusedOpcode &&
+  if (CanReassociate && N0.getOpcode() == PreferredFusedOpcode &&
       N0.getOperand(2).getOpcode() == ISD::FMUL && N0.hasOneUse() &&
       N0.getOperand(2).hasOneUse()) {
     FMA = N0;
     E = N1;
-  } else if (CanFuse && N1.getOpcode() == PreferredFusedOpcode &&
+  } else if (CanReassociate && N1.getOpcode() == PreferredFusedOpcode &&
              N1.getOperand(2).getOpcode() == ISD::FMUL && N1.hasOneUse() &&
              N1.getOperand(2).hasOneUse()) {
     FMA = N1;
@@ -16238,6 +16273,516 @@ bool DAGCombiner::checkMergeStoreCandidatesForDependencies(
   return true;
 }
 
+unsigned
+DAGCombiner::getConsecutiveStores(SmallVectorImpl<MemOpLink> &StoreNodes,
+                                  int64_t ElementSizeBytes) const {
+  while (true) {
+    // Find a store past the width of the first store.
+    size_t StartIdx = 0;
+    while ((StartIdx + 1 < StoreNodes.size()) &&
+           StoreNodes[StartIdx].OffsetFromBase + ElementSizeBytes !=
+              StoreNodes[StartIdx + 1].OffsetFromBase)
+      ++StartIdx;
+
+    // Bail if we don't have enough candidates to merge.
+    if (StartIdx + 1 >= StoreNodes.size())
+      return 0;
+
+    // Trim stores that overlapped with the first store.
+    if (StartIdx)
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + StartIdx);
+
+    // Scan the memory operations on the chain and find the first
+    // non-consecutive store memory address.
+    unsigned NumConsecutiveStores = 1;
+    int64_t StartAddress = StoreNodes[0].OffsetFromBase;
+    // Check that the addresses are consecutive starting from the second
+    // element in the list of stores.
+    for (unsigned i = 1, e = StoreNodes.size(); i < e; ++i) {
+      int64_t CurrAddress = StoreNodes[i].OffsetFromBase;
+      if (CurrAddress - StartAddress != (ElementSizeBytes * i))
+        break;
+      NumConsecutiveStores = i + 1;
+    }
+    if (NumConsecutiveStores > 1)
+      return NumConsecutiveStores;
+
+    // There are no consecutive stores at the start of the list.
+    // Remove the first store and try again.
+    StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + 1);
+  }
+}
+
+bool DAGCombiner::tryStoreMergeOfConstants(
+    SmallVectorImpl<MemOpLink> &StoreNodes, unsigned NumConsecutiveStores,
+    EVT MemVT, SDNode *RootNode, bool AllowVectors) {
+  LLVMContext &Context = *DAG.getContext();
+  const DataLayout &DL = DAG.getDataLayout();
+  int64_t ElementSizeBytes = MemVT.getStoreSize();
+  unsigned NumMemElts = MemVT.isVector() ? MemVT.getVectorNumElements() : 1;
+  bool MadeChange = false;
+
+  // Store the constants into memory as one consecutive store.
+  while (NumConsecutiveStores >= 2) {
+    LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
+    unsigned FirstStoreAS = FirstInChain->getAddressSpace();
+    unsigned FirstStoreAlign = FirstInChain->getAlignment();
+    unsigned LastLegalType = 1;
+    unsigned LastLegalVectorType = 1;
+    bool LastIntegerTrunc = false;
+    bool NonZero = false;
+    unsigned FirstZeroAfterNonZero = NumConsecutiveStores;
+    for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
+      StoreSDNode *ST = cast<StoreSDNode>(StoreNodes[i].MemNode);
+      SDValue StoredVal = ST->getValue();
+      bool IsElementZero = false;
+      if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(StoredVal))
+        IsElementZero = C->isNullValue();
+      else if (ConstantFPSDNode *C = dyn_cast<ConstantFPSDNode>(StoredVal))
+        IsElementZero = C->getConstantFPValue()->isNullValue();
+      if (IsElementZero) {
+        if (NonZero && FirstZeroAfterNonZero == NumConsecutiveStores)
+          FirstZeroAfterNonZero = i;
+      }
+      NonZero |= !IsElementZero;
+
+      // Find a legal type for the constant store.
+      unsigned SizeInBits = (i + 1) * ElementSizeBytes * 8;
+      EVT StoreTy = EVT::getIntegerVT(Context, SizeInBits);
+      bool IsFast = false;
+
+      // Break early when size is too large to be legal.
+      if (StoreTy.getSizeInBits() > MaximumLegalStoreInBits)
+        break;
+
+      if (TLI.isTypeLegal(StoreTy) &&
+          TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
+          TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                 *FirstInChain->getMemOperand(), &IsFast) &&
+          IsFast) {
+        LastIntegerTrunc = false;
+        LastLegalType = i + 1;
+        // Or check whether a truncstore is legal.
+      } else if (TLI.getTypeAction(Context, StoreTy) ==
+                 TargetLowering::TypePromoteInteger) {
+        EVT LegalizedStoredValTy =
+            TLI.getTypeToTransformTo(Context, StoredVal.getValueType());
+        if (TLI.isTruncStoreLegal(LegalizedStoredValTy, StoreTy) &&
+            TLI.canMergeStoresTo(FirstStoreAS, LegalizedStoredValTy, DAG) &&
+            TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                   *FirstInChain->getMemOperand(), &IsFast) &&
+            IsFast) {
+          LastIntegerTrunc = true;
+          LastLegalType = i + 1;
+        }
+      }
+
+      // We only use vectors if the constant is known to be zero or the
+      // target allows it and the function is not marked with the
+      // noimplicitfloat attribute.
+      if ((!NonZero ||
+           TLI.storeOfVectorConstantIsCheap(MemVT, i + 1, FirstStoreAS)) &&
+          AllowVectors) {
+        // Find a legal type for the vector store.
+        unsigned Elts = (i + 1) * NumMemElts;
+        EVT Ty = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
+        if (TLI.isTypeLegal(Ty) && TLI.isTypeLegal(MemVT) &&
+            TLI.canMergeStoresTo(FirstStoreAS, Ty, DAG) &&
+            TLI.allowsMemoryAccess(Context, DL, Ty,
+                                   *FirstInChain->getMemOperand(), &IsFast) &&
+            IsFast)
+          LastLegalVectorType = i + 1;
+      }
+    }
+
+    bool UseVector = (LastLegalVectorType > LastLegalType) && AllowVectors;
+    unsigned NumElem = (UseVector) ? LastLegalVectorType : LastLegalType;
+
+    // Check if we found a legal integer type that creates a meaningful
+    // merge.
+    if (NumElem < 2) {
+      // We know that candidate stores are in order and of correct
+      // shape. While there is no mergeable sequence from the
+      // beginning one may start later in the sequence. The only
+      // reason a merge of size N could have failed where another of
+      // the same size would not have, is if the alignment has
+      // improved or we've dropped a non-zero value. Drop as many
+      // candidates as we can here.
+      unsigned NumSkip = 1;
+      while ((NumSkip < NumConsecutiveStores) &&
+             (NumSkip < FirstZeroAfterNonZero) &&
+             (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
+        NumSkip++;
+
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
+      NumConsecutiveStores -= NumSkip;
+      continue;
+    }
+
+    // Check that we can merge these candidates without causing a cycle.
+    if (!checkMergeStoreCandidatesForDependencies(StoreNodes, NumElem,
+                                                  RootNode)) {
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
+      NumConsecutiveStores -= NumElem;
+      continue;
+    }
+
+    MadeChange |= mergeStoresOfConstantsOrVecElts(
+        StoreNodes, MemVT, NumElem, true, UseVector, LastIntegerTrunc);
+
+    // Remove merged stores for next iteration.
+    StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
+    NumConsecutiveStores -= NumElem;
+  }
+  return MadeChange;
+}
+
+bool DAGCombiner::tryStoreMergeOfExtracts(
+    SmallVectorImpl<MemOpLink> &StoreNodes, unsigned NumConsecutiveStores,
+    EVT MemVT, SDNode *RootNode) {
+  LLVMContext &Context = *DAG.getContext();
+  const DataLayout &DL = DAG.getDataLayout();
+  unsigned NumMemElts = MemVT.isVector() ? MemVT.getVectorNumElements() : 1;
+  bool MadeChange = false;
+
+  // Loop on Consecutive Stores on success.
+  while (NumConsecutiveStores >= 2) {
+    LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
+    unsigned FirstStoreAS = FirstInChain->getAddressSpace();
+    unsigned FirstStoreAlign = FirstInChain->getAlignment();
+    unsigned NumStoresToMerge = 1;
+    for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
+      // Find a legal type for the vector store.
+      unsigned Elts = (i + 1) * NumMemElts;
+      EVT Ty = EVT::getVectorVT(*DAG.getContext(), MemVT.getScalarType(), Elts);
+      bool IsFast = false;
+
+      // Break early when size is too large to be legal.
+      if (Ty.getSizeInBits() > MaximumLegalStoreInBits)
+        break;
+
+      if (TLI.isTypeLegal(Ty) && TLI.canMergeStoresTo(FirstStoreAS, Ty, DAG) &&
+          TLI.allowsMemoryAccess(Context, DL, Ty,
+                                 *FirstInChain->getMemOperand(), &IsFast) &&
+          IsFast)
+        NumStoresToMerge = i + 1;
+    }
+
+    // Check if we found a legal integer type creating a meaningful
+    // merge.
+    if (NumStoresToMerge < 2) {
+      // We know that candidate stores are in order and of correct
+      // shape. While there is no mergeable sequence from the
+      // beginning one may start later in the sequence. The only
+      // reason a merge of size N could have failed where another of
+      // the same size would not have, is if the alignment has
+      // improved. Drop as many candidates as we can here.
+      unsigned NumSkip = 1;
+      while ((NumSkip < NumConsecutiveStores) &&
+             (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
+        NumSkip++;
+
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
+      NumConsecutiveStores -= NumSkip;
+      continue;
+    }
+
+    // Check that we can merge these candidates without causing a cycle.
+    if (!checkMergeStoreCandidatesForDependencies(StoreNodes, NumStoresToMerge,
+                                                  RootNode)) {
+      StoreNodes.erase(StoreNodes.begin(),
+                       StoreNodes.begin() + NumStoresToMerge);
+      NumConsecutiveStores -= NumStoresToMerge;
+      continue;
+    }
+
+    MadeChange |= mergeStoresOfConstantsOrVecElts(
+        StoreNodes, MemVT, NumStoresToMerge, false, true, false);
+
+    StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumStoresToMerge);
+    NumConsecutiveStores -= NumStoresToMerge;
+  }
+  return MadeChange;
+}
+
+bool DAGCombiner::tryStoreMergeOfLoads(SmallVectorImpl<MemOpLink> &StoreNodes,
+                                       unsigned NumConsecutiveStores, EVT MemVT,
+                                       SDNode *RootNode, bool AllowVectors,
+                                       bool IsNonTemporalStore,
+                                       bool IsNonTemporalLoad) {
+  LLVMContext &Context = *DAG.getContext();
+  const DataLayout &DL = DAG.getDataLayout();
+  int64_t ElementSizeBytes = MemVT.getStoreSize();
+  unsigned NumMemElts = MemVT.isVector() ? MemVT.getVectorNumElements() : 1;
+  bool MadeChange = false;
+
+  int64_t StartAddress = StoreNodes[0].OffsetFromBase;
+
+  // Look for load nodes which are used by the stored values.
+  SmallVector<MemOpLink, 8> LoadNodes;
+
+  // Find acceptable loads. Loads need to have the same chain (token factor),
+  // must not be zext, volatile, indexed, and they must be consecutive.
+  BaseIndexOffset LdBasePtr;
+
+  for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
+    StoreSDNode *St = cast<StoreSDNode>(StoreNodes[i].MemNode);
+    SDValue Val = peekThroughBitcasts(St->getValue());
+    LoadSDNode *Ld = cast<LoadSDNode>(Val);
+
+    BaseIndexOffset LdPtr = BaseIndexOffset::match(Ld, DAG);
+    // If this is not the first ptr that we check.
+    int64_t LdOffset = 0;
+    if (LdBasePtr.getBase().getNode()) {
+      // The base ptr must be the same.
+      if (!LdBasePtr.equalBaseIndex(LdPtr, DAG, LdOffset))
+        break;
+    } else {
+      // Check that all other base pointers are the same as this one.
+      LdBasePtr = LdPtr;
+    }
+
+    // We found a potential memory operand to merge.
+    LoadNodes.push_back(MemOpLink(Ld, LdOffset));
+  }
+
+  while (NumConsecutiveStores >= 2 && LoadNodes.size() >= 2) {
+    Align RequiredAlignment;
+    bool NeedRotate = false;
+    if (LoadNodes.size() == 2) {
+      // If we have load/store pair instructions and we only have two values,
+      // don't bother merging.
+      if (TLI.hasPairedLoad(MemVT, RequiredAlignment) &&
+          StoreNodes[0].MemNode->getAlign() >= RequiredAlignment) {
+        StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + 2);
+        LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + 2);
+        break;
+      }
+      // If the loads are reversed, see if we can rotate the halves into place.
+      int64_t Offset0 = LoadNodes[0].OffsetFromBase;
+      int64_t Offset1 = LoadNodes[1].OffsetFromBase;
+      EVT PairVT = EVT::getIntegerVT(Context, ElementSizeBytes * 8 * 2);
+      if (Offset0 - Offset1 == ElementSizeBytes &&
+          (hasOperation(ISD::ROTL, PairVT) ||
+           hasOperation(ISD::ROTR, PairVT))) {
+        std::swap(LoadNodes[0], LoadNodes[1]);
+        NeedRotate = true;
+      }
+    }
+    LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
+    unsigned FirstStoreAS = FirstInChain->getAddressSpace();
+    unsigned FirstStoreAlign = FirstInChain->getAlignment();
+    LoadSDNode *FirstLoad = cast<LoadSDNode>(LoadNodes[0].MemNode);
+
+    // Scan the memory operations on the chain and find the first
+    // non-consecutive load memory address. These variables hold the index in
+    // the store node array.
+
+    unsigned LastConsecutiveLoad = 1;
+
+    // This variable refers to the size and not index in the array.
+    unsigned LastLegalVectorType = 1;
+    unsigned LastLegalIntegerType = 1;
+    bool isDereferenceable = true;
+    bool DoIntegerTruncate = false;
+    StartAddress = LoadNodes[0].OffsetFromBase;
+    SDValue LoadChain = FirstLoad->getChain();
+    for (unsigned i = 1; i < LoadNodes.size(); ++i) {
+      // All loads must share the same chain.
+      if (LoadNodes[i].MemNode->getChain() != LoadChain)
+        break;
+
+      int64_t CurrAddress = LoadNodes[i].OffsetFromBase;
+      if (CurrAddress - StartAddress != (ElementSizeBytes * i))
+        break;
+      LastConsecutiveLoad = i;
+
+      if (isDereferenceable && !LoadNodes[i].MemNode->isDereferenceable())
+        isDereferenceable = false;
+
+      // Find a legal type for the vector store.
+      unsigned Elts = (i + 1) * NumMemElts;
+      EVT StoreTy = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
+
+      // Break early when size is too large to be legal.
+      if (StoreTy.getSizeInBits() > MaximumLegalStoreInBits)
+        break;
+
+      bool IsFastSt = false;
+      bool IsFastLd = false;
+      if (TLI.isTypeLegal(StoreTy) &&
+          TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
+          TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                 *FirstInChain->getMemOperand(), &IsFastSt) &&
+          IsFastSt &&
+          TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                 *FirstLoad->getMemOperand(), &IsFastLd) &&
+          IsFastLd) {
+        LastLegalVectorType = i + 1;
+      }
+
+      // Find a legal type for the integer store.
+      unsigned SizeInBits = (i + 1) * ElementSizeBytes * 8;
+      StoreTy = EVT::getIntegerVT(Context, SizeInBits);
+      if (TLI.isTypeLegal(StoreTy) &&
+          TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
+          TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                 *FirstInChain->getMemOperand(), &IsFastSt) &&
+          IsFastSt &&
+          TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                 *FirstLoad->getMemOperand(), &IsFastLd) &&
+          IsFastLd) {
+        LastLegalIntegerType = i + 1;
+        DoIntegerTruncate = false;
+        // Or check whether a truncstore and extload is legal.
+      } else if (TLI.getTypeAction(Context, StoreTy) ==
+                 TargetLowering::TypePromoteInteger) {
+        EVT LegalizedStoredValTy = TLI.getTypeToTransformTo(Context, StoreTy);
+        if (TLI.isTruncStoreLegal(LegalizedStoredValTy, StoreTy) &&
+            TLI.canMergeStoresTo(FirstStoreAS, LegalizedStoredValTy, DAG) &&
+            TLI.isLoadExtLegal(ISD::ZEXTLOAD, LegalizedStoredValTy, StoreTy) &&
+            TLI.isLoadExtLegal(ISD::SEXTLOAD, LegalizedStoredValTy, StoreTy) &&
+            TLI.isLoadExtLegal(ISD::EXTLOAD, LegalizedStoredValTy, StoreTy) &&
+            TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                   *FirstInChain->getMemOperand(), &IsFastSt) &&
+            IsFastSt &&
+            TLI.allowsMemoryAccess(Context, DL, StoreTy,
+                                   *FirstLoad->getMemOperand(), &IsFastLd) &&
+            IsFastLd) {
+          LastLegalIntegerType = i + 1;
+          DoIntegerTruncate = true;
+        }
+      }
+    }
+
+    // Only use vector types if the vector type is larger than the integer
+    // type. If they are the same, use integers.
+    bool UseVectorTy =
+        LastLegalVectorType > LastLegalIntegerType && AllowVectors;
+    unsigned LastLegalType =
+        std::max(LastLegalVectorType, LastLegalIntegerType);
+
+    // We add +1 here because the LastXXX variables refer to location while
+    // the NumElem refers to array/index size.
+    unsigned NumElem = std::min(NumConsecutiveStores, LastConsecutiveLoad + 1);
+    NumElem = std::min(LastLegalType, NumElem);
+    unsigned FirstLoadAlign = FirstLoad->getAlignment();
+
+    if (NumElem < 2) {
+      // We know that candidate stores are in order and of correct
+      // shape. While there is no mergeable sequence from the
+      // beginning one may start later in the sequence. The only
+      // reason a merge of size N could have failed where another of
+      // the same size would not have is if the alignment or either
+      // the load or store has improved. Drop as many candidates as we
+      // can here.
+      unsigned NumSkip = 1;
+      while ((NumSkip < LoadNodes.size()) &&
+             (LoadNodes[NumSkip].MemNode->getAlignment() <= FirstLoadAlign) &&
+             (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
+        NumSkip++;
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
+      LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumSkip);
+      NumConsecutiveStores -= NumSkip;
+      continue;
+    }
+
+    // Check that we can merge these candidates without causing a cycle.
+    if (!checkMergeStoreCandidatesForDependencies(StoreNodes, NumElem,
+                                                  RootNode)) {
+      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
+      LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumElem);
+      NumConsecutiveStores -= NumElem;
+      continue;
+    }
+
+    // Find if it is better to use vectors or integers to load and store
+    // to memory.
+    EVT JointMemOpVT;
+    if (UseVectorTy) {
+      // Find a legal type for the vector store.
+      unsigned Elts = NumElem * NumMemElts;
+      JointMemOpVT = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
+    } else {
+      unsigned SizeInBits = NumElem * ElementSizeBytes * 8;
+      JointMemOpVT = EVT::getIntegerVT(Context, SizeInBits);
+    }
+
+    SDLoc LoadDL(LoadNodes[0].MemNode);
+    SDLoc StoreDL(StoreNodes[0].MemNode);
+
+    // The merged loads are required to have the same incoming chain, so
+    // using the first's chain is acceptable.
+
+    SDValue NewStoreChain = getMergeStoreChains(StoreNodes, NumElem);
+    AddToWorklist(NewStoreChain.getNode());
+
+    MachineMemOperand::Flags LdMMOFlags =
+        isDereferenceable ? MachineMemOperand::MODereferenceable
+                          : MachineMemOperand::MONone;
+    if (IsNonTemporalLoad)
+      LdMMOFlags |= MachineMemOperand::MONonTemporal;
+
+    MachineMemOperand::Flags StMMOFlags = IsNonTemporalStore
+                                              ? MachineMemOperand::MONonTemporal
+                                              : MachineMemOperand::MONone;
+
+    SDValue NewLoad, NewStore;
+    if (UseVectorTy || !DoIntegerTruncate) {
+      NewLoad = DAG.getLoad(
+          JointMemOpVT, LoadDL, FirstLoad->getChain(), FirstLoad->getBasePtr(),
+          FirstLoad->getPointerInfo(), FirstLoadAlign, LdMMOFlags);
+      SDValue StoreOp = NewLoad;
+      if (NeedRotate) {
+        unsigned LoadWidth = ElementSizeBytes * 8 * 2;
+        assert(JointMemOpVT == EVT::getIntegerVT(Context, LoadWidth) &&
+               "Unexpected type for rotate-able load pair");
+        SDValue RotAmt =
+            DAG.getShiftAmountConstant(LoadWidth / 2, JointMemOpVT, LoadDL);
+        // Target can convert to the identical ROTR if it does not have ROTL.
+        StoreOp = DAG.getNode(ISD::ROTL, LoadDL, JointMemOpVT, NewLoad, RotAmt);
+      }
+      NewStore = DAG.getStore(
+          NewStoreChain, StoreDL, StoreOp, FirstInChain->getBasePtr(),
+          FirstInChain->getPointerInfo(), FirstStoreAlign, StMMOFlags);
+    } else { // This must be the truncstore/extload case
+      EVT ExtendedTy =
+          TLI.getTypeToTransformTo(*DAG.getContext(), JointMemOpVT);
+      NewLoad = DAG.getExtLoad(ISD::EXTLOAD, LoadDL, ExtendedTy,
+                               FirstLoad->getChain(), FirstLoad->getBasePtr(),
+                               FirstLoad->getPointerInfo(), JointMemOpVT,
+                               FirstLoadAlign, LdMMOFlags);
+      NewStore = DAG.getTruncStore(NewStoreChain, StoreDL, NewLoad,
+                                   FirstInChain->getBasePtr(),
+                                   FirstInChain->getPointerInfo(), JointMemOpVT,
+                                   FirstInChain->getAlignment(),
+                                   FirstInChain->getMemOperand()->getFlags());
+    }
+
+    // Transfer chain users from old loads to the new load.
+    for (unsigned i = 0; i < NumElem; ++i) {
+      LoadSDNode *Ld = cast<LoadSDNode>(LoadNodes[i].MemNode);
+      DAG.ReplaceAllUsesOfValueWith(SDValue(Ld, 1),
+                                    SDValue(NewLoad.getNode(), 1));
+    }
+
+    // Replace all stores with the new store. Recursively remove corresponding
+    // values if they are no longer used.
+    for (unsigned i = 0; i < NumElem; ++i) {
+      SDValue Val = StoreNodes[i].MemNode->getOperand(1);
+      CombineTo(StoreNodes[i].MemNode, NewStore);
+      if (Val.getNode()->use_empty())
+        recursivelyDeleteUnusedNodes(Val.getNode());
+    }
+
+    MadeChange = true;
+    StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
+    LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumElem);
+    NumConsecutiveStores -= NumElem;
+  }
+  return MadeChange;
+}
+
 bool DAGCombiner::mergeConsecutiveStores(StoreSDNode *St) {
   if (OptLevel == CodeGenOpt::None || !EnableStoreMerging)
     return false;
@@ -16249,31 +16794,18 @@ bool DAGCombiner::mergeConsecutiveStores(StoreSDNode *St) {
   EVT MemVT = St->getMemoryVT();
   if (MemVT.isScalableVector())
     return false;
-
-  int64_t ElementSizeBytes = MemVT.getStoreSize();
-  unsigned NumMemElts = MemVT.isVector() ? MemVT.getVectorNumElements() : 1;
-
-  if (MemVT.getSizeInBits() * 2 > MaximumLegalStoreInBits)
+  if (!MemVT.isSimple() || MemVT.getSizeInBits() * 2 > MaximumLegalStoreInBits)
     return false;
 
-  bool NoVectors = DAG.getMachineFunction().getFunction().hasFnAttribute(
-      Attribute::NoImplicitFloat);
-
   // This function cannot currently deal with non-byte-sized memory sizes.
+  int64_t ElementSizeBytes = MemVT.getStoreSize();
   if (ElementSizeBytes * 8 != (int64_t)MemVT.getSizeInBits())
     return false;
 
-  if (!MemVT.isSimple())
-    return false;
-
-  // Perform an early exit check. Do not bother looking at stored values that
-  // are not constants, loads, or extracted vector elements.
+  // Do not bother looking at stored values that are not constants, loads, or
+  // extracted vector elements.
   SDValue StoredVal = peekThroughBitcasts(St->getValue());
-  StoreSource StoreSrc = getStoreSource(StoredVal);
-  bool IsNonTemporalStore = St->isNonTemporal();
-  bool IsNonTemporalLoad = StoreSrc == StoreSource::Load &&
-                           cast<LoadSDNode>(StoredVal)->isNonTemporal();
-
+  const StoreSource StoreSrc = getStoreSource(StoredVal);
   if (StoreSrc == StoreSource::Unknown)
     return false;
 
@@ -16292,6 +16824,12 @@ bool DAGCombiner::mergeConsecutiveStores(StoreSDNode *St) {
     return LHS.OffsetFromBase < RHS.OffsetFromBase;
   });
 
+  bool AllowVectors = !DAG.getMachineFunction().getFunction().hasFnAttribute(
+      Attribute::NoImplicitFloat);
+  bool IsNonTemporalStore = St->isNonTemporal();
+  bool IsNonTemporalLoad = StoreSrc == StoreSource::Load &&
+                           cast<LoadSDNode>(StoredVal)->isNonTemporal();
+
   // Store Merge attempts to merge the lowest stores. This generally
   // works out as if successful, as the remaining stores are checked
   // after the first collection of stores is merged. However, in the
@@ -16299,482 +16837,38 @@ bool DAGCombiner::mergeConsecutiveStores(StoreSDNode *St) {
   // p[0], p[1], p[2], p[3]}, we would fail and miss the subsequent
   // mergeable cases. To prevent this, we prune such stores from the
   // front of StoreNodes here.
-
-  bool RV = false;
+  bool MadeChange = false;
   while (StoreNodes.size() > 1) {
-    size_t StartIdx = 0;
-    while ((StartIdx + 1 < StoreNodes.size()) &&
-           StoreNodes[StartIdx].OffsetFromBase + ElementSizeBytes !=
-               StoreNodes[StartIdx + 1].OffsetFromBase)
-      ++StartIdx;
+    unsigned NumConsecutiveStores =
+        getConsecutiveStores(StoreNodes, ElementSizeBytes);
+    // There are no more stores in the list to examine.
+    if (NumConsecutiveStores == 0)
+      return MadeChange;
 
-    // Bail if we don't have enough candidates to merge.
-    if (StartIdx + 1 >= StoreNodes.size())
-      return RV;
+    // We have at least 2 consecutive stores. Try to merge them.
+    assert(NumConsecutiveStores >= 2 && "Expected at least 2 stores");
+    switch (StoreSrc) {
+    case StoreSource::Constant:
+      MadeChange |= tryStoreMergeOfConstants(StoreNodes, NumConsecutiveStores,
+                                             MemVT, RootNode, AllowVectors);
+      break;
 
-    if (StartIdx)
-      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + StartIdx);
+    case StoreSource::Extract:
+      MadeChange |= tryStoreMergeOfExtracts(StoreNodes, NumConsecutiveStores,
+                                            MemVT, RootNode);
+      break;
 
-    // Scan the memory operations on the chain and find the first
-    // non-consecutive store memory address.
-    unsigned NumConsecutiveStores = 1;
-    int64_t StartAddress = StoreNodes[0].OffsetFromBase;
-    // Check that the addresses are consecutive starting from the second
-    // element in the list of stores.
-    for (unsigned i = 1, e = StoreNodes.size(); i < e; ++i) {
-      int64_t CurrAddress = StoreNodes[i].OffsetFromBase;
-      if (CurrAddress - StartAddress != (ElementSizeBytes * i))
-        break;
-      NumConsecutiveStores = i + 1;
-    }
+    case StoreSource::Load:
+      MadeChange |= tryStoreMergeOfLoads(StoreNodes, NumConsecutiveStores,
+                                         MemVT, RootNode, AllowVectors,
+                                         IsNonTemporalStore, IsNonTemporalLoad);
+      break;
 
-    if (NumConsecutiveStores < 2) {
-      StoreNodes.erase(StoreNodes.begin(),
-                       StoreNodes.begin() + NumConsecutiveStores);
-      continue;
-    }
-
-    // The node with the lowest store address.
-    LLVMContext &Context = *DAG.getContext();
-    const DataLayout &DL = DAG.getDataLayout();
-
-    // Store the constants into memory as one consecutive store.
-    if (StoreSrc == StoreSource::Constant) {
-      while (NumConsecutiveStores >= 2) {
-        LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
-        unsigned FirstStoreAS = FirstInChain->getAddressSpace();
-        unsigned FirstStoreAlign = FirstInChain->getAlignment();
-        unsigned LastLegalType = 1;
-        unsigned LastLegalVectorType = 1;
-        bool LastIntegerTrunc = false;
-        bool NonZero = false;
-        unsigned FirstZeroAfterNonZero = NumConsecutiveStores;
-        for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
-          StoreSDNode *ST = cast<StoreSDNode>(StoreNodes[i].MemNode);
-          SDValue StoredVal = ST->getValue();
-          bool IsElementZero = false;
-          if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(StoredVal))
-            IsElementZero = C->isNullValue();
-          else if (ConstantFPSDNode *C = dyn_cast<ConstantFPSDNode>(StoredVal))
-            IsElementZero = C->getConstantFPValue()->isNullValue();
-          if (IsElementZero) {
-            if (NonZero && FirstZeroAfterNonZero == NumConsecutiveStores)
-              FirstZeroAfterNonZero = i;
-          }
-          NonZero |= !IsElementZero;
-
-          // Find a legal type for the constant store.
-          unsigned SizeInBits = (i + 1) * ElementSizeBytes * 8;
-          EVT StoreTy = EVT::getIntegerVT(Context, SizeInBits);
-          bool IsFast = false;
-
-          // Break early when size is too large to be legal.
-          if (StoreTy.getSizeInBits() > MaximumLegalStoreInBits)
-            break;
-
-          if (TLI.isTypeLegal(StoreTy) &&
-              TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
-              TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                     *FirstInChain->getMemOperand(), &IsFast) &&
-              IsFast) {
-            LastIntegerTrunc = false;
-            LastLegalType = i + 1;
-            // Or check whether a truncstore is legal.
-          } else if (TLI.getTypeAction(Context, StoreTy) ==
-                     TargetLowering::TypePromoteInteger) {
-            EVT LegalizedStoredValTy =
-                TLI.getTypeToTransformTo(Context, StoredVal.getValueType());
-            if (TLI.isTruncStoreLegal(LegalizedStoredValTy, StoreTy) &&
-                TLI.canMergeStoresTo(FirstStoreAS, LegalizedStoredValTy, DAG) &&
-                TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                       *FirstInChain->getMemOperand(),
-                                       &IsFast) &&
-                IsFast) {
-              LastIntegerTrunc = true;
-              LastLegalType = i + 1;
-            }
-          }
-
-          // We only use vectors if the constant is known to be zero or the
-          // target allows it and the function is not marked with the
-          // noimplicitfloat attribute.
-          if ((!NonZero ||
-               TLI.storeOfVectorConstantIsCheap(MemVT, i + 1, FirstStoreAS)) &&
-              !NoVectors) {
-            // Find a legal type for the vector store.
-            unsigned Elts = (i + 1) * NumMemElts;
-            EVT Ty = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
-            if (TLI.isTypeLegal(Ty) && TLI.isTypeLegal(MemVT) &&
-                TLI.canMergeStoresTo(FirstStoreAS, Ty, DAG) &&
-                TLI.allowsMemoryAccess(
-                    Context, DL, Ty, *FirstInChain->getMemOperand(), &IsFast) &&
-                IsFast)
-              LastLegalVectorType = i + 1;
-          }
-        }
-
-        bool UseVector = (LastLegalVectorType > LastLegalType) && !NoVectors;
-        unsigned NumElem = (UseVector) ? LastLegalVectorType : LastLegalType;
-
-        // Check if we found a legal integer type that creates a meaningful
-        // merge.
-        if (NumElem < 2) {
-          // We know that candidate stores are in order and of correct
-          // shape. While there is no mergeable sequence from the
-          // beginning one may start later in the sequence. The only
-          // reason a merge of size N could have failed where another of
-          // the same size would not have, is if the alignment has
-          // improved or we've dropped a non-zero value. Drop as many
-          // candidates as we can here.
-          unsigned NumSkip = 1;
-          while (
-              (NumSkip < NumConsecutiveStores) &&
-              (NumSkip < FirstZeroAfterNonZero) &&
-              (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
-            NumSkip++;
-
-          StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
-          NumConsecutiveStores -= NumSkip;
-          continue;
-        }
-
-        // Check that we can merge these candidates without causing a cycle.
-        if (!checkMergeStoreCandidatesForDependencies(StoreNodes, NumElem,
-                                                      RootNode)) {
-          StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
-          NumConsecutiveStores -= NumElem;
-          continue;
-        }
-
-        RV |= mergeStoresOfConstantsOrVecElts(StoreNodes, MemVT, NumElem, true,
-                                              UseVector, LastIntegerTrunc);
-
-        // Remove merged stores for next iteration.
-        StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
-        NumConsecutiveStores -= NumElem;
-      }
-      continue;
-    }
-
-    // When extracting multiple vector elements, try to store them
-    // in one vector store rather than a sequence of scalar stores.
-    if (StoreSrc == StoreSource::Extract) {
-      // Loop on Consecutive Stores on success.
-      while (NumConsecutiveStores >= 2) {
-        LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
-        unsigned FirstStoreAS = FirstInChain->getAddressSpace();
-        unsigned FirstStoreAlign = FirstInChain->getAlignment();
-        unsigned NumStoresToMerge = 1;
-        for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
-          // Find a legal type for the vector store.
-          unsigned Elts = (i + 1) * NumMemElts;
-          EVT Ty =
-              EVT::getVectorVT(*DAG.getContext(), MemVT.getScalarType(), Elts);
-          bool IsFast = false;
-
-          // Break early when size is too large to be legal.
-          if (Ty.getSizeInBits() > MaximumLegalStoreInBits)
-            break;
-
-          if (TLI.isTypeLegal(Ty) &&
-              TLI.canMergeStoresTo(FirstStoreAS, Ty, DAG) &&
-              TLI.allowsMemoryAccess(Context, DL, Ty,
-                                     *FirstInChain->getMemOperand(), &IsFast) &&
-              IsFast)
-            NumStoresToMerge = i + 1;
-        }
-
-        // Check if we found a legal integer type creating a meaningful
-        // merge.
-        if (NumStoresToMerge < 2) {
-          // We know that candidate stores are in order and of correct
-          // shape. While there is no mergeable sequence from the
-          // beginning one may start later in the sequence. The only
-          // reason a merge of size N could have failed where another of
-          // the same size would not have, is if the alignment has
-          // improved. Drop as many candidates as we can here.
-          unsigned NumSkip = 1;
-          while (
-              (NumSkip < NumConsecutiveStores) &&
-              (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
-            NumSkip++;
-
-          StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
-          NumConsecutiveStores -= NumSkip;
-          continue;
-        }
-
-        // Check that we can merge these candidates without causing a cycle.
-        if (!checkMergeStoreCandidatesForDependencies(
-                StoreNodes, NumStoresToMerge, RootNode)) {
-          StoreNodes.erase(StoreNodes.begin(),
-                           StoreNodes.begin() + NumStoresToMerge);
-          NumConsecutiveStores -= NumStoresToMerge;
-          continue;
-        }
-
-        RV |= mergeStoresOfConstantsOrVecElts(
-            StoreNodes, MemVT, NumStoresToMerge, false, true, false);
-
-        StoreNodes.erase(StoreNodes.begin(),
-                         StoreNodes.begin() + NumStoresToMerge);
-        NumConsecutiveStores -= NumStoresToMerge;
-      }
-      continue;
-    }
-
-    // Below we handle the case of multiple consecutive stores that
-    // come from multiple consecutive loads. We merge them into a single
-    // wide load and a single wide store.
-    assert(StoreSrc == StoreSource::Load && "Expected load source for store");
-
-    // Look for load nodes which are used by the stored values.
-    SmallVector<MemOpLink, 8> LoadNodes;
-
-    // Find acceptable loads. Loads need to have the same chain (token factor),
-    // must not be zext, volatile, indexed, and they must be consecutive.
-    BaseIndexOffset LdBasePtr;
-
-    for (unsigned i = 0; i < NumConsecutiveStores; ++i) {
-      StoreSDNode *St = cast<StoreSDNode>(StoreNodes[i].MemNode);
-      SDValue Val = peekThroughBitcasts(St->getValue());
-      LoadSDNode *Ld = cast<LoadSDNode>(Val);
-
-      BaseIndexOffset LdPtr = BaseIndexOffset::match(Ld, DAG);
-      // If this is not the first ptr that we check.
-      int64_t LdOffset = 0;
-      if (LdBasePtr.getBase().getNode()) {
-        // The base ptr must be the same.
-        if (!LdBasePtr.equalBaseIndex(LdPtr, DAG, LdOffset))
-          break;
-      } else {
-        // Check that all other base pointers are the same as this one.
-        LdBasePtr = LdPtr;
-      }
-
-      // We found a potential memory operand to merge.
-      LoadNodes.push_back(MemOpLink(Ld, LdOffset));
-    }
-
-    while (NumConsecutiveStores >= 2 && LoadNodes.size() >= 2) {
-      // If we have load/store pair instructions and we only have two values,
-      // don't bother merging.
-      Align RequiredAlignment;
-      if (LoadNodes.size() == 2 &&
-          TLI.hasPairedLoad(MemVT, RequiredAlignment) &&
-          StoreNodes[0].MemNode->getAlign() >= RequiredAlignment) {
-        StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + 2);
-        LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + 2);
-        break;
-      }
-      LSBaseSDNode *FirstInChain = StoreNodes[0].MemNode;
-      unsigned FirstStoreAS = FirstInChain->getAddressSpace();
-      unsigned FirstStoreAlign = FirstInChain->getAlignment();
-      LoadSDNode *FirstLoad = cast<LoadSDNode>(LoadNodes[0].MemNode);
-      unsigned FirstLoadAlign = FirstLoad->getAlignment();
-
-      // Scan the memory operations on the chain and find the first
-      // non-consecutive load memory address. These variables hold the index in
-      // the store node array.
-
-      unsigned LastConsecutiveLoad = 1;
-
-      // This variable refers to the size and not index in the array.
-      unsigned LastLegalVectorType = 1;
-      unsigned LastLegalIntegerType = 1;
-      bool isDereferenceable = true;
-      bool DoIntegerTruncate = false;
-      StartAddress = LoadNodes[0].OffsetFromBase;
-      SDValue FirstChain = FirstLoad->getChain();
-      for (unsigned i = 1; i < LoadNodes.size(); ++i) {
-        // All loads must share the same chain.
-        if (LoadNodes[i].MemNode->getChain() != FirstChain)
-          break;
-
-        int64_t CurrAddress = LoadNodes[i].OffsetFromBase;
-        if (CurrAddress - StartAddress != (ElementSizeBytes * i))
-          break;
-        LastConsecutiveLoad = i;
-
-        if (isDereferenceable && !LoadNodes[i].MemNode->isDereferenceable())
-          isDereferenceable = false;
-
-        // Find a legal type for the vector store.
-        unsigned Elts = (i + 1) * NumMemElts;
-        EVT StoreTy = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
-
-        // Break early when size is too large to be legal.
-        if (StoreTy.getSizeInBits() > MaximumLegalStoreInBits)
-          break;
-
-        bool IsFastSt = false;
-        bool IsFastLd = false;
-        if (TLI.isTypeLegal(StoreTy) &&
-            TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
-            TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                   *FirstInChain->getMemOperand(), &IsFastSt) &&
-            IsFastSt &&
-            TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                   *FirstLoad->getMemOperand(), &IsFastLd) &&
-            IsFastLd) {
-          LastLegalVectorType = i + 1;
-        }
-
-        // Find a legal type for the integer store.
-        unsigned SizeInBits = (i + 1) * ElementSizeBytes * 8;
-        StoreTy = EVT::getIntegerVT(Context, SizeInBits);
-        if (TLI.isTypeLegal(StoreTy) &&
-            TLI.canMergeStoresTo(FirstStoreAS, StoreTy, DAG) &&
-            TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                   *FirstInChain->getMemOperand(), &IsFastSt) &&
-            IsFastSt &&
-            TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                   *FirstLoad->getMemOperand(), &IsFastLd) &&
-            IsFastLd) {
-          LastLegalIntegerType = i + 1;
-          DoIntegerTruncate = false;
-          // Or check whether a truncstore and extload is legal.
-        } else if (TLI.getTypeAction(Context, StoreTy) ==
-                   TargetLowering::TypePromoteInteger) {
-          EVT LegalizedStoredValTy = TLI.getTypeToTransformTo(Context, StoreTy);
-          if (TLI.isTruncStoreLegal(LegalizedStoredValTy, StoreTy) &&
-              TLI.canMergeStoresTo(FirstStoreAS, LegalizedStoredValTy, DAG) &&
-              TLI.isLoadExtLegal(ISD::ZEXTLOAD, LegalizedStoredValTy,
-                                 StoreTy) &&
-              TLI.isLoadExtLegal(ISD::SEXTLOAD, LegalizedStoredValTy,
-                                 StoreTy) &&
-              TLI.isLoadExtLegal(ISD::EXTLOAD, LegalizedStoredValTy, StoreTy) &&
-              TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                     *FirstInChain->getMemOperand(),
-                                     &IsFastSt) &&
-              IsFastSt &&
-              TLI.allowsMemoryAccess(Context, DL, StoreTy,
-                                     *FirstLoad->getMemOperand(), &IsFastLd) &&
-              IsFastLd) {
-            LastLegalIntegerType = i + 1;
-            DoIntegerTruncate = true;
-          }
-        }
-      }
-
-      // Only use vector types if the vector type is larger than the integer
-      // type. If they are the same, use integers.
-      bool UseVectorTy =
-          LastLegalVectorType > LastLegalIntegerType && !NoVectors;
-      unsigned LastLegalType =
-          std::max(LastLegalVectorType, LastLegalIntegerType);
-
-      // We add +1 here because the LastXXX variables refer to location while
-      // the NumElem refers to array/index size.
-      unsigned NumElem =
-          std::min(NumConsecutiveStores, LastConsecutiveLoad + 1);
-      NumElem = std::min(LastLegalType, NumElem);
-
-      if (NumElem < 2) {
-        // We know that candidate stores are in order and of correct
-        // shape. While there is no mergeable sequence from the
-        // beginning one may start later in the sequence. The only
-        // reason a merge of size N could have failed where another of
-        // the same size would not have is if the alignment or either
-        // the load or store has improved. Drop as many candidates as we
-        // can here.
-        unsigned NumSkip = 1;
-        while ((NumSkip < LoadNodes.size()) &&
-               (LoadNodes[NumSkip].MemNode->getAlignment() <= FirstLoadAlign) &&
-               (StoreNodes[NumSkip].MemNode->getAlignment() <= FirstStoreAlign))
-          NumSkip++;
-        StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumSkip);
-        LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumSkip);
-        NumConsecutiveStores -= NumSkip;
-        continue;
-      }
-
-      // Check that we can merge these candidates without causing a cycle.
-      if (!checkMergeStoreCandidatesForDependencies(StoreNodes, NumElem,
-                                                    RootNode)) {
-        StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
-        LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumElem);
-        NumConsecutiveStores -= NumElem;
-        continue;
-      }
-
-      // Find if it is better to use vectors or integers to load and store
-      // to memory.
-      EVT JointMemOpVT;
-      if (UseVectorTy) {
-        // Find a legal type for the vector store.
-        unsigned Elts = NumElem * NumMemElts;
-        JointMemOpVT = EVT::getVectorVT(Context, MemVT.getScalarType(), Elts);
-      } else {
-        unsigned SizeInBits = NumElem * ElementSizeBytes * 8;
-        JointMemOpVT = EVT::getIntegerVT(Context, SizeInBits);
-      }
-
-      SDLoc LoadDL(LoadNodes[0].MemNode);
-      SDLoc StoreDL(StoreNodes[0].MemNode);
-
-      // The merged loads are required to have the same incoming chain, so
-      // using the first's chain is acceptable.
-
-      SDValue NewStoreChain = getMergeStoreChains(StoreNodes, NumElem);
-      AddToWorklist(NewStoreChain.getNode());
-
-      MachineMemOperand::Flags LdMMOFlags =
-          isDereferenceable ? MachineMemOperand::MODereferenceable
-                            : MachineMemOperand::MONone;
-      if (IsNonTemporalLoad)
-        LdMMOFlags |= MachineMemOperand::MONonTemporal;
-
-      MachineMemOperand::Flags StMMOFlags =
-          IsNonTemporalStore ? MachineMemOperand::MONonTemporal
-                             : MachineMemOperand::MONone;
-
-      SDValue NewLoad, NewStore;
-      if (UseVectorTy || !DoIntegerTruncate) {
-        NewLoad =
-            DAG.getLoad(JointMemOpVT, LoadDL, FirstLoad->getChain(),
-                        FirstLoad->getBasePtr(), FirstLoad->getPointerInfo(),
-                        FirstLoadAlign, LdMMOFlags);
-        NewStore = DAG.getStore(
-            NewStoreChain, StoreDL, NewLoad, FirstInChain->getBasePtr(),
-            FirstInChain->getPointerInfo(), FirstStoreAlign, StMMOFlags);
-      } else { // This must be the truncstore/extload case
-        EVT ExtendedTy =
-            TLI.getTypeToTransformTo(*DAG.getContext(), JointMemOpVT);
-        NewLoad = DAG.getExtLoad(ISD::EXTLOAD, LoadDL, ExtendedTy,
-                                 FirstLoad->getChain(), FirstLoad->getBasePtr(),
-                                 FirstLoad->getPointerInfo(), JointMemOpVT,
-                                 FirstLoadAlign, LdMMOFlags);
-        NewStore = DAG.getTruncStore(NewStoreChain, StoreDL, NewLoad,
-                                     FirstInChain->getBasePtr(),
-                                     FirstInChain->getPointerInfo(),
-                                     JointMemOpVT, FirstInChain->getAlignment(),
-                                     FirstInChain->getMemOperand()->getFlags());
-      }
-
-      // Transfer chain users from old loads to the new load.
-      for (unsigned i = 0; i < NumElem; ++i) {
-        LoadSDNode *Ld = cast<LoadSDNode>(LoadNodes[i].MemNode);
-        DAG.ReplaceAllUsesOfValueWith(SDValue(Ld, 1),
-                                      SDValue(NewLoad.getNode(), 1));
-      }
-
-      // Replace the all stores with the new store. Recursively remove
-      // corresponding value if its no longer used.
-      for (unsigned i = 0; i < NumElem; ++i) {
-        SDValue Val = StoreNodes[i].MemNode->getOperand(1);
-        CombineTo(StoreNodes[i].MemNode, NewStore);
-        if (Val.getNode()->use_empty())
-          recursivelyDeleteUnusedNodes(Val.getNode());
-      }
-
-      RV = true;
-      StoreNodes.erase(StoreNodes.begin(), StoreNodes.begin() + NumElem);
-      LoadNodes.erase(LoadNodes.begin(), LoadNodes.begin() + NumElem);
-      NumConsecutiveStores -= NumElem;
+    default:
+      llvm_unreachable("Unhandled store source type");
     }
   }
-  return RV;
+  return MadeChange;
 }
 
 SDValue DAGCombiner::replaceStoreChain(StoreSDNode *ST, SDValue BetterChain) {

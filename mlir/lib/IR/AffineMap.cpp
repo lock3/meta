@@ -104,11 +104,9 @@ AffineMap AffineMap::getMinorIdentityMap(unsigned dims, unsigned results,
   return AffineMap::get(dims, 0, id.getResults().take_back(results), context);
 }
 
-bool AffineMap::isMinorIdentity(AffineMap map) {
-  if (!map)
-    return false;
-  return map == getMinorIdentityMap(map.getNumDims(), map.getNumResults(),
-                                    map.getContext());
+bool AffineMap::isMinorIdentity() const {
+  return *this ==
+         getMinorIdentityMap(getNumDims(), getNumResults(), getContext());
 }
 
 /// Returns an AffineMap representing a permutation.
@@ -330,6 +328,21 @@ AffineMap AffineMap::compose(AffineMap map) {
   return AffineMap::get(numDims, numSymbols, exprs, map.getContext());
 }
 
+SmallVector<int64_t, 4> AffineMap::compose(ArrayRef<int64_t> values) {
+  assert(getNumSymbols() == 0 && "Expected symbol-less map");
+  SmallVector<AffineExpr, 4> exprs;
+  exprs.reserve(values.size());
+  MLIRContext *ctx = getContext();
+  for (auto v : values)
+    exprs.push_back(getAffineConstantExpr(v, ctx));
+  auto resMap = compose(AffineMap::get(0, 0, exprs, ctx));
+  SmallVector<int64_t, 4> res;
+  res.reserve(resMap.getNumResults());
+  for (auto e : resMap.getResults())
+    res.push_back(e.cast<AffineConstantExpr>().getValue());
+  return res;
+}
+
 bool AffineMap::isProjectedPermutation() {
   if (getNumSymbols() > 0)
     return false;
@@ -358,6 +371,14 @@ AffineMap AffineMap::getSubMap(ArrayRef<unsigned> resultPos) {
   for (auto idx : resultPos)
     exprs.push_back(getResult(idx));
   return AffineMap::get(getNumDims(), getNumSymbols(), exprs, getContext());
+}
+
+AffineMap AffineMap::getMajorSubMap(unsigned numResults) {
+  if (numResults == 0)
+    return AffineMap();
+  if (numResults > getNumResults())
+    return *this;
+  return getSubMap(llvm::to_vector<4>(llvm::seq<unsigned>(0, numResults)));
 }
 
 AffineMap AffineMap::getMinorSubMap(unsigned numResults) {
