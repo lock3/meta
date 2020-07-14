@@ -3662,7 +3662,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case LambdaExprClass: {
     const LambdaExpr *LE = cast<LambdaExpr>(this);
     for (Expr *E : LE->capture_inits())
-      if (E->HasSideEffects(Ctx, IncludePossibleEffects))
+      if (E && E->HasSideEffects(Ctx, IncludePossibleEffects))
         return true;
     return false;
   }
