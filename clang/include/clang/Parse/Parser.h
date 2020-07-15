@@ -505,13 +505,12 @@ public:
 
   bool isIdentifier() {
     if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
-      if (AnnotateIdentifierSplice())
-        return false;
-
+      AnnotateIdentifierSplice();
       return true;
     }
 
-    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice);
+    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice,
+                       tok::annot_invalid_identifier_splice);
   }
 
   // FIXME: This should probably be private similar to the other

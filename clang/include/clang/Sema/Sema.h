@@ -10157,6 +10157,9 @@ public:
   bool BuildCXXIdentifierSplice(
       ArrayRef<Expr *> Parts, IdentifierInfo *&Result);
 
+  void ActOnCXXInvalidIdentifierSplice(IdentifierInfo *&Result);
+  void BuildCXXInvalidIdentifierSplice(IdentifierInfo *&Result);
+
   ExprResult ActOnCXXDependentSpliceIdExpression(
       CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
       DeclarationNameInfo NameInfo,

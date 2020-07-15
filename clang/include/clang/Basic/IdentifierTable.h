@@ -662,6 +662,21 @@ public:
     return *CII;
   }
 
+  IdentifierInfo &getInvalid(ASTContext &C) {
+    unsigned SizeOfMem = sizeof(SplicedIdentifierInfo);
+
+    void *Mem = SplicedIdInfoAlloc.Allocate(
+        SizeOfMem, alignof(SplicedIdentifierInfo));
+
+    auto *CII = new (Mem) SplicedIdentifierInfo(C, 0);
+
+    auto &Entry = *HashTable.insert(
+        std::make_pair("__invalid_identifier_splice", nullptr)).first;
+    CII->Entry = &Entry;
+
+    return *CII;
+  }
+
   using iterator = HashTableTy::const_iterator;
   using const_iterator = HashTableTy::const_iterator;
 

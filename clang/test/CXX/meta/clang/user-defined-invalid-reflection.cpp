@@ -12,7 +12,7 @@ namespace non_template_reflection {
   }
 
   int unqualid_test() {
-    return unqualid(invalid_refl); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}} expected-error {{expected unqualified-id}}
+    return unqualid(invalid_refl); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
   }
 
   using ReflectedType = typename(invalid_refl); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
@@ -36,7 +36,7 @@ namespace template_reflection {
   }
 
   int unqualid_test() {
-    return unqualid(invalid_refl<1>); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}} expected-error {{expected unqualified-id}}
+    return unqualid(invalid_refl<1>); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
   }
 
   using ReflectedType = typename(invalid_refl<1>); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}

@@ -782,6 +782,9 @@ ANNOTATION(refltype)     // annotation for a reflected type specifier of the
                          // form "typename(reflection)".
 ANNOTATION(identifier_splice) // annotation for an identifier splice.
                               // e.g. "unqualid("a", 1)"
+ANNOTATION(invalid_identifier_splice) // annotation for an
+                                      // invalid identifier splice
+                                      // e.g. "unqualid foo )"
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

@@ -1511,6 +1511,17 @@ bool Sema::BuildCXXIdentifierSplice(
   return false;
 }
 
+void Sema::ActOnCXXInvalidIdentifierSplice(IdentifierInfo *&Result) {
+  BuildCXXInvalidIdentifierSplice(Result);
+}
+
+/// Constructs a new invalid identifier splice.
+///
+/// Returns true upon error.
+void Sema::BuildCXXInvalidIdentifierSplice(IdentifierInfo *&Result) {
+  Result = &Context.Idents.getInvalid(Context);
+}
+
 ExprResult Sema::ActOnCXXDependentSpliceIdExpression(
     CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
     DeclarationNameInfo NameInfo, const TemplateArgumentListInfo *TemplateArgs,
