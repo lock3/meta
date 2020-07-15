@@ -211,6 +211,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::TypeOfExpr:
     case Type::TypeOf:
     case Type::Decltype:
+    case Type::DependentIdentifierSplice:
     case Type::Reflected:
     case Type::UnaryTransform:
     case Type::Record:
@@ -1052,6 +1053,25 @@ void TypePrinter::printDecltypeBefore(const DecltypeType *T, raw_ostream &OS) {
 }
 
 void TypePrinter::printDecltypeAfter(const DecltypeType *T, raw_ostream &OS) {}
+
+void TypePrinter::printDependentIdentifierSpliceBefore(
+    const DependentIdentifierSpliceType *T, raw_ostream &OS) {
+  NestedNameSpecifier *Qualifier = T->getQualifier();
+  if (Qualifier)
+    Qualifier->print(OS, Policy);
+
+  OS << "unqualid(" << T->getIdentifierInfo()->getName() << ")";
+
+  if (T->getNumArgs()) {
+    IncludeStrongLifetimeRAII Strong(Policy);
+    printTemplateArgumentList(OS, T->template_arguments(), Policy);
+  }
+
+  spaceBeforePlaceHolder(OS);
+}
+
+void TypePrinter::printDependentIdentifierSpliceAfter(
+    const DependentIdentifierSpliceType *T, raw_ostream &OS) { }
 
 void TypePrinter::printReflectedBefore(const ReflectedType *T,
                                        raw_ostream &OS) {

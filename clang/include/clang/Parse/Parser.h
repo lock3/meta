@@ -3089,6 +3089,7 @@ private:
                                     bool ObjectHadErrors,
                                     SourceLocation TemplateKWLoc,
                                     IdentifierInfo *Name,
+                                    bool NameSpliced,
                                     SourceLocation NameLoc,
                                     bool EnteringContext,
                                     UnqualifiedId &Id,
@@ -3348,8 +3349,8 @@ private:
       CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
       bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
       bool AllowDeductionGuide, bool TemplateSpecified,
-      SourceLocation *TemplateKWLoc, IdentifierInfo *Id, SourceLocation IdLoc,
-      UnqualifiedId &Result);
+      SourceLocation *TemplateKWLoc, IdentifierInfo *Id,
+      bool IdSpliced, SourceLocation IdLoc, UnqualifiedId &Result);
 public:
   bool ParseUnqualifiedId(
       CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
@@ -3416,6 +3417,7 @@ private:
                                CXXScopeSpec &SS,
                                SourceLocation TemplateKWLoc,
                                UnqualifiedId &TemplateName,
+                               bool TemplateNameSpliced,
                                bool AllowTypeAnnotation = true,
                                bool TypeConstraint = false);
   void AnnotateTemplateIdTokenAsType(CXXScopeSpec &SS,

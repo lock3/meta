@@ -1540,6 +1540,123 @@ ExprResult Sema::BuildCXXDependentSpliceIdExpression(
       IsAddressOfOperand, TemplateArgs);
 }
 
+static QualType BuildTypeForIdentifierSplice(
+    Sema &SemaRef, CXXScopeSpec &SS, IdentifierInfo *Id,
+    SourceLocation IdLoc, TemplateArgumentListInfo &TemplateArgs) {
+  if (Id->isSplice()) {
+    return SemaRef.getASTContext().getDependentIdentifierSpliceType(
+        SS.getScopeRep(), Id, TemplateArgs);
+  } else {
+    return SemaRef.ResolveNonDependentIdentifierSpliceType(
+        SemaRef.getCurScope(), SS, Id, IdLoc, TemplateArgs);
+  }
+}
+
+QualType Sema::ResolveNonDependentIdentifierSpliceType(
+    Scope *S, CXXScopeSpec &SS,
+    IdentifierInfo *Id, SourceLocation IdLoc,
+    TemplateArgumentListInfo &TemplateArgs) {
+  LookupResult LookupResult(*this, Id, IdLoc, Sema::LookupOrdinaryName);
+  LookupParsedName(LookupResult, S, &SS);
+
+  if (!LookupResult.isSingleResult())
+    return QualType();
+
+  NamedDecl *FirstDecl = (*LookupResult.begin())->getUnderlyingDecl();
+  if (auto *Type = dyn_cast<TypeDecl>(FirstDecl)) {
+    DiagnoseUseOfDecl(Type, IdLoc);
+    MarkAnyDeclReferenced(Type->getLocation(), Type, /*OdrUse=*/false);
+    QualType Result = Context.getTypeDeclType(Type);
+
+    if (SS.isNotEmpty())
+      Result = getElaboratedType(ETK_None, SS, Result);
+
+    return Result;
+  }
+
+  if (auto *Template = dyn_cast<TemplateDecl>(FirstDecl)) {
+    // FIXME: This might not be right, is TemplateLoc the location of kw_template
+    // or the template name loc? Is there something that requires this location?
+    QualType Result = CheckTemplateIdType(
+        TemplateName(Template), /*TemplateLoc=*/SourceLocation(), TemplateArgs);
+
+    if (SS.isNotEmpty())
+      Result = getElaboratedType(ETK_None, SS, Result);
+
+    return Result;
+  }
+
+  Diag(IdLoc, diag::err_identifier_splice_not_type);
+  Diag(FirstDecl->getLocation(), diag::note_identifier_splice_resolved_here)
+      << FirstDecl;
+  return QualType();
+}
+
+void Sema::BuildIdentifierSpliceTypeLoc(
+    TypeLocBuilder &TLB, QualType T, SourceLocation TypenameLoc,
+    NestedNameSpecifierLoc QualifierLoc,
+    SourceLocation IdLoc, TemplateArgumentListInfo &TemplateArgs) {
+  if (const auto *DependentTy = T->getAs<DependentIdentifierSpliceType>()) {
+    DependentIdentifierSpliceTypeLoc NewTL
+        = TLB.push<DependentIdentifierSpliceTypeLoc>(T);
+    NewTL.setTypenameKeywordLoc(TypenameLoc);
+    NewTL.setQualifierLoc(QualifierLoc);
+    NewTL.setIdentifierLoc(IdLoc);
+    NewTL.setLAngleLoc(TemplateArgs.getLAngleLoc());
+    NewTL.setRAngleLoc(TemplateArgs.getRAngleLoc());
+    for (unsigned I = 0; I < TemplateArgs.size(); ++I)
+      NewTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
+  } else {
+    const auto *ElabTy = T->getAs<ElaboratedType>();
+    QualType InnerT = ElabTy ? ElabTy->getNamedType() : T;
+
+    if (const auto *SpecTy = InnerT->getAs<TemplateSpecializationType>()) {
+      TemplateSpecializationTypeLoc NewTL
+        = TLB.push<TemplateSpecializationTypeLoc>(InnerT);
+      NewTL.setTemplateKeywordLoc(SourceLocation());
+      NewTL.setTemplateNameLoc(IdLoc);
+      NewTL.setLAngleLoc(TemplateArgs.getLAngleLoc());
+      NewTL.setRAngleLoc(TemplateArgs.getRAngleLoc());
+      for (unsigned I = 0; I < TemplateArgs.size(); ++I)
+        NewTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
+    } else {
+      TLB.pushTypeSpec(InnerT).setNameLoc(IdLoc);
+    }
+
+    if (ElabTy) {
+      // Push the outer elaborated type
+      ElaboratedTypeLoc ElabTL = TLB.push<ElaboratedTypeLoc>(T);
+      ElabTL.setElaboratedKeywordLoc(SourceLocation());
+      ElabTL.setQualifierLoc(QualifierLoc);
+    }
+  }
+}
+
+TypeResult
+Sema::ActOnCXXDependentIdentifierSpliceType(
+    SourceLocation TypenameKWLoc, CXXScopeSpec &SS,
+    IdentifierInfo *Id, SourceLocation IdLoc, SourceLocation LAngleLoc,
+    ASTTemplateArgsPtr TemplateArgsIn, SourceLocation RAngleLoc) {
+  TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
+  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+
+  QualType Result = BuildTypeForIdentifierSplice(
+      *this, SS, Id, IdLoc, TemplateArgs);
+  if (Result.isNull())
+    return TypeResult(true);
+
+  NestedNameSpecifierLoc QualifierLoc;
+  if (SS.isNotEmpty())
+    QualifierLoc = SS.getWithLocInContext(Context);
+
+  // Create source-location information for this type.
+  TypeLocBuilder Builder;
+  BuildIdentifierSpliceTypeLoc(
+      Builder, Result, TypenameKWLoc, QualifierLoc, IdLoc, TemplateArgs);
+
+  return CreateParsedType(Result, Builder.getTypeSourceInfo(Context, Result));
+}
+
 /// Evaluates the given expression and yields the computed type.
 QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (E->isTypeDependent() || E->isValueDependent())

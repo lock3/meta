@@ -2814,6 +2814,10 @@ def err_expression_not_type_reflection : Error<
   "expression does not reflect a type">;
 def err_expression_not_value_reflection : Error<
   "expression does not reflect a value">;
+def err_identifier_splice_not_type : Error<
+  "identifier splice does not name a type or class template">;
+def note_identifier_splice_resolved_here : Note<
+  "splice resolved to %0 here">;
 def reflection_not_constant_expression : Error<
   "reflection is not a constant expression">;
 def reflection_reflects_non_constant_expression : Error<

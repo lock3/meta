@@ -5998,6 +5998,11 @@ bool UnnamedLocalNoLinkageFinder::VisitDecltypeType(const DecltypeType*) {
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitDependentIdentifierSpliceType(
+    const DependentIdentifierSpliceType*) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitReflectedType(const ReflectedType*) {
   return false;
 }

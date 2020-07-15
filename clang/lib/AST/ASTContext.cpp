@@ -3480,6 +3480,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::ExtInt:
   case Type::DependentExtInt:
   case Type::CXXDependentVariadicReifier:
+  case Type::DependentIdentifierSplice:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -5313,6 +5314,24 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
   }
   Types.push_back(dt);
   return QualType(dt, 0);
+}
+
+QualType ASTContext::getDependentIdentifierSpliceType(
+    NestedNameSpecifier *NNS, IdentifierInfo *II,
+    const TemplateArgumentListInfo &TemplateArgs) const {
+  llvm::SmallVector<TemplateArgument, 8> TemplateArgsArr;
+  for (auto &ArgLoc : TemplateArgs.arguments())
+    TemplateArgsArr.push_back(ArgLoc.getArgument());
+
+  return getDependentIdentifierSpliceType(NNS, II, TemplateArgsArr);
+}
+
+QualType ASTContext::getDependentIdentifierSpliceType(
+    NestedNameSpecifier *NNS, IdentifierInfo *II,
+    ArrayRef<TemplateArgument> TemplateArgs) const {
+  auto *T = DependentIdentifierSpliceType::Create(*this, NNS, II, TemplateArgs);
+  Types.push_back(T);
+  return QualType(T, 0);
 }
 
 QualType ASTContext::getReflectedType(Expr *E, QualType T) const {

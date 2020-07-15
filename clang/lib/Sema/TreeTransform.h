@@ -996,6 +996,24 @@ public:
   /// Subclasses may override this routine to provide different behavior.
   QualType RebuildDecltypeType(Expr *Underlying, SourceLocation Loc);
 
+  /// Build a new identifier splice type.
+  QualType RebuildDependentIdentifierSpliceType(
+      NestedNameSpecifierLoc QualifierLoc,
+      IdentifierInfo *Id, SourceLocation IdLoc,
+      TemplateArgumentListInfo &TemplateArgs) {
+    if (Id->isSplice()) {
+      return SemaRef.Context.getDependentIdentifierSpliceType(
+          QualifierLoc.getNestedNameSpecifier(), Id, TemplateArgs);
+    } else {
+      CXXScopeSpec SS;
+      SS.Adopt(QualifierLoc);
+
+      ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+      return getSema().ResolveNonDependentIdentifierSpliceType(
+          ParserLookup.getCurScope(), SS, Id, IdLoc, TemplateArgs);
+    }
+  }
+
   /// Build a new C++11 auto type.
   ///
   /// By default, builds a new AutoType with the given deduced type.
@@ -6666,6 +6684,46 @@ QualType TreeTransform<Derived>::TransformDependentExtIntType(
       return !(X == Y);
     }
   };
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformDependentIdentifierSpliceType(
+    TypeLocBuilder &TLB, DependentIdentifierSpliceTypeLoc TL) {
+  const DependentIdentifierSpliceType *T = TL.getTypePtr();
+
+  NestedNameSpecifierLoc QualifierLoc;
+  if (TL.getQualifierLoc()) {
+    QualifierLoc
+      = getDerived().TransformNestedNameSpecifierLoc(TL.getQualifierLoc());
+    if (!QualifierLoc)
+      return QualType();
+  }
+
+  IdentifierInfo *OldId = T->getIdentifierInfo();
+  IdentifierInfo *NewId = getDerived().TransformIdentifierInfo(OldId);
+
+  TemplateArgumentListInfo TemplateArgs;
+  if (TL.getNumArgs()) {
+    TemplateArgs.setLAngleLoc(TL.getLAngleLoc());
+    TemplateArgs.setRAngleLoc(TL.getRAngleLoc());
+
+    using ArgIterator = TemplateArgumentLocContainerIterator<
+                                              DependentIdentifierSpliceTypeLoc>;
+    if (getDerived().TransformTemplateArguments(
+        ArgIterator(TL, 0), ArgIterator(TL, TL.getNumArgs()), TemplateArgs))
+      return QualType();
+  }
+
+  SourceLocation IdLoc = TL.getIdentifierLoc();
+  QualType Result = getDerived().RebuildDependentIdentifierSpliceType(
+      QualifierLoc, NewId, IdLoc, TemplateArgs);
+  if (Result.isNull())
+    return QualType();
+
+  getSema().BuildIdentifierSpliceTypeLoc(
+      TLB, Result, TL.getTypenameKeywordLoc(), QualifierLoc,
+      IdLoc, TemplateArgs);
+  return Result;
+}
 
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformAutoType(TypeLocBuilder &TLB,

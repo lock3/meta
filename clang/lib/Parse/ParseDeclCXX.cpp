@@ -1204,6 +1204,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
   }
 
   IdentifierInfo *Id = Tok.getIdentifierInfo();
+  bool IdSpliced = Tok.is(tok::annot_identifier_splice);
   SourceLocation IdLoc = ConsumeIdentifier();
 
   if (Tok.is(tok::less)) {
@@ -1225,7 +1226,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
 
     // Parse the full template-id, then turn it into a type.
     if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
-                                TemplateName))
+                                TemplateName, IdSpliced))
       return true;
     if (Tok.is(tok::annot_template_id) &&
         takeTemplateIdAnnotation(Tok)->mightBeType())
@@ -1319,6 +1320,9 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::annot_pragma_ms_vtordisp:
   // struct foo {...} _Pragma(pointers_to_members(...));
   case tok::annot_pragma_ms_pointers_to_members:
+  // struct foo {...} unqualid(...);
+  case tok::kw_unqualid:
+  case tok::annot_identifier_splice:
     return true;
   case tok::colon:
     return CouldBeBitfield ||   // enum E { ... }   :         2;

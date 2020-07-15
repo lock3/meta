@@ -6628,6 +6628,18 @@ void TypeLocReader::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   TL.setNameLoc(readSourceLocation());
 }
 
+void TypeLocReader::VisitDependentIdentifierSpliceTypeLoc(
+    DependentIdentifierSpliceTypeLoc TL) {
+  TL.setTypenameKeywordLoc(readSourceLocation());
+  TL.setQualifierLoc(ReadNestedNameSpecifierLoc());
+  TL.setIdentifierLoc(readSourceLocation());
+  TL.setLAngleLoc(readSourceLocation());
+  TL.setRAngleLoc(readSourceLocation());
+  for (unsigned I = 0; I < TL.getNumArgs(); ++I)
+    TL.setArgLocInfo(I, Reader.readTemplateArgumentLocInfo(
+        TL.getTypePtr()->getArg(I).getKind()));
+}
+
 void TypeLocReader::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
   TL.setNameLoc(readSourceLocation());
 }

@@ -712,6 +712,7 @@ bool Parser::TryAnnotateTypeConstraint() {
 
   if (isIdentifier()) {
     UnqualifiedId PossibleConceptName;
+    bool NameSpliced = Tok.is(tok::annot_identifier_splice);
     PossibleConceptName.setIdentifier(Tok.getIdentifierInfo(),
                                       Tok.getLocation());
 
@@ -736,10 +737,11 @@ bool Parser::TryAnnotateTypeConstraint() {
     // may or may not have a template parameter list following the concept
     // name.
     if (AnnotateTemplateIdToken(PossibleConcept, TNK, SS,
-                                   /*TemplateKWLoc=*/SourceLocation(),
-                                   PossibleConceptName,
-                                   /*AllowTypeAnnotation=*/false,
-                                   /*TypeConstraint=*/true))
+                                /*TemplateKWLoc=*/SourceLocation(),
+                                PossibleConceptName,
+                                NameSpliced,
+                                /*AllowTypeAnnotation=*/false,
+                                /*TypeConstraint=*/true))
       return true;
   }
 
@@ -1291,6 +1293,7 @@ bool Parser::AnnotateTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
                                      CXXScopeSpec &SS,
                                      SourceLocation TemplateKWLoc,
                                      UnqualifiedId &TemplateName,
+                                     bool TemplateNameSpliced,
                                      bool AllowTypeAnnotation,
                                      bool TypeConstraint) {
   assert(getLangOpts().CPlusPlus && "Can only annotate template-ids in C++");
@@ -1355,8 +1358,9 @@ bool Parser::AnnotateTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
             : TemplateName.OperatorFunctionId.Operator;
 
     TemplateIdAnnotation *TemplateId = TemplateIdAnnotation::Create(
-        TemplateKWLoc, TemplateNameLoc, TemplateII, OpKind, Template, TNK,
-        LAngleLoc, RAngleLoc, TemplateArgs, ArgsInvalid, TemplateIds);
+        TemplateKWLoc, TemplateNameLoc, TemplateII, TemplateNameSpliced,
+        OpKind, Template, TNK, LAngleLoc, RAngleLoc, TemplateArgs,
+        ArgsInvalid, TemplateIds);
 
     Tok.setAnnotationValue(TemplateId);
     if (TemplateKWLoc.isValid())

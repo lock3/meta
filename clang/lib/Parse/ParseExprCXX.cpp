@@ -309,9 +309,11 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
       SourceLocation TemplateKWLoc = ConsumeToken();
 
       UnqualifiedId TemplateName;
+      bool NameSpliced = false;
       if (isIdentifier()) {
         // Consume the identifier.
         TemplateName.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+        NameSpliced = Tok.is(tok::annot_identifier_splice);
         ConsumeIdentifier();
       } else if (Tok.is(tok::kw_operator)) {
         // We don't need to actually parse the unqualified-id in this case,
@@ -352,7 +354,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
           getCurScope(), SS, TemplateKWLoc, TemplateName, ObjectType,
           EnteringContext, Template, /*AllowInjectedClassName*/ true);
       if (AnnotateTemplateIdToken(Template, TNK, SS, TemplateKWLoc,
-                                  TemplateName, false))
+                                  TemplateName, NameSpliced, false))
         return true;
 
       continue;
@@ -412,6 +414,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
       break;
 
     IdentifierInfo &II = *Tok.getIdentifierInfo();
+    bool NameSpliced = Tok.is(tok::annot_identifier_splice);
 
     // nested-name-specifier:
     //   type-name '::'
@@ -441,6 +444,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
       // It is invalid to have :: {, consume the scope qualifier and pretend
       // like we never saw it.
       Token Identifier = Tok; // Stash away the identifier.
+      NameSpliced = Tok.is(tok::annot_identifier_splice);
       ConsumeIdentifier();    // Eat the identifier, current token is now '::'.
       Diag(PP.getLocForEndOfToken(ConsumeToken()), diag::err_expected)
           << tok::identifier;
@@ -533,9 +537,10 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
         // specializations) still want to see the original template-id
         // token, and it might not be a type at all (e.g. a concept name in a
         // type-constraint).
+        NameSpliced = Tok.is(tok::annot_identifier_splice);
         ConsumeIdentifier();
         if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
-                                    TemplateName, false))
+                                    TemplateName, NameSpliced, false))
           return true;
         continue;
       }
@@ -558,13 +563,14 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
               << FixItHint::CreateInsertion(Tok.getLocation(), "template ");
         }
 
+        NameSpliced = Tok.is(tok::annot_identifier_splice);
         SourceLocation TemplateNameLoc = ConsumeIdentifier();
 
         TemplateNameKind TNK = Actions.ActOnTemplateName(
             getCurScope(), SS, TemplateNameLoc, TemplateName, ObjectType,
             EnteringContext, Template, /*AllowInjectedClassName*/ true);
         if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
-                                    TemplateName, false))
+                                    TemplateName, NameSpliced, false))
           return true;
 
         continue;
@@ -1831,6 +1837,7 @@ Parser::ParseCXXPseudoDestructor(Expr *Base, SourceLocation OpLoc,
   // Parse the second type.
   UnqualifiedId SecondTypeName;
   IdentifierInfo *Name = Tok.getIdentifierInfo();
+  bool NameSpliced = Tok.is(tok::annot_identifier_splice);
   SourceLocation NameLoc = ConsumeIdentifier();
   SecondTypeName.setIdentifier(Name, NameLoc);
 
@@ -1845,7 +1852,7 @@ Parser::ParseCXXPseudoDestructor(Expr *Base, SourceLocation OpLoc,
   if (Tok.is(tok::less) &&
       ParseUnqualifiedIdTemplateId(
           SS, ObjectType, Base && Base->containsErrors(), SourceLocation(),
-          Name, NameLoc, false, SecondTypeName,
+          Name, NameSpliced, NameLoc, false, SecondTypeName,
           /*AssumeTemplateId=*/true))
     return ExprError();
 
@@ -2373,8 +2380,9 @@ bool Parser::ParseCXXTypeSpecifierSeq(DeclSpec &DS) {
 /// \returns true if a parse error occurred, false otherwise.
 bool Parser::ParseUnqualifiedIdTemplateId(
     CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
-    SourceLocation TemplateKWLoc, IdentifierInfo *Name, SourceLocation NameLoc,
-    bool EnteringContext, UnqualifiedId &Id, bool AssumeTemplateId) {
+    SourceLocation TemplateKWLoc, IdentifierInfo *Name, bool NameSpliced,
+    SourceLocation NameLoc, bool EnteringContext, UnqualifiedId &Id,
+    bool AssumeTemplateId) {
   assert(Tok.is(tok::less) && "Expected '<' to finish parsing a template-id");
 
   TemplateTy Template;
@@ -2501,8 +2509,9 @@ bool Parser::ParseUnqualifiedIdTemplateId(
             : Id.OperatorFunctionId.Operator;
 
     TemplateIdAnnotation *TemplateId = TemplateIdAnnotation::Create(
-        TemplateKWLoc, Id.StartLocation, TemplateII, OpKind, Template, TNK,
-        LAngleLoc, RAngleLoc, TemplateArgs, /*ArgsInvalid*/false, TemplateIds);
+        TemplateKWLoc, Id.StartLocation, TemplateII, NameSpliced, OpKind,
+        Template, TNK, LAngleLoc, RAngleLoc, TemplateArgs,
+        /*ArgsInvalid*/false, TemplateIds);
 
     Id.setTemplateId(TemplateId);
     return false;
@@ -2769,8 +2778,8 @@ bool Parser::ParseUnqualifiedId(
     CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
     bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
     bool AllowDeductionGuide, bool TemplateSpecified,
-    SourceLocation *TemplateKWLoc, IdentifierInfo *Id, SourceLocation IdLoc,
-    UnqualifiedId &Result) {
+    SourceLocation *TemplateKWLoc, IdentifierInfo *Id, bool IdSpliced,
+    SourceLocation IdLoc, UnqualifiedId &Result) {
   if (!getLangOpts().CPlusPlus) {
     // If we're not in C++, only identifiers matter. Record the
     // identifier and return.
@@ -2803,8 +2812,8 @@ bool Parser::ParseUnqualifiedId(
   if (Tok.is(tok::less))
     return ParseUnqualifiedIdTemplateId(
         SS, ObjectType, ObjectHadErrors,
-        TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdLoc,
-        EnteringContext, Result, TemplateSpecified);
+        TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Id, IdSpliced,
+        IdLoc, EnteringContext, Result, TemplateSpecified);
   else if (TemplateSpecified &&
            Actions.ActOnTemplateName(
                getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
@@ -2882,12 +2891,13 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
   if (isIdentifier()) {
     // Consume the identifier.
     IdentifierInfo *Id = Tok.getIdentifierInfo();
+    bool IdSpliced = Tok.is(tok::annot_identifier_splice);
     SourceLocation IdLoc = ConsumeIdentifier();
 
     return ParseUnqualifiedId(
         SS, ObjectType, ObjectHadErrors, EnteringContext, AllowDestructorName,
         AllowConstructorName, AllowDeductionGuide, TemplateSpecified,
-        TemplateKWLoc, Id, IdLoc, Result);
+        TemplateKWLoc, Id, IdSpliced, IdLoc, Result);
   }
 
   // unqualified-id:
@@ -2965,7 +2975,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
       return ParseUnqualifiedIdTemplateId(
           SS, ObjectType, ObjectHadErrors,
           TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), nullptr,
-          SourceLocation(), EnteringContext, Result, TemplateSpecified);
+          /*NameSpliced=*/false, SourceLocation(), EnteringContext,
+          Result, TemplateSpecified);
     else if (TemplateSpecified &&
              Actions.ActOnTemplateName(
                  getCurScope(), SS, *TemplateKWLoc, Result, ObjectType,
@@ -3054,6 +3065,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
 
     // Parse the class-name (or template-name in a simple-template-id).
     IdentifierInfo *ClassName = Tok.getIdentifierInfo();
+    bool ClassNameSpliced = Tok.is(tok::annot_identifier_splice);
     SourceLocation ClassNameLoc = ConsumeIdentifier();
 
     if (Tok.is(tok::less)) {
@@ -3061,7 +3073,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
       return ParseUnqualifiedIdTemplateId(
           SS, ObjectType, ObjectHadErrors,
           TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), ClassName,
-          ClassNameLoc, EnteringContext, Result, TemplateSpecified);
+          ClassNameSpliced, ClassNameLoc, EnteringContext, Result,
+          TemplateSpecified);
     }
 
     // Note that this is a destructor name.

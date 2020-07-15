@@ -360,6 +360,19 @@ void TypeLocWriter::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
 
+void TypeLocWriter::VisitDependentIdentifierSpliceTypeLoc(
+    DependentIdentifierSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getTypenameKeywordLoc());
+  Record.AddNestedNameSpecifierLoc(TL.getQualifierLoc());
+  Record.AddSourceLocation(TL.getIdentifierLoc());
+  Record.AddSourceLocation(TL.getLAngleLoc());
+  Record.AddSourceLocation(TL.getRAngleLoc());
+  for (unsigned I = 0; I < TL.getNumArgs(); ++I)
+    Record.AddTemplateArgumentLocInfo(TL.getTypePtr()->getArg(I).getKind(),
+                                      TL.getArgLocInfo(I));
+}
+
+
 void TypeLocWriter::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }

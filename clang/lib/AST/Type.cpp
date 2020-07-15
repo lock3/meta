@@ -3480,6 +3480,48 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
   E->Profile(ID, Context, true);
 }
 
+DependentIdentifierSpliceType::DependentIdentifierSpliceType(
+    const ASTContext &C, NestedNameSpecifier *NNS, IdentifierInfo *II,
+    unsigned NumTemplateArgs)
+    : Type(DependentIdentifierSplice, C.DependentTy,
+           TypeDependence::DependentInstantiation, /*MetaType=*/false),
+      Context(C), NNS(NNS), II(II) {
+  assert(II->isSplice());
+
+  DependentIdentifierSpliceTypeBits.NumTemplateArgs = NumTemplateArgs;
+}
+
+DependentIdentifierSpliceType *DependentIdentifierSpliceType::Create(
+    const ASTContext &C, NestedNameSpecifier *NNS, IdentifierInfo *II,
+    ArrayRef<TemplateArgument> TemplateArgs) {
+  unsigned NumTemplateArgs = TemplateArgs.size();
+
+  unsigned SizeOfTrailingArgs = sizeof(TemplateArgument) * NumTemplateArgs;
+  unsigned SizeOfMem = sizeof(DependentIdentifierSpliceType) + SizeOfTrailingArgs;
+
+  void *Mem = C.Allocate(SizeOfMem, TypeAlignment);
+  auto *Type = new (Mem) DependentIdentifierSpliceType(
+      C, NNS, II, NumTemplateArgs);
+
+  if (NumTemplateArgs)
+    std::uninitialized_copy_n(TemplateArgs.data(), NumTemplateArgs,
+                              reinterpret_cast<TemplateArgument *>(Type + 1));
+
+  return Type;
+}
+
+void DependentIdentifierSpliceType::Profile(
+    llvm::FoldingSetNodeID &ID, const ASTContext& C,
+    NestedNameSpecifier *NNS, IdentifierInfo *II,
+    ArrayRef<TemplateArgument> TemplateArgs) {
+  NNS->Profile(ID);
+  ID.AddPointer(II);
+
+  for (TemplateArgument Arg : TemplateArgs) {
+    Arg.Profile(ID, C);
+  }
+}
+
 ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
   : Type(Reflected, Can, toTypeDependence(E->getDependence()),
          T->isMetaType()),
@@ -4116,6 +4158,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::SubstTemplateTypeParmPack:
   case Type::DependentName:
   case Type::DependentTemplateSpecialization:
+  case Type::DependentIdentifierSplice:
   case Type::Auto:
     return ResultIfUnknown;
 

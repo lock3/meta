@@ -1783,6 +1783,14 @@ protected:
     unsigned NumExpansions;
   };
 
+  class DependentIdentifierSpliceTypeBitfields {
+    friend class DependentIdentifierSpliceType;
+
+    unsigned : NumTypeBits;
+
+    unsigned NumTemplateArgs;
+  };
+
   class CXXDependentVariadicReifierTypeBitfields {
     friend class CXXDependentVariadicReifierType;
 
@@ -1808,6 +1816,7 @@ protected:
     DependentTemplateSpecializationTypeBitfields
       DependentTemplateSpecializationTypeBits;
     PackExpansionTypeBitfields PackExpansionTypeBits;
+    DependentIdentifierSpliceTypeBitfields DependentIdentifierSpliceTypeBits;
 
     static_assert(sizeof(TypeBitfields) <= 8,
                   "TypeBitfields is larger than 8 bytes!");
@@ -4564,6 +4573,68 @@ public:
 
   static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       Expr *E);
+};
+
+/// \brief Representation of a dependent identifier splice.
+class DependentIdentifierSpliceType : public Type,
+                                      public llvm::FoldingSetNode {
+  const ASTContext &Context;
+
+  /// The optional qualifier
+  NestedNameSpecifier *NNS;
+
+  /// The dependent identifier that names this type.
+  IdentifierInfo *II;
+
+  DependentIdentifierSpliceType(
+      const ASTContext &C, NestedNameSpecifier *NNS, IdentifierInfo *II,
+      unsigned NumTemplateArgs);
+
+public:
+  static DependentIdentifierSpliceType *Create(
+      const ASTContext &C, NestedNameSpecifier *NNS, IdentifierInfo *II,
+      ArrayRef<TemplateArgument> TemplateArgs);
+
+  NestedNameSpecifier *getQualifier() const { return NNS; }
+
+  IdentifierInfo *getIdentifierInfo() const { return II; }
+
+  /// Retrieve the template arguments.
+  const TemplateArgument *getArgs() const {
+    return reinterpret_cast<const TemplateArgument *>(this + 1);
+  }
+
+  /// Retrieve the number of template arguments.
+  unsigned getNumArgs() const {
+    return DependentIdentifierSpliceTypeBits.NumTemplateArgs;
+  }
+
+  const TemplateArgument &getArg(unsigned Idx) const; // in TemplateBase.h
+
+  ArrayRef<TemplateArgument> template_arguments() const {
+    return {getArgs(), getNumArgs()};
+  }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == DependentIdentifierSplice;
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(
+        ID, Context, getQualifier(), getIdentifierInfo(),
+        template_arguments());
+  }
+
+  static void Profile(
+      llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+      NestedNameSpecifier *NNS, IdentifierInfo *II,
+      ArrayRef<TemplateArgument> TemplateArgs);
 };
 
 /// \brief Representation of reflected types.

@@ -982,6 +982,13 @@ DEF_TRAVERSE_TYPE(TypeOfType, { TRY_TO(TraverseType(T->getUnderlyingType())); })
 DEF_TRAVERSE_TYPE(DecltypeType,
                   { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
 
+DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
+  // FIXME: Do we need to "traverse" the spliced identifier?
+
+  TRY_TO(TraverseTemplateArguments(T->getArgs(),
+                                   T->getNumArgs()));
+})
+
 DEF_TRAVERSE_TYPE(ReflectedType,
                   { TRY_TO(TraverseStmt(T->getReflection())); })
 
@@ -1259,6 +1266,14 @@ DEF_TRAVERSE_TYPELOC(TypeOfType, {
 // FIXME: location of underlying expr
 DEF_TRAVERSE_TYPELOC(DecltypeType, {
   TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
+})
+
+DEF_TRAVERSE_TYPELOC(DependentIdentifierSpliceType, {
+  // FIXME: Do we need to "traverse" the spliced identifier?
+
+  for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
+    TRY_TO(TraverseTemplateArgumentLoc(TL.getArgLoc(I)));
+  }
 })
 
 DEF_TRAVERSE_TYPELOC(ReflectedType, {

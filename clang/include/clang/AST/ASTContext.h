@@ -1509,6 +1509,14 @@ public:
   /// C++11 decltype.
   QualType getDecltypeType(Expr *e, QualType UnderlyingType) const;
 
+  /// Dependent identifier splice type.
+  QualType getDependentIdentifierSpliceType(
+      NestedNameSpecifier *NNS, IdentifierInfo *II,
+      const TemplateArgumentListInfo &TemplateArgs) const;
+  QualType getDependentIdentifierSpliceType(
+      NestedNameSpecifier *NNS, IdentifierInfo *II,
+      ArrayRef<TemplateArgument> TemplateArgs) const;
+
   /// \brief Reflected types.
   QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
 
