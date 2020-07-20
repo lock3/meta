@@ -1382,6 +1382,7 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
     case lltok::kw_immarg:
+    case lltok::kw_byref:
       HaveError |=
         Error(Lex.getLoc(),
               "invalid use of parameter-only attribute on a function");
@@ -1675,6 +1676,13 @@ bool LLParser::ParseOptionalParamAttrs(AttrBuilder &B) {
       B.addDereferenceableOrNullAttr(Bytes);
       continue;
     }
+    case lltok::kw_byref: {
+      Type *Ty;
+      if (ParseByRef(Ty))
+        return true;
+      B.addByRefAttr(Ty);
+      continue;
+    }
     case lltok::kw_inalloca:        B.addAttribute(Attribute::InAlloca); break;
     case lltok::kw_inreg:           B.addAttribute(Attribute::InReg); break;
     case lltok::kw_nest:            B.addAttribute(Attribute::Nest); break;
@@ -1795,6 +1803,7 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
     case lltok::kw_immarg:
+    case lltok::kw_byref:
       HaveError |= Error(Lex.getLoc(), "invalid use of parameter-only attribute");
       break;
 
@@ -2568,11 +2577,11 @@ bool LLParser::ParseByValWithOptionalType(Type *&Result) {
   return false;
 }
 
-/// ParsePreallocated
-///   ::= preallocated(<ty>)
-bool LLParser::ParsePreallocated(Type *&Result) {
+/// ParseRequiredTypeAttr
+///   ::= attrname(<ty>)
+bool LLParser::ParseRequiredTypeAttr(Type *&Result, lltok::Kind AttrName) {
   Result = nullptr;
-  if (!EatIfPresent(lltok::kw_preallocated))
+  if (!EatIfPresent(AttrName))
     return true;
   if (!EatIfPresent(lltok::lparen))
     return Error(Lex.getLoc(), "expected '('");
@@ -2581,6 +2590,18 @@ bool LLParser::ParsePreallocated(Type *&Result) {
   if (!EatIfPresent(lltok::rparen))
     return Error(Lex.getLoc(), "expected ')'");
   return false;
+}
+
+/// ParsePreallocated
+///   ::= preallocated(<ty>)
+bool LLParser::ParsePreallocated(Type *&Result) {
+  return ParseRequiredTypeAttr(Result, lltok::kw_preallocated);
+}
+
+/// ParseByRef
+///   ::= byref(<type>)
+bool LLParser::ParseByRef(Type *&Result) {
+  return ParseRequiredTypeAttr(Result, lltok::kw_byref);
 }
 
 /// ParseOptionalOperandBundles
@@ -4661,7 +4682,9 @@ bool LLParser::ParseDICompositeType(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(templateParams, MDField, );                                         \
   OPTIONAL(identifier, MDStringField, );                                       \
   OPTIONAL(discriminator, MDField, );                                          \
-  OPTIONAL(dataLocation, MDField, );
+  OPTIONAL(dataLocation, MDField, );                                           \
+  OPTIONAL(associated, MDField, );                                             \
+  OPTIONAL(allocated, MDField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
@@ -4671,7 +4694,8 @@ bool LLParser::ParseDICompositeType(MDNode *&Result, bool IsDistinct) {
             Context, *identifier.Val, tag.Val, name.Val, file.Val, line.Val,
             scope.Val, baseType.Val, size.Val, align.Val, offset.Val, flags.Val,
             elements.Val, runtimeLang.Val, vtableHolder.Val, templateParams.Val,
-            discriminator.Val, dataLocation.Val)) {
+            discriminator.Val, dataLocation.Val, associated.Val,
+            allocated.Val)) {
       Result = CT;
       return false;
     }
@@ -4683,7 +4707,7 @@ bool LLParser::ParseDICompositeType(MDNode *&Result, bool IsDistinct) {
       (Context, tag.Val, name.Val, file.Val, line.Val, scope.Val, baseType.Val,
        size.Val, align.Val, offset.Val, flags.Val, elements.Val,
        runtimeLang.Val, vtableHolder.Val, templateParams.Val, identifier.Val,
-       discriminator.Val, dataLocation.Val));
+       discriminator.Val, dataLocation.Val, associated.Val, allocated.Val));
   return false;
 }
 
@@ -7799,6 +7823,9 @@ bool LLParser::ParseTypeTestResolution(TypeTestResolution &TTRes) {
     return true;
 
   switch (Lex.getKind()) {
+  case lltok::kw_unknown:
+    TTRes.TheKind = TypeTestResolution::Unknown;
+    break;
   case lltok::kw_unsat:
     TTRes.TheKind = TypeTestResolution::Unsat;
     break;
