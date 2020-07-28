@@ -95,20 +95,17 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
 
   if (R.isUnresolvableResult())
     return isStaticContext ? IMA_Unresolved_StaticContext : IMA_Unresolved;
+
+  // If we're reflecting from a static context, consider even access
+  // of instance methods static.
+  if (isStaticContext && SemaRef.isReflecting())
+    return IMA_Static;
+
   // Collect all the declaring classes of instance members we find.
   bool hasNonInstance = false;
   bool isField = false;
   BaseSet Classes;
   for (NamedDecl *D : R) {
-    // if(isa<CXXMethodDecl>(D)) {
-    //   llvm::outs() << "Decl kind: " << D->getDeclKindName() << '\n';
-    //   if(dyn_cast<CXXMethodDecl>(D)->isReflectionParameter()) {
-    // 	llvm::outs() << "D is a reflection parameter.\n";
-    // 	return IMA_Static;
-    //   }
-    // }
-
-    // llvm::outs() << "Qualified name: " << D->getQualifiedNameAsString() << '\n';
     // Look through any using decls.
     D = D->getUnderlyingDecl();
 
