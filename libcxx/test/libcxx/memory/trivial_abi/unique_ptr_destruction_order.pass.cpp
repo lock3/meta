@@ -15,7 +15,7 @@
 // ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ABI_ENABLE_UNIQUE_PTR_TRIVIAL_ABI
 
 // There were assertion failures in both parse and codegen, which are fixed in clang 11.
-// UNSUPPORTED: clang-4, clang-5, clang-6, clang-7, clang-8, clang-9, clang-10
+// UNSUPPORTED: gcc, clang-4, clang-5, clang-6, clang-7, clang-8, clang-9, clang-10
 
 #include <memory>
 #include <cassert>
@@ -53,7 +53,7 @@ int main(int, char**) {
   char shared_buf[3] = {'0', '0', '0'};
   int cur_idx = 0;
 
-  func(A(shared_buf, &cur_idx), std::make_unique<B>(shared_buf, &cur_idx),
+  func(A(shared_buf, &cur_idx), std::unique_ptr<B>(new B(shared_buf, &cur_idx)),
        C(shared_buf, &cur_idx));
 
   // With trivial_abi, the std::unique_ptr<B> arg is always destructed first.

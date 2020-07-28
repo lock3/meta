@@ -714,6 +714,13 @@ const char *TextNodeDumper::getCommandName(unsigned CommandID) {
   return "<not a builtin command>";
 }
 
+void TextNodeDumper::printFPOptions(FPOptionsOverride FPO) {
+#define OPTION(NAME, TYPE, WIDTH, PREVIOUS)                                    \
+  if (FPO.has##NAME##Override())                                               \
+    OS << " " #NAME "=" << FPO.get##NAME##Override();
+#include "clang/Basic/FPOptions.def"
+}
+
 void TextNodeDumper::visitTextComment(const comments::TextComment *C,
                                       const comments::FullComment *) {
   OS << " Text=\"" << C->getText() << "\"";
@@ -946,6 +953,8 @@ void TextNodeDumper::VisitConstantExpr(const ConstantExpr *Node) {
 void TextNodeDumper::VisitCallExpr(const CallExpr *Node) {
   if (Node->usesADL())
     OS << " adl";
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getFPFeatures());
 }
 
 void TextNodeDumper::VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *Node) {
@@ -1062,6 +1071,8 @@ void TextNodeDumper::VisitUnaryOperator(const UnaryOperator *Node) {
      << UnaryOperator::getOpcodeStr(Node->getOpcode()) << "'";
   if (!Node->canOverflow())
     OS << " cannot overflow";
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getStoredFPFeatures());
 }
 
 void TextNodeDumper::VisitUnaryExprOrTypeTraitExpr(
@@ -1090,6 +1101,8 @@ void TextNodeDumper::VisitExtVectorElementExpr(
 
 void TextNodeDumper::VisitBinaryOperator(const BinaryOperator *Node) {
   OS << " '" << BinaryOperator::getOpcodeStr(Node->getOpcode()) << "'";
+  if (Node->hasStoredFPFeatures())
+    printFPOptions(Node->getStoredFPFeatures());
 }
 
 void TextNodeDumper::VisitCompoundAssignOperator(
@@ -1990,7 +2003,7 @@ void TextNodeDumper::VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *D) {
       dumpBareDeclRef(TC->getFoundDecl());
       OS << ")";
     }
-    Visit(TC->getImmediatelyDeclaredConstraint());
+    AddChild([=] { Visit(TC->getImmediatelyDeclaredConstraint()); });
   } else if (D->wasDeclaredWithTypename())
     OS << " typename";
   else

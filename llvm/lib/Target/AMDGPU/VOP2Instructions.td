@@ -472,7 +472,7 @@ def V_MADMK_F32 : VOP2_Pseudo <"v_madmk_f32", VOP_MADMK_F32, []>;
 
 let isCommutable = 1 in {
 defm V_ADD_F32 : VOP2Inst <"v_add_f32", VOP_F32_F32_F32, any_fadd>;
-defm V_SUB_F32 : VOP2Inst <"v_sub_f32", VOP_F32_F32_F32, fsub>;
+defm V_SUB_F32 : VOP2Inst <"v_sub_f32", VOP_F32_F32_F32, any_fsub>;
 defm V_SUBREV_F32 : VOP2Inst <"v_subrev_f32", VOP_F32_F32_F32, null_frag, "v_sub_f32">;
 defm V_MUL_LEGACY_F32 : VOP2Inst <"v_mul_legacy_f32", VOP_F32_F32_F32, AMDGPUfmul_legacy>;
 defm V_MUL_F32 : VOP2Inst <"v_mul_f32", VOP_F32_F32_F32, any_fmul>;
@@ -636,7 +636,7 @@ defm V_ASHRREV_I16 : VOP2Inst <"v_ashrrev_i16", VOP_I16_I16_I16, ashr_rev>;
 let isCommutable = 1 in {
 let FPDPRounding = 1 in {
 defm V_ADD_F16 : VOP2Inst <"v_add_f16", VOP_F16_F16_F16, any_fadd>;
-defm V_SUB_F16 : VOP2Inst <"v_sub_f16", VOP_F16_F16_F16, fsub>;
+defm V_SUB_F16 : VOP2Inst <"v_sub_f16", VOP_F16_F16_F16, any_fsub>;
 defm V_SUBREV_F16 : VOP2Inst <"v_subrev_f16", VOP_F16_F16_F16, null_frag, "v_sub_f16">;
 defm V_MUL_F16 : VOP2Inst <"v_mul_f16", VOP_F16_F16_F16, any_fmul>;
 
@@ -827,6 +827,24 @@ def : GCNPat <
 
 } // End Predicates = [Has16BitInsts]
 
+
+let SubtargetPredicate = HasIntClamp in {
+// Set clamp bit for saturation.
+def : VOPBinOpClampPat<uaddsat, V_ADD_CO_U32_e64, i32>;
+def : VOPBinOpClampPat<usubsat, V_SUB_CO_U32_e64, i32>;
+}
+
+let SubtargetPredicate = HasAddNoCarryInsts, OtherPredicates = [HasIntClamp] in {
+let AddedComplexity = 1 in { // Prefer over form with carry-out.
+def : VOPBinOpClampPat<uaddsat, V_ADD_U32_e64, i32>;
+def : VOPBinOpClampPat<usubsat, V_SUB_U32_e64, i32>;
+}
+}
+
+let SubtargetPredicate = Has16BitInsts, OtherPredicates = [HasIntClamp] in {
+def : VOPBinOpClampPat<uaddsat, V_ADD_U16_e64, i16>;
+def : VOPBinOpClampPat<usubsat, V_SUB_U16_e64, i16>;
+}
 
 //===----------------------------------------------------------------------===//
 // Target-specific instruction encodings.
