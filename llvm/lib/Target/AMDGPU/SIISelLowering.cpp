@@ -1137,7 +1137,6 @@ bool SITargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.align.reset();
     Info.flags = MachineMemOperand::MOLoad |
                  MachineMemOperand::MOStore |
-                 MachineMemOperand::MODereferenceable |
                  MachineMemOperand::MOVolatile;
     return true;
   }
@@ -2254,9 +2253,21 @@ SDValue SITargetLowering::LowerFormalArguments(
       const uint64_t Offset = VA.getLocMemOffset();
       Align Alignment = commonAlignment(KernelArgBaseAlign, Offset);
 
-      SDValue Arg =
-          lowerKernargMemParameter(DAG, VT, MemVT, DL, Chain, Offset, Alignment,
-                                   Ins[i].Flags.isSExt(), &Ins[i]);
+      if (Arg.Flags.isByRef()) {
+        SDValue Ptr = lowerKernArgParameterPtr(DAG, DL, Chain, Offset);
+
+        if (!isNoopAddrSpaceCast(AMDGPUAS::CONSTANT_ADDRESS,
+                                 Arg.Flags.getPointerAddrSpace())) {
+          Ptr = DAG.getAddrSpaceCast(DL, VT, Ptr, AMDGPUAS::CONSTANT_ADDRESS,
+                                     Arg.Flags.getPointerAddrSpace());
+        }
+
+        InVals.push_back(Ptr);
+        continue;
+      }
+
+      SDValue Arg = lowerKernargMemParameter(
+        DAG, VT, MemVT, DL, Chain, Offset, Alignment, Ins[i].Flags.isSExt(), &Ins[i]);
       Chains.push_back(Arg.getValue(1));
 
       auto *ParamTy =
@@ -4479,7 +4490,7 @@ static SDValue adjustLoadValueTypeImpl(SDValue Result, EVT LoadVT,
     EVT IntLoadVT = LoadVT.changeTypeToInteger();
 
     // Workaround legalizer not scalarizing truncate after vector op
-    // legalization byt not creating intermediate vector trunc.
+    // legalization but not creating intermediate vector trunc.
     SmallVector<SDValue, 4> Elts;
     DAG.ExtractVectorElements(Result, Elts);
     for (SDValue &Elt : Elts)

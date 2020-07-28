@@ -160,8 +160,10 @@ LookupResult DeviceTy::lookupMapping(void *HstPtrBegin, int64_t Size) {
 // If NULL is returned, then either data allocation failed or the user tried
 // to do an illegal mapping.
 void *DeviceTy::getOrAllocTgtPtr(void *HstPtrBegin, void *HstPtrBase,
-    int64_t Size, bool &IsNew, bool &IsHostPtr, bool IsImplicit,
-    bool UpdateRefCount, bool HasCloseModifier) {
+                                 int64_t Size, bool &IsNew, bool &IsHostPtr,
+                                 bool IsImplicit, bool UpdateRefCount,
+                                 bool HasCloseModifier,
+                                 bool HasPresentModifier) {
   void *rc = NULL;
   IsHostPtr = false;
   IsNew = false;
@@ -190,31 +192,40 @@ void *DeviceTy::getOrAllocTgtPtr(void *HstPtrBegin, void *HstPtrBase,
   } else if ((lr.Flags.ExtendsBefore || lr.Flags.ExtendsAfter) && !IsImplicit) {
     // Explicit extension of mapped data - not allowed.
     DP("Explicit extension of mapping is not allowed.\n");
-  } else if (Size) {
-    // If unified shared memory is active, implicitly mapped variables that are not
-    // privatized use host address. Any explicitly mapped variables also use
-    // host address where correctness is not impeded. In all other cases
-    // maps are respected.
-    // In addition to the mapping rules above, the close map
-    // modifier forces the mapping of the variable to the device.
-    if (RTLs->RequiresFlags & OMP_REQ_UNIFIED_SHARED_MEMORY &&
-        !HasCloseModifier) {
+  } else if (RTLs->RequiresFlags & OMP_REQ_UNIFIED_SHARED_MEMORY &&
+             !HasCloseModifier) {
+    // If unified shared memory is active, implicitly mapped variables that are
+    // not privatized use host address. Any explicitly mapped variables also use
+    // host address where correctness is not impeded. In all other cases maps
+    // are respected.
+    // In addition to the mapping rules above, the close map modifier forces the
+    // mapping of the variable to the device.
+    if (Size) {
       DP("Return HstPtrBegin " DPxMOD " Size=%ld RefCount=%s\n",
-         DPxPTR((uintptr_t)HstPtrBegin), Size, (UpdateRefCount ? " updated" : ""));
+         DPxPTR((uintptr_t)HstPtrBegin), Size,
+         (UpdateRefCount ? " updated" : ""));
       IsHostPtr = true;
       rc = HstPtrBegin;
-    } else {
-      // If it is not contained and Size > 0 we should create a new entry for it.
-      IsNew = true;
-      uintptr_t tp = (uintptr_t)RTL->data_alloc(RTLDeviceID, Size, HstPtrBegin);
-      DP("Creating new map entry: HstBase=" DPxMOD ", HstBegin=" DPxMOD ", "
-         "HstEnd=" DPxMOD ", TgtBegin=" DPxMOD "\n", DPxPTR(HstPtrBase),
-         DPxPTR(HstPtrBegin), DPxPTR((uintptr_t)HstPtrBegin + Size), DPxPTR(tp));
-      HostDataToTargetMap.emplace(
-          HostDataToTargetTy((uintptr_t)HstPtrBase, (uintptr_t)HstPtrBegin,
-                             (uintptr_t)HstPtrBegin + Size, tp));
-      rc = (void *)tp;
     }
+  } else if (HasPresentModifier) {
+    DP("Mapping required by 'present' map type modifier does not exist for "
+       "HstPtrBegin=" DPxMOD ", Size=%ld\n",
+       DPxPTR(HstPtrBegin), Size);
+    MESSAGE("device mapping required by 'present' map type modifier does not "
+            "exist for host address " DPxMOD " (%ld bytes)",
+            DPxPTR(HstPtrBegin), Size);
+  } else if (Size) {
+    // If it is not contained and Size > 0, we should create a new entry for it.
+    IsNew = true;
+    uintptr_t tp = (uintptr_t)data_alloc(Size, HstPtrBegin);
+    DP("Creating new map entry: HstBase=" DPxMOD ", HstBegin=" DPxMOD ", "
+       "HstEnd=" DPxMOD ", TgtBegin=" DPxMOD "\n",
+       DPxPTR(HstPtrBase), DPxPTR(HstPtrBegin),
+       DPxPTR((uintptr_t)HstPtrBegin + Size), DPxPTR(tp));
+    HostDataToTargetMap.emplace(
+        HostDataToTargetTy((uintptr_t)HstPtrBase, (uintptr_t)HstPtrBegin,
+                           (uintptr_t)HstPtrBegin + Size, tp));
+    rc = (void *)tp;
   }
 
   DataMapMtx.unlock();
@@ -288,7 +299,7 @@ int DeviceTy::deallocTgtPtr(void *HstPtrBegin, int64_t Size, bool ForceDelete,
     if (HT.decRefCount() == 0) {
       DP("Deleting tgt data " DPxMOD " of size %ld\n",
           DPxPTR(HT.TgtPtrBegin), Size);
-      RTL->data_delete(RTLDeviceID, (void *)HT.TgtPtrBegin);
+      data_delete((void *)HT.TgtPtrBegin);
       DP("Removing%s mapping with HstPtrBegin=" DPxMOD ", TgtPtrBegin=" DPxMOD
           ", Size=%ld\n", (ForceDelete ? " (forced)" : ""),
           DPxPTR(HT.HstPtrBegin), DPxPTR(HT.TgtPtrBegin), Size);
@@ -338,6 +349,14 @@ __tgt_target_table *DeviceTy::load_binary(void *Img) {
   __tgt_target_table *rc = RTL->load_binary(RTLDeviceID, Img);
   RTL->Mtx.unlock();
   return rc;
+}
+
+void *DeviceTy::data_alloc(int64_t Size, void *HstPtr) {
+  return RTL->data_alloc(RTLDeviceID, Size, HstPtr);
+}
+
+int32_t DeviceTy::data_delete(void *TgtPtrBegin) {
+  return RTL->data_delete(RTLDeviceID, TgtPtrBegin);
 }
 
 // Submit data to device
@@ -410,6 +429,12 @@ bool DeviceTy::isDataExchangable(const DeviceTy &DstDevice) {
            (RTL->data_exchange_async != nullptr);
 
   return false;
+}
+
+int32_t DeviceTy::synchronize(__tgt_async_info *AsyncInfoPtr) {
+  if (RTL->synchronize)
+    return RTL->synchronize(RTLDeviceID, AsyncInfoPtr);
+  return OFFLOAD_SUCCESS;
 }
 
 /// Check whether a device has an associated RTL and initialize it if it's not
