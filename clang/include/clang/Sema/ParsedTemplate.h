@@ -165,6 +165,9 @@ namespace clang {
     /// FIXME: Temporarily stores the name of a specialization
     IdentifierInfo *Name;
 
+    /// Whether this template-id's identifier was formed via a splice.
+    bool NameSpliced;
+
     /// FIXME: Temporarily stores the overloaded operator kind.
     OverloadedOperatorKind Operator;
 
@@ -201,7 +204,8 @@ namespace clang {
     /// appends it to List.
     static TemplateIdAnnotation *
     Create(SourceLocation TemplateKWLoc, SourceLocation TemplateNameLoc,
-           IdentifierInfo *Name, OverloadedOperatorKind OperatorKind,
+           IdentifierInfo *Name, bool NameSpliced,
+           OverloadedOperatorKind OperatorKind,
            ParsedTemplateTy OpaqueTemplateName, TemplateNameKind TemplateKind,
            SourceLocation LAngleLoc, SourceLocation RAngleLoc,
            ArrayRef<ParsedTemplateArgument> TemplateArgs, bool ArgsInvalid,
@@ -209,7 +213,8 @@ namespace clang {
       TemplateIdAnnotation *TemplateId = new (llvm::safe_malloc(
           totalSizeToAlloc<ParsedTemplateArgument>(TemplateArgs.size())))
           TemplateIdAnnotation(TemplateKWLoc, TemplateNameLoc, Name,
-                               OperatorKind, OpaqueTemplateName, TemplateKind,
+                               NameSpliced, OperatorKind,
+                               OpaqueTemplateName, TemplateKind,
                                LAngleLoc, RAngleLoc, TemplateArgs, ArgsInvalid);
       CleanupList.push_back(TemplateId);
       return TemplateId;
@@ -241,14 +246,15 @@ namespace clang {
 
     TemplateIdAnnotation(SourceLocation TemplateKWLoc,
                          SourceLocation TemplateNameLoc, IdentifierInfo *Name,
-                         OverloadedOperatorKind OperatorKind,
+                         bool NameSpliced, OverloadedOperatorKind OperatorKind,
                          ParsedTemplateTy OpaqueTemplateName,
                          TemplateNameKind TemplateKind,
                          SourceLocation LAngleLoc, SourceLocation RAngleLoc,
                          ArrayRef<ParsedTemplateArgument> TemplateArgs,
                          bool ArgsInvalid) noexcept
         : TemplateKWLoc(TemplateKWLoc), TemplateNameLoc(TemplateNameLoc),
-          Name(Name), Operator(OperatorKind), Template(OpaqueTemplateName),
+          Name(Name), NameSpliced(NameSpliced), Operator(OperatorKind),
+          Template(OpaqueTemplateName),
           Kind(TemplateKind), LAngleLoc(LAngleLoc), RAngleLoc(RAngleLoc),
           NumArgs(TemplateArgs.size()), ArgsInvalid(ArgsInvalid) {
 

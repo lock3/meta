@@ -2245,6 +2245,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::DependentName:
     case Type::UnresolvedUsing:
     case Type::Decltype:
+    case Type::DependentIdentifierSplice:
     case Type::Reflected:
     case Type::UnaryTransform:
     case Type::Auto:
@@ -6027,6 +6028,19 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                  cast<DecltypeType>(T)->getUnderlyingExpr(),
                                  OnlyDeduced, Depth, Used);
     break;
+
+  case Type::DependentIdentifierSplice: {
+    const DependentIdentifierSpliceType *SpliceTy
+      = cast<DependentIdentifierSpliceType>(T);
+
+    MarkUsedTemplateParameters(Ctx, SpliceTy->getQualifier(),
+                               OnlyDeduced, Depth, Used);
+
+    for (unsigned I = 0, N = SpliceTy->getNumArgs(); I != N; ++I)
+      MarkUsedTemplateParameters(Ctx, SpliceTy->getArg(I), OnlyDeduced, Depth,
+                                 Used);
+    break;
+  }
 
   case Type::Reflected:
     if (!OnlyDeduced)

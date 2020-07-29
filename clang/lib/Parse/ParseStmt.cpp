@@ -210,7 +210,15 @@ Retry:
     cutOffParsing();
     return StmtError();
 
-  case tok::identifier: {
+  case tok::kw_unqualid: {
+    if (AnnotateIdentifierSplice())
+      return StmtError();
+
+    LLVM_FALLTHROUGH;
+  }
+
+  case tok::identifier:
+  case tok::annot_identifier_splice: {
     Token Next = NextToken();
     if (Next.is(tok::colon)) { // C99 6.8.1: labeled-statement
       // identifier ':' statement

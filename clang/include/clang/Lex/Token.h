@@ -125,7 +125,8 @@ public:
   /// tok::identifier or tok::annot_identifier_splice.
   bool isIdentifier() const {
     return isOneOf(
-        tok::identifier, tok::annot_identifier_splice, tok::kw_unqualid);
+        tok::identifier, tok::annot_identifier_splice, tok::kw_unqualid,
+        tok::annot_invalid_identifier_splice);
   }
 
   /// Return a source location identifier for the specified
@@ -199,7 +200,8 @@ public:
 
   IdentifierInfo *getAnnotationIdentifierInfo() const {
     assert(isAnnotation() && "Used AnnotVal on non-annotation token");
-    assert(is(tok::annot_identifier_splice) &&
+    assert(isOneOf(tok::annot_identifier_splice,
+                   tok::annot_invalid_identifier_splice) &&
            "getAnnotationIdentifierInfo only supported for identifier splices");
     return (IdentifierInfo*) PtrData;
   }

@@ -784,6 +784,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
+  case Type::DependentIdentifierSplice:
+    if (!IsStructurallyEquivalent(
+        Context,
+        cast<DependentIdentifierSpliceType>(T1)->getIdentifierInfo(),
+        cast<DependentIdentifierSpliceType>(T2)->getIdentifierInfo()))
+      return false;
+    break;
+
   case Type::Auto: {
     auto *Auto1 = cast<AutoType>(T1);
     auto *Auto2 = cast<AutoType>(T2);

@@ -732,6 +732,12 @@ inline const TemplateArgument &AutoType::getArg(unsigned Idx) const {
   return getArgs()[Idx];
 }
 
+inline const TemplateArgument &
+    DependentIdentifierSpliceType::getArg(unsigned Idx) const {
+  assert(Idx < getNumArgs() && "Template argument out of range");
+  return getArgs()[Idx];
+}
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_TEMPLATEBASE_H

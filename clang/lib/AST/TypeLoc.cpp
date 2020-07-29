@@ -505,6 +505,24 @@ void TypeOfTypeLoc::initializeLocal(ASTContext &Context,
       getUnderlyingType(), Loc);
 }
 
+void DependentIdentifierSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                                       SourceLocation Loc) {
+  setTypenameKeywordLoc(Loc);
+  if (getTypePtr()->getQualifier()) {
+    NestedNameSpecifierLocBuilder Builder;
+    Builder.MakeTrivial(Context, getTypePtr()->getQualifier(), Loc);
+    setQualifierLoc(Builder.getWithLocInContext(Context));
+  } else {
+    setQualifierLoc(NestedNameSpecifierLoc());
+  }
+  setIdentifierLoc(Loc);
+  setLAngleLoc(Loc);
+  setRAngleLoc(Loc);
+  TemplateSpecializationTypeLoc::initializeArgLocs(Context, getNumArgs(),
+                                                   getTypePtr()->getArgs(),
+                                                   getArgInfos(), Loc);
+}
+
 void UnaryTransformTypeLoc::initializeLocal(ASTContext &Context,
                                        SourceLocation Loc) {
     setKWLoc(Loc);
