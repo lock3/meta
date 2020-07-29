@@ -421,7 +421,24 @@ let Class = ReflectedType in {
   }
 
   def : Creator<[{
-    return ctx.getDecltypeType(reflection, underlyingType);
+    return ctx.getReflectedType(reflection, underlyingType);
+  }]>;
+}
+
+let Class = DependentIdentifierSpliceType in {
+  def : Property<"qualifier", NestedNameSpecifier> {
+    let Read = [{ node->getQualifier() }];
+  }
+  def : Property<"identifier", Identifier> {
+    let Read = [{ node->getIdentifierInfo() }];
+  }
+  def : Property<"templateArguments", Array<TemplateArgument>> {
+    let Read = [{ node->template_arguments() }];
+  }
+
+  def : Creator<[{
+    return ctx.getDependentIdentifierSpliceType(qualifier, identifier,
+                                                templateArguments);
   }]>;
 }
 

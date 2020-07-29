@@ -506,13 +506,12 @@ public:
 
   bool isIdentifier() {
     if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
-      if (AnnotateIdentifierSplice())
-        return false;
-
+      AnnotateIdentifierSplice();
       return true;
     }
 
-    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice);
+    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice,
+                       tok::annot_invalid_identifier_splice);
   }
 
   // FIXME: This should probably be private similar to the other
@@ -3115,6 +3114,7 @@ public:
                                     bool ObjectHadErrors,
                                     SourceLocation TemplateKWLoc,
                                     IdentifierInfo *Name,
+                                    bool NameSpliced,
                                     SourceLocation NameLoc,
                                     bool EnteringContext,
                                     UnqualifiedId &Id,
@@ -3409,8 +3409,8 @@ private:
       CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
       bool EnteringContext, bool AllowDestructorName, bool AllowConstructorName,
       bool AllowDeductionGuide, bool TemplateSpecified,
-      SourceLocation *TemplateKWLoc, IdentifierInfo *Id, SourceLocation IdLoc,
-      UnqualifiedId &Result);
+      SourceLocation *TemplateKWLoc, IdentifierInfo *Id,
+      bool IdSpliced, SourceLocation IdLoc, UnqualifiedId &Result);
 public:
   bool ParseUnqualifiedId(
       CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
@@ -3477,6 +3477,7 @@ private:
                                CXXScopeSpec &SS,
                                SourceLocation TemplateKWLoc,
                                UnqualifiedId &TemplateName,
+                               bool TemplateNameSpliced,
                                bool AllowTypeAnnotation = true,
                                bool TypeConstraint = false);
   void AnnotateTemplateIdTokenAsType(CXXScopeSpec &SS,

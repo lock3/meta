@@ -435,22 +435,28 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 bool Parser::AnnotateIdentifierSplice() {
   assert(Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis));
 
-  // Attempt to reinterpret an identifier splice as a normal
-  // identifier.
+  // Attempt to reinterpret an identifier splice as a single annotated token.
   IdentifierInfo *II;
   SourceLocation IIBeginLoc;
   SourceLocation IIEndLoc;
-  if (ParseCXXIdentifierSplice(II, IIBeginLoc, IIEndLoc))
-    return true;
+
+  bool Invalid = ParseCXXIdentifierSplice(II, IIBeginLoc, IIEndLoc);
+  if (Invalid) {
+    // If invalid replace the identifier with a unique invalid identifier
+    // for recovery purposes.
+    Actions.ActOnCXXInvalidIdentifierSplice(II);
+  }
 
   Token AnnotTok;
   AnnotTok.startToken();
-  AnnotTok.setKind(tok::annot_identifier_splice);
+  AnnotTok.setKind(Invalid ? tok::annot_invalid_identifier_splice
+                           : tok::annot_identifier_splice);
   AnnotTok.setAnnotationValue(reinterpret_cast<void *>(II));
   AnnotTok.setLocation(IIBeginLoc);
   AnnotTok.setAnnotationEndLoc(IIEndLoc);
   UnconsumeToken(AnnotTok);
-  return false;
+
+  return Invalid;
 }
 
 bool Parser::TryAnnotateIdentifierSplice() {
@@ -488,12 +494,17 @@ bool Parser::ParseCXXIdentifierSplice(
       SkipUntil(tok::r_paren);
       return true;
     }
+
     Parts.push_back(Result.get());
     if (Tok.is(tok::r_paren))
       break;
-    if (ExpectAndConsume(tok::comma))
+
+    if (ExpectAndConsume(tok::comma)) {
+      SkipUntil(tok::r_paren);
       return true;
+    }
   }
+
   if (T.consumeClose())
     return true;
 

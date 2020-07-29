@@ -197,6 +197,7 @@ namespace clang {
   class TypedefDecl;
   class TypedefNameDecl;
   class TypeLoc;
+  class TypeLocBuilder;
   class TypoCorrectionConsumer;
   class UnqualifiedId;
   class UnresolvedLookupExpr;
@@ -10317,6 +10318,9 @@ public:
   bool BuildCXXIdentifierSplice(
       ArrayRef<Expr *> Parts, IdentifierInfo *&Result);
 
+  void ActOnCXXInvalidIdentifierSplice(IdentifierInfo *&Result);
+  void BuildCXXInvalidIdentifierSplice(IdentifierInfo *&Result);
+
   ExprResult ActOnCXXDependentSpliceIdExpression(
       CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
       DeclarationNameInfo NameInfo,
@@ -10328,8 +10332,21 @@ public:
       const TemplateArgumentListInfo *TemplateArgs,
       bool HasTrailingLParen, bool IsAddressOfOperand);
 
+  QualType ResolveNonDependentIdentifierSpliceType(
+      Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
+      SourceLocation IdLoc, TemplateArgumentListInfo &TemplateArgs);
 
-  bool ActOnCXXDependentSpliceIdExpression();
+  void BuildIdentifierSpliceTypeLoc(
+      TypeLocBuilder &TLB, QualType T, SourceLocation TypenameKWLoc,
+      NestedNameSpecifierLoc QualifierLoc,
+      SourceLocation IdLoc, TemplateArgumentListInfo &TemplateArgs);
+
+  TypeResult
+  ActOnCXXDependentIdentifierSpliceType(
+      SourceLocation TypenameKWLoc, CXXScopeSpec &SS,
+      IdentifierInfo *Id, SourceLocation IdLoc,
+      SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgs,
+      SourceLocation RAngleLoc);
 
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);

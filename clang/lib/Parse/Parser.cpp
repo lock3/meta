@@ -1621,6 +1621,7 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
   }
 
   IdentifierInfo *Name = Tok.getIdentifierInfo();
+  bool NameSpliced = Tok.is(tok::annot_identifier_splice);
   SourceLocation NameLoc = Tok.getLocation();
 
   // FIXME: Move the tentative declaration logic into ClassifyName so we can
@@ -1755,7 +1756,8 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
     Id.setIdentifier(Name, NameLoc);
     if (AnnotateTemplateIdToken(
             TemplateTy::make(Classification.getTemplateName()),
-            Classification.getTemplateNameKind(), SS, SourceLocation(), Id))
+            Classification.getTemplateNameKind(), SS, SourceLocation(),
+            Id, NameSpliced))
       return ANK_Error;
     return ANK_Success;
   }
@@ -1769,7 +1771,8 @@ Parser::TryAnnotateName(CorrectionCandidateCallback *CCC) {
     if (AnnotateTemplateIdToken(
             TemplateTy::make(Classification.getTemplateName()),
             Classification.getTemplateNameKind(), SS, SourceLocation(), Id,
-            /*AllowTypeAnnotation=*/false, /*TypeConstraint=*/true))
+            NameSpliced, /*AllowTypeAnnotation=*/false,
+            /*TypeConstraint=*/true))
       return ANK_Error;
     return ANK_Success;
   }
@@ -1867,7 +1870,18 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                                        /*EnteringContext=*/false, nullptr,
                                        /*IsTypename*/ true))
       return true;
-    if (SS.isEmpty()) {
+
+    // Determine if this is an identifier splice
+    bool IsIdentifierSplice = false;
+    if (isIdentifier() && Tok.is(tok::annot_identifier_splice)) {
+      IsIdentifierSplice = true;
+    } else if (Tok.is(tok::annot_template_id)) {
+      TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
+      IsIdentifierSplice = TemplateId->NameSpliced;
+    }
+
+    // If we have an identifier splice, we don't need a scope specifier.
+    if (SS.isEmpty() && !IsIdentifierSplice) {
       if (isIdentifier() || Tok.is(tok::annot_template_id) ||
           Tok.is(tok::annot_decltype)) {
         // Attempt to recover by skipping the invalid 'typename'
@@ -1887,6 +1901,63 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
 
       Diag(Tok.getLocation(), diag::err_expected_qualified_after_typename);
       return true;
+    }
+
+    if (IsIdentifierSplice) {
+      IdentifierInfo *Id;
+      SourceLocation IdLoc;
+
+      SourceLocation LAngleLoc;
+      TemplateArgList TemplateArgs;
+      SourceLocation RAngleLoc;
+
+      if (Tok.is(tok::annot_template_id)) {
+        TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
+        if (!TemplateId->mightBeType()) {
+          Diag(Tok, diag::err_typename_refers_to_non_type_template)
+            << Tok.getAnnotationRange();
+          return true;
+        }
+
+        ConsumeAnnotationToken();
+
+        // Handle the identifier information
+        Id = TemplateId->Name;
+        IdLoc = TemplateId->TemplateNameLoc;
+
+        // Handle the template arguemnts
+        LAngleLoc = TemplateId->LAngleLoc;
+        // FIXME: We should try to avoid the copy here
+        TemplateArgs.append(
+            TemplateId->getTemplateArgs(),
+            TemplateId->getTemplateArgs() + TemplateId->NumArgs);
+        RAngleLoc = TemplateId->RAngleLoc;
+      } else {
+        // Handle the identifier information
+        Id = Tok.getIdentifierInfo();
+        IdLoc = ConsumeIdentifier();
+
+        // Consume any template arguments that may not have been annotated
+        if (Tok.is(tok::less)) {
+          if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
+                                               LAngleLoc, TemplateArgs, RAngleLoc))
+            return true;
+        }
+      }
+
+      TypeResult Ty = Actions.ActOnCXXDependentIdentifierSpliceType(
+          TypenameLoc, SS, Id, IdLoc, LAngleLoc, TemplateArgs,
+          RAngleLoc);
+
+      Token AnnotTok;
+      AnnotTok.startToken();
+      AnnotTok.setKind(tok::annot_typename);
+      setTypeAnnotation(AnnotTok, Ty);
+      AnnotTok.setLocation(TypenameLoc);
+      AnnotTok.setAnnotationEndLoc(getEndOfPreviousToken());
+      UnconsumeToken(AnnotTok);
+
+      return false;
     }
 
     TypeResult Ty;
@@ -2033,6 +2104,7 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
       TemplateTy Template;
       UnqualifiedId TemplateName;
       TemplateName.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+      bool NameSpliced = Tok.is(tok::annot_identifier_splice);
       bool MemberOfUnknownSpecialization;
       if (TemplateNameKind TNK = Actions.isTemplateName(
               getCurScope(), SS,
@@ -2045,7 +2117,7 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
             isTemplateArgumentList(1) != TPResult::False) {
           ConsumeIdentifier();
           if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
-                                      TemplateName)) {
+                                      TemplateName, NameSpliced)) {
             // If an unrecoverable error occurred, we need to return true here,
             // because the token stream is in a damaged state.  We may not
             // return a valid identifier.
