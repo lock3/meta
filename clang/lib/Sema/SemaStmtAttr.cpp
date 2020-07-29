@@ -186,6 +186,7 @@ public:
   bool foundCallExpr() { return FoundCallExpr; }
 
   void VisitCallExpr(const CallExpr *E) { FoundCallExpr = true; }
+  void VisitAsmStmt(const AsmStmt *S) { FoundCallExpr = true; }
 
   void Visit(const Stmt *St) {
     if (!St)
@@ -338,16 +339,16 @@ static Attr *handleOpenCLUnrollHint(Sema &S, Stmt *St, const ParsedAttr &A,
 
   if (NumArgs == 1) {
     Expr *E = A.getArgAsExpr(0);
-    llvm::APSInt ArgVal(32);
+    Optional<llvm::APSInt> ArgVal;
 
     Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
-    if (!E->isIntegerConstantExpr(ArgVal, EvalCtx)) {
+    if (!(ArgVal = E->getIntegerConstantExpr(EvalCtx))) {
       S.Diag(A.getLoc(), diag::err_attribute_argument_type)
           << A << AANT_ArgumentIntegerConstant << E->getSourceRange();
       return nullptr;
     }
 
-    int Val = ArgVal.getSExtValue();
+    int Val = ArgVal->getSExtValue();
 
     if (Val <= 0) {
       S.Diag(A.getRange().getBegin(),

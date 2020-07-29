@@ -4290,17 +4290,19 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
   ASTContext &Context = Sema.Context;
 
   QualType FunctionTy = D->getType();
-  DeclRefExpr *Ref =
-      new (Context) DeclRefExpr(Context, D,
-                                /*RefersToEnclosingVariableOrCapture=*/false,
-                                FunctionTy, VK_LValue, MD->getLocation());
+  DeclRefExpr *Ref = new (Context) DeclRefExpr(
+      Context, D, /*RefersToEnclosingVariableOrCapture=*/false, FunctionTy,
+      VK_LValue, MD->getLocation());
+
   QualType PtrTy = Context.getPointerType(FunctionTy);
-  ImplicitCastExpr *Cast =
-      ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
-                               /*BasePath=*/nullptr, VK_RValue);
-  CallExpr *Call =
-      CallExpr::Create(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
-                       VK_RValue, MD->getLocation());
+  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
+      Context, PtrTy, CK_FunctionToPointerDecay, Ref, /*BasePath=*/nullptr,
+      VK_RValue);
+
+  CallExpr *Call = CallExpr::Create(
+      Context, Cast, ArrayRef<Expr *>(), Context.VoidTy, VK_RValue,
+      MD->getLocation(), Sema.CurFPFeatureOverrides());
+
   return EvaluateMetaDeclCall(Sema, MD, Call);
 }
 
