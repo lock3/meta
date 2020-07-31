@@ -238,9 +238,9 @@ enum reflection_query {
   query_remove_reference,
   query_add_lvalue_reference,
   query_add_rvalue_reference,
+  query_remove_extent,
   query_remove_pointer,
   query_add_pointer,
-  query_decay,
   query_make_signed,
   query_make_unsigned,
 
