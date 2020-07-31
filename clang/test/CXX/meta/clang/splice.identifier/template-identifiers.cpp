@@ -16,3 +16,22 @@ void test() {
 
 } // end namespace class_name
 
+namespace dependent_class_name {
+
+template<int N>
+struct S1 {
+  static int X2 () {
+    return N;
+  }
+};
+
+template<int N>
+void foo() {
+  int q = typename unqualid("S", N)<2>::X2();
+}
+
+void test() {
+  foo<1>();
+}
+
+} // end namespace dependent_class_name

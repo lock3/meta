@@ -1044,12 +1044,17 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     return ParseCastExpression(ParseKind, isAddressOfOperand, isTypeCast,
                                isVectorLiteral, NotPrimaryExpression);
 
+  case tok::kw_unqualid:
+  case tok::annot_identifier_splice:
   case tok::identifier: {      // primary-expression: identifier
                                // unqualified-id: identifier
                                // constant: enumeration-constant
     // Turn a potentially qualified name into a annot_typename or
     // annot_cxxscope if it would be valid.  This handles things like x::y, etc.
     if (getLangOpts().CPlusPlus) {
+      if (TryAnnotateIdentifierSplice())
+        return ExprError();
+
       // Avoid the unnecessary parse-time lookup in the common case
       // where the syntax forbids a type.
       const Token &Next = NextToken();
@@ -1663,7 +1668,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     LLVM_FALLTHROUGH;
   }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
-  case tok::kw_unqualid: // [Meta] id-expression: unqualid ( reflection )
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 
