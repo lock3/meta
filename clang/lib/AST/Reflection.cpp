@@ -253,9 +253,9 @@ namespace clang {
     query_remove_reference,
     query_add_lvalue_reference,
     query_add_rvalue_reference,
+    query_remove_extent,
     query_remove_pointer,
     query_add_pointer,
-    query_decay,
     query_make_signed,
     query_make_unsigned,
 
@@ -2806,6 +2806,21 @@ static bool addRvalueReference(const Reflection &R, APValue &Result) {
 }
 
 // Equivalent [meta.trans.ptr]p1:
+// If the reflected type names a type "array of U"
+// then returns a reflection of type U.
+//
+// Otherwise returns the reflected type.
+static bool removeExtent(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    if (MT->isArrayType())
+      return makeReflection(cast<ArrayType>(*MT)->getElementType(), Result);
+    return makeReflection(*MT, Result);
+  }
+
+  return Error(R);
+}
+
+// Equivalent [meta.trans.ptr]p1:
 // If typename(R) = T has type “(possibly cv-qualified) pointer to T1” then the
 // reflected type names T1; otherwise, it names T.
 static bool removePointer(const Reflection &R, APValue &Result) {
@@ -2829,25 +2844,6 @@ static bool addPointer(const Reflection &R, APValue &Result) {
     if (!T.isNull())
       return makeReflection(T.getNonReferenceType(), Result);
     return makeReflection(*MT, Result);
-  }
-
-  return Error(R);
-}
-
-// Equivalent [meta.trans.other]p5:
-// Let U be typename(remove_reference(typename(R). If
-// is_array_type(reflexpr(U)) is true, the reflected type shall equal
-// remove_extent_t<U>*. If is_function_type(reflexpr(U)) is true,
-// the reflected type shall equal add_pointer(reflexpr(U)). Otherwise
-// the reflected type equals remove_cv(reflexpr(U)).
-// NOTE: our library currently has no equivalent to std::remove_extent
-static bool decay(const Reflection &R, APValue &Result) {
-  // That's a lot of rules, but Clang already handles this for us. :)
-  if (MaybeType MT = getCanonicalType(R)) {
-    if (!MT->canDecayToPointerType())
-      return Error(R);
-    QualType T = R.getContext().getDecayedType(*MT);
-    return makeReflection(T, Result);
   }
 
   return Error(R);
@@ -3000,12 +2996,12 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return addLvalueReference(*this, Result);
   case query_add_rvalue_reference:
     return addRvalueReference(*this, Result);
+  case query_remove_extent:
+    return removeExtent(*this, Result);
   case query_remove_pointer:
     return removePointer(*this, Result);
   case query_add_pointer:
     return addPointer(*this, Result);
-  case query_decay:
-    return decay(*this, Result);
   case query_make_signed:
     return makeSigned(*this, Result);
   case query_make_unsigned:

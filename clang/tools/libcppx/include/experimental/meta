@@ -260,9 +260,9 @@ enum reflection_query : unsigned {
   query_remove_reference,
   query_add_lvalue_reference,
   query_add_rvalue_reference,
+  query_remove_extent,
   query_remove_pointer,
   query_add_pointer,
-  query_decay,
   query_make_signed,
   query_make_unsigned,
 
@@ -2799,6 +2799,20 @@ consteval info add_rvalue_reference(info type) {
 
 // Requires: is_type(type)
 //
+// Equivalent to reflexpr(std::remove_extent<T>::type) where type
+// is reflexpr(T).
+//
+// If the provided type reflection reflects an array type, returns
+// a new type reflection of the underlying (i.e. element) type.
+//
+// Otherwise, returns a new type reflection of equivalent type.
+consteval info remove_extent(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_remove_extent, type);
+}
+
+// Requires: is_type(type)
+//
 // Equivalent to reflexpr(std::remove_pointer<T>::type) where type
 // is reflexpr(T).
 //
@@ -2840,15 +2854,25 @@ consteval info remove_cvref(info type) {
 //
 // Equivalent to reflexpr(std::decay<T>::type) where type is reflexpr(T).
 //
-// If reflected type names the type "array of U" or "reference to array of U",
-// returns a new type reflection of U*.
+// Let U be remove_reference(reflexpr(T)).
 //
-// If T is a function type F or a reference thereto, equivalent to add_pointer(type).
+// If U is an array type, equivalent to add_pointer(remove_extent(U)).
 //
-// Otherwise, equivalent to remove_cvref(type).
+// If U is a function type, equivalent to add_pointer(U).
+//
+// Otherwise, equivalent to remove_cvref(U).
 consteval info decay(info type) {
   detail::require_type(type);
-  return __reflect(detail::query_decay, type);
+
+  info ref_removed = remove_reference(type);
+
+  if (is_array_type(ref_removed))
+    return add_pointer(remove_extent(ref_removed));
+
+  if (is_function_type(ref_removed))
+    return add_pointer(ref_removed);
+
+  return remove_cv(ref_removed);
 }
 
 // Requires: is_type(type)
