@@ -2652,41 +2652,18 @@ void ASTDeclReader::mergeMergeable(Mergeable<T> *D) {
 }
 
 void ASTDeclReader::VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D) {
+  Record.readOMPChildren(D->Data);
   VisitDecl(D);
-  unsigned NumVars = D->varlist_size();
-  SmallVector<Expr *, 16> Vars;
-  Vars.reserve(NumVars);
-  for (unsigned i = 0; i != NumVars; ++i) {
-    Vars.push_back(Record.readExpr());
-  }
-  D->setVars(Vars);
 }
 
 void ASTDeclReader::VisitOMPAllocateDecl(OMPAllocateDecl *D) {
+  Record.readOMPChildren(D->Data);
   VisitDecl(D);
-  unsigned NumVars = D->varlist_size();
-  unsigned NumClauses = D->clauselist_size();
-  SmallVector<Expr *, 16> Vars;
-  Vars.reserve(NumVars);
-  for (unsigned i = 0; i != NumVars; ++i) {
-    Vars.push_back(Record.readExpr());
-  }
-  D->setVars(Vars);
-  SmallVector<OMPClause *, 8> Clauses;
-  Clauses.reserve(NumClauses);
-  for (unsigned I = 0; I != NumClauses; ++I)
-    Clauses.push_back(Record.readOMPClause());
-  D->setClauses(Clauses);
 }
 
 void ASTDeclReader::VisitOMPRequiresDecl(OMPRequiresDecl * D) {
+  Record.readOMPChildren(D->Data);
   VisitDecl(D);
-  unsigned NumClauses = D->clauselist_size();
-  SmallVector<OMPClause *, 8> Clauses;
-  Clauses.reserve(NumClauses);
-  for (unsigned I = 0; I != NumClauses; ++I)
-    Clauses.push_back(Record.readOMPClause());
-  D->setClauses(Clauses);
 }
 
 void ASTDeclReader::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
@@ -2707,18 +2684,10 @@ void ASTDeclReader::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
 }
 
 void ASTDeclReader::VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D) {
+  Record.readOMPChildren(D->Data);
   VisitValueDecl(D);
-  D->setLocation(readSourceLocation());
-  Expr *MapperVarRefE = Record.readExpr();
-  D->setMapperVarRef(MapperVarRefE);
   D->VarName = Record.readDeclarationName();
   D->PrevDeclInScope = readDeclID();
-  unsigned NumClauses = D->clauselist_size();
-  SmallVector<OMPClause *, 8> Clauses;
-  Clauses.reserve(NumClauses);
-  for (unsigned I = 0; I != NumClauses; ++I)
-    Clauses.push_back(Record.readOMPClause());
-  D->setClauses(Clauses);
 }
 
 void ASTDeclReader::VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D) {
@@ -2909,9 +2878,11 @@ static bool isSameTemplateParameter(const NamedDecl *X,
       return false;
     if (TX->hasTypeConstraint() != TY->hasTypeConstraint())
       return false;
-    if (TX->hasTypeConstraint()) {
-      const TypeConstraint *TXTC = TX->getTypeConstraint();
-      const TypeConstraint *TYTC = TY->getTypeConstraint();
+    const TypeConstraint *TXTC = TX->getTypeConstraint();
+    const TypeConstraint *TYTC = TY->getTypeConstraint();
+    if (!TXTC != !TYTC)
+      return false;
+    if (TXTC && TYTC) {
       if (TXTC->getNamedConcept() != TYTC->getNamedConcept())
         return false;
       if (TXTC->hasExplicitTemplateArgs() != TYTC->hasExplicitTemplateArgs())
@@ -4005,24 +3976,35 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
     // locations.
     D = ImportDecl::CreateDeserialized(Context, ID, Record.back());
     break;
-  case DECL_OMP_THREADPRIVATE:
-    D = OMPThreadPrivateDecl::CreateDeserialized(Context, ID, Record.readInt());
+  case DECL_OMP_THREADPRIVATE: {
+    Record.skipInts(1);
+    unsigned NumChildren = Record.readInt();
+    Record.skipInts(1);
+    D = OMPThreadPrivateDecl::CreateDeserialized(Context, ID, NumChildren);
     break;
+  }
   case DECL_OMP_ALLOCATE: {
-    unsigned NumVars = Record.readInt();
     unsigned NumClauses = Record.readInt();
+    unsigned NumVars = Record.readInt();
+    Record.skipInts(1);
     D = OMPAllocateDecl::CreateDeserialized(Context, ID, NumVars, NumClauses);
     break;
   }
-  case DECL_OMP_REQUIRES:
-    D = OMPRequiresDecl::CreateDeserialized(Context, ID, Record.readInt());
+  case DECL_OMP_REQUIRES: {
+    unsigned NumClauses = Record.readInt();
+    Record.skipInts(2);
+    D = OMPRequiresDecl::CreateDeserialized(Context, ID, NumClauses);
     break;
+  }
   case DECL_OMP_DECLARE_REDUCTION:
     D = OMPDeclareReductionDecl::CreateDeserialized(Context, ID);
     break;
-  case DECL_OMP_DECLARE_MAPPER:
-    D = OMPDeclareMapperDecl::CreateDeserialized(Context, ID, Record.readInt());
+  case DECL_OMP_DECLARE_MAPPER: {
+    unsigned NumClauses = Record.readInt();
+    Record.skipInts(2);
+    D = OMPDeclareMapperDecl::CreateDeserialized(Context, ID, NumClauses);
     break;
+  }
   case DECL_OMP_CAPTUREDEXPR:
     D = OMPCapturedExprDecl::CreateDeserialized(Context, ID);
     break;

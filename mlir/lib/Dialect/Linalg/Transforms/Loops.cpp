@@ -683,6 +683,24 @@ static Optional<LinalgLoops> linalgOpToLoopsImplSwitch(Operation *op,
     return linalgOpToLoopsImpl<LoopTy, DotOp>(op, builder);
   if (isa<BatchMatmulOp>(op))
     return linalgOpToLoopsImpl<LoopTy, BatchMatmulOp>(op, builder);
+  if (isa<ConvWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvWOp>(op, builder);
+  if (isa<ConvNWCOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNWCOp>(op, builder);
+  if (isa<ConvNCWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNCWOp>(op, builder);
+  if (isa<ConvHWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvHWOp>(op, builder);
+  if (isa<ConvNHWCOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNHWCOp>(op, builder);
+  if (isa<ConvNCHWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNCHWOp>(op, builder);
+  if (isa<ConvDHWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvDHWOp>(op, builder);
+  if (isa<ConvNDHWCOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNDHWCOp>(op, builder);
+  if (isa<ConvNCDHWOp>(op))
+    return linalgOpToLoopsImpl<LoopTy, ConvNCDHWOp>(op, builder);
   llvm_unreachable("Unexpected op in linalgOpToLoopsImpl");
 }
 

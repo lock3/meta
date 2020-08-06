@@ -481,6 +481,11 @@ public:
            // Otherwise in OpenCLC v2.0 s6.5.5: every address space except
            // for __constant can be used as __generic.
            (A == LangAS::opencl_generic && B != LangAS::opencl_constant) ||
+           // We also define global_device and global_host address spaces,
+           // to distinguish global pointers allocated on host from pointers
+           // allocated on device, which are a subset of __global.
+           (A == LangAS::opencl_global && (B == LangAS::opencl_global_device ||
+                                           B == LangAS::opencl_global_host)) ||
            // Consider pointer size address spaces to be equivalent to default.
            ((isPtrSizeAddressSpace(A) || A == LangAS::Default) &&
             (isPtrSizeAddressSpace(B) || B == LangAS::Default));
@@ -1675,19 +1680,6 @@ protected:
     uint32_t NumElements;
   };
 
-  class ConstantMatrixTypeBitfields {
-    friend class ConstantMatrixType;
-
-    unsigned : NumTypeBits;
-
-    /// Number of rows and columns. Using 20 bits allows supporting very large
-    /// matrixes, while keeping 24 bits to accommodate NumTypeBits.
-    unsigned NumRows : 20;
-    unsigned NumColumns : 20;
-
-    static constexpr uint32_t MaxElementsPerDimension = (1 << 20) - 1;
-  };
-
   class AttributedTypeBitfields {
     friend class AttributedType;
 
@@ -1811,7 +1803,6 @@ protected:
     TypeWithKeywordBitfields TypeWithKeywordBits;
     ElaboratedTypeBitfields ElaboratedTypeBits;
     VectorTypeBitfields VectorTypeBits;
-    ConstantMatrixTypeBitfields ConstantMatrixTypeBits;
     SubstTemplateTypeParmPackTypeBitfields SubstTemplateTypeParmPackTypeBits;
     TemplateSpecializationTypeBitfields TemplateSpecializationTypeBits;
     DependentTemplateSpecializationTypeBitfields
@@ -1852,6 +1843,8 @@ protected:
                   " than 8 bytes!");
     static_assert(sizeof(PackExpansionTypeBitfields) <= 8,
                   "PackExpansionTypeBitfields is larger than 8 bytes");
+    static_assert(sizeof(DependentIdentifierSpliceTypeBitfields) <= 8,
+                  "DependentIdentifierSpliceTypeBitfields is larger than 8 bytes");
   };
 
 private:
@@ -1868,6 +1861,10 @@ protected:
   Type(TypeClass tc, QualType canon, TypeDependence Dependence, bool MetaType)
       : ExtQualsTypeCommonBase(this,
                                canon.isNull() ? QualType(this_(), 0) : canon) {
+    static_assert(sizeof(*this) <= 8 + sizeof(ExtQualsTypeCommonBase),
+                  "changing bitfields changed sizeof(Type)!");
+    static_assert(alignof(decltype(*this)) % sizeof(void *) == 0,
+                  "Insufficient alignment!");
     TypeBits.TC = tc;
     TypeBits.Dependence = static_cast<unsigned>(Dependence);
     TypeBits.MetaType = MetaType;
@@ -3494,7 +3491,14 @@ protected:
   friend class ASTContext;
 
   /// The element type of the matrix.
+  // FIXME: Appears to be unused? There is also MatrixType::ElementType...
   QualType ElementType;
+
+  /// Number of rows and columns.
+  unsigned NumRows;
+  unsigned NumColumns;
+
+  static constexpr unsigned MaxElementsPerDimension = (1 << 20) - 1;
 
   ConstantMatrixType(QualType MatrixElementType, unsigned NRows,
                      unsigned NColumns, QualType CanonElementType);
@@ -3504,25 +3508,24 @@ protected:
 
 public:
   /// Returns the number of rows in the matrix.
-  unsigned getNumRows() const { return ConstantMatrixTypeBits.NumRows; }
+  unsigned getNumRows() const { return NumRows; }
 
   /// Returns the number of columns in the matrix.
-  unsigned getNumColumns() const { return ConstantMatrixTypeBits.NumColumns; }
+  unsigned getNumColumns() const { return NumColumns; }
 
   /// Returns the number of elements required to embed the matrix into a vector.
   unsigned getNumElementsFlattened() const {
-    return ConstantMatrixTypeBits.NumRows * ConstantMatrixTypeBits.NumColumns;
+    return getNumRows() * getNumColumns();
   }
 
   /// Returns true if \p NumElements is a valid matrix dimension.
-  static bool isDimensionValid(uint64_t NumElements) {
-    return NumElements > 0 &&
-           NumElements <= ConstantMatrixTypeBitfields::MaxElementsPerDimension;
+  static constexpr bool isDimensionValid(size_t NumElements) {
+    return NumElements > 0 && NumElements <= MaxElementsPerDimension;
   }
 
   /// Returns the maximum number of elements per dimension.
-  static unsigned getMaxElementsPerDimension() {
-    return ConstantMatrixTypeBitfields::MaxElementsPerDimension;
+  static constexpr unsigned getMaxElementsPerDimension() {
+    return MaxElementsPerDimension;
   }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
@@ -4450,12 +4453,7 @@ class TypedefType : public Type {
 protected:
   friend class ASTContext; // ASTContext creates these.
 
-  TypedefType(TypeClass tc, const TypedefNameDecl *D, QualType can)
-      : Type(tc, can, can->getDependence() & ~TypeDependence::UnexpandedPack,
-             can->isMetaType()),
-        Decl(const_cast<TypedefNameDecl *>(D)) {
-    assert(!isa<TypedefType>(can) && "Invalid canonical type");
-  }
+  TypedefType(TypeClass tc, const TypedefNameDecl *D, QualType can);
 
 public:
   TypedefNameDecl *getDecl() const { return Decl; }
@@ -5806,7 +5804,8 @@ class PackExpansionType : public Type, public llvm::FoldingSetNode {
   PackExpansionType(QualType Pattern, QualType Canon,
                     Optional<unsigned> NumExpansions)
       : Type(PackExpansion, Canon,
-             (Pattern->getDependence() | TypeDependence::Instantiation) &
+             (Pattern->getDependence() | TypeDependence::Dependent |
+              TypeDependence::Instantiation) &
                  ~TypeDependence::UnexpandedPack, /*MetaType=*/false),
         Pattern(Pattern) {
     PackExpansionTypeBits.NumExpansions =
@@ -5827,8 +5826,8 @@ public:
     return None;
   }
 
-  bool isSugared() const { return !Pattern->isDependentType(); }
-  QualType desugar() const { return isSugared() ? Pattern : QualType(this, 0); }
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, getPattern(), getNumExpansions());

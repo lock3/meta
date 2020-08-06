@@ -49,9 +49,16 @@ func @test_shape_num_elements_fixed() {
 func @test_broadcast_fixed() {
   %0 = shape.const_shape [10, 1, 57, 92] : !shape.shape
   %1 = shape.const_shape [4, 57, 92] : !shape.shape
-  %2 = shape.broadcast %0, %1 : !shape.shape, !shape.shape
+  %2 = shape.broadcast %0, %1 : !shape.shape, !shape.shape -> !shape.shape
   %3 = "shape.print"(%2) : (!shape.shape) -> !shape.shape
   return
+}
+
+func @test_broadcast_extents() -> tensor<?xindex> {
+  %0 = shape.const_shape [10, 1, 57, 92] : tensor<?xindex>
+  %1 = shape.const_shape [4, 57, 92] : tensor<?xindex>
+  %2 = shape.broadcast %0, %1 : tensor<?xindex>, tensor<?xindex> -> tensor<?xindex>
+  return %2 : tensor<?xindex>
 }
 
 func @test_shape_any_fixed() {
@@ -116,6 +123,15 @@ func @mul(%size_arg : !shape.size, %index_arg : index) {
       : !shape.size, !shape.size -> !shape.size
   %index_prod = shape.mul %index_arg, %index_arg : index, index -> index
   %mixed_prod = shape.mul %size_arg, %index_arg
+      : !shape.size, index -> !shape.size
+  return
+}
+
+func @add(%size_arg : !shape.size, %index_arg : index) {
+  %size_sum = shape.add %size_arg, %size_arg
+      : !shape.size, !shape.size -> !shape.size
+  %index_sum = shape.add %index_arg, %index_arg : index, index -> index
+  %mixed_sum = shape.add %size_arg, %index_arg
       : !shape.size, index -> !shape.size
   return
 }
@@ -205,4 +221,17 @@ func @num_elements_shape(%arg : !shape.shape) -> !shape.size {
   return %result : !shape.size
 }
 
-
+// Testing nvoking shape function from another. shape_equal_shapes is merely
+// a trivial helper function to invoke elsewhere.
+func @shape_equal_shapes(%a : !shape.value_shape, %b : !shape.value_shape) -> !shape.shape {
+  %0 = shape.shape_of %a : !shape.value_shape -> !shape.shape
+  %1 = shape.shape_of %b : !shape.value_shape -> !shape.shape
+  %2 = "shape.join"(%0, %1) : (!shape.shape, !shape.shape) -> !shape.shape
+  return %2 : !shape.shape
+}
+func @shape_with_shape(%a : !shape.value_shape, %b : !shape.value_shape) -> !shape.shape {
+  %0 = shape.shape_of %a : !shape.value_shape -> !shape.shape
+  %1 = shape.with_shape %b, %0 : !shape.value_shape, !shape.shape
+  %2 = call @shape_equal_shapes(%a, %1) : (!shape.value_shape, !shape.value_shape) -> !shape.shape
+  return %2 : !shape.shape
+}

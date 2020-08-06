@@ -52,7 +52,6 @@ set(LLVM_TEST_DEPENDS
           UnitTests
           bugpoint
           count
-          extract
           llc
           lli
           lli-child-target
@@ -120,6 +119,7 @@ set(LLVM_TEST_DEPENDS
           opt
           sancov
           sanstats
+          split-file
           verify-uselistorder
           yaml-bench
           yaml2obj

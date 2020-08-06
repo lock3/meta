@@ -357,16 +357,6 @@ void AMDGPUCallLowering::splitToValueTypes(
   }
 }
 
-// Get the appropriate type to make \p OrigTy \p Factor times bigger.
-static LLT getMultipleType(LLT OrigTy, int Factor) {
-  if (OrigTy.isVector()) {
-    return LLT::vector(OrigTy.getNumElements() * Factor,
-                       OrigTy.getElementType());
-  }
-
-  return LLT::scalar(OrigTy.getSizeInBits() * Factor);
-}
-
 // TODO: Move to generic code
 static void unpackRegsToOrigType(MachineIRBuilder &B,
                                  ArrayRef<Register> DstRegs,
@@ -376,34 +366,51 @@ static void unpackRegsToOrigType(MachineIRBuilder &B,
                                  LLT PartTy) {
   assert(DstRegs.size() > 1 && "Nothing to unpack");
 
-  const unsigned SrcSize = SrcTy.getSizeInBits();
   const unsigned PartSize = PartTy.getSizeInBits();
 
   if (SrcTy.isVector() && !PartTy.isVector() &&
       PartSize > SrcTy.getElementType().getSizeInBits()) {
     // Vector was scalarized, and the elements extended.
-    auto UnmergeToEltTy = B.buildUnmerge(SrcTy.getElementType(),
-                                                  SrcReg);
+    auto UnmergeToEltTy = B.buildUnmerge(SrcTy.getElementType(), SrcReg);
     for (int i = 0, e = DstRegs.size(); i != e; ++i)
       B.buildAnyExt(DstRegs[i], UnmergeToEltTy.getReg(i));
     return;
   }
 
-  if (SrcSize % PartSize == 0) {
+  LLT GCDTy = getGCDType(SrcTy, PartTy);
+  if (GCDTy == PartTy) {
+    // If this already evenly divisible, we can create a simple unmerge.
     B.buildUnmerge(DstRegs, SrcReg);
     return;
   }
 
-  const int NumRoundedParts = (SrcSize + PartSize - 1) / PartSize;
+  MachineRegisterInfo &MRI = *B.getMRI();
+  LLT DstTy = MRI.getType(DstRegs[0]);
+  LLT LCMTy = getLCMType(SrcTy, PartTy);
 
-  LLT BigTy = getMultipleType(PartTy, NumRoundedParts);
-  auto ImpDef = B.buildUndef(BigTy);
+  const unsigned LCMSize = LCMTy.getSizeInBits();
+  const unsigned DstSize = DstTy.getSizeInBits();
+  const unsigned SrcSize = SrcTy.getSizeInBits();
 
-  auto Big = B.buildInsert(BigTy, ImpDef.getReg(0), SrcReg, 0).getReg(0);
+  Register UnmergeSrc = SrcReg;
+  if (LCMSize != SrcSize) {
+    // Widen to the common type.
+    Register Undef = B.buildUndef(SrcTy).getReg(0);
+    SmallVector<Register, 8> MergeParts(1, SrcReg);
+    for (unsigned Size = SrcSize; Size != LCMSize; Size += SrcSize)
+      MergeParts.push_back(Undef);
 
-  int64_t Offset = 0;
-  for (unsigned i = 0, e = DstRegs.size(); i != e; ++i, Offset += PartSize)
-    B.buildExtract(DstRegs[i], Big, Offset);
+    UnmergeSrc = B.buildMerge(LCMTy, MergeParts).getReg(0);
+  }
+
+  // Unmerge to the original registers and pad with dead defs.
+  SmallVector<Register, 8> UnmergeResults(DstRegs.begin(), DstRegs.end());
+  for (unsigned Size = DstSize * DstRegs.size(); Size != LCMSize;
+       Size += DstSize) {
+    UnmergeResults.push_back(MRI.createGenericVirtualRegister(DstTy));
+  }
+
+  B.buildUnmerge(UnmergeResults, UnmergeSrc);
 }
 
 /// Lower the return value for the already existing \p Ret. This assumes that
@@ -993,7 +1000,7 @@ bool AMDGPUCallLowering::passSpecialInputs(MachineIRBuilder &MIRBuilder,
     Register InputReg = MRI.createGenericVirtualRegister(ArgTy);
 
     if (IncomingArg) {
-      LI->loadInputValue(InputReg, MIRBuilder, IncomingArg);
+      LI->loadInputValue(InputReg, MIRBuilder, IncomingArg, ArgRC, ArgTy);
     } else {
       assert(InputID == AMDGPUFunctionArgInfo::IMPLICIT_ARG_PTR);
       LI->getImplicitArgPtr(InputReg, MRI, MIRBuilder);
@@ -1026,13 +1033,16 @@ bool AMDGPUCallLowering::passSpecialInputs(MachineIRBuilder &MIRBuilder,
   if (!OutgoingArg)
     return false;
 
-  const ArgDescriptor *IncomingArgX = std::get<0>(
-      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_X));
-  const ArgDescriptor *IncomingArgY = std::get<0>(
-      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_Y));
-  const ArgDescriptor *IncomingArgZ = std::get<0>(
-      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_Z));
+  auto WorkitemIDX =
+      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_X);
+  auto WorkitemIDY =
+      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_Y);
+  auto WorkitemIDZ =
+      CallerArgInfo.getPreloadedValue(AMDGPUFunctionArgInfo::WORKITEM_ID_Z);
 
+  const ArgDescriptor *IncomingArgX = std::get<0>(WorkitemIDX);
+  const ArgDescriptor *IncomingArgY = std::get<0>(WorkitemIDY);
+  const ArgDescriptor *IncomingArgZ = std::get<0>(WorkitemIDZ);
   const LLT S32 = LLT::scalar(32);
 
   // If incoming ids are not packed we need to pack them.
@@ -1040,12 +1050,14 @@ bool AMDGPUCallLowering::passSpecialInputs(MachineIRBuilder &MIRBuilder,
   Register InputReg;
   if (IncomingArgX && !IncomingArgX->isMasked() && CalleeArgInfo->WorkItemIDX) {
     InputReg = MRI.createGenericVirtualRegister(S32);
-    LI->loadInputValue(InputReg, MIRBuilder, IncomingArgX);
+    LI->loadInputValue(InputReg, MIRBuilder, IncomingArgX,
+                       std::get<1>(WorkitemIDX), std::get<2>(WorkitemIDX));
   }
 
   if (IncomingArgY && !IncomingArgY->isMasked() && CalleeArgInfo->WorkItemIDY) {
     Register Y = MRI.createGenericVirtualRegister(S32);
-    LI->loadInputValue(Y, MIRBuilder, IncomingArgY);
+    LI->loadInputValue(Y, MIRBuilder, IncomingArgY, std::get<1>(WorkitemIDY),
+                       std::get<2>(WorkitemIDY));
 
     Y = MIRBuilder.buildShl(S32, Y, MIRBuilder.buildConstant(S32, 10)).getReg(0);
     InputReg = InputReg ? MIRBuilder.buildOr(S32, InputReg, Y).getReg(0) : Y;
@@ -1053,7 +1065,8 @@ bool AMDGPUCallLowering::passSpecialInputs(MachineIRBuilder &MIRBuilder,
 
   if (IncomingArgZ && !IncomingArgZ->isMasked() && CalleeArgInfo->WorkItemIDZ) {
     Register Z = MRI.createGenericVirtualRegister(S32);
-    LI->loadInputValue(Z, MIRBuilder, IncomingArgZ);
+    LI->loadInputValue(Z, MIRBuilder, IncomingArgZ, std::get<1>(WorkitemIDZ),
+                       std::get<2>(WorkitemIDZ));
 
     Z = MIRBuilder.buildShl(S32, Z, MIRBuilder.buildConstant(S32, 20)).getReg(0);
     InputReg = InputReg ? MIRBuilder.buildOr(S32, InputReg, Z).getReg(0) : Z;
@@ -1067,7 +1080,8 @@ bool AMDGPUCallLowering::passSpecialInputs(MachineIRBuilder &MIRBuilder,
     ArgDescriptor IncomingArg = ArgDescriptor::createArg(
       IncomingArgX ? *IncomingArgX :
         IncomingArgY ? *IncomingArgY : *IncomingArgZ, ~0u);
-    LI->loadInputValue(InputReg, MIRBuilder, &IncomingArg);
+    LI->loadInputValue(InputReg, MIRBuilder, &IncomingArg,
+                       &AMDGPU::VGPR_32RegClass, S32);
   }
 
   if (OutgoingArg->isRegister()) {
