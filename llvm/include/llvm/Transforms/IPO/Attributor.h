@@ -99,21 +99,17 @@
 
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AssumeBundleQueries.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Analysis/CallGraph.h"
-#include "llvm/Analysis/InlineCost.h"
 #include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MustExecute.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/AbstractCallSite.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/PassManager.h"
@@ -121,6 +117,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/DOTGraphTraits.h"
 #include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "llvm/Transforms/Utils/CallGraphUpdater.h"
 
 namespace llvm {
@@ -158,8 +155,8 @@ public:
   using DepTy = PointerIntPair<AADepGraphNode *, 1>;
 
 protected:
-  /// Set of dependency graph nodes which this one depends on.
-  /// The bit encodes if it is optional.
+  /// Set of dependency graph nodes which should be updated if this one
+  /// is updated. The bit encodes if it is optional.
   TinyPtrVector<DepTy> Deps;
 
   static AADepGraphNode *DepGetVal(DepTy &DT) { return DT.getPointer(); }
@@ -187,6 +184,11 @@ public:
   friend struct AADepGraph;
 };
 
+/// The data structure for the dependency graph
+///
+/// Note that in this graph if there is an edge from A to B (A -> B),
+/// then it means that B depends on A, and when the state of A is
+/// updated, node B should also be updated
 struct AADepGraph {
   AADepGraph() {}
   ~AADepGraph() {}
@@ -200,7 +202,6 @@ struct AADepGraph {
   /// requires a single entry point, so we maintain a fake("synthetic") root
   /// node that depends on every node.
   AADepGraphNode SyntheticRoot;
-
   AADepGraphNode *GetEntryNode() { return &SyntheticRoot; }
 
   iterator begin() { return SyntheticRoot.child_begin(); }
@@ -1005,8 +1006,10 @@ struct Attributor {
       return AA;
     }
 
-    AA.initialize(*this);
-
+    {
+      TimeTraceScope TimeScope(AA.getName() + "::initialize");
+      AA.initialize(*this);
+    }
     // We can initialize (=look at) code outside the current function set but
     // not call update because that would again spawn new abstract attributes in
     // potentially unconnected code regions (=SCCs).

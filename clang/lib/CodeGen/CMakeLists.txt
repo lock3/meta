@@ -26,10 +26,6 @@ set(LLVM_LINK_COMPONENTS
   TransformUtils
   )
 
-if (MSVC)
-  set_source_files_properties(CodeGenModule.cpp PROPERTIES COMPILE_FLAGS /bigobj)
-endif()
-
 add_clang_library(clangCodeGen
   BackendUtil.cpp
   CGAtomic.cpp
@@ -62,6 +58,7 @@ add_clang_library(clangCodeGen
   CGObjCRuntime.cpp
   CGOpenCLRuntime.cpp
   CGOpenMPRuntime.cpp
+  CGOpenMPRuntimeAMDGCN.cpp
   CGOpenMPRuntimeGPU.cpp
   CGOpenMPRuntimeNVPTX.cpp
   CGRecordLayoutBuilder.cpp

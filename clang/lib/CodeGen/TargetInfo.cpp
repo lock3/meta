@@ -80,17 +80,17 @@ static bool isAggregateTypeForABI(QualType T) {
          T->isMemberFunctionPointerType();
 }
 
-ABIArgInfo
-ABIInfo::getNaturalAlignIndirect(QualType Ty, bool ByRef, bool Realign,
-                                 llvm::Type *Padding) const {
-  return ABIArgInfo::getIndirect(getContext().getTypeAlignInChars(Ty),
-                                 ByRef, Realign, Padding);
+ABIArgInfo ABIInfo::getNaturalAlignIndirect(QualType Ty, bool ByVal,
+                                            bool Realign,
+                                            llvm::Type *Padding) const {
+  return ABIArgInfo::getIndirect(getContext().getTypeAlignInChars(Ty), ByVal,
+                                 Realign, Padding);
 }
 
 ABIArgInfo
 ABIInfo::getNaturalAlignIndirectInReg(QualType Ty, bool Realign) const {
   return ABIArgInfo::getIndirectInReg(getContext().getTypeAlignInChars(Ty),
-                                      /*ByRef*/ false, Realign);
+                                      /*ByVal*/ false, Realign);
 }
 
 Address ABIInfo::EmitMSVAArg(CodeGenFunction &CGF, Address VAListAddr,
@@ -2404,10 +2404,8 @@ public:
   }
 
   /// Disable tail call on x86-64. The epilogue code before the tail jump blocks
-  /// the autoreleaseRV/retainRV optimization.
-  bool shouldSuppressTailCallsOfRetainAutoreleasedReturnValue() const override {
-    return true;
-  }
+  /// autoreleaseRV/retainRV and autoreleaseRV/unsafeClaimRV optimizations.
+  bool markARCOptimizedReturnCallsAsNoTail() const override { return true; }
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &CGM) const override {
     return 7;
@@ -8558,7 +8556,7 @@ ABIArgInfo LanaiABIInfo::classifyArgumentType(QualType Ty,
     if (RAA == CGCXXABI::RAA_Indirect) {
       return getIndirectResult(Ty, /*ByVal=*/false, State);
     } else if (RAA == CGCXXABI::RAA_DirectInMemory) {
-      return getNaturalAlignIndirect(Ty, /*ByRef=*/true);
+      return getNaturalAlignIndirect(Ty, /*ByVal=*/true);
     }
   }
 
@@ -10744,21 +10742,24 @@ private:
 } // end anonymous namespace
 
 ABIArgInfo VEABIInfo::classifyReturnType(QualType Ty) const {
-  if (Ty->isAnyComplexType()) {
+  if (Ty->isAnyComplexType())
     return ABIArgInfo::getDirect();
-  }
+  uint64_t Size = getContext().getTypeSize(Ty);
+  if (Size < 64 && Ty->isIntegerType())
+    return ABIArgInfo::getExtend(Ty);
   return DefaultABIInfo::classifyReturnType(Ty);
 }
 
 ABIArgInfo VEABIInfo::classifyArgumentType(QualType Ty) const {
-  if (Ty->isAnyComplexType()) {
+  if (Ty->isAnyComplexType())
     return ABIArgInfo::getDirect();
-  }
+  uint64_t Size = getContext().getTypeSize(Ty);
+  if (Size < 64 && Ty->isIntegerType())
+    return ABIArgInfo::getExtend(Ty);
   return DefaultABIInfo::classifyArgumentType(Ty);
 }
 
 void VEABIInfo::computeInfo(CGFunctionInfo &FI) const {
-
   FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
   for (auto &Arg : FI.arguments())
     Arg.info = classifyArgumentType(Arg.type);

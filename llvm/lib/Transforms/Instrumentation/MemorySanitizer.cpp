@@ -153,6 +153,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -2692,9 +2693,7 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
   void handleLifetimeStart(IntrinsicInst &I) {
     if (!PoisonStack)
       return;
-    DenseMap<Value *, AllocaInst *> AllocaForValue;
-    AllocaInst *AI =
-        llvm::findAllocaForValue(I.getArgOperand(1), AllocaForValue);
+    AllocaInst *AI = llvm::findAllocaForValue(I.getArgOperand(1));
     if (!AI)
       InstrumentLifetimeStart = false;
     LifetimeStartList.push_back(std::make_pair(&I, AI));
@@ -3585,14 +3584,15 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
       // will become a non-readonly function after it is instrumented by us. To
       // prevent this code from being optimized out, mark that function
       // non-readonly in advance.
+      AttrBuilder B;
+      B.addAttribute(Attribute::ReadOnly)
+          .addAttribute(Attribute::ReadNone)
+          .addAttribute(Attribute::WriteOnly)
+          .addAttribute(Attribute::ArgMemOnly)
+          .addAttribute(Attribute::Speculatable);
+
+      Call->removeAttributes(AttributeList::FunctionIndex, B);
       if (Function *Func = Call->getCalledFunction()) {
-        // Clear out readonly/readnone attributes.
-        AttrBuilder B;
-        B.addAttribute(Attribute::ReadOnly)
-            .addAttribute(Attribute::ReadNone)
-            .addAttribute(Attribute::WriteOnly)
-            .addAttribute(Attribute::ArgMemOnly)
-            .addAttribute(Attribute::Speculatable);
         Func->removeAttributes(AttributeList::FunctionIndex, B);
       }
 
@@ -4065,6 +4065,12 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
       instrumentAsmArgument(Operand, I, IRB, DL, /*isOutput*/ true);
     }
 
+    setShadow(&I, getCleanShadow(&I));
+    setOrigin(&I, getCleanOrigin());
+  }
+
+  void visitFreezeInst(FreezeInst &I) {
+    // Freeze always returns a fully defined value.
     setShadow(&I, getCleanShadow(&I));
     setOrigin(&I, getCleanOrigin());
   }

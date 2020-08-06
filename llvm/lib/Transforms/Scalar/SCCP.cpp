@@ -104,8 +104,7 @@ bool isConstant(const ValueLatticeElement &LV) {
 // ValueLatticeElement::isOverdefined() and is intended to be used in the
 // transition to ValueLatticeElement.
 bool isOverdefined(const ValueLatticeElement &LV) {
-  return LV.isOverdefined() ||
-         (LV.isConstantRange() && !LV.getConstantRange().isSingleElement());
+  return !LV.isUnknownOrUndef() && !isConstant(LV);
 }
 
 //===----------------------------------------------------------------------===//
@@ -649,17 +648,30 @@ void SCCPSolver::getFeasibleSuccessors(Instruction &TI,
       Succs[0] = true;
       return;
     }
-    ValueLatticeElement SCValue = getValueState(SI->getCondition());
-    ConstantInt *CI = getConstantInt(SCValue);
-
-    if (!CI) {   // Overdefined or unknown condition?
-      // All destinations are executable!
-      if (!SCValue.isUnknownOrUndef())
-        Succs.assign(TI.getNumSuccessors(), true);
+    const ValueLatticeElement &SCValue = getValueState(SI->getCondition());
+    if (ConstantInt *CI = getConstantInt(SCValue)) {
+      Succs[SI->findCaseValue(CI)->getSuccessorIndex()] = true;
       return;
     }
 
-    Succs[SI->findCaseValue(CI)->getSuccessorIndex()] = true;
+    // TODO: Switch on undef is UB. Stop passing false once the rest of LLVM
+    // is ready.
+    if (SCValue.isConstantRange(/*UndefAllowed=*/false)) {
+      const ConstantRange &Range = SCValue.getConstantRange();
+      for (const auto &Case : SI->cases()) {
+        const APInt &CaseValue = Case.getCaseValue()->getValue();
+        if (Range.contains(CaseValue))
+          Succs[Case.getSuccessorIndex()] = true;
+      }
+
+      // TODO: Determine whether default case is reachable.
+      Succs[SI->case_default()->getSuccessorIndex()] = true;
+      return;
+    }
+
+    // Overdefined or unknown condition? All destinations are executable!
+    if (!SCValue.isUnknownOrUndef())
+      Succs.assign(TI.getNumSuccessors(), true);
     return;
   }
 
@@ -1110,7 +1122,9 @@ static ValueLatticeElement getValueFromMetadata(const Instruction *I) {
     if (I->getType()->isIntegerTy())
       return ValueLatticeElement::getRange(
           getConstantRangeFromMetadata(*Ranges));
-  // TODO: Also handle MD_nonnull.
+  if (I->hasMetadata(LLVMContext::MD_nonnull))
+    return ValueLatticeElement::getNot(
+        ConstantPointerNull::get(cast<PointerType>(I->getType())));
   return ValueLatticeElement::getOverdefined();
 }
 
@@ -1278,6 +1292,17 @@ void SCCPSolver::handleCallResult(CallBase &CB) {
         return;
       }
 
+      // TODO: Actually filp MayIncludeUndef for the created range to false,
+      // once most places in the optimizer respect the branches on
+      // undef/poison are UB rule. The reason why the new range cannot be
+      // undef is as follows below:
+      // The new range is based on a branch condition. That guarantees that
+      // neither of the compare operands can be undef in the branch targets,
+      // unless we have conditions that are always true/false (e.g. icmp ule
+      // i32, %a, i32_max). For the latter overdefined/empty range will be
+      // inferred, but the branch will get folded accordingly anyways.
+      bool MayIncludeUndef = !isa<PredicateAssume>(PI);
+
       ValueLatticeElement CondVal = getValueState(OtherOp);
       ValueLatticeElement &IV = ValueState[&CB];
       if (CondVal.isConstantRange() || CopyOfVal.isConstantRange()) {
@@ -1303,24 +1328,22 @@ void SCCPSolver::handleCallResult(CallBase &CB) {
           NewCR = CopyOfCR;
 
         addAdditionalUser(OtherOp, &CB);
-        // TODO: Actually filp MayIncludeUndef for the created range to false,
-        // once most places in the optimizer respect the branches on
-        // undef/poison are UB rule. The reason why the new range cannot be
-        // undef is as follows below:
-        // The new range is based on a branch condition. That guarantees that
-        // neither of the compare operands can be undef in the branch targets,
-        // unless we have conditions that are always true/false (e.g. icmp ule
-        // i32, %a, i32_max). For the latter overdefined/empty range will be
-        // inferred, but the branch will get folded accordingly anyways.
         mergeInValue(
             IV, &CB,
-            ValueLatticeElement::getRange(NewCR, /*MayIncludeUndef=*/true));
+            ValueLatticeElement::getRange(NewCR, MayIncludeUndef));
         return;
       } else if (Pred == CmpInst::ICMP_EQ && CondVal.isConstant()) {
         // For non-integer values or integer constant expressions, only
         // propagate equal constants.
         addAdditionalUser(OtherOp, &CB);
         mergeInValue(IV, &CB, CondVal);
+        return;
+      } else if (Pred == CmpInst::ICMP_NE && CondVal.isConstant() &&
+                 !MayIncludeUndef) {
+        // Propagate inequalities.
+        addAdditionalUser(OtherOp, &CB);
+        mergeInValue(IV, &CB,
+                     ValueLatticeElement::getNot(CondVal.getConstant()));
         return;
       }
 
@@ -1848,8 +1871,25 @@ static bool removeNonFeasibleEdges(const SCCPSolver &Solver, BasicBlock *BB,
     BranchInst::Create(OnlyFeasibleSuccessor, BB);
     TI->eraseFromParent();
     DTU.applyUpdatesPermissive(Updates);
+  } else if (FeasibleSuccessors.size() > 1) {
+    SwitchInstProfUpdateWrapper SI(*cast<SwitchInst>(TI));
+    SmallVector<DominatorTree::UpdateType, 8> Updates;
+    for (auto CI = SI->case_begin(); CI != SI->case_end();) {
+      if (FeasibleSuccessors.contains(CI->getCaseSuccessor())) {
+        ++CI;
+        continue;
+      }
+
+      BasicBlock *Succ = CI->getCaseSuccessor();
+      Succ->removePredecessor(BB);
+      Updates.push_back({DominatorTree::Delete, BB, Succ});
+      SI.removeCase(CI);
+      // Don't increment CI, as we removed a case.
+    }
+
+    DTU.applyUpdatesPermissive(Updates);
   } else {
-    llvm_unreachable("Either all successors are feasible, or exactly one is");
+    llvm_unreachable("Must have at least one feasible successor");
   }
   return true;
 }

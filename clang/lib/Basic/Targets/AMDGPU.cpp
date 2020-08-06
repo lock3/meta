@@ -46,6 +46,8 @@ const LangASMap AMDGPUTargetInfo::AMDGPUDefIsGenMap = {
     Constant, // opencl_constant
     Private,  // opencl_private
     Generic,  // opencl_generic
+    Global,   // opencl_global_device
+    Global,   // opencl_global_host
     Global,   // cuda_device
     Constant, // cuda_constant
     Local,    // cuda_shared
@@ -61,6 +63,8 @@ const LangASMap AMDGPUTargetInfo::AMDGPUDefIsPrivMap = {
     Constant, // opencl_constant
     Private,  // opencl_private
     Generic,  // opencl_generic
+    Global,   // opencl_global_device
+    Global,   // opencl_global_host
     Global,   // cuda_device
     Constant, // cuda_constant
     Local,    // cuda_shared
@@ -170,6 +174,7 @@ bool AMDGPUTargetInfo::initFeatureMap(
   // XXX - What does the member GPU mean if device name string passed here?
   if (isAMDGCN(getTriple())) {
     switch (llvm::AMDGPU::parseArchAMDGCN(CPU)) {
+    case GK_GFX1031:
     case GK_GFX1030:
       Features["ci-insts"] = true;
       Features["dot1-insts"] = true;

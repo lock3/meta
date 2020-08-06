@@ -104,7 +104,7 @@ def DeducedTemplateSpecializationType : TypeNode<DeducedType>;
 def InjectedClassNameType : TypeNode<Type>, AlwaysDependent, LeafType;
 def DependentNameType : TypeNode<Type>, AlwaysDependent;
 def DependentTemplateSpecializationType : TypeNode<Type>, AlwaysDependent;
-def PackExpansionType : TypeNode<Type>, NeverCanonicalUnlessDependent;
+def PackExpansionType : TypeNode<Type>, AlwaysDependent;
 def CXXDependentVariadicReifierType : TypeNode<Type>, MetaType;
 def CXXRequiredTypeType : TypeNode<Type>, MetaType;
 def ObjCTypeParamType : TypeNode<Type>, NeverCanonical;

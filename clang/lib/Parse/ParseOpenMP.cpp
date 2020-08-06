@@ -579,9 +579,6 @@ Parser::ParseOpenMPDeclareMapperDirective(AccessSpecifier AS) {
   }
 
   // Enter scope.
-  OMPDeclareMapperDecl *DMD = Actions.ActOnOpenMPDeclareMapperDirectiveStart(
-      getCurScope(), Actions.getCurLexicalContext(), MapperId, MapperType,
-      Range.getBegin(), VName, AS);
   DeclarationNameInfo DirName;
   SourceLocation Loc = Tok.getLocation();
   unsigned ScopeFlags = Scope::FnScope | Scope::DeclScope |
@@ -590,8 +587,8 @@ Parser::ParseOpenMPDeclareMapperDirective(AccessSpecifier AS) {
   Actions.StartOpenMPDSABlock(OMPD_declare_mapper, DirName, getCurScope(), Loc);
 
   // Add the mapper variable declaration.
-  Actions.ActOnOpenMPDeclareMapperDirectiveVarDecl(
-      DMD, getCurScope(), MapperType, Range.getBegin(), VName);
+  ExprResult MapperVarRef = Actions.ActOnOpenMPDeclareMapperDirectiveVarDecl(
+      getCurScope(), MapperType, Range.getBegin(), VName);
 
   // Parse map clauses.
   SmallVector<OMPClause *, 6> Clauses;
@@ -601,7 +598,7 @@ Parser::ParseOpenMPDeclareMapperDirective(AccessSpecifier AS) {
                                  : getOpenMPClauseKind(PP.getSpelling(Tok));
     Actions.StartOpenMPClause(CKind);
     OMPClause *Clause =
-        ParseOpenMPClause(OMPD_declare_mapper, CKind, Clauses.size() == 0);
+        ParseOpenMPClause(OMPD_declare_mapper, CKind, Clauses.empty());
     if (Clause)
       Clauses.push_back(Clause);
     else
@@ -620,12 +617,13 @@ Parser::ParseOpenMPDeclareMapperDirective(AccessSpecifier AS) {
   // Exit scope.
   Actions.EndOpenMPDSABlock(nullptr);
   OMPDirectiveScope.Exit();
-
-  DeclGroupPtrTy DGP =
-      Actions.ActOnOpenMPDeclareMapperDirectiveEnd(DMD, getCurScope(), Clauses);
+  DeclGroupPtrTy DG = Actions.ActOnOpenMPDeclareMapperDirective(
+      getCurScope(), Actions.getCurLexicalContext(), MapperId, MapperType,
+      Range.getBegin(), VName, AS, MapperVarRef.get(), Clauses);
   if (!IsCorrect)
     return DeclGroupPtrTy();
-  return DGP;
+
+  return DG;
 }
 
 TypeResult Parser::parseOpenMPDeclareMapperVarDecl(SourceRange &Range,
@@ -880,7 +878,8 @@ void Parser::parseOMPTraitPropertyKind(
     return;
   }
 
-  TIProperty.Kind = getOpenMPContextTraitPropertyKind(Set, Name);
+  TIProperty.RawString = Name;
+  TIProperty.Kind = getOpenMPContextTraitPropertyKind(Set, Selector, Name);
   if (TIProperty.Kind != TraitProperty::invalid) {
     if (checkForDuplicates(*this, Name, NameLoc, Seen, CONTEXT_TRAIT_LVL))
       TIProperty.Kind = TraitProperty::invalid;
@@ -921,7 +920,7 @@ void Parser::parseOMPTraitPropertyKind(
        {TraitSet::construct, TraitSet::user, TraitSet::implementation,
         TraitSet::device}) {
     TraitProperty PropertyForName =
-        getOpenMPContextTraitPropertyKind(PotentialSet, Name);
+        getOpenMPContextTraitPropertyKind(PotentialSet, Selector, Name);
     if (PropertyForName == TraitProperty::invalid)
       continue;
     Diag(NameLoc, diag::note_omp_declare_variant_ctx_try)
@@ -960,8 +959,8 @@ static bool checkExtensionProperty(Parser &P, SourceLocation Loc,
     for (OMPTraitProperty &SeenProp : TISelector.Properties)
       if (IsMatchExtension(SeenProp)) {
         P.Diag(Loc, diag::err_omp_variant_ctx_second_match_extension);
-        StringRef SeenName =
-            llvm::omp::getOpenMPContextTraitPropertyName(SeenProp.Kind);
+        StringRef SeenName = llvm::omp::getOpenMPContextTraitPropertyName(
+            SeenProp.Kind, SeenProp.RawString);
         SourceLocation SeenLoc = Seen[SeenName];
         P.Diag(SeenLoc, diag::note_omp_declare_variant_ctx_used_here)
             << CONTEXT_TRAIT_LVL << SeenName;
@@ -1006,11 +1005,13 @@ void Parser::parseOMPContextProperty(OMPTraitSelector &TISelector,
   }
 
   Diag(PropertyLoc, diag::warn_omp_ctx_incompatible_property_for_selector)
-      << getOpenMPContextTraitPropertyName(TIProperty.Kind)
+      << getOpenMPContextTraitPropertyName(TIProperty.Kind,
+                                           TIProperty.RawString)
       << getOpenMPContextTraitSelectorName(TISelector.Kind)
       << getOpenMPContextTraitSetName(Set);
   Diag(PropertyLoc, diag::note_omp_ctx_compatible_set_and_selector_for_property)
-      << getOpenMPContextTraitPropertyName(TIProperty.Kind)
+      << getOpenMPContextTraitPropertyName(TIProperty.Kind,
+                                           TIProperty.RawString)
       << getOpenMPContextTraitSelectorName(
              getOpenMPContextTraitSelectorForProperty(TIProperty.Kind))
       << getOpenMPContextTraitSetName(
@@ -1056,8 +1057,8 @@ void Parser::parseOMPTraitSelectorKind(
   for (const auto &PotentialSet :
        {TraitSet::construct, TraitSet::user, TraitSet::implementation,
         TraitSet::device}) {
-    TraitProperty PropertyForName =
-        getOpenMPContextTraitPropertyKind(PotentialSet, Name);
+    TraitProperty PropertyForName = getOpenMPContextTraitPropertyKind(
+        PotentialSet, TraitSelector::invalid, Name);
     if (PropertyForName == TraitProperty::invalid)
       continue;
     Diag(NameLoc, diag::note_omp_declare_variant_ctx_is_a)
@@ -1151,7 +1152,8 @@ void Parser::parseOMPContextSelector(
 
   if (!RequiresProperty) {
     TISelector.Properties.push_back(
-        {getOpenMPContextTraitPropertyForSelector(TISelector.Kind)});
+        {getOpenMPContextTraitPropertyForSelector(TISelector.Kind),
+         getOpenMPContextTraitSelectorName(TISelector.Kind)});
     return;
   }
 
@@ -1168,7 +1170,8 @@ void Parser::parseOMPContextSelector(
     if (!Condition.isUsable())
       return FinishSelector();
     TISelector.ScoreOrCondition = Condition.get();
-    TISelector.Properties.push_back({TraitProperty::user_condition_unknown});
+    TISelector.Properties.push_back(
+        {TraitProperty::user_condition_unknown, "<condition>"});
     return;
   }
 
@@ -1247,8 +1250,8 @@ void Parser::parseOMPTraitSetKind(OMPTraitSet &TISet,
   for (const auto &PotentialSet :
        {TraitSet::construct, TraitSet::user, TraitSet::implementation,
         TraitSet::device}) {
-    TraitProperty PropertyForName =
-        getOpenMPContextTraitPropertyKind(PotentialSet, Name);
+    TraitProperty PropertyForName = getOpenMPContextTraitPropertyKind(
+        PotentialSet, TraitSelector::invalid, Name);
     if (PropertyForName == TraitProperty::invalid)
       continue;
     Diag(NameLoc, diag::note_omp_declare_variant_ctx_is_a)
@@ -1831,8 +1834,15 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
     VariantMatchInfo VMI;
     ASTContext &ASTCtx = Actions.getASTContext();
     TI.getAsVariantMatchInfo(ASTCtx, VMI);
-    OMPContext OMPCtx(ASTCtx.getLangOpts().OpenMPIsDevice,
-                      ASTCtx.getTargetInfo().getTriple());
+
+    std::function<void(StringRef)> DiagUnknownTrait = [this, Loc](
+                                                          StringRef ISATrait) {
+      // TODO Track the selector locations in a way that is accessible here to
+      // improve the diagnostic location.
+      Diag(Loc, diag::warn_unknown_begin_declare_variant_isa_trait) << ISATrait;
+    };
+    TargetOMPContext OMPCtx(ASTCtx, std::move(DiagUnknownTrait),
+                            /* CurrentFunctionDecl */ nullptr);
 
     if (isVariantApplicableInContext(VMI, OMPCtx, /* DeviceSetOnly */ true)) {
       Actions.ActOnOpenMPBeginDeclareVariant(Loc, TI);
@@ -3191,7 +3201,6 @@ static void parseMapType(Parser &P, Parser::OpenMPVarListDataTy &Data) {
 
 /// Parses simple expression in parens for single-expression clauses of OpenMP
 /// constructs.
-/// \param RLoc Returned location of right paren.
 ExprResult Parser::ParseOpenMPIteratorsExpr() {
   assert(isIdentifier() && PP.getSpelling(Tok) == "iterator" &&
          "Expected 'iterator' token.");
@@ -3453,36 +3462,43 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
     if (Tok.is(tok::colon))
       Data.ColonLoc = ConsumeToken();
   } else if (Kind == OMPC_to || Kind == OMPC_from) {
-    if (isIdentifier()) {
-      bool IsMapperModifier = false;
-      if (Kind == OMPC_to) {
-        auto Modifier =
-            static_cast<OpenMPToModifierKind>(getOpenMPSimpleClauseType(
-                Kind, PP.getSpelling(Tok), getLangOpts().OpenMP));
-        if (Modifier == OMPC_TO_MODIFIER_mapper)
-          IsMapperModifier = true;
-      } else {
-        auto Modifier =
-            static_cast<OpenMPFromModifierKind>(getOpenMPSimpleClauseType(
-                Kind, PP.getSpelling(Tok), getLangOpts().OpenMP));
-        if (Modifier == OMPC_FROM_MODIFIER_mapper)
-          IsMapperModifier = true;
-      }
-      if (IsMapperModifier) {
-        // Parse the mapper modifier.
-        ConsumeIdentifier();
+    while (isIdentifier()) {
+      auto Modifier =
+          static_cast<OpenMPMotionModifierKind>(getOpenMPSimpleClauseType(
+              Kind, PP.getSpelling(Tok), getLangOpts().OpenMP));
+      if (Modifier == OMPC_MOTION_MODIFIER_unknown)
+        break;
+      Data.MotionModifiers.push_back(Modifier);
+      Data.MotionModifiersLoc.push_back(Tok.getLocation());
+      ConsumeIdentifier();
+      if (Modifier == OMPC_MOTION_MODIFIER_mapper) {
         IsInvalidMapperModifier = parseMapperModifier(Data);
-        if (Tok.isNot(tok::colon)) {
-          if (!IsInvalidMapperModifier)
-            Diag(Tok, diag::warn_pragma_expected_colon) << ")";
-          SkipUntil(tok::colon, tok::r_paren, tok::annot_pragma_openmp_end,
-                    StopBeforeMatch);
-        }
-        // Consume ':'.
-        if (Tok.is(tok::colon))
-          ConsumeToken();
+        if (IsInvalidMapperModifier)
+          break;
       }
+      // OpenMP < 5.1 doesn't permit a ',' or additional modifiers.
+      if (getLangOpts().OpenMP < 51)
+        break;
+      // OpenMP 5.1 accepts an optional ',' even if the next character is ':'.
+      // TODO: Is that intentional?
+      if (Tok.is(tok::comma))
+        ConsumeToken();
     }
+    if (!Data.MotionModifiers.empty() && Tok.isNot(tok::colon)) {
+      if (!IsInvalidMapperModifier) {
+        if (getLangOpts().OpenMP < 51)
+          Diag(Tok, diag::warn_pragma_expected_colon) << ")";
+        else
+          Diag(Tok, diag::warn_pragma_expected_colon) << "motion modifier";
+      }
+      SkipUntil(tok::colon, tok::r_paren, tok::annot_pragma_openmp_end,
+                StopBeforeMatch);
+    }
+    // OpenMP 5.1 permits a ':' even without a preceding modifier.  TODO: Is
+    // that intentional?
+    if ((!Data.MotionModifiers.empty() || getLangOpts().OpenMP >= 51) &&
+        Tok.is(tok::colon))
+      Data.ColonLoc = ConsumeToken();
   } else if (Kind == OMPC_allocate ||
              (Kind == OMPC_affinity && isIdentifier() &&
               PP.getSpelling(Tok) == "iterator")) {
@@ -3658,6 +3674,7 @@ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
       Kind, Vars, Data.DepModOrTailExpr, Locs, Data.ColonLoc,
       Data.ReductionOrMapperIdScopeSpec, Data.ReductionOrMapperId,
       Data.ExtraModifier, Data.MapTypeModifiers, Data.MapTypeModifiersLoc,
-      Data.IsMapTypeImplicit, Data.ExtraModifierLoc);
+      Data.IsMapTypeImplicit, Data.ExtraModifierLoc, Data.MotionModifiers,
+      Data.MotionModifiersLoc);
 }
 

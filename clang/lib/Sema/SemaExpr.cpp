@@ -339,11 +339,10 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, ArrayRef<SourceLocation> Locs,
   //  List-items in map clauses on this construct may only refer to the declared
   //  variable var and entities that could be referenced by a procedure defined
   //  at the same location
-  auto *DMD = dyn_cast<OMPDeclareMapperDecl>(CurContext);
-  if (LangOpts.OpenMP && DMD && !CurContext->containsDecl(D) &&
-      isa<VarDecl>(D)) {
+  if (LangOpts.OpenMP && isa<VarDecl>(D) &&
+      !isOpenMPDeclareMapperVarDeclAllowed(cast<VarDecl>(D))) {
     Diag(Loc, diag::err_omp_declare_mapper_wrong_var)
-        << DMD->getVarName().getAsString();
+        << getOpenMPDeclareMapperVarName();
     Diag(D->getLocation(), diag::note_entity_declared_at) << D;
     return true;
   }
@@ -4393,7 +4392,6 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::UnaryTransform:
     case Type::Attributed:
     case Type::SubstTemplateTypeParm:
-    case Type::PackExpansion:
     case Type::MacroQualified:
       // Keep walking after single level desugaring.
       T = T.getSingleStepDesugaredType(Context);
@@ -18000,6 +17998,25 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
 
   if (Var->isInvalidDecl())
     return;
+
+  // Record a CUDA/HIP static device/constant variable if it is referenced
+  // by host code. This is done conservatively, when the variable is referenced
+  // in any of the following contexts:
+  //   - a non-function context
+  //   - a host function
+  //   - a host device function
+  // This also requires the reference of the static device/constant variable by
+  // host code to be visible in the device compilation for the compiler to be
+  // able to externalize the static device/constant variable.
+  if ((Var->hasAttr<CUDADeviceAttr>() || Var->hasAttr<CUDAConstantAttr>()) &&
+      Var->isFileVarDecl() && Var->getStorageClass() == SC_Static) {
+    auto *CurContext = SemaRef.CurContext;
+    if (!CurContext || !isa<FunctionDecl>(CurContext) ||
+        cast<FunctionDecl>(CurContext)->hasAttr<CUDAHostAttr>() ||
+        (!cast<FunctionDecl>(CurContext)->hasAttr<CUDADeviceAttr>() &&
+         !cast<FunctionDecl>(CurContext)->hasAttr<CUDAGlobalAttr>()))
+      SemaRef.getASTContext().CUDAStaticDeviceVarReferencedByHost.insert(Var);
+  }
 
   auto *MSI = Var->getMemberSpecializationInfo();
   TemplateSpecializationKind TSK = MSI ? MSI->getTemplateSpecializationKind()

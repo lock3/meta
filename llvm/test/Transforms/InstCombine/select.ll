@@ -2487,3 +2487,53 @@ define <2 x i32> @true_undef_vec(i1 %cond, <2 x i32> %x) {
   %s = select i1 %cond, <2 x i32> undef, <2 x i32> %x
   ret <2 x i32> %s
 }
+
+define i8 @cond_freeze(i8 %x, i8 %y) {
+; CHECK-LABEL: @cond_freeze(
+; CHECK-NEXT:    ret i8 [[X:%.*]]
+;
+  %cond.fr = freeze i1 undef
+  %s = select i1 %cond.fr, i8 %x, i8 %y
+  ret i8 %s
+}
+
+define i8 @cond_freeze2(i8 %x, i8 %y) {
+; CHECK-LABEL: @cond_freeze2(
+; CHECK-NEXT:    ret i8 1
+;
+  %cond.fr = freeze i1 undef
+  %s = select i1 %cond.fr, i8 %x, i8 1
+  ret i8 %s
+}
+
+define i8 @cond_freeze3(i8 %x) {
+; CHECK-LABEL: @cond_freeze3(
+; CHECK-NEXT:    ret i8 1
+;
+  %cond.fr = freeze i1 undef
+  %s = select i1 %cond.fr, i8 1, i8 %x
+  ret i8 %s
+}
+
+define <2 x i8> @cond_freeze_vec(<2 x i8> %x) {
+; CHECK-LABEL: @cond_freeze_vec(
+; CHECK-NEXT:    ret <2 x i8> <i8 1, i8 2>
+;
+  %cond.fr = freeze <2 x i1> <i1 undef, i1 undef>
+  %s = select <2 x i1> %cond.fr, <2 x i8> <i8 1, i8 2>, <2 x i8> %x
+  ret <2 x i8> %s
+}
+
+declare void @foo2(i8, i8)
+
+define void @cond_freeze_multipleuses(i8 %x, i8 %y) {
+; CHECK-LABEL: @cond_freeze_multipleuses(
+; CHECK-NEXT:    call void @foo2(i8 [[X:%.*]], i8 [[Y:%.*]])
+; CHECK-NEXT:    ret void
+;
+  %cond.fr = freeze i1 undef
+  %s = select i1 %cond.fr, i8 %x, i8 %y
+  %s2 = select i1 %cond.fr, i8 %y, i8 %x
+  call void @foo2(i8 %s, i8 %s2)
+  ret void
+}
