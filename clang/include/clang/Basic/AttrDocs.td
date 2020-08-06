@@ -1084,6 +1084,7 @@ not made control-dependent on any additional values, e.g., unrolling a loop
 executed by all work items.
 
 Sample usage:
+
 .. code-block:: c
 
   void convfunc(void) __attribute__((convergent));
@@ -3120,6 +3121,31 @@ memory area persists between kernel executions. Pointer types to the global
 address space are allowed as function parameters or local variables. Starting
 with OpenCL v2.0, the global address space can be used with global (program
 scope) variables and static local variable as well.
+  }];
+}
+
+def OpenCLAddressSpaceGlobalExtDocs : Documentation {
+  let Category = DocOpenCLAddressSpaces;
+  let Heading = "[[clang::opencl_global_device]], [[clang::opencl_global_host]]";
+  let Content = [{
+The ``global_device`` and ``global_host`` address space attributes specify that
+an object is allocated in global memory on the device/host. It helps to
+distinguish USM (Unified Shared Memory) pointers that access global device
+memory from those that access global host memory. These new address spaces are
+a subset of the ``__global/opencl_global`` address space, the full address space
+set model for OpenCL 2.0 with the extension looks as follows:
+
+  | generic->global->host
+  |                ->device
+  |        ->private
+  |        ->local
+  | constant
+
+As ``global_device`` and ``global_host`` are a subset of
+``__global/opencl_global`` address spaces it is allowed to convert
+``global_device`` and ``global_host`` address spaces to
+``__global/opencl_global`` address spaces (following ISO/IEC TR 18037 5.1.3
+"Address space nesting and rules for pointers).
   }];
 }
 

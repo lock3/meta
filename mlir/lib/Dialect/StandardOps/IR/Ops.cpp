@@ -749,8 +749,7 @@ static LogicalResult verify(CallOp op) {
 }
 
 FunctionType CallOp::getCalleeType() {
-  SmallVector<Type, 8> argTypes(getOperandTypes());
-  return FunctionType::get(argTypes, getResultTypes(), getContext());
+  return FunctionType::get(getOperandTypes(), getResultTypes(), getContext());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1327,7 +1326,7 @@ static LogicalResult verify(DimOp op) {
   } else if (auto memrefType = type.dyn_cast<MemRefType>()) {
     if (index.getValue() >= memrefType.getRank())
       return op.emitOpError("index is out of range");
-  } else if (type.isa<UnrankedTensorType>()) {
+  } else if (type.isa<UnrankedTensorType>() || type.isa<UnrankedMemRefType>()) {
     // Assume index to be in range.
   } else {
     llvm_unreachable("expected operand with tensor or memref type");
@@ -1343,9 +1342,13 @@ OpFoldResult DimOp::fold(ArrayRef<Attribute> operands) {
   if (!index)
     return {};
 
-  // Fold if the shape extent along the given index is known.
   auto argTy = memrefOrTensor().getType();
+  // Fold if the shape extent along the given index is known.
   if (auto shapedTy = argTy.dyn_cast<ShapedType>()) {
+    // Folding for unranked types (UnrankedMemRefType, UnrankedTensorType) is
+    // not supported.
+    if (!shapedTy.hasRank())
+      return {};
     if (!shapedTy.isDynamicDim(index.getInt())) {
       Builder builder(getContext());
       return builder.getIndexAttr(shapedTy.getShape()[index.getInt()]);
@@ -1358,7 +1361,7 @@ OpFoldResult DimOp::fold(ArrayRef<Attribute> operands) {
     return {};
 
   // The size at the given index is now known to be a dynamic size of a memref.
-  auto memref = memrefOrTensor().getDefiningOp();
+  auto *memref = memrefOrTensor().getDefiningOp();
   unsigned unsignedIndex = index.getValue().getZExtValue();
   if (auto alloc = dyn_cast_or_null<AllocOp>(memref))
     return *(alloc.getDynamicSizes().begin() +
@@ -2039,10 +2042,12 @@ LogicalResult PrefetchOp::fold(ArrayRef<Attribute> cstOperands,
 //===----------------------------------------------------------------------===//
 
 OpFoldResult RankOp::fold(ArrayRef<Attribute> operands) {
-  // Constant fold rank when the rank of the tensor is known.
+  // Constant fold rank when the rank of the operand is known.
   auto type = getOperand().getType();
-  if (auto tensorType = type.dyn_cast<RankedTensorType>())
-    return IntegerAttr::get(IndexType::get(getContext()), tensorType.getRank());
+  if (auto shapedType = type.dyn_cast<ShapedType>())
+    if (shapedType.hasRank())
+      return IntegerAttr::get(IndexType::get(getContext()),
+                              shapedType.getRank());
   return IntegerAttr();
 }
 

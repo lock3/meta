@@ -752,7 +752,8 @@ let Class = PackExpansionType in {
   }
 
   def : Creator<[{
-    return ctx.getPackExpansionType(pattern, numExpansions);
+    return ctx.getPackExpansionType(pattern, numExpansions,
+                                    /*ExpectPackInType*/false);
   }]>;
 }
 

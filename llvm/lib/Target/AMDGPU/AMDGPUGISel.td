@@ -186,6 +186,11 @@ def : GINodeEquiv<G_AMDGPU_ATOMIC_INC, SIatomic_inc>;
 def : GINodeEquiv<G_AMDGPU_ATOMIC_DEC, SIatomic_dec>;
 def : GINodeEquiv<G_AMDGPU_ATOMIC_INC, atomic_inc_glue>;
 def : GINodeEquiv<G_AMDGPU_ATOMIC_DEC, atomic_dec_glue>;
+def : GINodeEquiv<G_AMDGPU_ATOMIC_FMIN, SIatomic_fmin>;
+def : GINodeEquiv<G_AMDGPU_ATOMIC_FMAX, SIatomic_fmax>;
+def : GINodeEquiv<G_AMDGPU_ATOMIC_FMIN, atomic_load_fmin_glue>;
+def : GINodeEquiv<G_AMDGPU_ATOMIC_FMAX, atomic_load_fmax_glue>;
+
 
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_SWAP, SIbuffer_atomic_swap>;
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_ADD, SIbuffer_atomic_add>;
@@ -199,6 +204,7 @@ def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_OR, SIbuffer_atomic_or>;
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_XOR, SIbuffer_atomic_xor>;
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_INC, SIbuffer_atomic_inc>;
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_DEC, SIbuffer_atomic_dec>;
+def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_FADD, SIbuffer_atomic_fadd>;
 def : GINodeEquiv<G_AMDGPU_BUFFER_ATOMIC_CMPSWAP, SIbuffer_atomic_cmpswap>;
 def : GINodeEquiv<G_AMDGPU_S_BUFFER_LOAD, SIsbuffer_load>;
 
@@ -317,3 +323,6 @@ def gi_extract_dlc : GICustomOperandRenderer<"renderExtractDLC">,
 
 def gi_extract_swz : GICustomOperandRenderer<"renderExtractSWZ">,
   GISDNodeXFormEquiv<extract_swz>;
+
+def gi_frameindex_to_targetframeindex : GICustomOperandRenderer<"renderFrameIndex">,
+  GISDNodeXFormEquiv<frameindex_to_targetframeindex>;
