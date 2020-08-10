@@ -562,9 +562,7 @@ public:
 
   void VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *D) {
     if (const auto *TC = D->getTypeConstraint())
-      if (TC->hasExplicitTemplateArgs())
-        for (const auto &ArgLoc : TC->getTemplateArgsAsWritten()->arguments())
-          dumpTemplateArgumentLoc(ArgLoc);
+      Visit(TC->getImmediatelyDeclaredConstraint());
     if (D->hasDefaultArgument())
       Visit(D->getDefaultArgument(), SourceRange(),
             D->getDefaultArgStorage().getInheritedFrom(),
@@ -592,6 +590,12 @@ public:
   void VisitConceptDecl(const ConceptDecl *D) {
     dumpTemplateParameters(D->getTemplateParameters());
     Visit(D->getConstraintExpr());
+  }
+
+  void VisitConceptSpecializationExpr(const ConceptSpecializationExpr *CSE) {
+    if (CSE->hasExplicitTemplateArgs())
+      for (const auto &ArgLoc : CSE->getTemplateArgsAsWritten()->arguments())
+        dumpTemplateArgumentLoc(ArgLoc);
   }
 
   void VisitUsingShadowDecl(const UsingShadowDecl *D) {

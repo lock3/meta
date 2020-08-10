@@ -8314,7 +8314,7 @@ static void lookupOperatorsForDefaultedComparison(Sema &Self, Scope *S,
                                                   UnresolvedSetImpl &Operators,
                                                   OverloadedOperatorKind Op) {
   auto Lookup = [&](OverloadedOperatorKind OO) {
-    Self.LookupOverloadedOperatorName(OO, S, QualType(), QualType(), Operators);
+    Self.LookupOverloadedOperatorName(OO, S, Operators);
   };
 
   // Every defaulted operator looks up itself.

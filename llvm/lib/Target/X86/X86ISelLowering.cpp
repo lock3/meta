@@ -35847,6 +35847,85 @@ combineRedundantDWordShuffle(SDValue N, MutableArrayRef<int> Mask,
   return V;
 }
 
+// TODO: Merge with foldShuffleOfHorizOp.
+static SDValue combineShuffleWithHorizOp(SDValue N, MVT VT, const SDLoc &DL,
+                                         SelectionDAG &DAG,
+                                         const X86Subtarget &Subtarget) {
+  bool IsUnary;
+  SmallVector<int, 64> TargetMask;
+  SmallVector<SDValue, 2> TargetOps;
+  if (!isTargetShuffle(N.getOpcode()) ||
+      !getTargetShuffleMask(N.getNode(), VT, true, TargetOps, TargetMask,
+                            IsUnary))
+    return SDValue();
+
+  // Combine binary shuffle of 2 similar 'Horizontal' instructions into a
+  // single instruction. Attempt to match a v2X64 repeating shuffle pattern that
+  // represents the LHS/RHS inputs for the lower/upper halves.
+  if (TargetMask.empty() || TargetOps.empty() || 2 < TargetOps.size())
+    return SDValue();
+
+  SDValue BC0 = peekThroughBitcasts(TargetOps.front());
+  SDValue BC1 = peekThroughBitcasts(TargetOps.back());
+  EVT VT0 = BC0.getValueType();
+  EVT VT1 = BC1.getValueType();
+  unsigned Opcode0 = BC0.getOpcode();
+  unsigned Opcode1 = BC1.getOpcode();
+  if (Opcode0 != Opcode1 || VT0 != VT1)
+    return SDValue();
+
+  bool isHoriz = (Opcode0 == X86ISD::FHADD || Opcode0 == X86ISD::HADD ||
+                  Opcode0 == X86ISD::FHSUB || Opcode0 == X86ISD::HSUB);
+  bool isPack = (Opcode0 == X86ISD::PACKSS || Opcode0 == X86ISD::PACKUS);
+  if (!isHoriz && !isPack)
+    return SDValue();
+
+  // Canonicalize unary horizontal ops to only refer to lower halves.
+  if (TargetMask.size() == VT0.getVectorNumElements()) {
+    int NumElts = VT0.getVectorNumElements();
+    int NumLanes = VT0.getSizeInBits() / 128;
+    int NumEltsPerLane = NumElts / NumLanes;
+    int NumHalfEltsPerLane = NumEltsPerLane / 2;
+    for (int i = 0; i != NumElts; ++i) {
+      int &M = TargetMask[i];
+      if (isUndefOrZero(M))
+        continue;
+      if (M < NumElts && BC0.getOperand(0) == BC0.getOperand(1) &&
+          (M % NumEltsPerLane) >= NumHalfEltsPerLane)
+        M -= NumHalfEltsPerLane;
+      if (NumElts <= M && BC1.getOperand(0) == BC1.getOperand(1) &&
+          ((M - NumElts) % NumEltsPerLane) >= NumHalfEltsPerLane)
+        M -= NumHalfEltsPerLane;
+    }
+  }
+
+  SmallVector<int, 16> TargetMask128, WideMask128;
+  if (isRepeatedTargetShuffleMask(128, VT, TargetMask, TargetMask128) &&
+      scaleShuffleElements(TargetMask128, 2, WideMask128)) {
+    assert(isUndefOrZeroOrInRange(WideMask128, 0, 4) && "Illegal shuffle");
+    bool SingleOp = (TargetOps.size() == 1);
+    if (!isHoriz || shouldUseHorizontalOp(SingleOp, DAG, Subtarget)) {
+      SDValue Lo = isInRange(WideMask128[0], 0, 2) ? BC0 : BC1;
+      SDValue Hi = isInRange(WideMask128[1], 0, 2) ? BC0 : BC1;
+      Lo = Lo.getOperand(WideMask128[0] & 1);
+      Hi = Hi.getOperand(WideMask128[1] & 1);
+      if (SingleOp) {
+        MVT SrcVT = BC0.getOperand(0).getSimpleValueType();
+        SDValue Undef = DAG.getUNDEF(SrcVT);
+        SDValue Zero = getZeroVector(SrcVT, Subtarget, DAG, DL);
+        Lo = (WideMask128[0] == SM_SentinelZero ? Zero : Lo);
+        Hi = (WideMask128[1] == SM_SentinelZero ? Zero : Hi);
+        Lo = (WideMask128[0] == SM_SentinelUndef ? Undef : Lo);
+        Hi = (WideMask128[1] == SM_SentinelUndef ? Undef : Hi);
+      }
+      SDValue Horiz = DAG.getNode(Opcode0, DL, VT0, Lo, Hi);
+      return DAG.getBitcast(VT, Horiz);
+    }
+  }
+
+  return SDValue();
+}
+
 // Attempt to commute shufps LHS loads:
 // permilps(shufps(load(),x)) --> permilps(shufps(x,load()))
 static SDValue combineCommutableSHUFP(SDValue N, MVT VT, const SDLoc &DL,
@@ -35909,58 +35988,8 @@ static SDValue combineTargetShuffle(SDValue N, SelectionDAG &DAG,
   SmallVector<int, 4> Mask;
   unsigned Opcode = N.getOpcode();
 
-  bool IsUnary;
-  SmallVector<int, 64> TargetMask;
-  SmallVector<SDValue, 2> TargetOps;
-  if (isTargetShuffle(Opcode))
-    getTargetShuffleMask(N.getNode(), VT, true, TargetOps, TargetMask, IsUnary);
-
-  // Combine binary shuffle of 2 similar 'Horizontal' instructions into a
-  // single instruction. Attempt to match a v2X64 repeating shuffle pattern that
-  // represents the LHS/RHS inputs for the lower/upper halves.
-  SmallVector<int, 16> TargetMask128;
-  if (!TargetMask.empty() && 0 < TargetOps.size() && TargetOps.size() <= 2 &&
-      isRepeatedTargetShuffleMask(128, VT, TargetMask, TargetMask128)) {
-    SmallVector<int, 16> WidenedMask128 = TargetMask128;
-    while (WidenedMask128.size() > 2) {
-      SmallVector<int, 16> WidenedMask;
-      if (!canWidenShuffleElements(WidenedMask128, WidenedMask))
-        break;
-      WidenedMask128 = std::move(WidenedMask);
-    }
-    if (WidenedMask128.size() == 2) {
-      assert(isUndefOrZeroOrInRange(WidenedMask128, 0, 4) && "Illegal shuffle");
-      SDValue BC0 = peekThroughBitcasts(TargetOps.front());
-      SDValue BC1 = peekThroughBitcasts(TargetOps.back());
-      EVT VT0 = BC0.getValueType();
-      EVT VT1 = BC1.getValueType();
-      unsigned Opcode0 = BC0.getOpcode();
-      unsigned Opcode1 = BC1.getOpcode();
-      bool isHoriz = (Opcode0 == X86ISD::FHADD || Opcode0 == X86ISD::HADD ||
-                      Opcode0 == X86ISD::FHSUB || Opcode0 == X86ISD::HSUB);
-      if (Opcode0 == Opcode1 && VT0 == VT1 &&
-          (isHoriz || Opcode0 == X86ISD::PACKSS || Opcode0 == X86ISD::PACKUS)) {
-        bool SingleOp = (TargetOps.size() == 1);
-        if (!isHoriz || shouldUseHorizontalOp(SingleOp, DAG, Subtarget)) {
-          SDValue Lo = isInRange(WidenedMask128[0], 0, 2) ? BC0 : BC1;
-          SDValue Hi = isInRange(WidenedMask128[1], 0, 2) ? BC0 : BC1;
-          Lo = Lo.getOperand(WidenedMask128[0] & 1);
-          Hi = Hi.getOperand(WidenedMask128[1] & 1);
-          if (SingleOp) {
-            MVT SrcVT = BC0.getOperand(0).getSimpleValueType();
-            SDValue Undef = DAG.getUNDEF(SrcVT);
-            SDValue Zero = getZeroVector(SrcVT, Subtarget, DAG, DL);
-            Lo = (WidenedMask128[0] == SM_SentinelZero ? Zero : Lo);
-            Hi = (WidenedMask128[1] == SM_SentinelZero ? Zero : Hi);
-            Lo = (WidenedMask128[0] == SM_SentinelUndef ? Undef : Lo);
-            Hi = (WidenedMask128[1] == SM_SentinelUndef ? Undef : Hi);
-          }
-          SDValue Horiz = DAG.getNode(Opcode0, DL, VT0, Lo, Hi);
-          return DAG.getBitcast(VT, Horiz);
-        }
-      }
-    }
-  }
+  if (SDValue R = combineShuffleWithHorizOp(N, VT, DL, DAG, Subtarget))
+    return R;
 
   if (SDValue R = combineCommutableSHUFP(N, VT, DL, DAG))
     return R;
@@ -39614,7 +39643,7 @@ combineVSelectWithAllOnesOrZeros(SDNode *N, SelectionDAG &DAG,
   if (TValIsAllOnes && FValIsAllZeros)
     return DAG.getBitcast(VT, Cond);
 
-  if (!DCI.isBeforeLegalize() && !TLI.isTypeLegal(CondVT))
+  if (!TLI.isTypeLegal(CondVT))
     return SDValue();
 
   // vselect Cond, 111..., X -> or Cond, X
@@ -39633,10 +39662,14 @@ combineVSelectWithAllOnesOrZeros(SDNode *N, SelectionDAG &DAG,
 
   // vselect Cond, 000..., X -> andn Cond, X
   if (TValIsAllZeros) {
-    MVT AndNVT = MVT::getVectorVT(MVT::i64, CondVT.getSizeInBits() / 64);
-    SDValue CastCond = DAG.getBitcast(AndNVT, Cond);
-    SDValue CastRHS = DAG.getBitcast(AndNVT, RHS);
-    SDValue AndN = DAG.getNode(X86ISD::ANDNP, DL, AndNVT, CastCond, CastRHS);
+    SDValue CastRHS = DAG.getBitcast(CondVT, RHS);
+    SDValue AndN;
+    // The canonical form differs for i1 vectors - x86andnp is not used
+    if (CondVT.getScalarType() == MVT::i1)
+      AndN = DAG.getNode(ISD::AND, DL, CondVT, DAG.getNOT(DL, Cond, CondVT),
+                         CastRHS);
+    else
+      AndN = DAG.getNode(X86ISD::ANDNP, DL, CondVT, Cond, CastRHS);
     return DAG.getBitcast(VT, AndN);
   }
 
@@ -40159,13 +40192,13 @@ static SDValue combineSelect(SDNode *N, SelectionDAG &DAG,
   if (SDValue V = combineSelectOfTwoConstants(N, DAG))
     return V;
 
-  // Canonicalize max and min:
-  // (x > y) ? x : y -> (x >= y) ? x : y
-  // (x < y) ? x : y -> (x <= y) ? x : y
+  // Canonicalize min/max:
+  // (x > 0) ? x : 0 -> (x >= 0) ? x : 0
+  // (x < -1) ? x : -1 -> (x <= -1) ? x : -1
   // This allows use of COND_S / COND_NS (see TranslateX86CC) which eliminates
   // the need for an extra compare
   // against zero. e.g.
-  // (x - y) > 0 : (x - y) ? 0 -> (x - y) >= 0 : (x - y) ? 0
+  // (a - b) > 0 : (a - b) ? 0 -> (a - b) >= 0 : (a - b) ? 0
   // subl   %esi, %edi
   // testl  %edi, %edi
   // movl   $0, %eax
@@ -40176,18 +40209,14 @@ static SDValue combineSelect(SDNode *N, SelectionDAG &DAG,
   // cmovsl %eax, %edi
   if (N->getOpcode() == ISD::SELECT && Cond.getOpcode() == ISD::SETCC &&
       Cond.hasOneUse() &&
-      DAG.isEqualTo(LHS, Cond.getOperand(0)) &&
-      DAG.isEqualTo(RHS, Cond.getOperand(1))) {
+      LHS == Cond.getOperand(0) && RHS == Cond.getOperand(1)) {
     ISD::CondCode CC = cast<CondCodeSDNode>(Cond.getOperand(2))->get();
-    switch (CC) {
-    default: break;
-    case ISD::SETLT:
-    case ISD::SETGT: {
-      ISD::CondCode NewCC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGE;
+    if ((CC == ISD::SETGT && isNullConstant(RHS)) ||
+        (CC == ISD::SETLT && isAllOnesConstant(RHS))) {
+      ISD::CondCode NewCC = CC == ISD::SETGT ? ISD::SETGE : ISD::SETLE;
       Cond = DAG.getSetCC(SDLoc(Cond), Cond.getValueType(),
                           Cond.getOperand(0), Cond.getOperand(1), NewCC);
       return DAG.getSelect(DL, VT, Cond, LHS, RHS);
-    }
     }
   }
 

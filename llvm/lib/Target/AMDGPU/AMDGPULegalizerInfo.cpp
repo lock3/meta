@@ -708,6 +708,15 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
   FMad.scalarize(0)
       .lower();
 
+  auto &FRem = getActionDefinitionsBuilder(G_FREM);
+  if (ST.has16BitInsts()) {
+    FRem.customFor({S16, S32, S64});
+  } else {
+    FRem.minScalar(0, S32)
+        .customFor({S32, S64});
+  }
+  FRem.scalarize(0);
+
   // TODO: Do we need to clamp maximum bitwidth?
   getActionDefinitionsBuilder(G_TRUNC)
     .legalIf(isScalar(0))
@@ -1293,6 +1302,11 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     Shifts.clampScalar(1, S32, S32);
     Shifts.clampScalar(0, S16, S64);
     Shifts.widenScalarToNextPow2(0, 16);
+
+    getActionDefinitionsBuilder({G_SSHLSAT, G_USHLSAT})
+      .minScalar(0, S16)
+      .scalarize(0)
+      .lower();
   } else {
     // Make sure we legalize the shift amount type first, as the general
     // expansion for the shifted type will produce much worse code if it hasn't
@@ -1300,6 +1314,11 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     Shifts.clampScalar(1, S32, S32);
     Shifts.clampScalar(0, S32, S64);
     Shifts.widenScalarToNextPow2(0, 32);
+
+    getActionDefinitionsBuilder({G_SSHLSAT, G_USHLSAT})
+      .minScalar(0, S32)
+      .scalarize(0)
+      .lower();
   }
   Shifts.scalarize(0);
 
@@ -1340,7 +1359,8 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .clampScalar(EltTypeIdx, S32, S64)
       .clampScalar(VecTypeIdx, S32, S64)
       .clampScalar(IdxTypeIdx, S32, S32)
-      // TODO: Clamp the number of elements before resorting to stack lowering.
+      .clampMaxNumElements(1, S32, 32)
+      // TODO: Clamp elements for 64-bit vectors?
       // It should only be necessary with variable indexes.
       // As a last resort, lower to the stack
       .lower();
@@ -1590,6 +1610,8 @@ bool AMDGPULegalizerInfo::legalizeCustom(LegalizerHelper &Helper,
     return legalizeFrint(MI, MRI, B);
   case TargetOpcode::G_FCEIL:
     return legalizeFceil(MI, MRI, B);
+  case TargetOpcode::G_FREM:
+    return legalizeFrem(MI, MRI, B);
   case TargetOpcode::G_INTRINSIC_TRUNC:
     return legalizeIntrinsicTrunc(MI, MRI, B);
   case TargetOpcode::G_SITOFP:
@@ -1856,6 +1878,23 @@ bool AMDGPULegalizerInfo::legalizeFceil(
   // TODO: Should this propagate fast-math-flags?
   B.buildFAdd(MI.getOperand(0).getReg(), Trunc, Add);
   return true;
+}
+
+bool AMDGPULegalizerInfo::legalizeFrem(
+  MachineInstr &MI, MachineRegisterInfo &MRI,
+  MachineIRBuilder &B) const {
+    Register DstReg = MI.getOperand(0).getReg();
+    Register Src0Reg = MI.getOperand(1).getReg();
+    Register Src1Reg = MI.getOperand(2).getReg();
+    auto Flags = MI.getFlags();
+    LLT Ty = MRI.getType(DstReg);
+
+    auto Div = B.buildFDiv(Ty, Src0Reg, Src1Reg, Flags);
+    auto Trunc = B.buildIntrinsicTrunc(Ty, Div, Flags);
+    auto Neg = B.buildFNeg(Ty, Trunc, Flags);
+    B.buildFMA(DstReg, Neg, Src1Reg, Src0Reg, Flags);
+    MI.eraseFromParent();
+    return true;
 }
 
 static MachineInstrBuilder extractF64Exponent(Register Hi,
