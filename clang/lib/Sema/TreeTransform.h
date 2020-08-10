@@ -3843,13 +3843,15 @@ public:
   ///
   /// By default, performs semantic analysis in order to build a new fold
   /// expression.
-  ExprResult RebuildCXXFoldExpr(SourceLocation LParenLoc, Expr *LHS,
+  ExprResult RebuildCXXFoldExpr(UnresolvedLookupExpr *ULE,
+                                SourceLocation LParenLoc, Expr *LHS,
                                 BinaryOperatorKind Operator,
                                 SourceLocation EllipsisLoc, Expr *RHS,
                                 SourceLocation RParenLoc,
                                 Optional<unsigned> NumExpansions) {
-    return getSema().BuildCXXFoldExpr(LParenLoc, LHS, Operator, EllipsisLoc,
-                                      RHS, RParenLoc, NumExpansions);
+    return getSema().BuildCXXFoldExpr(ULE, LParenLoc, LHS, Operator,
+                                      EllipsisLoc, RHS, RParenLoc,
+                                      NumExpansions);
   }
 
   /// Build an empty C++1z fold-expression with the given operator.
@@ -3876,8 +3878,8 @@ public:
   }
 
   ExprResult RebuildRecoveryExpr(SourceLocation BeginLoc, SourceLocation EndLoc,
-                                 ArrayRef<Expr *> SubExprs) {
-    return getSema().CreateRecoveryExpr(BeginLoc, EndLoc, SubExprs);
+                                 ArrayRef<Expr *> SubExprs, QualType Type) {
+    return getSema().CreateRecoveryExpr(BeginLoc, EndLoc, SubExprs, Type);
   }
 
 private:
@@ -9445,7 +9447,14 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
     StmtResult Body;
     {
       Sema::CompoundScopeRAII CompoundScope(getSema());
-      Stmt *CS = D->getInnermostCapturedStmt()->getCapturedStmt();
+      Stmt *CS;
+      if (D->getDirectiveKind() == OMPD_atomic ||
+          D->getDirectiveKind() == OMPD_critical ||
+          D->getDirectiveKind() == OMPD_section ||
+          D->getDirectiveKind() == OMPD_master)
+        CS = D->getAssociatedStmt();
+      else
+        CS = D->getInnermostCapturedStmt()->getCapturedStmt();
       Body = getDerived().TransformStmt(CS);
     }
     AssociatedStmt =
@@ -11327,7 +11336,7 @@ ExprResult TreeTransform<Derived>::TransformRecoveryExpr(RecoveryExpr *E) {
   if (!getDerived().AlwaysRebuild() && !Changed)
     return E;
   return getDerived().RebuildRecoveryExpr(E->getBeginLoc(), E->getEndLoc(),
-                                          Children);
+                                          Children, E->getType());
 }
 
 template<typename Derived>
@@ -14302,6 +14311,14 @@ TreeTransform<Derived>::TransformMaterializeTemporaryExpr(
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
+  UnresolvedLookupExpr *Callee = nullptr;
+  if (Expr *OldCallee = E->getCallee()) {
+    ExprResult CalleeResult = getDerived().TransformExpr(OldCallee);
+    if (CalleeResult.isInvalid())
+      return ExprError();
+    Callee = cast<UnresolvedLookupExpr>(CalleeResult.get());
+  }
+
   Expr *Pattern = E->getPattern();
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
@@ -14342,8 +14359,8 @@ TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
       return E;
 
     return getDerived().RebuildCXXFoldExpr(
-        E->getBeginLoc(), LHS.get(), E->getOperator(), E->getEllipsisLoc(),
-        RHS.get(), E->getEndLoc(), NumExpansions);
+        Callee, E->getBeginLoc(), LHS.get(), E->getOperator(),
+        E->getEllipsisLoc(), RHS.get(), E->getEndLoc(), NumExpansions);
   }
 
   // The transform has determined that we should perform an elementwise
@@ -14363,8 +14380,8 @@ TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
       return true;
 
     Result = getDerived().RebuildCXXFoldExpr(
-        E->getBeginLoc(), Out.get(), E->getOperator(), E->getEllipsisLoc(),
-        Result.get(), E->getEndLoc(), OrigNumExpansions);
+        Callee, E->getBeginLoc(), Out.get(), E->getOperator(),
+        E->getEllipsisLoc(), Result.get(), E->getEndLoc(), OrigNumExpansions);
     if (Result.isInvalid())
       return true;
   }
@@ -14379,16 +14396,21 @@ TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
     if (Out.get()->containsUnexpandedParameterPack()) {
       // We still have a pack; retain a pack expansion for this slice.
       Result = getDerived().RebuildCXXFoldExpr(
-          E->getBeginLoc(), LeftFold ? Result.get() : Out.get(),
+          Callee, E->getBeginLoc(), LeftFold ? Result.get() : Out.get(),
           E->getOperator(), E->getEllipsisLoc(),
           LeftFold ? Out.get() : Result.get(), E->getEndLoc(),
           OrigNumExpansions);
     } else if (Result.isUsable()) {
       // We've got down to a single element; build a binary operator.
-      Result = getDerived().RebuildBinaryOperator(
-          E->getEllipsisLoc(), E->getOperator(),
-          LeftFold ? Result.get() : Out.get(),
-          LeftFold ? Out.get() : Result.get());
+      Expr *LHS = LeftFold ? Result.get() : Out.get();
+      Expr *RHS = LeftFold ? Out.get() : Result.get();
+      if (Callee)
+        Result = getDerived().RebuildCXXOperatorCallExpr(
+            BinaryOperator::getOverloadedOperator(E->getOperator()),
+            E->getEllipsisLoc(), Callee, LHS, RHS);
+      else
+        Result = getDerived().RebuildBinaryOperator(E->getEllipsisLoc(),
+                                                    E->getOperator(), LHS, RHS);
     } else
       Result = Out;
 
@@ -14406,8 +14428,8 @@ TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
       return true;
 
     Result = getDerived().RebuildCXXFoldExpr(
-        E->getBeginLoc(), Result.get(), E->getOperator(), E->getEllipsisLoc(),
-        Out.get(), E->getEndLoc(), OrigNumExpansions);
+        Callee, E->getBeginLoc(), Result.get(), E->getOperator(),
+        E->getEllipsisLoc(), Out.get(), E->getEndLoc(), OrigNumExpansions);
     if (Result.isInvalid())
       return true;
   }

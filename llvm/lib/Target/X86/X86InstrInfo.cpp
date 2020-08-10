@@ -1127,7 +1127,8 @@ void X86InstrInfo::reMaterialize(MachineBasicBlock &MBB,
                                  const MachineInstr &Orig,
                                  const TargetRegisterInfo &TRI) const {
   bool ClobbersEFLAGS = Orig.modifiesRegister(X86::EFLAGS, &TRI);
-  if (ClobbersEFLAGS && !isSafeToClobberEFLAGS(MBB, I)) {
+  if (ClobbersEFLAGS && MBB.computeRegisterLiveness(&TRI, X86::EFLAGS, I) !=
+                            MachineBasicBlock::LQR_Dead) {
     // The instruction clobbers EFLAGS. Re-materialize as MOV32ri to avoid side
     // effects.
     int Value;
@@ -4312,7 +4313,7 @@ bool X86InstrInfo::optimizeCompareInstr(MachineInstr &CmpInstr, Register SrcReg,
 /// instructions in-between do not load or store, and have no side effects.
 MachineInstr *X86InstrInfo::optimizeLoadInstr(MachineInstr &MI,
                                               const MachineRegisterInfo *MRI,
-                                              unsigned &FoldAsLoadDefReg,
+                                              Register &FoldAsLoadDefReg,
                                               MachineInstr *&DefMI) const {
   // Check whether we can move DefMI here.
   DefMI = MRI->getVRegDef(FoldAsLoadDefReg);
