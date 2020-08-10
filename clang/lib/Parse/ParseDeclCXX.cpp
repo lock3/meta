@@ -1150,8 +1150,14 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
 ///         ::[opt] nested-name-specifier[opt] class-name
 TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                           SourceLocation &EndLocation) {
-  // Ignore attempts to use typename
   if (Tok.is(tok::kw_typename)) {
+    // This may be a typename reifier
+    if (getLangOpts().Reflection && NextToken().is(tok::l_paren)) {
+      BaseLoc = ConsumeToken();
+      return ParseReflectedTypeSpecifier(BaseLoc, EndLocation);
+    }
+
+    // Ignore attempts to use typename
     Diag(Tok, diag::err_expected_class_name_not_template)
       << FixItHint::CreateRemoval(Tok.getLocation());
     ConsumeToken();
