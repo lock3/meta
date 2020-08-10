@@ -104,8 +104,9 @@ using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
 
 struct InjectionInfo {
   InjectionInfo(InjectionType Injection, InjectionInfo *ParentInjection)
-    : Injection(Injection), Modifiers(), ParentInjection(ParentInjection),
-      InitializingFragment() { }
+    : Injection(Injection), PointOfInjection(), Modifiers(),
+      ParentInjection(ParentInjection), InitializingFragment(),
+      CapturedValues() { }
 
 
   InjectionInfo *PrepareForPending() {
@@ -133,6 +134,9 @@ struct InjectionInfo {
 
   /// The entity being Injected.
   InjectionType Injection;
+
+  /// The source location of the triggering injector.
+  SourceLocation PointOfInjection;
 
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
@@ -172,6 +176,10 @@ struct InjectionInfo {
 
   /// The template arguments to apply when injecting the injection.
   Sema::FragInstantiationArgTy TemplateArgs;
+
+  /// The required relative declarations that should be part of the
+  /// decl replacement mapping.
+  llvm::SmallVector<Decl *, 8> RequiredRelatives;
 };
 
 /// An injection context. This is declared to establish a set of
@@ -367,6 +375,37 @@ public:
     return CurInjection->TemplateArgs;
   }
 
+  // Adds this declaration as a required relative, a required relative
+  // is one that should be remapped from a declaration clone.
+  //
+  // For instance, in the following example, `x` is a required
+  // relative of `get_x`.
+  //
+  // class example {
+  //   int x;
+  //
+  //   int get_x() {
+  //     return x;
+  //   }
+  // };
+  void AddRequiredRelative(Decl *D) {
+    assert(!isInjectingFragment());
+    CurInjection->RequiredRelatives.push_back(D);
+  }
+
+  void verifyHasAllRequiredRelatives() {
+    SourceLocation POI = CurInjection->PointOfInjection;
+    for (Decl *D : CurInjection->RequiredRelatives) {
+      if (GetDeclReplacement(D))
+        continue;
+
+      SemaRef.Diag(POI, diag::err_injection_missing_required_relative)
+        << cast<NamedDecl>(D) << cast<NamedDecl>(Injectee);
+      SemaRef.Diag(D->getLocation(), diag::note_required_relative_declared)
+        << cast<NamedDecl>(D);
+    }
+  }
+
   bool ShouldInjectInto(DeclContext *DC) const {
     // When not doing a declaration rebuild, this should always be true.
     //
@@ -491,6 +530,10 @@ public:
     return RebuildOnlyContext;
   }
 
+  void SetPointOfInjection(SourceLocation PointOfInjection) {
+    CurInjection->PointOfInjection = PointOfInjection;
+  }
+
   /// Sets the declaration modifiers.
   void SetModifiers(const ReflectionModifiers &Modifiers) {
     this->CurInjection->Modifiers = Modifiers;
@@ -574,8 +617,10 @@ public:
       //
       // If this condition is true, we're injecting a decl who's in the same
       // decl context as the declaration we're currently cloning.
-      if (D->getDeclContext() == getInjectionDeclContext())
+      if (D->getDeclContext() == getInjectionDeclContext()) {
+        AddRequiredRelative(D);
         return nullptr;
+      }
     } else if (hasTemplateArgs() && InstantiateTemplates) {
       if (isa<CXXRecordDecl>(D)) {
         auto *Record = cast<CXXRecordDecl>(D);
@@ -3496,6 +3541,9 @@ static bool InjectFragment(
     Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
     Ctx->AddTemplateArgs(InjectionTemplateArgs);
 
+    // Add source location information for the current injection.
+    Ctx->SetPointOfInjection(POI);
+
     // Legacy setup.
     Ctx->AddLegacyPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
@@ -3512,7 +3560,7 @@ static bool AddBase(Sema &S, CXXInjectorDecl *MD,
                     CXXBaseSpecifier *Injection,
                     const ReflectionModifiers &Modifiers,
                     Decl *Injectee) {
-  // SourceLocation POI = MD->getSourceRange().getEnd();
+  SourceLocation POI = MD->getSourceRange().getEnd();
   // DeclContext *InjectionDC = Injection->getDeclContext();
   // Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
@@ -3526,6 +3574,7 @@ static bool AddBase(Sema &S, CXXInjectorDecl *MD,
 
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     Ctx->SetModifiers(Modifiers);
+    Ctx->SetPointOfInjection(POI);
 
     // Inject the base specifier.
     if (Ctx->InjectBaseSpecifier(Injection))
@@ -3558,8 +3607,10 @@ static bool CopyDeclaration(Sema &S, CXXInjectorDecl *MD,
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
     Ctx->MaybeAddDeclSubstitution(InjectionOwner, Injectee);
-
     Ctx->SetModifiers(Modifiers);
+
+    // Add source location information for the current injection.
+    Ctx->SetPointOfInjection(POI);
 
     // Inject the declaration.
     Decl* Result = Ctx->InjectDecl(Injection);
@@ -3886,6 +3937,10 @@ public:
       InjectionContext *Ctx = PendingCtxs.back();
       if (shouldStopProcessing(Ctx))
         break;
+
+      Ctx->ForEachPendingInjection([&Ctx] {
+        Ctx->verifyHasAllRequiredRelatives();
+      });
 
       delete Ctx;
       PendingCtxs.pop_back();

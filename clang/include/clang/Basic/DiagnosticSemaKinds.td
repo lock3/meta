@@ -10758,6 +10758,10 @@ def err_injecting_local_into_invalid_scope : Error<
   "cannot inject a local variable into %select{namespace|class}0 scope">;
 def err_injecting_into_parent_of_global_namespace : Error<
   "cannot inject into the parent namespace of the global namespace">;
+def err_injection_missing_required_relative : Error<
+  "a clone of %0 was required, but was not present in the injectee %1">;
+def note_required_relative_declared : Note<
+  "%0 declared here">;
 def err_modify_virtual_constructor : Error<
   "cannot make a constructor virtual">;
 def err_modify_constexpr_field : Error<
