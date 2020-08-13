@@ -11095,6 +11095,10 @@ EvaluateBuiltinClassifyType(QualType T, const LangOptions &LangOpts) {
 
   case Type::LValueReference:
   case Type::RValueReference:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     llvm_unreachable("invalid type for expression");
   }
 
@@ -13228,6 +13232,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_AtomicToNonAtomic:
   case CK_NoOp:
   case CK_LValueToRValueBitCast:
+  case CK_ParameterQualification:
     return ExprEvaluatorBaseTy::VisitCastExpr(E);
 
   case CK_MemberPointerToBoolean:
@@ -13334,6 +13339,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return false;
     return Success(Value, E);
   }
+
   }
 
   llvm_unreachable("unknown cast resulting in integral value");

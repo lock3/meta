@@ -2890,6 +2890,14 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
       T = cast<ReferenceType>(T)->getPointeeType().getTypePtr();
       continue;
 
+    // Treat parameter types like references
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
+      T = cast<ParameterType>(T)->getParameterType().getTypePtr();
+      break;
+
     // These are fundamental types.
     case Type::Vector:
     case Type::ExtVector:

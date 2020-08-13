@@ -2291,6 +2291,13 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       return Sema::TDK_NonDeducedMismatch;
     }
 
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
+      // FIXME: The above parameter types should likely can be usable
+      // for deduction. If this is changed, make sure to update
+      // MarkUsedTemplateParameters.
     case Type::TypeOfExpr:
     case Type::TypeOf:
     case Type::DependentName:
@@ -6131,6 +6138,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                cast<DependentExtIntType>(T)->getNumBitsExpr(),
                                OnlyDeduced, Depth, Used);
     break;
+
+  // FIXME: If these are changed to be used by deduction, this needs
+  // updated.
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
 
   // None of these types have any template parameters in them.
   case Type::Builtin:
