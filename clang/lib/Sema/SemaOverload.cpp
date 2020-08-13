@@ -5183,6 +5183,13 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
   return Result;
 }
 
+static ImplicitConversionSequence
+TryParameterConversion(Sema &S, Expr *From, QualType ToType,
+                       bool SuppressUserConversions,
+                       bool InOverloadResolution,
+                       bool AllowObjCWritebackConversion,
+                       bool AllowExplicit);
+
 /// TryCopyInitialization - Try to copy-initialize a value of type
 /// ToType from the expression From. Return the implicit conversion
 /// sequence required to pass this argument, which may be a bad
@@ -5195,6 +5202,11 @@ TryCopyInitialization(Sema &S, Expr *From, QualType ToType,
                       bool InOverloadResolution,
                       bool AllowObjCWritebackConversion,
                       bool AllowExplicit) {
+  if (ToType->isParameterType())
+    return TryParameterConversion(S, From, ToType, SuppressUserConversions,
+                                  InOverloadResolution,
+                                  AllowObjCWritebackConversion, AllowExplicit);
+
   if (InitListExpr *FromInitList = dyn_cast<InitListExpr>(From))
     return TryListConversion(S, FromInitList, ToType, SuppressUserConversions,
                              InOverloadResolution,AllowObjCWritebackConversion);
@@ -5223,6 +5235,27 @@ static bool TryCopyInitialization(const CanQualType FromQTy,
     TryCopyInitialization(S, &TmpExpr, ToQTy, true, true, false);
 
   return !ICS.isBad();
+}
+
+static ImplicitConversionSequence
+TryParameterConversion(Sema &S, Expr *From, QualType ToType,
+                       bool SuppressUserConversions,
+                       bool InOverloadResolution,
+                       bool AllowObjCWritebackConversion,
+                       bool AllowExplicit) {
+  assert(ToType->isParameterType());
+  const ParameterType *ParmType = cast<ParameterType>(ToType);
+
+  // Perform the conversion/initialization on the adjusted type.
+  ToType = ParmType->getAdjustedType();
+
+  // FIXME: For move semantics, we might want to preserve the parameter
+  // type so we can infer an lvalue to xvalue conversion -- if we need that
+  // at all.
+
+  return TryCopyInitialization(S, From, ToType, SuppressUserConversions, 
+                               InOverloadResolution,
+                               AllowObjCWritebackConversion, AllowExplicit);
 }
 
 /// TryObjectArgumentInitialization - Try to initialize the object
@@ -6373,8 +6406,8 @@ void Sema::AddOverloadCandidate(
       Candidate.Conversions[ConvIdx] = TryCopyInitialization(
           *this, Args[ArgIdx], ParamType, SuppressUserConversions,
           /*InOverloadResolution=*/true,
-          /*AllowObjCWritebackConversion=*/
-          getLangOpts().ObjCAutoRefCount, AllowExplicitConversions);
+          /*AllowObjCWritebackConversion=*/getLangOpts().ObjCAutoRefCount,
+          AllowExplicitConversions);
       if (Candidate.Conversions[ConvIdx].isBad()) {
         Candidate.Viable = false;
         Candidate.FailureKind = ovl_fail_bad_conversion;

@@ -1820,10 +1820,26 @@ bool CursorVisitor::VisitPipeTypeLoc(PipeTypeLoc TL) {
   return Visit(TL.getValueLoc());
 }
 
-#define DEFAULT_TYPELOC_IMPL(CLASS, PARENT)                                    \
-  bool CursorVisitor::Visit##CLASS##TypeLoc(CLASS##TypeLoc TL) {               \
-    return Visit##PARENT##Loc(TL);                                             \
-  }
+bool CursorVisitor::VisitInParameterTypeLoc(InParameterTypeLoc TL) {
+  return Visit(TL.getParameterTypeLoc());
+}
+
+bool CursorVisitor::VisitOutParameterTypeLoc(OutParameterTypeLoc TL) {
+  return Visit(TL.getParameterTypeLoc());
+}
+
+bool CursorVisitor::VisitInOutParameterTypeLoc(InOutParameterTypeLoc TL) {
+  return Visit(TL.getParameterTypeLoc());
+}
+
+bool CursorVisitor::VisitMoveParameterTypeLoc(MoveParameterTypeLoc TL) {
+  return Visit(TL.getParameterTypeLoc());
+}
+
+#define DEFAULT_TYPELOC_IMPL(CLASS, PARENT) \
+bool CursorVisitor::Visit##CLASS##TypeLoc(CLASS##TypeLoc TL) { \
+  return Visit##PARENT##Loc(TL); \
+}
 
 DEFAULT_TYPELOC_IMPL(Complex, Type)
 DEFAULT_TYPELOC_IMPL(ConstantArray, ArrayType)

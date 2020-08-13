@@ -2106,6 +2106,10 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::MacroQualified:
   case Type::ExtInt:
   case Type::DependentExtInt:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     llvm_unreachable("type is illegal as a nested name specifier");
 
   case Type::SubstTemplateTypeParmPack:
@@ -3665,6 +3669,28 @@ void CXXNameMangler::mangleType(const DependentExtIntType *T) {
     Out << "j";
   else
     Out << "i";
+}
+
+// <type> ::= ???
+
+void CXXNameMangler::mangleType(const InParameterType *T) {
+  Out << "U1i";
+  return mangleType(T->getParameterType());
+}
+
+void CXXNameMangler::mangleType(const OutParameterType *T) {
+  Out << "U1o";
+  return mangleType(T->getParameterType());
+}
+
+void CXXNameMangler::mangleType(const InOutParameterType *T) {
+  Out << "U2io";
+  return mangleType(T->getParameterType());
+}
+
+void CXXNameMangler::mangleType(const MoveParameterType *T) {
+  Out << "U1m";
+  return mangleType(T->getParameterType());
 }
 
 void CXXNameMangler::mangleIntegerLiteral(QualType T,

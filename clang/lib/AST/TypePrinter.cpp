@@ -268,6 +268,10 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::SubstTemplateTypeParm:
     case Type::MacroQualified:
     case Type::CXXDependentVariadicReifier:
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
       CanPrefixQualifiers = false;
       break;
 
@@ -1217,6 +1221,50 @@ void TypePrinter::printDependentExtIntBefore(const DependentExtIntType *T,
 
 void TypePrinter::printDependentExtIntAfter(const DependentExtIntType *T,
                                             raw_ostream &OS) {}
+
+namespace
+{
+  void printParameterType(TypePrinter &TP, const char *Mode,
+                          const ParameterType *T, raw_ostream &OS) {
+
+    OS << Mode << ' ';
+    TP.print(T->getParameterType(), OS, StringRef());
+  }
+}
+
+void TypePrinter::printInParameterBefore(const InParameterType *T,
+                                         raw_ostream &OS) {
+  printParameterType(*this, "in", T, OS);
+}
+
+void TypePrinter::printInParameterAfter(const InParameterType *T,
+                                        raw_ostream &OS) {}
+
+void TypePrinter::printOutParameterBefore(const OutParameterType *T,
+                                          raw_ostream &OS) {
+  printParameterType(*this, "out", T, OS);
+}
+
+void TypePrinter::printOutParameterAfter(const OutParameterType *T,
+                                         raw_ostream &OS) {}
+
+
+void TypePrinter::printInOutParameterBefore(const InOutParameterType *T,
+                                            raw_ostream &OS) {
+  printParameterType(*this, "inout", T, OS);
+}
+
+void TypePrinter::printInOutParameterAfter(const InOutParameterType *T,
+                                           raw_ostream &OS) {}
+
+
+void TypePrinter::printMoveParameterBefore(const MoveParameterType *T,
+                                           raw_ostream &OS) {
+  printParameterType(*this, "move", T, OS);
+}
+
+void TypePrinter::printMoveParameterAfter(const MoveParameterType *T,
+                                          raw_ostream &OS) {}
 
 /// Appends the given scope to the end of a string.
 void TypePrinter::AppendScope(DeclContext *DC, raw_ostream &OS) {

@@ -587,6 +587,18 @@ const char *DeclSpec::getSpecifierName(ConstexprSpecKind C) {
   llvm_unreachable("Unknown ConstexprSpecKind");
 }
 
+const char *DeclSpec::getSpecifierName(ParameterPassingKind K) {
+  switch (K) {
+  case PPK_unspecified: return "unspecified";
+  case PPK_in:      return "in";
+  case PPK_out:     return "out";
+  case PPK_inout:   return "inout";
+  case PPK_forward: return "forward";
+  case PPK_move:    return "move";
+  }
+  llvm_unreachable("Unknown ParamterPassingKind");
+}
+
 const char *DeclSpec::getSpecifierName(TQ T) {
   switch (T) {
   case DeclSpec::TQ_unspecified: return "unspecified";

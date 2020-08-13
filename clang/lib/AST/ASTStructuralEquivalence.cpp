@@ -1026,6 +1026,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                   cast<PipeType>(T2)->getElementType()))
       return false;
     break;
+
   case Type::ExtInt: {
     const auto *Int1 = cast<ExtIntType>(T1);
     const auto *Int2 = cast<ExtIntType>(T2);
@@ -1035,6 +1036,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
   }
+
   case Type::DependentExtInt: {
     const auto *Int1 = cast<DependentExtIntType>(T1);
     const auto *Int2 = cast<DependentExtIntType>(T2);
@@ -1043,6 +1045,19 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         !IsStructurallyEquivalent(Context, Int1->getNumBitsExpr(),
                                   Int2->getNumBitsExpr()))
       return false;
+    break;
+  }
+  
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter: {
+    const auto* Ptr1 = cast<ParameterType>(T1);
+    const auto* Ptr2 = cast<ParameterType>(T2);
+    if (!IsStructurallyEquivalent(Context, Ptr1->getParameterType(),
+                                  Ptr2->getParameterType()))
+      return false;
+    break;
   }
   } // end switch
 

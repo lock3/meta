@@ -2694,6 +2694,70 @@ class DependentExtIntTypeLoc final
     : public InheritingConcreteTypeLoc<TypeSpecTypeLoc, DependentExtIntTypeLoc,
                                         DependentExtIntType> {};
 
+struct ParameterTypeLocInfo {
+  SourceLocation ModeLoc;
+};
+
+/// Represents a location for a parameter type. We currently don't maintain
+/// source locations for the parameter passing specifier.
+class ParameterTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                ParameterTypeLoc,
+                                                ParameterType,
+                                                ParameterTypeLocInfo> {
+public:
+  SourceLocation getModeLoc() const {
+    return this->getLocalData()->ModeLoc;
+  }
+
+  void setModeLoc(SourceLocation Loc) {
+    this->getLocalData()->ModeLoc = Loc;
+  }
+
+  TypeLoc getParameterTypeLoc() const {
+    return this->getInnerTypeLoc();
+  }
+
+  SourceRange getLocalSourceRange() const {
+    return SourceRange(getModeLoc(), getModeLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc) {
+    setModeLoc(Loc);
+  }
+
+  TypeLoc getInnerLoc() const {
+    return getInnerTypeLoc();
+  }
+
+  QualType getInnerType() const {
+    return this->getTypePtr()->getParameterType();
+  }
+};
+
+struct InParameterTypeLoc :
+  public InheritingConcreteTypeLoc<ParameterTypeLoc,
+                                   InParameterTypeLoc,
+                                   InParameterType> {
+};
+
+struct OutParameterTypeLoc :
+  public InheritingConcreteTypeLoc<ParameterTypeLoc,
+                                   OutParameterTypeLoc,
+                                   OutParameterType> {
+};
+
+struct InOutParameterTypeLoc :
+  public InheritingConcreteTypeLoc<ParameterTypeLoc,
+                                   InOutParameterTypeLoc,
+                                   InOutParameterType> {
+};
+
+struct MoveParameterTypeLoc :
+  public InheritingConcreteTypeLoc<ParameterTypeLoc,
+                                   MoveParameterTypeLoc,
+                                   MoveParameterType> {
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_TYPELOC_H

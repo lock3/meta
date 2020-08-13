@@ -434,6 +434,14 @@ def warn_modifying_shadowing_decl :
           "field of %1">,
   InGroup<ShadowFieldInConstructorModified>, DefaultIgnore;
 
+// Parameter passing.
+def err_cv_qualified_parameter_passing :
+  Error<"%select{in|out|inout|forward|move}0 parameter cannot be cv-qualified">;
+def err_ref_qualified_parameter_passing :
+  Error<"%select{in|out|inout|forward|move}0 parameter cannot be a reference">;
+def err_read_from_out_parameter :
+  Error<"cannot read from an out parameter">;
+
 // C++ decomposition declarations
 def err_decomp_decl_context : Error<
   "decomposition declaration not permitted in this context">;

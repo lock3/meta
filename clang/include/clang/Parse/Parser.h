@@ -2395,12 +2395,16 @@ private:
                         ParsedAttributesWithRange &Attrs);
   DeclSpecContext
   getDeclSpecContextFromDeclaratorContext(DeclaratorContext Context);
+
   void ParseDeclarationSpecifiers(
       DeclSpec &DS,
       const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
       AccessSpecifier AS = AS_none,
       DeclSpecContext DSC = DeclSpecContext::DSC_normal,
       LateParsedAttrList *LateAttrs = nullptr);
+
+  void ParseParameterPassingSpecifier(DeclSpec &DS);
+
   bool DiagnoseMissingSemiAfterTagDefinition(
       DeclSpec &DS, AccessSpecifier AS, DeclSpecContext DSContext,
       LateParsedAttrList *LateAttrs = nullptr);
@@ -2574,6 +2578,10 @@ private:
   TPResult
   isCXXDeclarationSpecifier(TPResult BracedCastResult = TPResult::False,
                             bool *InvalidAsDeclSpec = nullptr);
+
+  /// Returns true if the next term is a parameter passing specifier
+  /// and false if it is not.
+  bool isParameterPassingSpecifier();
 
   /// Given that isCXXDeclarationSpecifier returns \c TPResult::True or
   /// \c TPResult::Ambiguous, determine whether the decl-specifier would be

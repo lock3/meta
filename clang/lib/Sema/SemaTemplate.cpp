@@ -6111,6 +6111,22 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentExtIntType(
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitInParameterType(const InParameterType* T) {
+  return Visit(T->getParameterType());
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitOutParameterType(const OutParameterType* T) {
+  return Visit(T->getParameterType());
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitInOutParameterType(const InOutParameterType* T) {
+  return Visit(T->getParameterType());
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitMoveParameterType(const MoveParameterType* T) {
+  return Visit(T->getParameterType());
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitTagDecl(const TagDecl *Tag) {
   if (Tag->getDeclContext()->isFunctionOrMethod()) {
     S.Diag(SR.getBegin(),

@@ -1634,6 +1634,7 @@ void ScalarExprEmitter::EmitBinOpCheck(
 
 Value *ScalarExprEmitter::VisitExpr(Expr *E) {
   CGF.ErrorUnsupported(E, "scalar expression");
+  E->dump();
   if (E->getType()->isVoidType())
     return nullptr;
   return llvm::UndefValue::get(CGF.ConvertType(E->getType()));
@@ -2361,6 +2362,10 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
 
   case CK_IntToOCLSampler:
     return CGF.CGM.createOpenCLIntToSamplerConversion(E, CGF);
+
+  case CK_ParameterQualification:
+    // See through the conversion.
+    return Visit(E);
 
   } // end of switch
 

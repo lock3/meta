@@ -846,9 +846,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
 
       return;
     }
-
     LLVM_FALLTHROUGH;
-
 
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -913,6 +911,10 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_FixedPointToIntegral:
   case CK_IntegralToFixedPoint:
     llvm_unreachable("cast kind invalid for aggregate types");
+  
+  case CK_ParameterQualification:
+    // This is a no-op. See through the qualification.
+    return Visit(E->getSubExpr());
   }
 }
 

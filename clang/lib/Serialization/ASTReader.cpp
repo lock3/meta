@@ -6800,11 +6800,27 @@ void TypeLocReader::VisitPipeTypeLoc(PipeTypeLoc TL) {
 void TypeLocReader::VisitExtIntTypeLoc(clang::ExtIntTypeLoc TL) {
   TL.setNameLoc(readSourceLocation());
 }
+
 void TypeLocReader::VisitDependentExtIntTypeLoc(
     clang::DependentExtIntTypeLoc TL) {
   TL.setNameLoc(readSourceLocation());
 }
 
+void TypeLocReader::VisitInParameterTypeLoc(InParameterTypeLoc TL) {
+  TL.setModeLoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitOutParameterTypeLoc(OutParameterTypeLoc TL) {
+  TL.setModeLoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitInOutParameterTypeLoc(InOutParameterTypeLoc TL) {
+  TL.setModeLoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitMoveParameterTypeLoc(MoveParameterTypeLoc TL) {
+  TL.setModeLoc(readSourceLocation());
+}
 
 void ASTRecordReader::readTypeLoc(TypeLoc TL) {
   TypeLocReader TLR(*this);

@@ -14052,6 +14052,10 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
            HandleIntToFloatCast(Info, E, From, Result.IntImag,
                                 To, Result.FloatImag);
   }
+
+  case CK_ParameterQualification:
+    // Evaluate the subexpression.
+    return Visit(E->getSubExpr());
   }
 
   llvm_unreachable("unknown cast resulting in complex value");

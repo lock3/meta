@@ -1709,6 +1709,12 @@ public:
     ParmVarDeclBits.IsKNRPromoted = promoted;
   }
 
+  /// True if the parameter type is declared having one of the parameter
+  /// passing modes e.g., 'in T'.
+  bool hasParameterPassingMode() const {
+    return getType()->isParameterType();
+  }
+
   Expr *getDefaultArg();
   const Expr *getDefaultArg() const {
     return const_cast<ParmVarDecl *>(this)->getDefaultArg();

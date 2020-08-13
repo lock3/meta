@@ -954,3 +954,49 @@ let Class = DependentExtIntType in {
     return ctx.getDependentExtIntType(isUnsigned, numBitsExpr);
   }]>;
 }
+
+let Class = ParameterType in {
+  def : Property<"parameterType", QualType> {
+    let Read = [{ node->getParameterType() }];
+  }
+}
+
+let Class = InParameterType in {
+  def : Property<"parameterType", QualType> {
+    let Read = [{ node->getParameterType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getInParameterType(parameterType);
+  }]>;
+}
+
+let Class = OutParameterType in {
+  def : Property<"parameterType", QualType> {
+    let Read = [{ node->getParameterType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getOutParameterType(parameterType);
+  }]>;
+}
+
+let Class = InOutParameterType in {
+  def : Property<"parameterType", QualType> {
+    let Read = [{ node->getParameterType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getInOutParameterType(parameterType);
+  }]>;
+}
+
+let Class = MoveParameterType in {
+  def : Property<"parameterType", QualType> {
+    let Read = [{ node->getParameterType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getMoveParameterType(parameterType);
+  }]>;
+}

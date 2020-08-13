@@ -4576,17 +4576,32 @@ public:
                 E = CallArgTypeInfo->param_type_end();
            I != E; ++I, ++Arg) {
         assert(Arg != ArgRange.end() && "Running over edge of argument list!");
+
+        // Adjust parameter types as needed...
+        QualType PT = *I;
+        if (const auto *ParmType = dyn_cast<ParameterType>(PT))
+          PT = ParmType->getAdjustedType();
+
+        // ... and the initializer also. If this is a parameter qualification,
+        // strip off the implicit cast so we check the actual type of the
+        // argument (other implicit casts are salient).
+        const Expr *A = *Arg;
+        if (const auto *Cast = dyn_cast<ImplicitCastExpr>(A))
+          if (Cast->getCastKind() == CK_ParameterQualification)
+            A = Cast->getSubExpr();
+
         assert((isGenericMethod ||
-                ((*I)->isVariablyModifiedType() ||
-                 (*I).getNonReferenceType()->isObjCRetainableType() ||
+                (PT->isVariablyModifiedType() ||
+                 PT.getNonReferenceType()->isObjCRetainableType() ||
                  getContext()
-                         .getCanonicalType((*I).getNonReferenceType())
+                         .getCanonicalType(PT.getNonReferenceType())
                          .getTypePtr() ==
-                     getContext()
-                         .getCanonicalType((*Arg)->getType())
+                 getContext()
+                         .getCanonicalType(A->getType())
                          .getTypePtr())) &&
                "type mismatch in call argument!");
-        ArgTypes.push_back(*I);
+
+        ArgTypes.push_back(PT);
       }
     }
 

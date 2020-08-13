@@ -4011,6 +4011,11 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return Cache::get(cast<PipeType>(T)->getElementType());
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    return Cache::get(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4099,6 +4104,11 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
     return computeTypeLinkageInfo(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return computeTypeLinkageInfo(cast<PipeType>(T)->getElementType());
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    return computeTypeLinkageInfo(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4264,6 +4274,15 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::Pipe:
   case Type::ExtInt:
   case Type::DependentExtInt:
+    return false;
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    // TODO: This could be wrong. It seems like these may be nullable
+    // if their underlying type is nullable. But maybe that's not what
+    // this function computes.
     return false;
   }
   llvm_unreachable("bad type kind!");
@@ -4520,3 +4539,4 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
   for (const TemplateArgument &Arg : Arguments)
     Arg.Profile(ID, Context);
 }
+

@@ -3269,6 +3269,13 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::Reflected:
   case Type::UnaryTransform:
     break;
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    // Create a type corresponding to the adjusted parameter type.
+    return getOrCreateType(cast<ParameterType>(Ty)->getAdjustedType(), Unit);
   }
 
   llvm_unreachable("type should have been unwrapped!");

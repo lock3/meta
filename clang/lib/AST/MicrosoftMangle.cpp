@@ -2972,6 +2972,26 @@ void MicrosoftCXXNameMangler::mangleType(const PipeType *T, Qualifiers,
   mangleArtificialTagType(TTK_Struct, TemplateMangling, {"__clang"});
 }
 
+void MicrosoftCXXNameMangler::mangleType(const InParameterType *T,
+                                         Qualifiers Quals, SourceRange Range) {
+  llvm_unreachable("cannot mangle in parameter types yet");
+}
+
+void MicrosoftCXXNameMangler::mangleType(const OutParameterType *T,
+                                         Qualifiers Quals, SourceRange Range) {
+  llvm_unreachable("cannot mangle out parameter types yet");
+}
+
+void MicrosoftCXXNameMangler::mangleType(const InOutParameterType *T,
+                                         Qualifiers Quals, SourceRange Range) {
+  llvm_unreachable("cannot mangle inout parameter types yet");
+}
+
+void MicrosoftCXXNameMangler::mangleType(const MoveParameterType *T,
+                                         Qualifiers Quals, SourceRange Range) {
+  llvm_unreachable("cannot mangle move parameter types yet");
+}
+
 void MicrosoftMangleContextImpl::mangleCXXName(GlobalDecl GD,
                                                raw_ostream &Out) {
   const NamedDecl *D = cast<NamedDecl>(GD.getDecl());

@@ -3127,6 +3127,10 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
 
     postMerge(Size, Lo, Hi);
   }
+
+  // Classify parameters according to their underlying type.
+  if (const ParameterType *Parm = dyn_cast<ParameterType>(Ty))
+    classify(Parm->getParameterType(), OffsetBase, Lo, Hi, isNamedArg);
 }
 
 ABIArgInfo X86_64ABIInfo::getIndirectReturnResult(QualType Ty) const {
@@ -3835,7 +3839,7 @@ ABIArgInfo X86_64ABIInfo::classifyRegCallStructType(QualType Ty,
 }
 
 void X86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
-
+  
   const unsigned CallingConv = FI.getCallingConvention();
   // It is possible to force Win64 calling convention on any x86_64 target by
   // using __attribute__((ms_abi)). In such case to correctly emit Win64
