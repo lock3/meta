@@ -2723,25 +2723,25 @@ public:
   }
 };
 
-struct InParameterTypeLoc :
+class InParameterTypeLoc :
   public InheritingConcreteTypeLoc<ParameterTypeLoc,
                                    InParameterTypeLoc,
                                    InParameterType> {
 };
 
-struct OutParameterTypeLoc :
+class OutParameterTypeLoc :
   public InheritingConcreteTypeLoc<ParameterTypeLoc,
                                    OutParameterTypeLoc,
                                    OutParameterType> {
 };
 
-struct InOutParameterTypeLoc :
+class InOutParameterTypeLoc :
   public InheritingConcreteTypeLoc<ParameterTypeLoc,
                                    InOutParameterTypeLoc,
                                    InOutParameterType> {
 };
 
-struct MoveParameterTypeLoc :
+class MoveParameterTypeLoc :
   public InheritingConcreteTypeLoc<ParameterTypeLoc,
                                    MoveParameterTypeLoc,
                                    MoveParameterType> {
