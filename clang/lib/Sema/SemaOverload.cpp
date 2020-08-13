@@ -34,6 +34,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -1752,11 +1753,19 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       }
 
       // Check that we've computed the proper type after overload resolution.
+#ifndef NDEBUG
       // FIXME: FixOverloadedFunctionReference has side-effects; we shouldn't
       // be calling it from within an NDEBUG block.
+
+      // This is a hack to prevent duplicated diagnostics triggered by
+      // the above side effects in some cases involving immediate invocations.
+      llvm::SaveAndRestore<bool> DisableIITracking(
+          S.RebuildingImmediateInvocation, true);
+
       assert(S.Context.hasSameType(
         FromType,
         S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
+#endif
     } else {
       return false;
     }

@@ -16285,15 +16285,20 @@ static bool isInUnevaluatedContext(Sema &SemaRef, Expr *E) {
 }
 
 ExprResult Sema::CheckForImmediateInvocation(ExprResult E, FunctionDecl *Decl) {
-  // FIXME: Added `E.get()->isValueDependent()` to handle expansion statements.
-  // It seems like this should fall out of the implementation. i.e. this is
-  // likely an issue with expansion statements.
+  // Skip checking dependent expressions - If we allow dependent expressions
+  // we end up evaluating dependent constant expressions.
+  //
+  // FIXME: The isInUnevaluatedContext patch is not standard compliant,
+  // see: https://reviews.llvm.org/D76724
+  //
+  // "A manifestly constant-evaluated expression is evaluated even in
+  // an unevaluated operand"
   if (!E.isUsable() || !Decl || !Decl->isConsteval() || isConstantEvaluated() ||
-      E.get()->isValueDependent() || RebuildingImmediateInvocation ||
+      E.get()->getDependence() || RebuildingImmediateInvocation ||
       isInUnevaluatedContext(*this, E.get()))
     return E;
 
-  /// Opportunistically remove the callee from ReferencesToConsteval if we can.
+  /// Opportunistically remove the callee from ReferenceToConsteval if we can.
   /// It's OK if this fails; we'll also remove this in
   /// HandleImmediateInvocations, but catching it here allows us to avoid
   /// walking the AST looking for it in simple cases.
@@ -18284,10 +18289,18 @@ void Sema::MarkDeclRefReferenced(DeclRefExpr *E, const Expr *Base) {
         !Method->getDevirtualizedMethod(Base, getLangOpts().AppleKext))
       OdrUse = false;
 
-  if (auto *FD = dyn_cast<FunctionDecl>(E->getDecl()))
-    if (!isConstantEvaluated() && FD->isConsteval() &&
-        !RebuildingImmediateInvocation)
+  if (auto *FD = dyn_cast<FunctionDecl>(E->getDecl())) {
+    // Skip checking dependent contexts - If we attempt to check
+    // dependent contexts here, we end up increasing the guarantee on
+    // CheckForImmediateInvocation's opportunistic removal from
+    // ReferenceToConsteval to guaranteed removal -- to prevent
+    // incorrect diagnostics. This would require an additional AST
+    // walk to ensure the reference was removed.
+    if (FD->isConsteval() && !isConstantEvaluated() &&
+        !CurContext->isDependentContext() && !RebuildingImmediateInvocation)
       ExprEvalContexts.back().ReferenceToConsteval.insert(E);
+  }
+
   MarkExprReferenced(*this, E->getLocation(), E->getDecl(), E, OdrUse);
 }
 

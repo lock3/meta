@@ -437,7 +437,7 @@ public:
 };
 
 template<typename F, typename N, typename P>
-constexpr std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> last)
+consteval std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> last)
 {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
