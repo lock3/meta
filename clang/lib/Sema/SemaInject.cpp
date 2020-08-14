@@ -1352,6 +1352,19 @@ static void InjectFunctionDefinition(InjectionContext *Ctx,
                             /*IsInstantiation=*/true);
 }
 
+static ConstexprSpecKind Transform(ConstexprModifier Modifier) {
+  switch(Modifier) {
+  case ConstexprModifier::Constexpr:
+    return CSK_constexpr;
+  case ConstexprModifier::Consteval:
+    return CSK_consteval;
+  case ConstexprModifier::Constinit:
+    return CSK_constinit;
+  default:
+    llvm_unreachable("Invalid constexpr modifier transformation");
+  }
+}
+
 Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -1367,16 +1380,23 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   UpdateFunctionParms(D, Fn);
 
   // Update the constexpr specifier.
-  if (GetModifiers().addConstexpr()) {
-    Fn->setConstexprKind(CSK_constexpr);
+  if (GetModifiers().modifyConstexpr()) {
     Fn->setType(Fn->getType().withConst());
+
+    ConstexprModifier Modifier = GetModifiers().getConstexprModifier();
+    if (Modifier == ConstexprModifier::Constinit) {
+      SemaRef.Diag(Fn->getLocation(), diag::err_modify_constinit_function);
+      Fn->setInvalidDecl(true);
+    } else {
+      Fn->setConstexprKind(Transform(Modifier));
+    }
   } else {
     Fn->setConstexprKind(D->getConstexprKind());
   }
 
   // Set properties.
   Fn->setInlineSpecified(D->isInlineSpecified());
-  Fn->setInvalidDecl(Invalid);
+  Fn->setInvalidDecl(Fn->isInvalidDecl() || Invalid);
   if (D->getFriendObjectKind() != Decl::FOK_None)
     Fn->setObjectOfFriendDecl();
 
@@ -1424,8 +1444,8 @@ static void CheckInjectedVarDecl(Sema &SemaRef, VarDecl *VD,
       return;
 
     SemaRef.Diag(VD->getLocation(),
-                   diag::err_static_data_member_not_allowed_in_anon_struct)
-      << VD->getDeclName() << RD->getTagKind();
+                 diag::err_static_data_member_not_allowed_in_anon_struct)
+        << VD->getDeclName() << RD->getTagKind();
   }
 }
 
@@ -1465,9 +1485,24 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   Var->setInitStyle(D->getInitStyle());
   Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
 
-  if (GetModifiers().addConstexpr()) {
-    Var->setConstexpr(true);
+  if (GetModifiers().modifyConstexpr()) {
     Var->setType(Var->getType().withConst());
+    switch (GetModifiers().getConstexprModifier()) {
+    case ConstexprModifier::Constexpr:
+      Var->setConstexpr(true);
+      break;
+    case ConstexprModifier::Consteval:
+      SemaRef.Diag(Var->getLocation(), diag::err_modify_consteval_variable);
+      Var->setInvalidDecl(true);
+      break;
+    case ConstexprModifier::Constinit:
+      Var->addAttr(ConstInitAttr::Create(
+          SemaRef.Context, Var->getLocation(),
+          AttributeCommonInfo::AS_Keyword, ConstInitAttr::Keyword_constinit));
+      break;
+    default:
+      llvm_unreachable("invalid constexpr modifier transformation");
+    }
   } else {
     Var->setConstexpr(D->isConstexpr());
   }
@@ -1807,8 +1842,9 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // There are some interesting cases we probably need to handle.
 
   // Can't make
-  if (GetModifiers().addConstexpr()) {
-    SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field);
+  if (GetModifiers().modifyConstexpr()) {
+    SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field) <<
+        Transform(GetModifiers().getConstexprModifier());
     Field->setInvalidDecl(true);
   }
 
@@ -1900,13 +1936,21 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D, F FinishBody) {
   ApplyAccess(GetModifiers(), Method, D);
 
   // Update the constexpr specifier.
-  if (GetModifiers().addConstexpr()) {
-    if (isa<CXXDestructorDecl>(Method)) {
-      SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor) << CSK_constexpr;
-      Method->setInvalidDecl(true);
-    }
-    Method->setConstexprKind(CSK_constexpr);
+  if (GetModifiers().modifyConstexpr()) {
     Method->setType(Method->getType().withConst());
+
+    ConstexprModifier Modifier = GetModifiers().getConstexprModifier();
+    if (Modifier == ConstexprModifier::Constinit) {
+      SemaRef.Diag(Method->getLocation(), diag::err_modify_constinit_function);
+      Method->setInvalidDecl(true);
+    } else {
+      ConstexprSpecKind SpecKind = Transform(Modifier);
+      if (isa<CXXDestructorDecl>(Method)) {
+        SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor) << SpecKind;
+        Method->setInvalidDecl(true);
+      }
+      Method->setConstexprKind(SpecKind);
+    }
   } else {
     Method->setConstexprKind(D->getConstexprKind());
   }

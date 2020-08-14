@@ -10734,7 +10734,11 @@ def note_required_relative_declared : Note<
 def err_modify_virtual_constructor : Error<
   "cannot make a constructor virtual">;
 def err_modify_constexpr_field : Error<
-  "cannot make a non-static data member constexpr">;
+  "cannot make a non-static data member %sub{select_constexpr_spec_kind}0">;
+def err_modify_constinit_function : Error<
+  "cannot make a function constinit">;
+def err_modify_consteval_variable : Error<
+  "cannot make a variable consteval">;
 def err_invalid_type_transformer_operand : Error<
   "invalid operand of type %0; expected a reflection">;
 def err_invalid_unquote_operator : Error<

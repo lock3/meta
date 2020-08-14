@@ -272,7 +272,7 @@ namespace clang {
     // Modifier updates
     query_set_access,
     query_set_storage,
-    query_set_add_constexpr,
+    query_set_constexpr,
     query_set_add_explicit,
     query_set_add_virtual,
     query_set_add_pure_virtual,
@@ -3227,16 +3227,16 @@ setStorageMod(const Reflection &R, const ArrayRef<APValue> &Args,
   return Error(R);
 }
 
-static ReflectionModifiers withConstexpr(const Reflection &R, bool AddConstexpr) {
+static ReflectionModifiers withConstexpr(const Reflection &R, std::uint64_t Val) {
   ReflectionModifiers M = R.getModifiers();
-  M.setAddConstexpr(AddConstexpr);
+  M.setConstexprModifier(static_cast<ConstexprModifier>(Val));
   return M;
 }
 
 static bool
-setAddConstexprMod(const Reflection &R, const ArrayRef<APValue> &Args,
-                   APValue &Result) {
-  if (OptionalBool V = getArgAsBool(Args, 0))
+setConstexprMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                APValue &Result) {
+  if (OptionalUInt V = getArgAsUInt(Args, 0))
     return makeReflection(R, withConstexpr(R, *V), Result);
   return Error(R);
 }
@@ -3308,8 +3308,8 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
     return setAccessMod(*this, ContextualArgs, Result);
   case query_set_storage:
     return setStorageMod(*this, ContextualArgs, Result);
-  case query_set_add_constexpr:
-    return setAddConstexprMod(*this, ContextualArgs, Result);
+  case query_set_constexpr:
+    return setConstexprMod(*this, ContextualArgs, Result);
   case query_set_add_explicit:
     return setAddExplicitMod(*this, ContextualArgs, Result);
   case query_set_add_virtual:
