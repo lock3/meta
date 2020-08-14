@@ -159,8 +159,16 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
            "We have paramInfos, but the prototype doesn't?");
     // Copy out parameters, performing adjustments as needed.
     for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
-      CanQualType T = getAdjustedParameterType(Ctx, FPT->getParamType(I));
-      prefix.push_back(T);
+      CanQualType PT = FPT->getParamType(I);
+      prefix.push_back(getAdjustedParameterType(Ctx, PT));
+
+      // FIXME: If the original was an input or output parameter, add a new
+      // parameter to communicate call-site information to function.
+      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT)) {
+        llvm::outs() << "ADD IN INFO\n";
+        PT->getTypePtr()->dump();
+        prefix.push_back(Ctx.BoolTy);
+      }
     }
     return;
   }
@@ -2381,6 +2389,8 @@ namespace {
 void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
                                          llvm::Function *Fn,
                                          const FunctionArgList &Args) {
+  llvm::outs() << "DO PROLOG\n";
+
   if (CurCodeDecl && CurCodeDecl->hasAttr<NakedAttr>())
     // Naked functions don't have prologues.
     return;
@@ -2431,6 +2441,7 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
   // entails copying one or more LLVM IR arguments into an alloca.  Don't push
   // any cleanups or do anything that might unwind.  We do that separately, so
   // we can push the cleanups in the correct order for the ABI.
+  llvm::outs() << "HERE: " << FI.arg_size() << ' ' << Args.size() << '\n';
   assert(FI.arg_size() == Args.size() &&
          "Mismatch between function signature & arguments.");
   unsigned ArgNo = 0;
