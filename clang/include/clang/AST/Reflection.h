@@ -296,10 +296,17 @@ enum class StorageModifier : unsigned {
   ThreadLocal
 };
 
+enum class ConstexprModifier : unsigned {
+  NotModified,
+  Constexpr,
+  Consteval,
+  Constinit
+};
+
 class ReflectionModifiers {
   AccessModifier Access;
   StorageModifier Storage;
-  bool AddConstexpr;
+  ConstexprModifier Constexpr;
   bool AddExplicit;
   bool AddVirtual;
   bool AddPureVirtual;
@@ -308,7 +315,8 @@ public:
   ReflectionModifiers()
     : Access(AccessModifier::NotModified),
       Storage(StorageModifier::NotModified),
-      AddConstexpr(false), AddExplicit(false), AddVirtual(false),
+      Constexpr(ConstexprModifier::NotModified),
+      AddExplicit(false), AddVirtual(false),
       AddPureVirtual(false), NewName(nullptr) { }
 
   void setAccessModifier(AccessModifier Access) {
@@ -338,12 +346,16 @@ public:
     return Storage;
   }
 
-  void setAddConstexpr(bool AddConstexpr) {
-    this->AddConstexpr = AddConstexpr;
+  void setConstexprModifier(ConstexprModifier Constexpr) {
+    this->Constexpr = Constexpr;
   }
 
-  bool addConstexpr() const {
-    return AddConstexpr;
+  bool modifyConstexpr() const {
+    return Constexpr != ConstexprModifier::NotModified;
+  }
+
+  ConstexprModifier getConstexprModifier() const {
+    return Constexpr;
   }
 
   void setAddExplicit(bool AddExplicit) {

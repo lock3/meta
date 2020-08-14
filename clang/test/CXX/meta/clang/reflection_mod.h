@@ -16,4 +16,11 @@ enum class StorageModifier : unsigned {
   ThreadLocal
 };
 
+enum class ConstexprModifier : unsigned {
+  NotModified,
+  Constexpr,
+  Consteval,
+  Constinit
+};
+
 #endif
