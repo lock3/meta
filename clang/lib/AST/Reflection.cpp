@@ -276,6 +276,7 @@ namespace clang {
     query_set_add_explicit,
     query_set_add_virtual,
     query_set_add_pure_virtual,
+    query_set_add_inline,
     query_set_new_name,
 
     // Labels for kinds of queries. These need to be updated when new
@@ -1121,6 +1122,8 @@ static bool isInline(ReflectionQueryEvaluator &Eval,
       return SuccessBool(Eval, Result, VD->isInline());
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
       return SuccessBool(Eval, Result, FD->isInlined());
+    if (const NamespaceDecl *NS = dyn_cast<NamespaceDecl>(D))
+      return SuccessBool(Eval, Result, NS->isInline());
   }
   return SuccessFalse(Eval, Result);
 }
@@ -3284,6 +3287,20 @@ setAddPureVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
   return Error(R);
 }
 
+static ReflectionModifiers withInline(const Reflection &R, bool AddInline) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddInline(AddInline);
+  return M;
+}
+
+static bool
+setAddInlineMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withInline(R, *V), Result);
+  return Error(R);
+}
+
 static ReflectionModifiers withNewName(const Reflection &R, const Expr *NewName) {
   ReflectionModifiers M = R.getModifiers();
   M.setNewName(NewName);
@@ -3316,6 +3333,8 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
     return setAddVirtualMod(*this, ContextualArgs, Result);
   case query_set_add_pure_virtual:
     return setAddPureVirtualMod(*this, ContextualArgs, Result);
+  case query_set_add_inline:
+    return setAddInlineMod(*this, ContextualArgs, Result);
   case query_set_new_name:
     return setNewNameMod(*this, ContextualArgs, Result);
   default:

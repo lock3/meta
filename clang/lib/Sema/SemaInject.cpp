@@ -1203,7 +1203,7 @@ Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   SourceLocation &&NamespaceLoc = D->getBeginLoc();
   SourceLocation &&Loc = D->getLocation();
 
-  bool IsInline = D->isInline();
+  bool IsInline = D->isInline() || GetModifiers().addInline();
   bool IsInvalid = false;
   bool IsStd = false;
   bool AddToKnown = false;
@@ -1395,7 +1395,12 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   }
 
   // Set properties.
-  Fn->setInlineSpecified(D->isInlineSpecified());
+  if (D->isInlineSpecified()) {
+    Fn->setInlineSpecified();
+  } else if (D->isInlined() || GetModifiers().addInline()) {
+    Fn->setImplicitlyInline();
+  }
+
   Fn->setInvalidDecl(Fn->isInvalidDecl() || Invalid);
   if (D->getFriendObjectKind() != Decl::FOK_None)
     Fn->setObjectOfFriendDecl();
@@ -1534,7 +1539,7 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 
   if (D->isInlineSpecified())
     Var->setInlineSpecified();
-  else if (D->isInline())
+  else if (D->isInline() || GetModifiers().addInline())
     Var->setImplicitlyInline();
 
   InjectVariableInitializer(*this, D, Var);
@@ -1932,6 +1937,9 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D, F FinishBody) {
   }
 
   // Propagate semantic properties.
+  if (D->isInlined())
+    Method->setImplicitlyInline();
+
   Method->setImplicit(D->isImplicit());
   ApplyAccess(GetModifiers(), Method, D);
 

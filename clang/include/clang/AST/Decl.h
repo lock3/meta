@@ -2567,7 +2567,7 @@ public:
   bool isInlineSpecified() const { return FunctionDeclBits.IsInlineSpecified; }
 
   /// Set whether the "inline" keyword was specified for this function.
-  void setInlineSpecified(bool I) {
+  void setInlineSpecified(bool I = true) {
     FunctionDeclBits.IsInlineSpecified = I;
     FunctionDeclBits.IsInline = I;
   }

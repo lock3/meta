@@ -277,6 +277,7 @@ enum reflection_query : unsigned {
   query_set_add_explicit,
   query_set_add_virtual,
   query_set_add_pure_virtual,
+  query_set_add_inline,
   query_set_new_name
 };
 
@@ -3470,6 +3471,18 @@ consteval void make_virtual(info& mem_function, bool mark_virtual = true) {
 consteval void make_pure_virtual(info& mem_function, bool mark_pure_virtual = true) {
   detail::require_mem_function(mem_function);
   __reflect_mod(detail::query_set_add_pure_virtual, mem_function, mark_pure_virtual);
+}
+
+// Inline
+
+// Requires: is_function(reflection)
+//
+// Updates the value of reflection adding an inline modifier if true,
+// removing any inline modifier if false.
+// When injected via declaration cloning, an inline modifier
+// will result in the injected declaration being inline.
+consteval void make_inline(info& reflection, bool mark_inline = true) {
+  __reflect_mod(detail::query_set_add_inline, reflection, mark_inline);
 }
 
 // Names
