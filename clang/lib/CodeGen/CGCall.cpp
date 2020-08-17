@@ -2440,17 +2440,17 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
     const VarDecl *Arg = *i;
     const ABIArgInfo &ArgI = info_it->info;
 
+    // We are converting from ABIArgInfo type to VarDecl type directly, unless
+    // the parameter is promoted. In this case we convert to
+    // CGFunctionInfo::ArgInfo type with subsequent argument demotion.
+    //
+    // We are also covnerting if the parameter has parameter passing mode.
     bool isPromoted = false;
     bool isAdjusted = false;
     if (const ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(Arg)) {
       isPromoted = Parm->isKNRPromoted();
       isAdjusted = Parm->hasParameterPassingMode();
     }
-    // We are converting from ABIArgInfo type to VarDecl type directly, unless
-    // the parameter is promoted. In this case we convert to
-    // CGFunctionInfo::ArgInfo type with subsequent argument demotion.
-    //
-    // We are also covnerting if the parameter has parameter passing mode.
     QualType Ty = (isPromoted || isAdjusted) ? info_it->type : Arg->getType();
 
     assert(hasScalarEvaluationKind(Ty) ==
