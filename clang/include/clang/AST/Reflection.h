@@ -310,6 +310,7 @@ class ReflectionModifiers {
   bool AddExplicit;
   bool AddVirtual;
   bool AddPureVirtual;
+  bool AddInline;
   const Expr *NewName;
 public:
   ReflectionModifiers()
@@ -317,7 +318,8 @@ public:
       Storage(StorageModifier::NotModified),
       Constexpr(ConstexprModifier::NotModified),
       AddExplicit(false), AddVirtual(false),
-      AddPureVirtual(false), NewName(nullptr) { }
+      AddPureVirtual(false), AddInline(false),
+      NewName(nullptr) { }
 
   void setAccessModifier(AccessModifier Access) {
     this->Access = Access;
@@ -380,6 +382,14 @@ public:
 
   bool addPureVirtual() const {
     return AddPureVirtual;
+  }
+
+  void setAddInline(bool AddInline) {
+    this->AddInline = AddInline;
+  }
+
+  bool addInline() const {
+    return AddInline;
   }
 
   void setNewName(const Expr *NewName) {

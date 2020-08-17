@@ -255,6 +255,7 @@ enum reflection_query {
   query_set_add_explicit,
   query_set_add_virtual,
   query_set_add_pure_virtual,
+  query_set_add_inline,
   query_set_new_name
 };
 
