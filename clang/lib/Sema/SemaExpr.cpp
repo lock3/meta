@@ -3314,9 +3314,8 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
       break;
 
     case Type::MoveParameter:
-      // The type is adjusted to an xvalue of type T.
+      // The type is adjusted to T. It's already an lvalue.
       type = cast<ParameterType>(type)->getParameterType();
-      valueKind = VK_XValue;
       break;
 
     default:
