@@ -128,11 +128,10 @@ LogicalResult getMemRefAlignment(LLVMTypeConverter &typeConverter, T op,
 
   // TODO: this should use the MLIR data layout when it becomes available and
   // stop depending on translation.
-  LLVM::LLVMDialect *dialect = typeConverter.getDialect();
   llvm::LLVMContext llvmContext;
   align = LLVM::TypeToLLVMIRTranslator(llvmContext)
               .getPreferredAlignment(elementTy.cast<LLVM::LLVMType>(),
-                                     dialect->getDataLayout());
+                                     typeConverter.getDataLayout());
   return success();
 }
 
@@ -1153,6 +1152,7 @@ public:
       if (memrefVectorElementType.getElementType() !=
           xferOp.getVectorType().getElementType())
         return failure();
+#ifndef NDEBUG
       // Check that memref vector type is a suffix of 'vectorType.
       unsigned memrefVecEltRank = memrefVectorElementType.getRank();
       unsigned resultVecRank = xferOp.getVectorType().getRank();
@@ -1165,6 +1165,7 @@ public:
         assert(memrefVecEltShape[i] != resultVecShape[rankOffset + i] &&
                "memref vector element shape should match suffix of vector "
                "result shape.");
+#endif // ifndef NDEBUG
     }
 
     // 1. Get the source/dst address as an LLVM vector pointer.

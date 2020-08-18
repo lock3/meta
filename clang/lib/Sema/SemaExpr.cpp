@@ -1125,6 +1125,11 @@ static QualType handleFloatConversion(Sema &S, ExprResult &LHS,
   bool LHSFloat = LHSType->isRealFloatingType();
   bool RHSFloat = RHSType->isRealFloatingType();
 
+  // FIXME: Implement floating to fixed point conversion.(Bug 46268)
+  // Reference N1169 4.1.4 (Type conversion, usual arithmetic conversions).
+  if ((LHSType->isFixedPointType() && RHSFloat) ||
+      (LHSFloat && RHSType->isFixedPointType()))
+    return QualType();
   // If we have two real floating types, convert the smaller operand
   // to the bigger result.
   if (LHSFloat && RHSFloat) {
@@ -6963,24 +6968,6 @@ Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
         << DIE->getSourceRange();
       Diag(InitArgList[I]->getBeginLoc(), diag::note_designated_init_mixed)
         << InitArgList[I]->getSourceRange();
-    } else if (const auto *SL = dyn_cast<StringLiteral>(InitArgList[I])) {
-      unsigned NumConcat = SL->getNumConcatenated();
-      const auto *SLNext =
-          dyn_cast<StringLiteral>(InitArgList[I + 1 < E ? I + 1 : 0]);
-      // Diagnose missing comma in string array initialization.
-      // Do not warn when all the elements in the initializer are concatenated
-      // together. Do not warn for macros too.
-      if (NumConcat > 1 && E > 2 && !SL->getBeginLoc().isMacroID() && SLNext &&
-          NumConcat != SLNext->getNumConcatenated()) {
-        SmallVector<FixItHint, 1> Hints;
-        for (unsigned i = 0; i < NumConcat - 1; ++i)
-          Hints.push_back(FixItHint::CreateInsertion(
-              PP.getLocForEndOfToken(SL->getStrTokenLoc(i)), ","));
-
-        Diag(SL->getStrTokenLoc(1), diag::warn_concatenated_literal_array_init)
-            << Hints;
-        Diag(SL->getBeginLoc(), diag::note_concatenated_string_literal_silence);
-      }
     }
   }
 
@@ -17987,8 +17974,7 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
   // This also requires the reference of the static device/constant variable by
   // host code to be visible in the device compilation for the compiler to be
   // able to externalize the static device/constant variable.
-  if ((Var->hasAttr<CUDADeviceAttr>() || Var->hasAttr<CUDAConstantAttr>()) &&
-      Var->isFileVarDecl() && Var->getStorageClass() == SC_Static) {
+  if (SemaRef.getASTContext().mayExternalizeStaticVar(Var)) {
     auto *CurContext = SemaRef.CurContext;
     if (!CurContext || !isa<FunctionDecl>(CurContext) ||
         cast<FunctionDecl>(CurContext)->hasAttr<CUDAHostAttr>() ||

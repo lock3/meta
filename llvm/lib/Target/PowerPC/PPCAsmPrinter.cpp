@@ -64,6 +64,7 @@
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -154,8 +155,9 @@ private:
   /// linkage for them in AIX.
   SmallPtrSet<MCSymbol *, 8> ExtSymSDNodeSymbols;
 
-  /// A unique trailing identifier as a part of sinit/sterm functions.
-  std::string GlobalUniqueModuleId;
+  /// A format indicator and unique trailing identifier to form part of the
+  /// sinit/sterm function names.
+  std::string FormatIndicatorAndUniqueModId;
 
   static void ValidateGV(const GlobalVariable *GV);
   // Record a list of GlobalAlias associated with a GlobalObject.
@@ -1709,10 +1711,7 @@ void PPCAIXAsmPrinter::emitGlobalVariable(const GlobalVariable *GV) {
          "Unhandled intrinsic global variable.");
   ValidateGV(GV);
 
-  // Create the symbol, set its storage class.
   MCSymbolXCOFF *GVSym = cast<MCSymbolXCOFF>(getSymbol(GV));
-  GVSym->setStorageClass(
-      TargetLoweringObjectFileXCOFF::getStorageClassForGlobal(GV));
 
   if (GV->isDeclarationForLinker()) {
     emitLinkage(GV, GVSym);
@@ -1736,6 +1735,8 @@ void PPCAIXAsmPrinter::emitGlobalVariable(const GlobalVariable *GV) {
   if (GVKind.isCommon() || GVKind.isBSSLocal()) {
     Align Alignment = GV->getAlign().getValueOr(DL.getPreferredAlign(GV));
     uint64_t Size = DL.getTypeAllocSize(GV->getType()->getElementType());
+    GVSym->setStorageClass(
+        TargetLoweringObjectFileXCOFF::getStorageClassForGlobal(GV));
 
     if (GVKind.isBSSLocal())
       OutStreamer->emitXCOFFLocalCommonSymbol(
@@ -1826,7 +1827,7 @@ void PPCAIXAsmPrinter::emitEndOfAsmFile(Module &M) {
   for (auto &I : TOC) {
     // Setup the csect for the current TC entry.
     MCSectionXCOFF *TCEntry = cast<MCSectionXCOFF>(
-        getObjFileLowering().getSectionForTOCEntry(I.first));
+        getObjFileLowering().getSectionForTOCEntry(I.first, TM));
     OutStreamer->SwitchSection(TCEntry);
 
     OutStreamer->emitLabel(I.second);
@@ -1860,17 +1861,23 @@ bool PPCAIXAsmPrinter::doInitialization(Module &M) {
       continue;
 
     if (isSpecialLLVMGlobalArrayForStaticInit(&G)) {
-      // Generate a unique module id which is a part of sinit and sterm function
-      // names.
-      if (GlobalUniqueModuleId.empty()) {
-        GlobalUniqueModuleId = getUniqueModuleId(&M);
-        // FIXME: We need to figure out what to hash on or encode into the
-        // unique ID we need.
-        if (GlobalUniqueModuleId.compare("") == 0)
-          llvm::report_fatal_error(
-              "cannot produce a unique identifier for this module based on"
-              " strong external symbols");
-        GlobalUniqueModuleId = GlobalUniqueModuleId.substr(1);
+      // Generate a format indicator and a unique module id to be a part of
+      // the sinit and sterm function names.
+      if (FormatIndicatorAndUniqueModId.empty()) {
+        std::string UniqueModuleId = getUniqueModuleId(&M);
+        if (UniqueModuleId.compare("") != 0)
+          // TODO: Use source file full path to generate the unique module id
+          // and add a format indicator as a part of function name in case we
+          // will support more than one format.
+          FormatIndicatorAndUniqueModId = "clang_" + UniqueModuleId.substr(1);
+        else
+          // Use the Pid and current time as the unique module id when we cannot
+          // generate one based on a module's strong external symbols.
+          // FIXME: Adjust the comment accordingly after we use source file full
+          // path instead.
+          FormatIndicatorAndUniqueModId =
+              "clangPidTime_" + llvm::itostr(sys::Process::getProcessId()) +
+              "_" + llvm::itostr(time(nullptr));
       }
 
       emitSpecialLLVMGlobal(&G);
@@ -1907,15 +1914,6 @@ void PPCAIXAsmPrinter::emitInstruction(const MachineInstr *MI) {
     if (MO.isSymbol()) {
       MCSymbolXCOFF *S =
           cast<MCSymbolXCOFF>(OutContext.getOrCreateSymbol(MO.getSymbolName()));
-      if (!S->hasRepresentedCsectSet()) {
-        // On AIX, an undefined symbol needs to be associated with a
-        // MCSectionXCOFF to get the correct storage mapping class.
-        // In this case, XCOFF::XMC_PR.
-        MCSectionXCOFF *Sec = OutContext.getXCOFFSection(
-            S->getName(), XCOFF::XMC_PR, XCOFF::XTY_ER, XCOFF::C_EXT,
-            SectionKind::getMetadata());
-        S->setRepresentedCsect(Sec);
-      }
       ExtSymSDNodeSymbols.insert(S);
     }
   } break;
@@ -1938,10 +1936,9 @@ void PPCAIXAsmPrinter::emitInstruction(const MachineInstr *MI) {
 }
 
 bool PPCAIXAsmPrinter::doFinalization(Module &M) {
-  bool Ret = PPCAsmPrinter::doFinalization(M);
   for (MCSymbol *Sym : ExtSymSDNodeSymbols)
     OutStreamer->emitSymbolAttribute(Sym, MCSA_Extern);
-  return Ret;
+  return PPCAsmPrinter::doFinalization(M);
 }
 
 void PPCAIXAsmPrinter::emitXXStructorList(const DataLayout &DL,
@@ -1960,7 +1957,7 @@ void PPCAIXAsmPrinter::emitXXStructorList(const DataLayout &DL,
     llvm::GlobalAlias::create(
         GlobalValue::ExternalLinkage,
         (IsCtor ? llvm::Twine("__sinit") : llvm::Twine("__sterm")) +
-            llvm::Twine("80000000_clang_", GlobalUniqueModuleId) +
+            llvm::Twine("80000000_", FormatIndicatorAndUniqueModId) +
             llvm::Twine("_", llvm::utostr(Index++)),
         cast<Function>(S.Func));
   }
