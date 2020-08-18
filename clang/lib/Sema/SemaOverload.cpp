@@ -5249,13 +5249,18 @@ TryParameterConversion(Sema &S, Expr *From, QualType ToType,
   // Perform the conversion/initialization on the adjusted type.
   ToType = ParmType->getAdjustedType();
 
-  // FIXME: For move semantics, we might want to preserve the parameter
-  // type so we can infer an lvalue to xvalue conversion -- if we need that
-  // at all.
+  auto Seq = TryCopyInitialization(S, From, ToType, SuppressUserConversions, 
+                                   InOverloadResolution,
+                                   AllowObjCWritebackConversion, AllowExplicit);
 
-  return TryCopyInitialization(S, From, ToType, SuppressUserConversions, 
-                               InOverloadResolution,
-                               AllowObjCWritebackConversion, AllowExplicit);
+  // For move parameters, ensure that the source expression is an rvalue.
+  if (ParmType->isMoveParameter()) {
+    if (From->isLValue())
+      S.Diag(From->getExprLoc(), diag::err_move_from_lvalue)
+        << From->getSourceRange();
+  }
+
+  return Seq;
 }
 
 /// TryObjectArgumentInitialization - Try to initialize the object
