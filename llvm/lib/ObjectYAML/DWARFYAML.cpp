@@ -17,9 +17,7 @@
 namespace llvm {
 
 bool DWARFYAML::Data::isEmpty() const {
-  return DebugStrings.empty() && AbbrevDecls.empty() && DebugAranges &&
-         DebugRanges.empty() && !PubNames && !PubTypes && !GNUPubNames &&
-         !GNUPubTypes && CompileUnits.empty() && DebugLines.empty();
+  return getNonEmptySectionNames().empty();
 }
 
 SetVector<StringRef> DWARFYAML::Data::getNonEmptySectionNames() const {
@@ -136,6 +134,7 @@ void MappingTraits<DWARFYAML::PubEntry>::mapping(IO &IO,
 
 void MappingTraits<DWARFYAML::PubSection>::mapping(
     IO &IO, DWARFYAML::PubSection &Section) {
+  IO.mapOptional("Format", Section.Format, dwarf::DWARF32);
   IO.mapRequired("Length", Section.Length);
   IO.mapRequired("Version", Section.Version);
   IO.mapRequired("UnitOffset", Section.UnitOffset);
@@ -150,7 +149,7 @@ void MappingTraits<DWARFYAML::Unit>::mapping(IO &IO, DWARFYAML::Unit &Unit) {
   if (Unit.Version >= 5)
     IO.mapRequired("UnitType", Unit.Type);
   IO.mapRequired("AbbrOffset", Unit.AbbrOffset);
-  IO.mapRequired("AddrSize", Unit.AddrSize);
+  IO.mapOptional("AddrSize", Unit.AddrSize);
   IO.mapOptional("Entries", Unit.Entries);
 }
 
@@ -284,13 +283,6 @@ void MappingTraits<DWARFYAML::ListTable<EntryType>>::mapping(
   IO.mapOptional("OffsetEntryCount", ListTable.OffsetEntryCount);
   IO.mapOptional("Offsets", ListTable.Offsets);
   IO.mapOptional("Lists", ListTable.Lists);
-}
-
-void MappingTraits<DWARFYAML::InitialLength>::mapping(
-    IO &IO, DWARFYAML::InitialLength &InitialLength) {
-  IO.mapRequired("TotalLength", InitialLength.TotalLength);
-  if (InitialLength.isDWARF64())
-    IO.mapRequired("TotalLength64", InitialLength.TotalLength64);
 }
 
 } // end namespace yaml

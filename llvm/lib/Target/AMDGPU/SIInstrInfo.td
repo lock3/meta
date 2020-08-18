@@ -316,7 +316,7 @@ defm atomic_load_fmax_#as : binary_atomic_op<SIatomic_fmax, 0>;
 } // End let AddressSpaces = ...
 } // End foreach AddrSpace
 
-def atomic_fadd_global_noret : PatFrag<
+def atomic_fadd_global_noret_impl : PatFrag<
   (ops node:$ptr, node:$value),
   (atomic_load_fadd node:$ptr, node:$value)> {
   // FIXME: Move this
@@ -325,14 +325,9 @@ def atomic_fadd_global_noret : PatFrag<
   let AddressSpaces = StoreAddress_global.AddrSpaces;
 }
 
-def atomic_pk_fadd_global_noret : PatFrag<
-    (ops node:$ptr, node:$value),
-    (atomic_load_fadd node:$ptr, node:$value)> {
-  // FIXME: Move this
-  let MemoryVT = v2f16;
-  let IsAtomic = 1;
-  let AddressSpaces = StoreAddress_global.AddrSpaces;
-}
+def atomic_fadd_global_noret : PatFrags<(ops node:$src0, node:$src1),
+  [(int_amdgcn_global_atomic_fadd node:$src0, node:$src1),
+   (atomic_fadd_global_noret_impl node:$src0, node:$src1)]>;
 
 //===----------------------------------------------------------------------===//
 // SDNodes PatFrags for loads/stores with a glue input.
@@ -1089,8 +1084,14 @@ def clampmod0 : NamedOperandBit_0<"ClampSI", NamedMatchClass<"ClampSI">>;
 def highmod : NamedOperandBit<"High", NamedMatchClass<"High">>;
 
 def DLC : NamedOperandBit<"DLC", NamedMatchClass<"DLC">>;
+def DLC_0 : NamedOperandBit_0<"DLC", NamedMatchClass<"DLC">>;
+
 def GLC : NamedOperandBit<"GLC", NamedMatchClass<"GLC">>;
+def GLC_0 : NamedOperandBit_0<"GLC", NamedMatchClass<"GLC">>;
+
 def SLC : NamedOperandBit<"SLC", NamedMatchClass<"SLC">>;
+def SLC_0 : NamedOperandBit_0<"SLC", NamedMatchClass<"SLC">>;
+
 def TFE : NamedOperandBit<"TFE", NamedMatchClass<"TFE">>;
 def SWZ : NamedOperandBit<"SWZ", NamedMatchClass<"SWZ">>;
 def UNorm : NamedOperandBit<"UNorm", NamedMatchClass<"UNorm">>;
@@ -1513,6 +1514,10 @@ class getVOPSrc0ForVT<ValueType VT> {
           )
        )
     );
+}
+
+class getSOPSrcForVT<ValueType VT> {
+  RegisterOperand ret = !if(!eq(VT.Size, 64), SSrc_b64, SSrc_b32);
 }
 
 // Returns the vreg register class to use for source operand given VT

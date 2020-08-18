@@ -1399,6 +1399,8 @@ StmtResult Parser::ParseIfStatement(SourceLocation *TrailingElseLoc) {
   // Parse the condition.
   StmtResult InitStmt;
   Sema::ConditionResult Cond;
+  SourceLocation LParen;
+  SourceLocation RParen;
 
   {
     EnterExpressionEvaluationContext Unevaluated(
@@ -1409,7 +1411,8 @@ StmtResult Parser::ParseIfStatement(SourceLocation *TrailingElseLoc) {
 
     if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
                                   IsConstexpr ? Sema::ConditionKind::ConstexprIf
-                                              : Sema::ConditionKind::Boolean))
+                                              : Sema::ConditionKind::Boolean,
+                                  &LParen, &RParen))
       return StmtError();
   }
 
@@ -1523,8 +1526,8 @@ StmtResult Parser::ParseIfStatement(SourceLocation *TrailingElseLoc) {
   if (ElseStmt.isInvalid())
     ElseStmt = Actions.ActOnNullStmt(ElseStmtLoc);
 
-  return Actions.ActOnIfStmt(IfLoc, IsConstexpr, InitStmt.get(), Cond,
-                             ThenStmt.get(), ElseLoc, ElseStmt.get());
+  return Actions.ActOnIfStmt(IfLoc, IsConstexpr, LParen, InitStmt.get(), Cond,
+                             RParen, ThenStmt.get(), ElseLoc, ElseStmt.get());
 }
 
 /// ParseSwitchStatement
@@ -1563,12 +1566,14 @@ StmtResult Parser::ParseSwitchStatement(SourceLocation *TrailingElseLoc) {
   // Parse the condition.
   StmtResult InitStmt;
   Sema::ConditionResult Cond;
+  SourceLocation LParen;
+  SourceLocation RParen;
   if (ParseParenExprOrCondition(&InitStmt, Cond, SwitchLoc,
-                                Sema::ConditionKind::Switch))
+                                Sema::ConditionKind::Switch, &LParen, &RParen))
     return StmtError();
 
-  StmtResult Switch =
-      Actions.ActOnStartOfSwitchStmt(SwitchLoc, InitStmt.get(), Cond);
+  StmtResult Switch = Actions.ActOnStartOfSwitchStmt(
+      SwitchLoc, LParen, InitStmt.get(), Cond, RParen);
 
   if (Switch.isInvalid()) {
     // Skip the switch body.

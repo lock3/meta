@@ -118,6 +118,19 @@ struct SimplifyQuery {
     Copy.CxtI = I;
     return Copy;
   }
+  SimplifyQuery getWithoutUndef() const {
+    SimplifyQuery Copy(*this);
+    Copy.CanUseUndef = false;
+    return Copy;
+  }
+
+  /// If CanUseUndef is true, returns whether \p V is undef.
+  /// Otherwise always return false.
+  bool isUndefValue(Value *V) const {
+    if (!CanUseUndef)
+      return false;
+    return isa<UndefValue>(V);
+  }
 };
 
 // NOTE: the explicit multiple argument versions of these functions are

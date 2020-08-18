@@ -105,6 +105,7 @@ private:
   bool selectG_INSERT(MachineInstr &I) const;
 
   bool selectInterpP1F16(MachineInstr &MI) const;
+  bool selectWritelane(MachineInstr &MI) const;
   bool selectDivScale(MachineInstr &MI) const;
   bool selectIntrinsicIcmp(MachineInstr &MI) const;
   bool selectBallot(MachineInstr &I) const;
@@ -183,6 +184,9 @@ private:
 
   InstructionSelector::ComplexRendererFns
   selectFlatOffsetSigned(MachineOperand &Root) const;
+
+  InstructionSelector::ComplexRendererFns
+  selectGlobalSAddr(MachineOperand &Root) const;
 
   InstructionSelector::ComplexRendererFns
   selectMUBUFScratchOffen(MachineOperand &Root) const;

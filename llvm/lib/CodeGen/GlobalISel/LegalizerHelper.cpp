@@ -2369,6 +2369,28 @@ LegalizerHelper::lowerBitcast(MachineInstr &MI) {
   return UnableToLegalize;
 }
 
+/// Figure out the bit offset into a register when coercing a vector index for
+/// the wide element type. This is only for the case when promoting vector to
+/// one with larger elements.
+//
+///
+/// %offset_idx = G_AND %idx, ~(-1 << Log2(DstEltSize / SrcEltSize))
+/// %offset_bits = G_SHL %offset_idx, Log2(SrcEltSize)
+static Register getBitcastWiderVectorElementOffset(MachineIRBuilder &B,
+                                                   Register Idx,
+                                                   unsigned NewEltSize,
+                                                   unsigned OldEltSize) {
+  const unsigned Log2EltRatio = Log2_32(NewEltSize / OldEltSize);
+  LLT IdxTy = B.getMRI()->getType(Idx);
+
+  // Now figure out the amount we need to shift to get the target bits.
+  auto OffsetMask = B.buildConstant(
+    IdxTy, ~(APInt::getAllOnesValue(IdxTy.getSizeInBits()) << Log2EltRatio));
+  auto OffsetIdx = B.buildAnd(IdxTy, Idx, OffsetMask);
+  return B.buildShl(IdxTy, OffsetIdx,
+                    B.buildConstant(IdxTy, Log2_32(OldEltSize))).getReg(0);
+}
+
 /// Perform a G_EXTRACT_VECTOR_ELT in a different sized vector element. If this
 /// is casting to a vector with a smaller element size, perform multiple element
 /// extracts and merge the results. If this is coercing to a vector with larger
@@ -2467,17 +2489,110 @@ LegalizerHelper::bitcastExtractVectorElt(MachineInstr &MI, unsigned TypeIdx,
                                                      ScaledIdx).getReg(0);
     }
 
-    // Now figure out the amount we need to shift to get the target bits.
-    auto OffsetMask = MIRBuilder.buildConstant(
-      IdxTy, ~(APInt::getAllOnesValue(IdxTy.getSizeInBits()) << Log2EltRatio));
-    auto OffsetIdx = MIRBuilder.buildAnd(IdxTy, Idx, OffsetMask);
-    auto OffsetBits = MIRBuilder.buildShl(
-      IdxTy, OffsetIdx,
-      MIRBuilder.buildConstant(IdxTy, Log2_32(OldEltSize)));
+    // Compute the bit offset into the register of the target element.
+    Register OffsetBits = getBitcastWiderVectorElementOffset(
+      MIRBuilder, Idx, NewEltSize, OldEltSize);
 
     // Shift the wide element to get the target element.
     auto ExtractedBits = MIRBuilder.buildLShr(NewEltTy, WideElt, OffsetBits);
     MIRBuilder.buildTrunc(Dst, ExtractedBits);
+    MI.eraseFromParent();
+    return Legalized;
+  }
+
+  return UnableToLegalize;
+}
+
+/// Emit code to insert \p InsertReg into \p TargetRet at \p OffsetBits in \p
+/// TargetReg, while preserving other bits in \p TargetReg.
+///
+/// (InsertReg << Offset) | (TargetReg & ~(-1 >> InsertReg.size()) << Offset)
+static Register buildBitFieldInsert(MachineIRBuilder &B,
+                                    Register TargetReg, Register InsertReg,
+                                    Register OffsetBits) {
+  LLT TargetTy = B.getMRI()->getType(TargetReg);
+  LLT InsertTy = B.getMRI()->getType(InsertReg);
+  auto ZextVal = B.buildZExt(TargetTy, InsertReg);
+  auto ShiftedInsertVal = B.buildShl(TargetTy, ZextVal, OffsetBits);
+
+  // Produce a bitmask of the value to insert
+  auto EltMask = B.buildConstant(
+    TargetTy, APInt::getLowBitsSet(TargetTy.getSizeInBits(),
+                                   InsertTy.getSizeInBits()));
+  // Shift it into position
+  auto ShiftedMask = B.buildShl(TargetTy, EltMask, OffsetBits);
+  auto InvShiftedMask = B.buildNot(TargetTy, ShiftedMask);
+
+  // Clear out the bits in the wide element
+  auto MaskedOldElt = B.buildAnd(TargetTy, TargetReg, InvShiftedMask);
+
+  // The value to insert has all zeros already, so stick it into the masked
+  // wide element.
+  return B.buildOr(TargetTy, MaskedOldElt, ShiftedInsertVal).getReg(0);
+}
+
+/// Perform a G_INSERT_VECTOR_ELT in a different sized vector element. If this
+/// is increasing the element size, perform the indexing in the target element
+/// type, and use bit operations to insert at the element position. This is
+/// intended for architectures that can dynamically index the register file and
+/// want to force indexing in the native register size.
+LegalizerHelper::LegalizeResult
+LegalizerHelper::bitcastInsertVectorElt(MachineInstr &MI, unsigned TypeIdx,
+                                        LLT CastTy) {
+  if (TypeIdx != 0)
+    return UnableToLegalize;
+
+  Register Dst = MI.getOperand(0).getReg();
+  Register SrcVec = MI.getOperand(1).getReg();
+  Register Val = MI.getOperand(2).getReg();
+  Register Idx = MI.getOperand(3).getReg();
+
+  LLT VecTy = MRI.getType(Dst);
+  LLT IdxTy = MRI.getType(Idx);
+
+  LLT VecEltTy = VecTy.getElementType();
+  LLT NewEltTy = CastTy.isVector() ? CastTy.getElementType() : CastTy;
+  const unsigned NewEltSize = NewEltTy.getSizeInBits();
+  const unsigned OldEltSize = VecEltTy.getSizeInBits();
+
+  unsigned NewNumElts = CastTy.isVector() ? CastTy.getNumElements() : 1;
+  unsigned OldNumElts = VecTy.getNumElements();
+
+  Register CastVec = MIRBuilder.buildBitcast(CastTy, SrcVec).getReg(0);
+  if (NewNumElts < OldNumElts) {
+    if (NewEltSize % OldEltSize != 0)
+      return UnableToLegalize;
+
+    // This only depends on powers of 2 because we use bit tricks to figure out
+    // the bit offset we need to shift to get the target element. A general
+    // expansion could emit division/multiply.
+    if (!isPowerOf2_32(NewEltSize / OldEltSize))
+      return UnableToLegalize;
+
+    const unsigned Log2EltRatio = Log2_32(NewEltSize / OldEltSize);
+    auto Log2Ratio = MIRBuilder.buildConstant(IdxTy, Log2EltRatio);
+
+    // Divide to get the index in the wider element type.
+    auto ScaledIdx = MIRBuilder.buildLShr(IdxTy, Idx, Log2Ratio);
+
+    Register ExtractedElt = CastVec;
+    if (CastTy.isVector()) {
+      ExtractedElt = MIRBuilder.buildExtractVectorElement(NewEltTy, CastVec,
+                                                          ScaledIdx).getReg(0);
+    }
+
+    // Compute the bit offset into the register of the target element.
+    Register OffsetBits = getBitcastWiderVectorElementOffset(
+      MIRBuilder, Idx, NewEltSize, OldEltSize);
+
+    Register InsertedElt = buildBitFieldInsert(MIRBuilder, ExtractedElt,
+                                               Val, OffsetBits);
+    if (CastTy.isVector()) {
+      InsertedElt = MIRBuilder.buildInsertVectorElement(
+        CastTy, CastVec, InsertedElt, ScaledIdx).getReg(0);
+    }
+
+    MIRBuilder.buildBitcast(Dst, InsertedElt);
     MI.eraseFromParent();
     return Legalized;
   }
@@ -2674,6 +2789,8 @@ LegalizerHelper::bitcast(MachineInstr &MI, unsigned TypeIdx, LLT CastTy) {
   }
   case TargetOpcode::G_EXTRACT_VECTOR_ELT:
     return bitcastExtractVectorElt(MI, TypeIdx, CastTy);
+  case TargetOpcode::G_INSERT_VECTOR_ELT:
+    return bitcastInsertVectorElt(MI, TypeIdx, CastTy);
   default:
     return UnableToLegalize;
   }
@@ -2687,7 +2804,7 @@ void LegalizerHelper::changeOpcode(MachineInstr &MI, unsigned NewOpcode) {
 }
 
 LegalizerHelper::LegalizeResult
-LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT LowerHintTy) {
   using namespace TargetOpcode;
 
   switch(MI.getOpcode()) {
@@ -2697,6 +2814,7 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     return lowerBitcast(MI);
   case TargetOpcode::G_SREM:
   case TargetOpcode::G_UREM: {
+    LLT Ty = MRI.getType(MI.getOperand(0).getReg());
     auto Quot =
         MIRBuilder.buildInstr(MI.getOpcode() == G_SREM ? G_SDIV : G_UDIV, {Ty},
                               {MI.getOperand(1), MI.getOperand(2)});
@@ -2717,6 +2835,7 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     Register Overflow = MI.getOperand(1).getReg();
     Register LHS = MI.getOperand(2).getReg();
     Register RHS = MI.getOperand(3).getReg();
+    LLT Ty = MRI.getType(Res);
 
     unsigned Opcode = MI.getOpcode() == TargetOpcode::G_SMULO
                           ? TargetOpcode::G_SMULH
@@ -2745,11 +2864,13 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     return Legalized;
   }
   case TargetOpcode::G_FNEG: {
+    Register Res = MI.getOperand(0).getReg();
+    LLT Ty = MRI.getType(Res);
+
     // TODO: Handle vector types once we are able to
     // represent them.
     if (Ty.isVector())
       return UnableToLegalize;
-    Register Res = MI.getOperand(0).getReg();
     LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
     Type *ZeroTy = getFloatTypeForLLT(Ctx, Ty);
     if (!ZeroTy)
@@ -2764,12 +2885,14 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     return Legalized;
   }
   case TargetOpcode::G_FSUB: {
+    Register Res = MI.getOperand(0).getReg();
+    LLT Ty = MRI.getType(Res);
+
     // Lower (G_FSUB LHS, RHS) to (G_FADD LHS, (G_FNEG RHS)).
     // First, check if G_FNEG is marked as Lower. If so, we may
     // end up with an infinite loop as G_FSUB is used to legalize G_FNEG.
     if (LI.getAction({G_FNEG, {Ty}}).Action == Lower)
       return UnableToLegalize;
-    Register Res = MI.getOperand(0).getReg();
     Register LHS = MI.getOperand(1).getReg();
     Register RHS = MI.getOperand(2).getReg();
     Register Neg = MRI.createGenericVirtualRegister(Ty);
@@ -2813,7 +2936,7 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
   case TargetOpcode::G_CTLZ:
   case TargetOpcode::G_CTTZ:
   case TargetOpcode::G_CTPOP:
-    return lowerBitCount(MI, TypeIdx, Ty);
+    return lowerBitCount(MI);
   case G_UADDO: {
     Register Res = MI.getOperand(0).getReg();
     Register CarryOut = MI.getOperand(1).getReg();
@@ -2875,24 +2998,24 @@ LegalizerHelper::lower(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     return Legalized;
   }
   case G_UITOFP:
-    return lowerUITOFP(MI, TypeIdx, Ty);
+    return lowerUITOFP(MI);
   case G_SITOFP:
-    return lowerSITOFP(MI, TypeIdx, Ty);
+    return lowerSITOFP(MI);
   case G_FPTOUI:
-    return lowerFPTOUI(MI, TypeIdx, Ty);
+    return lowerFPTOUI(MI);
   case G_FPTOSI:
     return lowerFPTOSI(MI);
   case G_FPTRUNC:
-    return lowerFPTRUNC(MI, TypeIdx, Ty);
+    return lowerFPTRUNC(MI);
   case G_FPOWI:
     return lowerFPOWI(MI);
   case G_SMIN:
   case G_SMAX:
   case G_UMIN:
   case G_UMAX:
-    return lowerMinMax(MI, TypeIdx, Ty);
+    return lowerMinMax(MI);
   case G_FCOPYSIGN:
-    return lowerFCopySign(MI, TypeIdx, Ty);
+    return lowerFCopySign(MI);
   case G_FMINNUM:
   case G_FMAXNUM:
     return lowerFMinNumMaxNum(MI);
@@ -4641,7 +4764,7 @@ LegalizerHelper::narrowScalarCTPOP(MachineInstr &MI, unsigned TypeIdx,
 }
 
 LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerBitCount(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::lowerBitCount(MachineInstr &MI) {
   unsigned Opc = MI.getOpcode();
   const auto &TII = MIRBuilder.getTII();
   auto isSupported = [this](const LegalityQuery &Q) {
@@ -4731,15 +4854,15 @@ LegalizerHelper::lowerBitCount(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     // unless the target has ctlz but not ctpop, in which case we use:
     // { return 32 - nlz(~x & (x-1)); }
     // Ref: "Hacker's Delight" by Henry Warren
-    auto MIBCstNeg1 = MIRBuilder.buildConstant(Ty, -1);
-    auto MIBNot = MIRBuilder.buildXor(Ty, SrcReg, MIBCstNeg1);
+    auto MIBCstNeg1 = MIRBuilder.buildConstant(SrcTy, -1);
+    auto MIBNot = MIRBuilder.buildXor(SrcTy, SrcReg, MIBCstNeg1);
     auto MIBTmp = MIRBuilder.buildAnd(
-        Ty, MIBNot, MIRBuilder.buildAdd(Ty, SrcReg, MIBCstNeg1));
-    if (!isSupported({TargetOpcode::G_CTPOP, {Ty, Ty}}) &&
-        isSupported({TargetOpcode::G_CTLZ, {Ty, Ty}})) {
-      auto MIBCstLen = MIRBuilder.buildConstant(Ty, Len);
+        SrcTy, MIBNot, MIRBuilder.buildAdd(SrcTy, SrcReg, MIBCstNeg1));
+    if (!isSupported({TargetOpcode::G_CTPOP, {SrcTy, SrcTy}}) &&
+        isSupported({TargetOpcode::G_CTLZ, {SrcTy, SrcTy}})) {
+      auto MIBCstLen = MIRBuilder.buildConstant(SrcTy, Len);
       MIRBuilder.buildSub(MI.getOperand(0), MIBCstLen,
-                          MIRBuilder.buildCTLZ(Ty, MIBTmp));
+                          MIRBuilder.buildCTLZ(SrcTy, MIBTmp));
       MI.eraseFromParent();
       return Legalized;
     }
@@ -4748,6 +4871,8 @@ LegalizerHelper::lowerBitCount(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     return Legalized;
   }
   case TargetOpcode::G_CTPOP: {
+    Register SrcReg = MI.getOperand(1).getReg();
+    LLT Ty = MRI.getType(SrcReg);
     unsigned Size = Ty.getSizeInBits();
     MachineIRBuilder &B = MIRBuilder;
 
@@ -4757,11 +4882,11 @@ LegalizerHelper::lowerBitCount(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
     // B2Count = val - { (val >> 1) & 0x55555555 }
     // since it gives same result in blocks of 2 with one instruction less.
     auto C_1 = B.buildConstant(Ty, 1);
-    auto B2Set1LoTo1Hi = B.buildLShr(Ty, MI.getOperand(1).getReg(), C_1);
+    auto B2Set1LoTo1Hi = B.buildLShr(Ty, SrcReg, C_1);
     APInt B2Mask1HiTo0 = APInt::getSplat(Size, APInt(8, 0x55));
     auto C_B2Mask1HiTo0 = B.buildConstant(Ty, B2Mask1HiTo0);
     auto B2Count1Hi = B.buildAnd(Ty, B2Set1LoTo1Hi, C_B2Mask1HiTo0);
-    auto B2Count = B.buildSub(Ty, MI.getOperand(1).getReg(), B2Count1Hi);
+    auto B2Count = B.buildSub(Ty, SrcReg, B2Count1Hi);
 
     // In order to get count in blocks of 4 add values from adjacent block of 2.
     // B4Count = { B2Count & 0x33333333 } + { (B2Count >> 2) & 0x33333333 }
@@ -4860,8 +4985,7 @@ LegalizerHelper::lowerU64ToF32BitOps(MachineInstr &MI) {
   return Legalized;
 }
 
-LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerUITOFP(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::LegalizeResult LegalizerHelper::lowerUITOFP(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src = MI.getOperand(1).getReg();
   LLT DstTy = MRI.getType(Dst);
@@ -4889,8 +5013,7 @@ LegalizerHelper::lowerUITOFP(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
   return UnableToLegalize;
 }
 
-LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerSITOFP(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::LegalizeResult LegalizerHelper::lowerSITOFP(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src = MI.getOperand(1).getReg();
   LLT DstTy = MRI.getType(Dst);
@@ -4936,8 +5059,7 @@ LegalizerHelper::lowerSITOFP(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
   return UnableToLegalize;
 }
 
-LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerFPTOUI(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::LegalizeResult LegalizerHelper::lowerFPTOUI(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src = MI.getOperand(1).getReg();
   LLT DstTy = MRI.getType(Dst);
@@ -5154,7 +5276,7 @@ LegalizerHelper::lowerFPTRUNC_F64_TO_F16(MachineInstr &MI) {
 }
 
 LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerFPTRUNC(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::lowerFPTRUNC(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src = MI.getOperand(1).getReg();
 
@@ -5198,8 +5320,7 @@ static CmpInst::Predicate minMaxToCompare(unsigned Opc) {
   }
 }
 
-LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerMinMax(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::LegalizeResult LegalizerHelper::lowerMinMax(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src0 = MI.getOperand(1).getReg();
   Register Src1 = MI.getOperand(2).getReg();
@@ -5215,7 +5336,7 @@ LegalizerHelper::lowerMinMax(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
 }
 
 LegalizerHelper::LegalizeResult
-LegalizerHelper::lowerFCopySign(MachineInstr &MI, unsigned TypeIdx, LLT Ty) {
+LegalizerHelper::lowerFCopySign(MachineInstr &MI) {
   Register Dst = MI.getOperand(0).getReg();
   Register Src0 = MI.getOperand(1).getReg();
   Register Src1 = MI.getOperand(2).getReg();

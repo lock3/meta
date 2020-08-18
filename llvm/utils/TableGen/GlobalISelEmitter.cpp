@@ -1089,6 +1089,7 @@ public:
     IPM_MemoryVsLLTSize,
     IPM_MemoryAddressSpace,
     IPM_MemoryAlignment,
+    IPM_VectorSplatImm,
     IPM_GenericPredicate,
     OPM_SameOperand,
     OPM_ComplexPattern,
@@ -2021,6 +2022,42 @@ public:
   }
 };
 
+// Matcher for immAllOnesV/immAllZerosV
+class VectorSplatImmPredicateMatcher : public InstructionPredicateMatcher {
+public:
+  enum SplatKind {
+    AllZeros,
+    AllOnes
+  };
+
+private:
+  SplatKind Kind;
+
+public:
+  VectorSplatImmPredicateMatcher(unsigned InsnVarID, SplatKind K)
+      : InstructionPredicateMatcher(IPM_VectorSplatImm, InsnVarID), Kind(K) {}
+
+  static bool classof(const PredicateMatcher *P) {
+    return P->getKind() == IPM_VectorSplatImm;
+  }
+
+  bool isIdentical(const PredicateMatcher &B) const override {
+    return InstructionPredicateMatcher::isIdentical(B) &&
+           Kind == static_cast<const VectorSplatImmPredicateMatcher &>(B).Kind;
+  }
+
+  void emitPredicateOpcodes(MatchTable &Table,
+                            RuleMatcher &Rule) const override {
+    if (Kind == AllOnes)
+      Table << MatchTable::Opcode("GIM_CheckIsBuildVectorAllOnes");
+    else
+      Table << MatchTable::Opcode("GIM_CheckIsBuildVectorAllZeros");
+
+    Table << MatchTable::Comment("MI") << MatchTable::IntValue(InsnVarID);
+    Table << MatchTable::LineBreak;
+  }
+};
+
 /// Generates code to check an arbitrary C++ instruction predicate.
 class GenericInstructionPredicateMatcher : public InstructionPredicateMatcher {
 protected:
@@ -2077,8 +2114,9 @@ protected:
   SmallVector<std::pair<Record *, unsigned>, 2> PhysRegInputs;
 
 public:
-  InstructionMatcher(RuleMatcher &Rule, StringRef SymbolicName)
-      : Rule(Rule), SymbolicName(SymbolicName) {
+  InstructionMatcher(RuleMatcher &Rule, StringRef SymbolicName,
+                     bool NumOpsCheck = true)
+      : Rule(Rule), NumOperandsCheck(NumOpsCheck), SymbolicName(SymbolicName) {
     // We create a new instruction matcher.
     // Get a new ID for that instruction.
     InsnVarID = Rule.implicitlyDefineInsnVar(*this);
@@ -2267,9 +2305,10 @@ protected:
 
 public:
   InstructionOperandMatcher(unsigned InsnVarID, unsigned OpIdx,
-                            RuleMatcher &Rule, StringRef SymbolicName)
+                            RuleMatcher &Rule, StringRef SymbolicName,
+                            bool NumOpsCheck = true)
       : OperandPredicateMatcher(OPM_Instruction, InsnVarID, OpIdx),
-        InsnMatcher(new InstructionMatcher(Rule, SymbolicName)) {}
+        InsnMatcher(new InstructionMatcher(Rule, SymbolicName, NumOpsCheck)) {}
 
   static bool classof(const PredicateMatcher *P) {
     return P->getKind() == OPM_Instruction;
@@ -3766,9 +3805,12 @@ Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
     return failedImport("Src pattern child has predicate (" +
                         explainPredicates(Src) + ")");
   }
+
+  bool IsAtomic = false;
   if (SrcGIEquivOrNull && SrcGIEquivOrNull->getValueAsBit("CheckMMOIsNonAtomic"))
     InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("NotAtomic");
   else if (SrcGIEquivOrNull && SrcGIEquivOrNull->getValueAsBit("CheckMMOIsAtomic")) {
+    IsAtomic = true;
     InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
       "Unordered", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
   }
@@ -3820,6 +3862,27 @@ Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
           --NumChildren;
         }
       }
+    }
+
+    // Hack around an unfortunate mistake in how atomic store (and really
+    // atomicrmw in general) operands were ordered. A ISD::STORE used the order
+    // <stored value>, <pointer> order. ISD::ATOMIC_STORE used the opposite,
+    // <pointer>, <stored value>. In GlobalISel there's just the one store
+    // opcode, so we need to swap the operands here to get the right type check.
+    if (IsAtomic && SrcGIOrNull->TheDef->getName() == "G_STORE") {
+      assert(NumChildren == 2 && "wrong operands for atomic store");
+
+      TreePatternNode *PtrChild = Src->getChild(0);
+      TreePatternNode *ValueChild = Src->getChild(1);
+
+      if (auto Error = importChildMatcher(Rule, InsnMatcher, PtrChild, true,
+                                          false, 1, TempOpIdx))
+        return std::move(Error);
+
+      if (auto Error = importChildMatcher(Rule, InsnMatcher, ValueChild, false,
+                                          false, 0, TempOpIdx))
+        return std::move(Error);
+      return InsnMatcher;
     }
 
     // Match the used operands (i.e. the children of the operator).
@@ -4053,6 +4116,32 @@ Error GlobalISelEmitter::importChildMatcher(
     // Place holder for SRCVALUE nodes. Nothing to do here.
     if (ChildRec->getName() == "srcvalue")
       return Error::success();
+
+    const bool ImmAllOnesV = ChildRec->getName() == "immAllOnesV";
+    if (ImmAllOnesV || ChildRec->getName() == "immAllZerosV") {
+      auto MaybeInsnOperand = OM.addPredicate<InstructionOperandMatcher>(
+          InsnMatcher.getRuleMatcher(), SrcChild->getName(), false);
+      InstructionOperandMatcher &InsnOperand = **MaybeInsnOperand;
+
+      ValueTypeByHwMode VTy = ChildTypes.front().getValueTypeByHwMode();
+      InsnOperand.getInsnMatcher().addPredicate<InstructionOpcodeMatcher>(
+          &Target.getInstruction(RK.getDef("G_BUILD_VECTOR")));
+
+      // TODO: Handle both G_BUILD_VECTOR and G_BUILD_VECTOR_TRUNC We could
+      // theoretically not emit any opcode check, but getOpcodeMatcher currently
+      // has to succeed.
+      OperandMatcher &OM =
+          InsnOperand.getInsnMatcher().addOperand(0, "", TempOpIdx);
+      if (auto Error =
+              OM.addTypeCheckPredicate(VTy, false /* OperandIsAPointer */))
+        return failedImport(toString(std::move(Error)) +
+                            " for result of Src pattern operator");
+
+      InsnOperand.getInsnMatcher().addPredicate<VectorSplatImmPredicateMatcher>(
+          ImmAllOnesV ? VectorSplatImmPredicateMatcher::AllOnes
+                      : VectorSplatImmPredicateMatcher::AllZeros);
+      return Error::success();
+    }
 
     return failedImport(
         "Src pattern child def is an unsupported tablegen class");

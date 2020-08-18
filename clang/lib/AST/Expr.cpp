@@ -4521,8 +4521,8 @@ BinaryOperator::BinaryOperator(const ASTContext &Ctx, Expr *lhs, Expr *rhs,
   SubExprs[LHS] = lhs;
   SubExprs[RHS] = rhs;
   BinaryOperatorBits.HasFPFeatures = FPFeatures.requiresTrailingStorage();
-  if (BinaryOperatorBits.HasFPFeatures)
-    *getTrailingFPFeatures() = FPFeatures;
+  if (hasStoredFPFeatures())
+    setStoredFPFeatures(FPFeatures);
   setDependence(computeDependence(this));
 }
 
@@ -4538,8 +4538,8 @@ BinaryOperator::BinaryOperator(const ASTContext &Ctx, Expr *lhs, Expr *rhs,
   SubExprs[LHS] = lhs;
   SubExprs[RHS] = rhs;
   BinaryOperatorBits.HasFPFeatures = FPFeatures.requiresTrailingStorage();
-  if (BinaryOperatorBits.HasFPFeatures)
-    *getTrailingFPFeatures() = FPFeatures;
+  if (hasStoredFPFeatures())
+    setStoredFPFeatures(FPFeatures);
   setDependence(computeDependence(this));
 }
 
@@ -4603,6 +4603,8 @@ UnaryOperator::UnaryOperator(const ASTContext &Ctx, Expr *input, Opcode opc,
   UnaryOperatorBits.CanOverflow = CanOverflow;
   UnaryOperatorBits.Loc = l;
   UnaryOperatorBits.HasFPFeatures = FPFeatures.requiresTrailingStorage();
+  if (hasStoredFPFeatures())
+    setStoredFPFeatures(FPFeatures);
   setDependence(computeDependence(this));
 }
 

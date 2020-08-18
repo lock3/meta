@@ -25,6 +25,7 @@
 #include "flang/Semantics/unparse-with-symbols.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdio>
 #include <cstring>
@@ -34,11 +35,7 @@
 #include <optional>
 #include <stdlib.h>
 #include <string>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <vector>
-
-#include "f18_version.h"
 
 static std::list<std::string> argList(int argc, char *const argv[]) {
   std::list<std::string> result;
@@ -70,7 +67,7 @@ std::vector<std::string> filesToDelete;
 void CleanUpAtExit() {
   for (const auto &path : filesToDelete) {
     if (!path.empty()) {
-      unlink(path.data());
+      llvm::sys::fs::remove(path);
     }
   }
 }
@@ -112,36 +109,29 @@ struct DriverOptions {
   bool getSymbolsSources{false};
 };
 
-bool ParentProcess() {
-  if (fork() == 0) {
-    return false; // in child process
-  }
-  int childStat{0};
-  wait(&childStat);
-  if (!WIFEXITED(childStat) || WEXITSTATUS(childStat) != 0) {
-    exit(EXIT_FAILURE);
-  }
-  return true;
-}
-
-void Exec(std::vector<char *> &argv, bool verbose = false) {
+void Exec(std::vector<llvm::StringRef> &argv, bool verbose = false) {
   if (verbose) {
     for (size_t j{0}; j < argv.size(); ++j) {
       llvm::errs() << (j > 0 ? " " : "") << argv[j];
     }
     llvm::errs() << '\n';
   }
-  argv.push_back(nullptr);
-  execvp(argv[0], &argv[0]);
-  llvm::errs() << "execvp(" << argv[0]
-               << ") failed: " << llvm::sys::StrError(errno) << '\n';
-  exit(EXIT_FAILURE);
+  std::string ErrMsg;
+  llvm::ErrorOr<std::string> Program = llvm::sys::findProgramByName(argv[0]);
+  if (!Program)
+    ErrMsg = Program.getError().message();
+  if (!Program ||
+      llvm::sys::ExecuteAndWait(
+          Program.get(), argv, llvm::None, {}, 0, 0, &ErrMsg)) {
+    llvm::errs() << "execvp(" << argv[0] << ") failed: " << ErrMsg << '\n';
+    exit(EXIT_FAILURE);
+  }
 }
 
 void RunOtherCompiler(DriverOptions &driver, char *source, char *relo) {
-  std::vector<char *> argv;
+  std::vector<llvm::StringRef> argv;
   for (size_t j{0}; j < driver.F18_FCArgs.size(); ++j) {
-    argv.push_back(driver.F18_FCArgs[j].data());
+    argv.push_back(driver.F18_FCArgs[j]);
   }
   char dashC[3] = "-c", dashO[3] = "-o";
   argv.push_back(dashC);
@@ -331,16 +321,16 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
 
   std::string relo{RelocatableName(driver, path)};
 
-  char tmpSourcePath[32];
-  std::snprintf(tmpSourcePath, sizeof tmpSourcePath, "/tmp/f18-%lx.f90",
-      static_cast<unsigned long>(getpid()));
+  llvm::SmallString<32> tmpSourcePath;
   {
-    std::error_code EC;
-    llvm::raw_fd_ostream tmpSource(tmpSourcePath, EC, llvm::sys::fs::F_None);
+    int fd;
+    std::error_code EC =
+        llvm::sys::fs::createUniqueFile("f18-%%%%.f90", fd, tmpSourcePath);
     if (EC) {
       llvm::errs() << EC.message() << "\n";
       std::exit(EXIT_FAILURE);
     }
+    llvm::raw_fd_ostream tmpSource(fd, /*shouldClose*/ true);
     Unparse(tmpSource, parseTree, driver.encoding, true /*capitalize*/,
         options.features.IsEnabled(
             Fortran::common::LanguageFeature::BackslashEscapes),
@@ -348,56 +338,41 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
         driver.unparseTypedExprsToF18_FC ? &asFortran : nullptr);
   }
 
-  if (ParentProcess()) {
-    filesToDelete.push_back(tmpSourcePath);
-    if (!driver.compileOnly && driver.outputPath.empty()) {
-      filesToDelete.push_back(relo);
-    }
-    return relo;
+  RunOtherCompiler(driver, tmpSourcePath.data(), relo.data());
+  filesToDelete.emplace_back(tmpSourcePath);
+  if (!driver.compileOnly && driver.outputPath.empty()) {
+    filesToDelete.push_back(relo);
   }
-  RunOtherCompiler(driver, tmpSourcePath, relo.data());
-  return {};
+  return relo;
 }
 
 std::string CompileOtherLanguage(std::string path, DriverOptions &driver) {
   std::string relo{RelocatableName(driver, path)};
-  if (ParentProcess()) {
-    if (!driver.compileOnly && driver.outputPath.empty()) {
-      filesToDelete.push_back(relo);
-    }
-    return relo;
-  }
   RunOtherCompiler(driver, path.data(), relo.data());
-  return {};
+  if (!driver.compileOnly && driver.outputPath.empty()) {
+    filesToDelete.push_back(relo);
+  }
+  return relo;
 }
 
 void Link(std::vector<std::string> &liblist, std::vector<std::string> &objects,
     DriverOptions &driver) {
-  if (!ParentProcess()) {
-    std::vector<char *> argv;
-    for (size_t j{0}; j < driver.F18_FCArgs.size(); ++j) {
-      argv.push_back(driver.F18_FCArgs[j].data());
-    }
-    for (auto &obj : objects) {
-      argv.push_back(obj.data());
-    }
-    if (!driver.outputPath.empty()) {
-      char dashO[3] = "-o";
-      argv.push_back(dashO);
-      argv.push_back(driver.outputPath.data());
-    }
-    for (auto &lib : liblist) {
-      argv.push_back(lib.data());
-    }
-    Exec(argv, driver.verbose);
+  std::vector<llvm::StringRef> argv;
+  for (size_t j{0}; j < driver.F18_FCArgs.size(); ++j) {
+    argv.push_back(driver.F18_FCArgs[j].data());
   }
-}
-
-int printVersion() {
-  llvm::errs() << "\nf18 compiler (under development), version "
-               << __FLANG_MAJOR__ << "." << __FLANG_MINOR__ << "."
-               << __FLANG_PATCHLEVEL__ << "\n";
-  return exitStatus;
+  for (auto &obj : objects) {
+    argv.push_back(obj.data());
+  }
+  if (!driver.outputPath.empty()) {
+    char dashO[3] = "-o";
+    argv.push_back(dashO);
+    argv.push_back(driver.outputPath.data());
+  }
+  for (auto &lib : liblist) {
+    argv.push_back(lib.data());
+  }
+  Exec(argv, driver.verbose);
 }
 
 int main(int argc, char *const argv[]) {
@@ -421,11 +396,6 @@ int main(int argc, char *const argv[]) {
   options.predefinitions.emplace_back("__F18_MAJOR__", "1");
   options.predefinitions.emplace_back("__F18_MINOR__", "1");
   options.predefinitions.emplace_back("__F18_PATCHLEVEL__", "1");
-  options.predefinitions.emplace_back("__flang__", __FLANG__);
-  options.predefinitions.emplace_back("__flang_major__", __FLANG_MAJOR__);
-  options.predefinitions.emplace_back("__flang_minor__", __FLANG_MINOR__);
-  options.predefinitions.emplace_back(
-      "__flang_patchlevel__", __FLANG_PATCHLEVEL__);
 #if __x86_64__
   options.predefinitions.emplace_back("__x86_64__", "1");
 #endif
@@ -675,16 +645,13 @@ int main(int argc, char *const argv[]) {
           << "Unrecognised options are passed through to the external compiler\n"
           << "set by F18_FC (see defaults).\n";
       return exitStatus;
-    } else if (arg == "-V" || arg == "--version") {
-      return printVersion();
+    } else if (arg == "-V") {
+      llvm::errs() << "\nf18 compiler (under development)\n";
+      return exitStatus;
     } else {
       driver.F18_FCArgs.push_back(arg);
       if (arg == "-v") {
-        if (args.size() > 1) {
-          driver.verbose = true;
-        } else {
-          return printVersion();
-        }
+        driver.verbose = true;
       } else if (arg == "-I") {
         driver.F18_FCArgs.push_back(args.front());
         driver.searchDirectories.push_back(args.front());
