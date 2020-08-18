@@ -1708,6 +1708,8 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
     // do nothing
   } else if (const auto *VD = dyn_cast<ValueDecl>(D)) {
     QualType T = VD->getType();
+    if (const auto *PT = dyn_cast<ParameterType>(T))
+      T = PT->getAdjustedType();
     if (const auto *RT = T->getAs<ReferenceType>()) {
       if (ForAlignof)
         T = RT->getPointeeType();
