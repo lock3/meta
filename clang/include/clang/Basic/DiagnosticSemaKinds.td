@@ -2173,6 +2173,9 @@ def err_selected_explicit_constructor : Error<
 def note_explicit_ctor_deduction_guide_here : Note<
   "explicit %select{constructor|deduction guide}0 declared here">;
 
+def err_move_from_lvalue : Error<
+  "initialization of a move parameter from an lvalue expression">;
+
 // C++11 decltype
 def err_decltype_in_declarator : Error<
     "'decltype' cannot be used to name a declaration">;
