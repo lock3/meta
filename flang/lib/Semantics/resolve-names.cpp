@@ -510,6 +510,7 @@ public:
   Symbol &MakeSymbol(Scope &, const SourceName &, Attrs);
   Symbol &MakeSymbol(const SourceName &, Attrs = Attrs{});
   Symbol &MakeSymbol(const parser::Name &, Attrs = Attrs{});
+  Symbol &MakeHostAssocSymbol(const parser::Name &, const Symbol &);
 
   template <typename D>
   common::IfNoLvalue<Symbol &, D> MakeSymbol(
@@ -1290,7 +1291,6 @@ public:
     ResolveName(*parser::Unwrap<parser::Name>(x.name));
   }
   void Post(const parser::ProcComponentRef &);
-  bool Pre(const parser::ActualArg &);
   bool Pre(const parser::FunctionReference &);
   bool Pre(const parser::CallStmt &);
   bool Pre(const parser::ImportStmt &);
@@ -2008,6 +2008,14 @@ Symbol &ScopeHandler::MakeSymbol(const SourceName &name, Attrs attrs) {
 }
 Symbol &ScopeHandler::MakeSymbol(const parser::Name &name, Attrs attrs) {
   return Resolve(name, MakeSymbol(name.source, attrs));
+}
+Symbol &ScopeHandler::MakeHostAssocSymbol(
+    const parser::Name &name, const Symbol &hostSymbol) {
+  Symbol &symbol{MakeSymbol(name, HostAssocDetails{hostSymbol})};
+  name.symbol = &symbol;
+  symbol.attrs() = hostSymbol.attrs(); // TODO: except PRIVATE, PUBLIC?
+  symbol.flags() = hostSymbol.flags();
+  return symbol;
 }
 Symbol &ScopeHandler::CopySymbol(const SourceName &name, const Symbol &symbol) {
   CHECK(!FindInScope(currScope(), name));
@@ -3305,8 +3313,7 @@ Symbol &DeclarationVisitor::HandleAttributeStmt(
         (currScope().kind() == Scope::Kind::Subprogram ||
             currScope().kind() == Scope::Kind::Block)) {
       if (auto *hostSymbol{FindSymbol(name)}) {
-        name.symbol = nullptr;
-        symbol = &MakeSymbol(name, HostAssocDetails{*hostSymbol});
+        symbol = &MakeHostAssocSymbol(name, *hostSymbol);
       }
     }
   } else if (symbol && symbol->has<UseDetails>()) {
@@ -4581,9 +4588,7 @@ Symbol *DeclarationVisitor::DeclareLocalEntity(const parser::Name &name) {
   if (!PassesLocalityChecks(name, prev)) {
     return nullptr;
   }
-  Symbol &symbol{MakeSymbol(name, HostAssocDetails{prev})};
-  name.symbol = &symbol;
-  return &symbol;
+  return &MakeHostAssocSymbol(name, prev);
 }
 
 Symbol *DeclarationVisitor::DeclareStatementEntity(const parser::Name &name,
@@ -4882,9 +4887,7 @@ bool ConstructVisitor::Pre(const parser::LocalitySpec::Shared &x) {
     }
     Symbol &prev{FindOrDeclareEnclosingEntity(name)};
     if (PassesSharedLocalityChecks(name, prev)) {
-      auto &symbol{MakeSymbol(name, HostAssocDetails{prev})};
-      symbol.set(Symbol::Flag::LocalityShared);
-      name.symbol = &symbol; // override resolution to parent
+      MakeHostAssocSymbol(name, prev).set(Symbol::Flag::LocalityShared);
     }
   }
   return false;
@@ -5317,23 +5320,6 @@ const DeclTypeSpec &ConstructVisitor::ToDeclTypeSpec(
 
 // ResolveNamesVisitor implementation
 
-// Ensures that bare undeclared intrinsic procedure names passed as actual
-// arguments get recognized as being intrinsics.
-bool ResolveNamesVisitor::Pre(const parser::ActualArg &arg) {
-  if (const auto *expr{std::get_if<Indirection<parser::Expr>>(&arg.u)}) {
-    if (const auto *designator{
-            std::get_if<Indirection<parser::Designator>>(&expr->value().u)}) {
-      if (const auto *dataRef{
-              std::get_if<parser::DataRef>(&designator->value().u)}) {
-        if (const auto *name{std::get_if<parser::Name>(&dataRef->u)}) {
-          NameIsKnownOrIntrinsic(*name);
-        }
-      }
-    }
-  }
-  return true;
-}
-
 bool ResolveNamesVisitor::Pre(const parser::FunctionReference &x) {
   HandleCall(Symbol::Flag::Function, x.v);
   return false;
@@ -5437,8 +5423,7 @@ const parser::Name *DeclarationVisitor::ResolveName(const parser::Name &name) {
       return nullptr; // reported an error
     }
     if (IsUplevelReference(*symbol)) {
-      name.symbol = nullptr;
-      MakeSymbol(name, HostAssocDetails{*symbol});
+      MakeHostAssocSymbol(name, *symbol);
     } else if (IsDummy(*symbol) ||
         (!symbol->GetType() && FindCommonBlockContaining(*symbol))) {
       ConvertToObjectEntity(*symbol);
@@ -5916,7 +5901,8 @@ bool ResolveNamesVisitor::Pre(const parser::SpecificationPart &x) {
   Walk(std::get<2>(x.t));
   Walk(std::get<3>(x.t));
   Walk(std::get<4>(x.t));
-  const std::list<parser::DeclarationConstruct> &decls{std::get<5>(x.t)};
+  Walk(std::get<5>(x.t));
+  const std::list<parser::DeclarationConstruct> &decls{std::get<6>(x.t)};
   for (const auto &decl : decls) {
     if (const auto *spec{
             std::get_if<parser::SpecificationConstruct>(&decl.u)}) {

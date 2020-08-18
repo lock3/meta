@@ -178,10 +178,7 @@ define amdgpu_ps <2 x float> @v_andn2_i64_vs(i64 %src0, i64 inreg %src1) {
 define amdgpu_ps <2 x i32> @s_andn2_v2i32(<2 x i32> inreg %src0, <2 x i32> inreg %src1) {
 ; GCN-LABEL: s_andn2_v2i32:
 ; GCN:       ; %bb.0:
-; GCN-NEXT:    s_mov_b32 s0, -1
-; GCN-NEXT:    s_mov_b32 s1, s0
-; GCN-NEXT:    s_xor_b64 s[0:1], s[4:5], s[0:1]
-; GCN-NEXT:    s_and_b64 s[0:1], s[2:3], s[0:1]
+; GCN-NEXT:    s_andn2_b64 s[0:1], s[2:3], s[4:5]
 ; GCN-NEXT:    ; return to shader part epilog
   %not.src1 = xor <2 x i32> %src1, <i32 -1, i32 -1>
   %and = and <2 x i32> %src0, %not.src1
@@ -191,10 +188,7 @@ define amdgpu_ps <2 x i32> @s_andn2_v2i32(<2 x i32> inreg %src0, <2 x i32> inreg
 define amdgpu_ps <2 x i32> @s_andn2_v2i32_commute(<2 x i32> inreg %src0, <2 x i32> inreg %src1) {
 ; GCN-LABEL: s_andn2_v2i32_commute:
 ; GCN:       ; %bb.0:
-; GCN-NEXT:    s_mov_b32 s0, -1
-; GCN-NEXT:    s_mov_b32 s1, s0
-; GCN-NEXT:    s_xor_b64 s[0:1], s[4:5], s[0:1]
-; GCN-NEXT:    s_and_b64 s[0:1], s[0:1], s[2:3]
+; GCN-NEXT:    s_andn2_b64 s[0:1], s[2:3], s[4:5]
 ; GCN-NEXT:    ; return to shader part epilog
   %not.src1 = xor <2 x i32> %src1, <i32 -1, i32 -1>
   %and = and <2 x i32> %not.src1, %src0
@@ -204,18 +198,16 @@ define amdgpu_ps <2 x i32> @s_andn2_v2i32_commute(<2 x i32> inreg %src0, <2 x i3
 define amdgpu_ps i16 @s_andn2_i16(i16 inreg %src0, i16 inreg %src1) {
 ; GFX6-LABEL: s_andn2_i16:
 ; GFX6:       ; %bb.0:
-; GFX6-NEXT:    s_xor_b32 s0, s3, -1
-; GFX6-NEXT:    s_and_b32 s0, s2, s0
+; GFX6-NEXT:    s_andn2_b32 s0, s2, s3
 ; GFX6-NEXT:    ; return to shader part epilog
 ;
 ; GFX9-LABEL: s_andn2_i16:
 ; GFX9:       ; %bb.0:
 ; GFX9-NEXT:    s_mov_b32 s0, 0xffff
 ; GFX9-NEXT:    s_and_b32 s1, s3, s0
-; GFX9-NEXT:    s_xor_b32 s1, s1, s0
-; GFX9-NEXT:    s_and_b32 s2, s2, s0
-; GFX9-NEXT:    s_and_b32 s0, s1, s0
+; GFX9-NEXT:    s_xor_b32 s0, s1, s0
 ; GFX9-NEXT:    s_and_b32 s0, s2, s0
+; GFX9-NEXT:    s_bfe_u32 s0, s0, 0x100000
 ; GFX9-NEXT:    ; return to shader part epilog
   %not.src1 = xor i16 %src1, -1
   %and = and i16 %src0, %not.src1
@@ -225,18 +217,16 @@ define amdgpu_ps i16 @s_andn2_i16(i16 inreg %src0, i16 inreg %src1) {
 define amdgpu_ps i16 @s_andn2_i16_commute(i16 inreg %src0, i16 inreg %src1) {
 ; GFX6-LABEL: s_andn2_i16_commute:
 ; GFX6:       ; %bb.0:
-; GFX6-NEXT:    s_xor_b32 s0, s3, -1
-; GFX6-NEXT:    s_and_b32 s0, s0, s2
+; GFX6-NEXT:    s_andn2_b32 s0, s2, s3
 ; GFX6-NEXT:    ; return to shader part epilog
 ;
 ; GFX9-LABEL: s_andn2_i16_commute:
 ; GFX9:       ; %bb.0:
 ; GFX9-NEXT:    s_mov_b32 s0, 0xffff
 ; GFX9-NEXT:    s_and_b32 s1, s3, s0
-; GFX9-NEXT:    s_xor_b32 s1, s1, s0
-; GFX9-NEXT:    s_and_b32 s1, s1, s0
-; GFX9-NEXT:    s_and_b32 s0, s2, s0
-; GFX9-NEXT:    s_and_b32 s0, s1, s0
+; GFX9-NEXT:    s_xor_b32 s0, s1, s0
+; GFX9-NEXT:    s_and_b32 s0, s0, s2
+; GFX9-NEXT:    s_bfe_u32 s0, s0, 0x100000
 ; GFX9-NEXT:    ; return to shader part epilog
   %not.src1 = xor i16 %src1, -1
   %and = and i16 %not.src1, %src0
@@ -247,7 +237,7 @@ define amdgpu_ps { i16, i16 } @s_andn2_i16_multi_use(i16 inreg %src0, i16 inreg 
 ; GFX6-LABEL: s_andn2_i16_multi_use:
 ; GFX6:       ; %bb.0:
 ; GFX6-NEXT:    s_xor_b32 s1, s3, -1
-; GFX6-NEXT:    s_and_b32 s0, s2, s1
+; GFX6-NEXT:    s_andn2_b32 s0, s2, s3
 ; GFX6-NEXT:    ; return to shader part epilog
 ;
 ; GFX9-LABEL: s_andn2_i16_multi_use:
@@ -255,9 +245,8 @@ define amdgpu_ps { i16, i16 } @s_andn2_i16_multi_use(i16 inreg %src0, i16 inreg 
 ; GFX9-NEXT:    s_mov_b32 s0, 0xffff
 ; GFX9-NEXT:    s_and_b32 s1, s3, s0
 ; GFX9-NEXT:    s_xor_b32 s1, s1, s0
-; GFX9-NEXT:    s_and_b32 s2, s2, s0
-; GFX9-NEXT:    s_and_b32 s0, s1, s0
-; GFX9-NEXT:    s_and_b32 s0, s2, s0
+; GFX9-NEXT:    s_and_b32 s0, s2, s1
+; GFX9-NEXT:    s_bfe_u32 s0, s0, 0x100000
 ; GFX9-NEXT:    ; return to shader part epilog
   %not.src1 = xor i16 %src1, -1
   %and = and i16 %src0, %not.src1
@@ -269,9 +258,8 @@ define amdgpu_ps { i16, i16 } @s_andn2_i16_multi_use(i16 inreg %src0, i16 inreg 
 define amdgpu_ps { i16, i16 } @s_andn2_i16_multi_foldable_use(i16 inreg %src0, i16 inreg %src1, i16 inreg %src2) {
 ; GFX6-LABEL: s_andn2_i16_multi_foldable_use:
 ; GFX6:       ; %bb.0:
-; GFX6-NEXT:    s_xor_b32 s1, s4, -1
-; GFX6-NEXT:    s_and_b32 s0, s2, s1
-; GFX6-NEXT:    s_and_b32 s1, s3, s1
+; GFX6-NEXT:    s_andn2_b32 s0, s2, s4
+; GFX6-NEXT:    s_andn2_b32 s1, s3, s4
 ; GFX6-NEXT:    ; return to shader part epilog
 ;
 ; GFX9-LABEL: s_andn2_i16_multi_foldable_use:

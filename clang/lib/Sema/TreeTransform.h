@@ -1375,19 +1375,23 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildIfStmt(SourceLocation IfLoc, bool IsConstexpr,
-                           Sema::ConditionResult Cond, Stmt *Init, Stmt *Then,
+                           SourceLocation LParenLoc, Sema::ConditionResult Cond,
+                           SourceLocation RParenLoc, Stmt *Init, Stmt *Then,
                            SourceLocation ElseLoc, Stmt *Else) {
-    return getSema().ActOnIfStmt(IfLoc, IsConstexpr, Init, Cond, Then,
-                                 ElseLoc, Else);
+    return getSema().ActOnIfStmt(IfLoc, IsConstexpr, LParenLoc, Init, Cond,
+                                 RParenLoc, Then, ElseLoc, Else);
   }
 
   /// Start building a new switch statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildSwitchStmtStart(SourceLocation SwitchLoc, Stmt *Init,
-                                    Sema::ConditionResult Cond) {
-    return getSema().ActOnStartOfSwitchStmt(SwitchLoc, Init, Cond);
+  StmtResult RebuildSwitchStmtStart(SourceLocation SwitchLoc,
+                                    SourceLocation LParenLoc, Stmt *Init,
+                                    Sema::ConditionResult Cond,
+                                    SourceLocation RParenLoc) {
+    return getSema().ActOnStartOfSwitchStmt(SwitchLoc, LParenLoc, Init, Cond,
+                                            RParenLoc);
   }
 
   /// Attach the body to the switch statement.
@@ -7821,9 +7825,9 @@ TreeTransform<Derived>::TransformIfStmt(IfStmt *S) {
       Else.get() == S->getElse())
     return S;
 
-  return getDerived().RebuildIfStmt(S->getIfLoc(), S->isConstexpr(), Cond,
-                                    Init.get(), Then.get(), S->getElseLoc(),
-                                    Else.get());
+  return getDerived().RebuildIfStmt(
+      S->getIfLoc(), S->isConstexpr(), S->getLParenLoc(), Cond,
+      S->getRParenLoc(), Init.get(), Then.get(), S->getElseLoc(), Else.get());
 }
 
 template<typename Derived>
@@ -7842,8 +7846,9 @@ TreeTransform<Derived>::TransformSwitchStmt(SwitchStmt *S) {
     return StmtError();
 
   // Rebuild the switch statement.
-  StmtResult Switch
-    = getDerived().RebuildSwitchStmtStart(S->getSwitchLoc(), Init.get(), Cond);
+  StmtResult Switch =
+      getDerived().RebuildSwitchStmtStart(S->getSwitchLoc(), S->getLParenLoc(),
+                                          Init.get(), Cond, S->getRParenLoc());
   if (Switch.isInvalid())
     return StmtError();
 
@@ -11688,7 +11693,7 @@ TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {
     FPOptionsOverride NewOverrides = E->getFPFeatures();
     getSema().CurFPFeatures =
         NewOverrides.applyOverrides(getSema().getLangOpts());
-    getSema().FpPragmaStack.CurrentValue = NewOverrides.getAsOpaqueInt();
+    getSema().FpPragmaStack.CurrentValue = NewOverrides;
   }
 
   return getDerived().RebuildCallExpr(Callee.get(), FakeLParenLoc,
@@ -11805,7 +11810,7 @@ TreeTransform<Derived>::TransformBinaryOperator(BinaryOperator *E) {
   FPOptionsOverride NewOverrides(E->getFPFeatures(getSema().getLangOpts()));
   getSema().CurFPFeatures =
       NewOverrides.applyOverrides(getSema().getLangOpts());
-  getSema().FpPragmaStack.CurrentValue = NewOverrides.getAsOpaqueInt();
+  getSema().FpPragmaStack.CurrentValue = NewOverrides;
   return getDerived().RebuildBinaryOperator(E->getOperatorLoc(), E->getOpcode(),
                                             LHS.get(), RHS.get());
 }
@@ -11862,7 +11867,7 @@ TreeTransform<Derived>::TransformCompoundAssignOperator(
   FPOptionsOverride NewOverrides(E->getFPFeatures(getSema().getLangOpts()));
   getSema().CurFPFeatures =
       NewOverrides.applyOverrides(getSema().getLangOpts());
-  getSema().FpPragmaStack.CurrentValue = NewOverrides.getAsOpaqueInt();
+  getSema().FpPragmaStack.CurrentValue = NewOverrides;
   return getDerived().TransformBinaryOperator(E);
 }
 
@@ -12340,7 +12345,7 @@ TreeTransform<Derived>::TransformCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
   FPOptionsOverride NewOverrides(E->getFPFeatures());
   getSema().CurFPFeatures =
       NewOverrides.applyOverrides(getSema().getLangOpts());
-  getSema().FpPragmaStack.CurrentValue = NewOverrides.getAsOpaqueInt();
+  getSema().FpPragmaStack.CurrentValue = NewOverrides;
 
   return getDerived().RebuildCXXOperatorCallExpr(E->getOperator(),
                                                  E->getOperatorLoc(),

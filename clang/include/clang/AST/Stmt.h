@@ -1908,6 +1908,8 @@ class IfStmt final
   //    Present if and only if hasElseStorage().
   enum { InitOffset = 0, ThenOffsetFromCond = 1, ElseOffsetFromCond = 2 };
   enum { NumMandatoryStmtPtr = 2 };
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
 
   unsigned numTrailingObjects(OverloadToken<Stmt *>) const {
     return NumMandatoryStmtPtr + hasElseStorage() + hasVarStorage() +
@@ -1928,7 +1930,8 @@ class IfStmt final
 
   /// Build an if/then/else statement.
   IfStmt(const ASTContext &Ctx, SourceLocation IL, bool IsConstexpr, Stmt *Init,
-         VarDecl *Var, Expr *Cond, Stmt *Then, SourceLocation EL, Stmt *Else);
+         VarDecl *Var, Expr *Cond, SourceLocation LParenLoc,
+         SourceLocation RParenLoc, Stmt *Then, SourceLocation EL, Stmt *Else);
 
   /// Build an empty if/then/else statement.
   explicit IfStmt(EmptyShell Empty, bool HasElse, bool HasVar, bool HasInit);
@@ -1937,7 +1940,8 @@ public:
   /// Create an IfStmt.
   static IfStmt *Create(const ASTContext &Ctx, SourceLocation IL,
                         bool IsConstexpr, Stmt *Init, VarDecl *Var, Expr *Cond,
-                        Stmt *Then, SourceLocation EL = SourceLocation(),
+                        SourceLocation LPL, SourceLocation RPL, Stmt *Then,
+                        SourceLocation EL = SourceLocation(),
                         Stmt *Else = nullptr);
 
   /// Create an empty IfStmt optionally with storage for an else statement,
@@ -2067,6 +2071,10 @@ public:
       return getElse()->getEndLoc();
     return getThen()->getEndLoc();
   }
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  void setRParenLoc(SourceLocation Loc) { RParenLoc = Loc; }
 
   // Iterators over subexpressions.  The iterators will include iterating
   // over the initialization expression referenced by the condition variable.
@@ -2114,6 +2122,8 @@ class SwitchStmt final : public Stmt,
   //    Always present.
   enum { InitOffset = 0, BodyOffsetFromCond = 1 };
   enum { NumMandatoryStmtPtr = 2 };
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
 
   unsigned numTrailingObjects(OverloadToken<Stmt *>) const {
     return NumMandatoryStmtPtr + hasInitStorage() + hasVarStorage();
@@ -2127,7 +2137,8 @@ class SwitchStmt final : public Stmt,
   unsigned bodyOffset() const { return condOffset() + BodyOffsetFromCond; }
 
   /// Build a switch statement.
-  SwitchStmt(const ASTContext &Ctx, Stmt *Init, VarDecl *Var, Expr *Cond);
+  SwitchStmt(const ASTContext &Ctx, Stmt *Init, VarDecl *Var, Expr *Cond,
+             SourceLocation LParenLoc, SourceLocation RParenLoc);
 
   /// Build a empty switch statement.
   explicit SwitchStmt(EmptyShell Empty, bool HasInit, bool HasVar);
@@ -2135,7 +2146,8 @@ class SwitchStmt final : public Stmt,
 public:
   /// Create a switch statement.
   static SwitchStmt *Create(const ASTContext &Ctx, Stmt *Init, VarDecl *Var,
-                            Expr *Cond);
+                            Expr *Cond, SourceLocation LParenLoc,
+                            SourceLocation RParenLoc);
 
   /// Create an empty switch statement optionally with storage for
   /// an init expression and a condition variable.
@@ -2223,6 +2235,10 @@ public:
 
   SourceLocation getSwitchLoc() const { return SwitchStmtBits.SwitchLoc; }
   void setSwitchLoc(SourceLocation L) { SwitchStmtBits.SwitchLoc = L; }
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  void setRParenLoc(SourceLocation Loc) { RParenLoc = Loc; }
 
   void setBody(Stmt *S, SourceLocation SL) {
     setBody(S);
