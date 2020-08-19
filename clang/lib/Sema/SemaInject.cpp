@@ -3532,6 +3532,8 @@ static void PerformInjection(InjectionContext *Ctx, Decl *Injectee, Decl *Inject
   // The logic for block fragments is different, since everything in the fragment
   // is stored in a CompoundStmt.
   if (isa<CXXStmtFragmentDecl>(Injection)) {
+    Sema::SynthesizedFunctionScope Scope(Ctx->getSema(), cast<FunctionDecl>(Injectee));
+
     CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
     CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());
     for (Stmt *S : FragmentBlock->body()) {
@@ -4051,7 +4053,6 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   S.ActOnStartOfFunctionDef(nullptr, NewMethod);
 
   Sema::SynthesizedFunctionScope Scope(S, NewMethod);
-  Sema::ContextRAII MethodCtx(S, NewMethod);
 
   StmtResult NewBody = Ctx->TransformStmt(OldMethod->getBody());
   if (NewBody.isInvalid())
@@ -4153,7 +4154,6 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   S.ActOnStartOfFunctionDef(nullptr, NewMethod);
 
   Sema::SynthesizedFunctionScope Scope(S, NewMethod);
-  Sema::ContextRAII MethodCtx(S, NewMethod);
 
   StmtResult NewBody = Pattern;
   if (D->getInstantiatedFromMemberTemplate()) {
