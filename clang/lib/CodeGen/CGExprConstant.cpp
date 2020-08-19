@@ -1371,6 +1371,8 @@ llvm::Constant *ConstantEmitter::tryEmitConstantExpr(const ConstantExpr *CE) {
     RetType = Call->getCallReturnType(CGF->getContext());
   else if (auto *Ctor = dyn_cast<CXXConstructExpr>(Inner))
     RetType = Ctor->getType();
+  else if (auto *Frag = dyn_cast<CXXFragmentCaptureExpr>(Inner))
+    RetType = Frag->getType();
   llvm::Constant *Res =
       emitAbstract(CE->getBeginLoc(), CE->getAPValueResult(), RetType);
   return Res;
