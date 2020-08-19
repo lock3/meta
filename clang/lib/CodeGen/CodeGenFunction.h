@@ -1301,6 +1301,13 @@ private:
   llvm::SmallDenseMap<const ParmVarDecl *, const ImplicitParamDecl *, 2>
       SizeArguments;
 
+  /// Provides a mapping from all in/out parameters to their implicit call-site
+  /// information parameters. For input paramteers, this is whether the argument
+  /// can be moved and for output parameters, it's whether the object has been
+  /// initialized.
+  llvm::SmallDenseMap<const ParmVarDecl *, const ImplicitParamDecl *, 2>
+      InOutArguments;
+
   /// Track escaped local variables with auto storage. Used during SEH
   /// outlining to produce a call to llvm.localescape.
   llvm::DenseMap<llvm::AllocaInst *, int> EscapedLocals;
