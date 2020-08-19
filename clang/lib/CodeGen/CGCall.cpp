@@ -147,6 +147,7 @@ static CanQualType getAdjustedParameterType(ASTContext &Ctx, CanQualType T) {
 
 /// Adds the formal parameters in FPT to the given prefix. If any parameter in
 /// FPT has pass_object_size attrs, then we'll add parameters for those, too.
+/// Same for in- and out-parameters.
 static void appendParameterTypes(const CodeGenTypes &CGT,
                                  SmallVectorImpl<CanQualType> &prefix,
               SmallVectorImpl<FunctionProtoType::ExtParameterInfo> &paramInfos,
@@ -162,13 +163,10 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
       CanQualType PT = FPT->getParamType(I);
       prefix.push_back(getAdjustedParameterType(Ctx, PT));
 
-      // FIXME: If the original was an input or output parameter, add a new
-      // parameter to communicate call-site information to function.
-      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT)) {
-        llvm::outs() << "ADD IN INFO\n";
-        PT->getTypePtr()->dump();
+      // If the original was an input or output parameter, add a new parameter
+      // to communicate call-site information to function.
+      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT))
         prefix.push_back(Ctx.BoolTy);
-      }
     }
     return;
   }
@@ -2389,8 +2387,6 @@ namespace {
 void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
                                          llvm::Function *Fn,
                                          const FunctionArgList &Args) {
-  llvm::outs() << "DO PROLOG\n";
-
   if (CurCodeDecl && CurCodeDecl->hasAttr<NakedAttr>())
     // Naked functions don't have prologues.
     return;
@@ -2441,7 +2437,6 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
   // entails copying one or more LLVM IR arguments into an alloca.  Don't push
   // any cleanups or do anything that might unwind.  We do that separately, so
   // we can push the cleanups in the correct order for the ABI.
-  llvm::outs() << "HERE: " << FI.arg_size() << ' ' << Args.size() << '\n';
   assert(FI.arg_size() == Args.size() &&
          "Mismatch between function signature & arguments.");
   unsigned ArgNo = 0;
@@ -3807,6 +3802,8 @@ void CodeGenFunction::EmitCallArgs(
     AbstractCallee AC, unsigned ParamsToSkip, EvaluationOrder Order) {
   assert((int)ArgTypes.size() == (ArgRange.end() - ArgRange.begin()));
 
+  llvm::outs() << "EMIT ARGS\n";
+
   // We *have* to evaluate arguments from right to left in the MS C++ ABI,
   // because arguments are destroyed left to right in the callee. As a special
   // case, there are certain language constructs that require left-to-right
@@ -3871,7 +3868,8 @@ void CodeGenFunction::EmitCallArgs(
     assert(InitialArgSize + 1 == Args.size() &&
            "The code below depends on only adding one arg per EmitCallArg");
     (void)InitialArgSize;
-    // Since pointer argument are never emitted as LValue, it is safe to emit
+
+    // Since pointer arguments are never emitted as LValue, it is safe to emit
     // non-null argument check for r-value only.
     if (!Args.back().hasLValue()) {
       RValue RVArg = Args.back().getKnownRValue();
@@ -3881,6 +3879,41 @@ void CodeGenFunction::EmitCallArgs(
       // destruction/cleanups, so we can safely "emit" it after its arg,
       // regardless of right-to-leftness
       MaybeEmitImplicitObjectSize(Idx, *Arg, RVArg);
+    }
+
+    // Insert additional arguments for in- and out-parameters types.
+    QualType T = ArgTypes[Idx];
+    llvm::outs() << "HERE\n";
+    T->dump();
+    if (const auto *PT = dyn_cast<ParameterType>(ArgTypes[Idx])) {
+      const Expr *E = *Arg;
+      llvm::outs() << "ARG!\n";
+      PT->dump();
+      E->dump();
+      llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
+      llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
+      llvm::Value *V;
+      if (PT->isInParameter())
+        // An input parameter is finally movable if it is passed as a prvalue
+        // or xvalue.
+        //
+        // TODO: Can we move a const rvalue or xvalue? Can we even get const
+        // expressions in these contexts?
+        V = E->isRValue() || E->isXValue() ? True : False;
+      else if (PT->isOutParameter())
+        // An output parameter is either uninitialized or not.
+        //
+        // TODO: Everything in C++ is initialzed. How would I know whether
+        // something is initialized or not?
+        V = True;
+      else
+        // Inout and move parameters do not have etra parameters.
+        continue;
+
+      // Add the argument, swapping order as needed.
+      Args.add(RValue::get(V), getContext().BoolTy);
+      if (!LeftToRight)
+        std::swap(Args.back(), *(&Args.back() - 1));
     }
   }
 
