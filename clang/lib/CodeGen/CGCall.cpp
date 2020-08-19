@@ -3802,8 +3802,6 @@ void CodeGenFunction::EmitCallArgs(
     AbstractCallee AC, unsigned ParamsToSkip, EvaluationOrder Order) {
   assert((int)ArgTypes.size() == (ArgRange.end() - ArgRange.begin()));
 
-  llvm::outs() << "EMIT ARGS\n";
-
   // We *have* to evaluate arguments from right to left in the MS C++ ABI,
   // because arguments are destroyed left to right in the callee. As a special
   // case, there are certain language constructs that require left-to-right
@@ -3882,14 +3880,8 @@ void CodeGenFunction::EmitCallArgs(
     }
 
     // Insert additional arguments for in- and out-parameters types.
-    QualType T = ArgTypes[Idx];
-    llvm::outs() << "HERE\n";
-    T->dump();
     if (const auto *PT = dyn_cast<ParameterType>(ArgTypes[Idx])) {
       const Expr *E = *Arg;
-      llvm::outs() << "ARG!\n";
-      PT->dump();
-      E->dump();
       llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
       llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
       llvm::Value *V;
