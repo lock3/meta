@@ -2569,6 +2569,10 @@ public:
   Decl *ActOnSkippedFunctionBody(Decl *Decl);
   void ActOnFinishInlineFunctionDef(FunctionDecl *D);
 
+  /// For functions with movable inputs, this computes the definite last
+  /// use of input parameters and rewrites that as a move.
+  void computeMoveOnLastUse(FunctionDecl *D);
+
   /// ActOnFinishDelayedAttribute - Invoked when we have finished parsing an
   /// attribute for which parsing is delayed.
   void ActOnFinishDelayedAttribute(Scope *S, Decl *D, ParsedAttributes &Attrs);
