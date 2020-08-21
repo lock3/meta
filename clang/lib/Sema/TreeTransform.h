@@ -1008,7 +1008,6 @@ public:
       CXXScopeSpec SS;
       SS.Adopt(QualifierLoc);
 
-      ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
       return getSema().ResolveNonDependentIdentifierSpliceType(
           ParserLookup.getCurScope(), SS, Id, IdLoc, TemplateArgs);
     }

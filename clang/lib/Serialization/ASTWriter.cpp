@@ -4671,8 +4671,8 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
     // Sort the identifiers to visit based on their name.
     llvm::sort(IIs, llvm::deref<std::less<>>());
     for (const IdentifierInfo *II : IIs) {
-      for (IdentifierResolver::iterator D = SemaRef.IdResolver->begin(II),
-                                     DEnd = SemaRef.IdResolver->end();
+      for (IdentifierResolver::iterator D = SemaRef.IdResolver.begin(II),
+                                     DEnd = SemaRef.IdResolver.end();
            D != DEnd; ++D) {
         GetDeclRef(*D);
       }

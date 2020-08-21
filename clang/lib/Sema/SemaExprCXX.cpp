@@ -2980,7 +2980,7 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
       Alloc->addAttr(ExtraAttr);
     AddKnownFunctionAttributesForReplaceableGlobalAllocationFunction(Alloc);
     Context.getTranslationUnitDecl()->addDecl(Alloc);
-    IdResolver->tryAddTopLevelDecl(Alloc, Name);
+    IdResolver.tryAddTopLevelDecl(Alloc, Name);
   };
 
   if (!LangOpts.CUDA)

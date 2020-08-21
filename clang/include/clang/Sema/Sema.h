@@ -989,7 +989,7 @@ public:
   /// It would be best to refactor this.
   SmallVector<Decl*,2> WeakTopLevelDecl;
 
-  IdentifierResolver *IdResolver;
+  IdentifierResolver IdResolver;
 
   /// Translation Unit Scope - useful to Objective-C actions that need
   /// to lookup file scope declarations in the "ordinary" C decl namespace.
