@@ -3802,8 +3802,6 @@ void CodeGenFunction::EmitCallArgs(
     AbstractCallee AC, unsigned ParamsToSkip, EvaluationOrder Order) {
   assert((int)ArgTypes.size() == (ArgRange.end() - ArgRange.begin()));
 
-  llvm::outs() << "EMIT ARGS\n";
-
   // We *have* to evaluate arguments from right to left in the MS C++ ABI,
   // because arguments are destroyed left to right in the callee. As a special
   // case, there are certain language constructs that require left-to-right
@@ -3882,14 +3880,8 @@ void CodeGenFunction::EmitCallArgs(
     }
 
     // Insert additional arguments for in- and out-parameters types.
-    QualType T = ArgTypes[Idx];
-    llvm::outs() << "HERE\n";
-    T->dump();
     if (const auto *PT = dyn_cast<ParameterType>(ArgTypes[Idx])) {
       const Expr *E = *Arg;
-      llvm::outs() << "ARG!\n";
-      PT->dump();
-      E->dump();
       llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
       llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
       llvm::Value *V;
@@ -3997,6 +3989,10 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
     return emitWritebackArg(*this, args, CRE);
   }
 
+  // Get the adjusted parameter type as needed.
+  if (type->isParameterType())
+    type = cast<ParameterType>(type)->getAdjustedType();
+
   // Ignore parameter adjustments.
   if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E))
     if (Cast->getCastKind() == CK_ParameterQualification)
@@ -4011,10 +4007,6 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
   }
 
   bool HasAggregateEvalKind = hasAggregateEvaluationKind(type);
-
-  // Get the adjusted parameter type as needed.
-  if (type->isParameterType())
-    type = cast<ParameterType>(type)->getAdjustedType();
 
   // In the Microsoft C++ ABI, aggregate arguments are destructed by the callee.
   // However, we still have to push an EH-only cleanup in case we unwind before
