@@ -1361,8 +1361,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
 
   // If the argument type is a pack expansion, look at its pattern.
   // This isn't explicitly called out
-  if (const PackExpansionType *ArgExpansion
-                                            = dyn_cast<PackExpansionType>(Arg))
+  if (const PackExpansionType *ArgExpansion = dyn_cast<PackExpansionType>(Arg))
     Arg = ArgExpansion->getPattern();
 
   if (PartialOrdering) {
@@ -3435,6 +3434,10 @@ CheckOriginalCallArgDeduction(Sema &S, TemplateDeductionInfo &Info,
   if (Context.hasSameUnqualifiedType(A, DeducedA))
     return Sema::TDK_Success;
 
+  // Strip parameter passing modes.
+  if (const ParameterType *ParmType = DeducedA->getAs<ParameterType>())
+    DeducedA = ParmType->getParameterType();
+
   // Strip off references on the argument types; they aren't needed for
   // the following checks.
   if (const ReferenceType *DeducedARef = DeducedA->getAs<ReferenceType>())
@@ -3859,6 +3862,10 @@ ResolveOverloadForDeduction(Sema &S, TemplateParameterList *TemplateParams,
 static bool AdjustFunctionParmAndArgTypesForDeduction(
     Sema &S, TemplateParameterList *TemplateParams, unsigned FirstInnerIndex,
     QualType &ParamType, QualType &ArgType, Expr *Arg, unsigned &TDF) {
+  // If P is a parameter type of the form <mode> T, adjust it to T. 
+  if (const auto *PT = dyn_cast<ParameterType>(ParamType))
+    ParamType = PT->getParameterType();
+
   // C++0x [temp.deduct.call]p3:
   //   If P is a cv-qualified type, the top level cv-qualifiers of P's type
   //   are ignored for type deduction.
@@ -4134,8 +4141,9 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     NumExplicitlySpecified = Deduced.size();
   } else {
     // Just fill in the parameter types from the function declaration.
-    for (unsigned I = 0; I != NumParams; ++I)
+    for (unsigned I = 0; I != NumParams; ++I) {
       ParamTypes.push_back(Function->getParamDecl(I)->getType());
+    }
   }
 
   SmallVector<OriginalCallArg, 8> OriginalCallArgs;
@@ -4573,6 +4581,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     TemplateArgumentListInfo *ExplicitTemplateArgs,
     FunctionDecl *&Specialization, TemplateDeductionInfo &Info,
     bool IsAddressOfFunction) {
+
   return DeduceTemplateArguments(FunctionTemplate, ExplicitTemplateArgs,
                                  QualType(), Specialization, Info,
                                  IsAddressOfFunction);
@@ -6128,12 +6137,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                OnlyDeduced, Depth, Used);
     break;
 
-  // FIXME: If these are changed to be used by deduction, this needs
-  // updated.
   case Type::InParameter:
   case Type::OutParameter:
   case Type::InOutParameter:
   case Type::MoveParameter:
+    // Search in the underlying type.
+    MarkUsedTemplateParameters(Ctx, cast<ParameterType>(T)->getParameterType(),
+                               OnlyDeduced, Depth, Used);
 
   // None of these types have any template parameters in them.
   case Type::Builtin:

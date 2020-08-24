@@ -2364,7 +2364,6 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
 
   TypeLoc OldTL = OldDI->getTypeLoc();
   if (PackExpansionTypeLoc ExpansionTL = OldTL.getAs<PackExpansionTypeLoc>()) {
-
     // We have a function parameter pack. Substitute into the pattern of the
     // expansion.
     NewDI = SubstType(ExpansionTL.getPatternLoc(), TemplateArgs,

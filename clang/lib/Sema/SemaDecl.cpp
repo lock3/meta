@@ -13536,7 +13536,13 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   CheckFunctionOrTemplateParamDeclarator(S, D);
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
-  QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
+
+  // Adjust the type based on parameter passing mode.
+  if (PPK != PPK_unspecified) {
+    // FIXME: We can probably do better than trivial soruce info.
+    QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
+    TInfo = Context.getTrivialTypeSourceInfo(ParmType);
+  }
 
   DeclarationNameInfo DNI = FindParamName(*this, S, D);
 
@@ -13545,7 +13551,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // looking like class members in C++.
   ParmVarDecl *New =
       CheckParameter(Context.getTranslationUnitDecl(), D.getBeginLoc(),
-                     DNI, ParmType, TInfo, SC);
+                     DNI, TInfo->getType(), TInfo, SC);
 
   if (D.isInvalidType())
     New->setInvalidDecl();
