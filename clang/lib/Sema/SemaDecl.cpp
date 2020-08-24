@@ -13606,7 +13606,13 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   CheckFunctionOrTemplateParamDeclarator(S, D);
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
-  QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
+
+  // Adjust the type based on parameter passing mode.
+  if (PPK != PPK_unspecified) {
+    // FIXME: We can probably do better than trivial soruce info.
+    QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
+    TInfo = Context.getTrivialTypeSourceInfo(ParmType);
+  }
 
   DeclarationNameInfo DNI = FindParamName(*this, S, D);
 
@@ -13615,7 +13621,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // looking like class members in C++.
   ParmVarDecl *New =
       CheckParameter(Context.getTranslationUnitDecl(), D.getBeginLoc(),
-                     DNI, ParmType, TInfo, SC);
+                     DNI, TInfo->getType(), TInfo, SC);
 
   if (D.isInvalidType())
     New->setInvalidDecl();
@@ -14342,6 +14348,28 @@ static void diagnoseImplicitlyRetainedSelf(Sema &S) {
           << FixItHint::CreateInsertion(P.first, "self->");
 }
 
+// Returns true if D is a movable input parameter, which is only the case
+// when D is nontrivial.
+static bool isMovableInParameter(ParmVarDecl *D)
+{
+  QualType T = D->getType();
+  if (const auto *PT = dyn_cast<ParameterType>(T)) {
+    T = PT->getParameterType();
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+      return !Class->canPassInRegisters();
+  }
+  return false;
+}
+
+// Returns true if D has any in parameters that can be moved.
+static bool hasMovableInParameters(FunctionDecl *D)
+{
+  for (std::size_t I = 0; I < D->getNumParams(); ++I)
+    if (isMovableInParameter(D->getParamDecl(I)))
+      return true;
+  return false;
+}
+
 Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
                                     bool IsInstantiation) {
   FunctionDecl *FD = dcl ? dcl->getAsFunction() : nullptr;
@@ -14370,6 +14398,9 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   if (FD) {
     FD->setBody(Body);
     FD->setWillHaveBody(false);
+
+    if (hasMovableInParameters(FD))
+      computeMoveOnLastUse(FD);
 
     if (getLangOpts().CPlusPlus14) {
       if (!FD->isInvalidDecl() && Body && !FD->isDependentContext() &&

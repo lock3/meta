@@ -1301,6 +1301,13 @@ private:
   llvm::SmallDenseMap<const ParmVarDecl *, const ImplicitParamDecl *, 2>
       SizeArguments;
 
+  /// Provides a mapping from all in/out parameters to their implicit call-site
+  /// information parameters. For input paramteers, this is whether the argument
+  /// can be moved and for output parameters, it's whether the object has been
+  /// initialized.
+  llvm::SmallDenseMap<const ParmVarDecl *, const ImplicitParamDecl *, 2>
+      InOutArguments;
+
   /// Track escaped local variables with auto storage. Used during SEH
   /// outlining to produce a call to llvm.localescape.
   llvm::DenseMap<llvm::AllocaInst *, int> EscapedLocals;
@@ -4576,32 +4583,21 @@ public:
                 E = CallArgTypeInfo->param_type_end();
            I != E; ++I, ++Arg) {
         assert(Arg != ArgRange.end() && "Running over edge of argument list!");
-
-        // Adjust parameter types as needed...
-        QualType PT = *I;
-        if (const auto *ParmType = dyn_cast<ParameterType>(PT))
-          PT = ParmType->getAdjustedType();
-
-        // ... and the initializer also. If this is a parameter qualification,
-        // strip off the implicit cast so we check the actual type of the
-        // argument (other implicit casts are salient).
+        QualType P = *I;
         const Expr *A = *Arg;
-        if (const auto *Cast = dyn_cast<ImplicitCastExpr>(A))
-          if (Cast->getCastKind() == CK_ParameterQualification)
-            A = Cast->getSubExpr();
-
         assert((isGenericMethod ||
-                (PT->isVariablyModifiedType() ||
-                 PT.getNonReferenceType()->isObjCRetainableType() ||
+                (P->isParameterType() || // TODO: Stop ignoring these
+                 P->isVariablyModifiedType() ||
+                 P.getNonReferenceType()->isObjCRetainableType() ||
                  getContext()
-                         .getCanonicalType(PT.getNonReferenceType())
+                         .getCanonicalType(P.getNonReferenceType())
                          .getTypePtr() ==
                  getContext()
                          .getCanonicalType(A->getType())
                          .getTypePtr())) &&
                "type mismatch in call argument!");
 
-        ArgTypes.push_back(PT);
+        ArgTypes.push_back(P);
       }
     }
 

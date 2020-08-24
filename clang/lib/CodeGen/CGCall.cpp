@@ -147,6 +147,7 @@ static CanQualType getAdjustedParameterType(ASTContext &Ctx, CanQualType T) {
 
 /// Adds the formal parameters in FPT to the given prefix. If any parameter in
 /// FPT has pass_object_size attrs, then we'll add parameters for those, too.
+/// Same for in- and out-parameters.
 static void appendParameterTypes(const CodeGenTypes &CGT,
                                  SmallVectorImpl<CanQualType> &prefix,
               SmallVectorImpl<FunctionProtoType::ExtParameterInfo> &paramInfos,
@@ -159,8 +160,13 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
            "We have paramInfos, but the prototype doesn't?");
     // Copy out parameters, performing adjustments as needed.
     for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
-      CanQualType T = getAdjustedParameterType(Ctx, FPT->getParamType(I));
-      prefix.push_back(T);
+      CanQualType PT = FPT->getParamType(I);
+      prefix.push_back(getAdjustedParameterType(Ctx, PT));
+
+      // If the original was an input or output parameter, add a new parameter
+      // to communicate call-site information to function.
+      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT))
+        prefix.push_back(Ctx.BoolTy);
     }
     return;
   }
@@ -3860,7 +3866,8 @@ void CodeGenFunction::EmitCallArgs(
     assert(InitialArgSize + 1 == Args.size() &&
            "The code below depends on only adding one arg per EmitCallArg");
     (void)InitialArgSize;
-    // Since pointer argument are never emitted as LValue, it is safe to emit
+
+    // Since pointer arguments are never emitted as LValue, it is safe to emit
     // non-null argument check for r-value only.
     if (!Args.back().hasLValue()) {
       RValue RVArg = Args.back().getKnownRValue();
@@ -3870,6 +3877,35 @@ void CodeGenFunction::EmitCallArgs(
       // destruction/cleanups, so we can safely "emit" it after its arg,
       // regardless of right-to-leftness
       MaybeEmitImplicitObjectSize(Idx, *Arg, RVArg);
+    }
+
+    // Insert additional arguments for in- and out-parameters types.
+    if (const auto *PT = dyn_cast<ParameterType>(ArgTypes[Idx])) {
+      const Expr *E = *Arg;
+      llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
+      llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
+      llvm::Value *V;
+      if (PT->isInParameter())
+        // An input parameter is finally movable if it is passed as a prvalue
+        // or xvalue.
+        //
+        // TODO: Can we move a const rvalue or xvalue? Can we even get const
+        // expressions in these contexts?
+        V = E->isRValue() || E->isXValue() ? True : False;
+      else if (PT->isOutParameter())
+        // An output parameter is either uninitialized or not.
+        //
+        // TODO: Everything in C++ is initialzed. How would I know whether
+        // something is initialized or not?
+        V = True;
+      else
+        // Inout and move parameters do not have etra parameters.
+        continue;
+
+      // Add the argument, swapping order as needed.
+      Args.add(RValue::get(V), getContext().BoolTy);
+      if (!LeftToRight)
+        std::swap(Args.back(), *(&Args.back() - 1));
     }
   }
 
@@ -3953,6 +3989,10 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
     return emitWritebackArg(*this, args, CRE);
   }
 
+  // Get the adjusted parameter type as needed.
+  if (type->isParameterType())
+    type = cast<ParameterType>(type)->getAdjustedType();
+
   // Ignore parameter adjustments.
   if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E))
     if (Cast->getCastKind() == CK_ParameterQualification)
@@ -3967,10 +4007,6 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
   }
 
   bool HasAggregateEvalKind = hasAggregateEvaluationKind(type);
-
-  // Get the adjusted parameter type as needed.
-  if (type->isParameterType())
-    type = cast<ParameterType>(type)->getAdjustedType();
 
   // In the Microsoft C++ ABI, aggregate arguments are destructed by the callee.
   // However, we still have to push an EH-only cleanup in case we unwind before

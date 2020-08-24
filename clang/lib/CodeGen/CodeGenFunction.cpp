@@ -27,6 +27,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/TargetInfo.h"
@@ -1221,14 +1222,25 @@ QualType CodeGenFunction::BuildFunctionArgList(GlobalDecl GD,
   if (PassedParams) {
     for (auto *Param : FD->parameters()) {
       Args.push_back(Param);
-      if (!Param->hasAttr<PassObjectSizeAttr>())
-        continue;
 
-      auto *Implicit = ImplicitParamDecl::Create(
-          getContext(), Param->getDeclContext(), Param->getLocation(),
-          /*Id=*/nullptr, getContext().getSizeType(), ImplicitParamDecl::Other);
-      SizeArguments[Param] = Implicit;
-      Args.push_back(Implicit);
+      // Add extra boolean parameters for in/out parameters.
+      QualType T = Param->getType();
+      if (isa<InParameterType>(T) || isa<OutParameterType>(T)) {
+        auto *Implicit = ImplicitParamDecl::Create(
+            getContext(), Param->getDeclContext(), Param->getLocation(),
+            /*Id=*/nullptr, getContext().BoolTy, ImplicitParamDecl::Other);
+        InOutArguments[Param] = Implicit;
+        Args.push_back(Implicit);
+      }
+
+      // Add an extra parameters for PassObjectSize.
+      if (Param->hasAttr<PassObjectSizeAttr>()) {
+        auto *Implicit = ImplicitParamDecl::Create(
+            getContext(), Param->getDeclContext(), Param->getLocation(),
+            /*Id=*/nullptr, getContext().getSizeType(), ImplicitParamDecl::Other);
+        SizeArguments[Param] = Implicit;
+        Args.push_back(Implicit);
+      }
     }
   }
 
