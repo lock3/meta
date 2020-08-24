@@ -4586,8 +4586,8 @@ public:
         QualType P = *I;
         const Expr *A = *Arg;
         assert((isGenericMethod ||
-                P->isParameterType() || // TODO: Stop ignoring these
-                (P->isVariablyModifiedType() ||
+                (P->isParameterType() || // TODO: Stop ignoring these
+                 P->isVariablyModifiedType() ||
                  P.getNonReferenceType()->isObjCRetainableType() ||
                  getContext()
                          .getCanonicalType(P.getNonReferenceType())

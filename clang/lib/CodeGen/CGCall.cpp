@@ -3989,6 +3989,10 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
     return emitWritebackArg(*this, args, CRE);
   }
 
+  // Get the adjusted parameter type as needed.
+  if (type->isParameterType())
+    type = cast<ParameterType>(type)->getAdjustedType();
+
   // Ignore parameter adjustments.
   if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E))
     if (Cast->getCastKind() == CK_ParameterQualification)
@@ -4003,10 +4007,6 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
   }
 
   bool HasAggregateEvalKind = hasAggregateEvaluationKind(type);
-
-  // Get the adjusted parameter type as needed.
-  if (type->isParameterType())
-    type = cast<ParameterType>(type)->getAdjustedType();
 
   // In the Microsoft C++ ABI, aggregate arguments are destructed by the callee.
   // However, we still have to push an EH-only cleanup in case we unwind before
