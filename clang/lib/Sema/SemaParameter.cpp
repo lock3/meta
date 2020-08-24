@@ -136,7 +136,7 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   AC.getCFGBuildOptions().setAllAlwaysAdd();
 
   CFG *G = AC.getCFG();
-  G->dump(Context.getLangOpts(), true);
+  // G->dump(Context.getLangOpts(), true);
 
-  findLastUses(D, G);
+  // findLastUses(D, G);
 }

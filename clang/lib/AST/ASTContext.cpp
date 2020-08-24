@@ -3405,7 +3405,7 @@ QualType ASTContext::getInParameterType(QualType T) const {
   QualType Adjusted = T;
   if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
     if (!Class->canPassInRegisters())
-      Adjusted = getLValueReferenceType(T);
+      Adjusted = getLValueReferenceType(getConstType(T));
 
   // Build and register the type.
   auto *NewTy =

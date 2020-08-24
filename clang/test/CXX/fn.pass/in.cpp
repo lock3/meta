@@ -45,3 +45,16 @@ nontrivial in_nontrivial(in nontrivial x)
   return x;
 }
 
+void test() {
+  int x = 0;
+  in_scalar(0);
+  in_scalar(x);
+
+  trivial t;
+  in_trivial(trivial());
+  in_trivial(t);
+
+  nontrivial n;
+  in_nontrivial(nontrivial());
+  in_nontrivial(n);
+}
