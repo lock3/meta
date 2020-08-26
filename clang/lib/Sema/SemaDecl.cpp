@@ -14280,22 +14280,19 @@ static void diagnoseImplicitlyRetainedSelf(Sema &S) {
 
 // Returns true if D is a movable input parameter, which is only the case
 // when D is nontrivial.
-static bool isMovableInParameter(ParmVarDecl *D)
-{
+static bool isMovableInParameter(ASTContext &Ctx, ParmVarDecl *D) {
   QualType T = D->getType();
-  if (const auto *PT = dyn_cast<ParameterType>(T)) {
-    T = PT->getParameterType();
-    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
-      return !Class->canPassInRegisters();
-  }
+  if (const auto *PT = dyn_cast<ParameterType>(T))
+    if (PT->isInParameter())
+      return !InParameterType::isPassByValue(Ctx, PT->getParameterType());
   return false;
 }
 
 // Returns true if D has any in parameters that can be moved.
-static bool hasMovableInParameters(FunctionDecl *D)
+static bool hasMovableInParameters(ASTContext &Ctx, FunctionDecl *D)
 {
   for (std::size_t I = 0; I < D->getNumParams(); ++I)
-    if (isMovableInParameter(D->getParamDecl(I)))
+    if (isMovableInParameter(Ctx, D->getParamDecl(I)))
       return true;
   return false;
 }
@@ -14319,7 +14316,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     FD->setBody(Body);
     FD->setWillHaveBody(false);
 
-    if (hasMovableInParameters(FD))
+    if (hasMovableInParameters(Context, FD))
       computeMoveOnLastUse(FD);
 
     if (getLangOpts().CPlusPlus14) {

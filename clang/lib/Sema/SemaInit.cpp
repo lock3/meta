@@ -4238,7 +4238,7 @@ static void TryReferenceListInitialization(Sema &S,
 
   // For parameter types, initialize an object of the underlying type.
   if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType();
+    DestType = ParamType->getAdjustedType(S.Context);
 
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
@@ -4304,7 +4304,7 @@ static void TryListInitialization(Sema &S,
 
   // For parameter types, initialize an object of the underlying type.
   if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType();
+    DestType = ParamType->getAdjustedType(S.Context);
 
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
@@ -4691,8 +4691,8 @@ static void TryReferenceInitialization(Sema &S,
   QualType DestType = Entity.getType();
 
   // Adjust parameter types as needed.
-  if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getAdjustedType();
+  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
 
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
@@ -4737,8 +4737,8 @@ static void TryReferenceInitializationCore(Sema &S,
   QualType DestType = Entity.getType();
 
   // Adjust the parameter type as needed.
-  if (DestType->isParameterType())
-    DestType = cast<ParameterType>(DestType)->getAdjustedType();
+  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
 
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
@@ -5674,9 +5674,9 @@ void InitializationSequence::InitializeFrom(Sema &S,
   QualType DestType = Entity.getType();
 
   // Adjust destination parameter types as needed.
-  const auto *ParamType = DestType->getAs<ParameterType>();
+  auto *ParamType = DestType->getAs<ParameterType>();
   if (ParamType)
-    DestType = ParamType->getAdjustedType();
+    DestType = ParamType->getAdjustedType(Context);
 
   if (DestType->isDependentType() ||
       Expr::hasAnyTypeDependentArguments(Args) ||

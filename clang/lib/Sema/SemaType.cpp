@@ -8499,7 +8499,7 @@ bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
   // If a parameter type is required to be complete, then its adjusted type
   // is required to be complete.
   if (auto *Param = dyn_cast<ParameterType>(T))
-    T = Param->getAdjustedType();
+    T = Param->getAdjustedType(Context);
 
   // FIXME: Add this assertion to make sure we always get instantiation points.
   //  assert(!Loc.isInvalid() && "Invalid location in RequireCompleteType");

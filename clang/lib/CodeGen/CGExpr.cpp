@@ -2783,8 +2783,8 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
 
     // Get the variable type, adjusting as needed for parameter passing types.
     QualType VarType = VD->getType();
-    if (VarType->isParameterType())
-      VarType = cast<ParameterType>(VarType)->getAdjustedType();
+    if (auto *ParamType = dyn_cast<ParameterType>(VarType))
+      VarType = ParamType->getAdjustedType(getContext());
 
     // Drill into reference types.
     LValue LV = VarType->isReferenceType() ?

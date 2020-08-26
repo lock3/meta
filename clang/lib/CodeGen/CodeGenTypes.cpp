@@ -818,7 +818,8 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::InOutParameter:
   case Type::MoveParameter:
     // Convert to the adjusted type.
-    ResultType = ConvertType(Ty->getAs<ParameterType>()->getAdjustedType());
+    ResultType = ConvertType(
+      Ty->getAs<ParameterType>()->getAdjustedType(getContext()));
     break;
   }
 
