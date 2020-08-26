@@ -8496,10 +8496,10 @@ static void assignInheritanceModel(Sema &S, CXXRecordDecl *RD) {
 bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
                                    CompleteTypeKind Kind,
                                    TypeDiagnoser *Diagnoser) {
-  // If a parameter type is required to be complete, then its adjusted type
+  // If a parameter type is required to be complete, then its underlying type
   // is required to be complete.
   if (auto *Param = dyn_cast<ParameterType>(T))
-    T = Param->getAdjustedType(Context);
+    T = Param->getParameterType();
 
   // FIXME: Add this assertion to make sure we always get instantiation points.
   //  assert(!Loc.isInvalid() && "Invalid location in RequireCompleteType");

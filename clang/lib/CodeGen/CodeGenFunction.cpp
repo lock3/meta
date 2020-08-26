@@ -203,7 +203,8 @@ llvm::Type *CodeGenFunction::ConvertType(QualType T) {
   return CGM.getTypes().ConvertType(T);
 }
 
-TypeEvaluationKind CodeGenFunction::getEvaluationKind(QualType type) {
+TypeEvaluationKind CodeGenFunction::getEvaluationKind(ASTContext &Ctx,
+                                                      QualType type) {
   type = type.getCanonicalType();
   while (true) {
     switch (type->getTypeClass()) {
@@ -260,7 +261,7 @@ TypeEvaluationKind CodeGenFunction::getEvaluationKind(QualType type) {
     case Type::InOutParameter:
     case Type::MoveParameter:
       // The evaluation kind depends on that of the adjusted type.
-      type = cast<ParameterType>(type)->getAdjustedType(getContext());
+      type = cast<ParameterType>(type)->getAdjustedType(Ctx);
       continue;
     }
     llvm_unreachable("unknown type kind!");

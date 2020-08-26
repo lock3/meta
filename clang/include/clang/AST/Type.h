@@ -6615,9 +6615,13 @@ class InParameterType : public ParameterType {
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_in;
 
-  /// Returns true if `T` should be passed by value, presumably in registers.
-  /// If false, arguments are passed by reference.
+  /// Returns true if `T` should be passed by value.
   static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
@@ -6676,6 +6680,11 @@ public:
   /// Returns true if `T` should be passed by value, presumably in registers.
   /// If false, arguments are passed by reference.
   static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }

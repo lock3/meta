@@ -1153,7 +1153,7 @@ public:
   public:
     OpaqueValueMappingData() : OpaqueValue(nullptr) {}
 
-    static bool shouldBindAsLValue(const Expr *expr) {
+    static bool shouldBindAsLValue(CodeGenFunction &CGF, const Expr *expr) {
       // gl-values should be bound as l-values for obvious reasons.
       // Records should be bound as l-values because IR generation
       // always keeps them in memory.  Expressions of function type
@@ -1161,13 +1161,13 @@ public:
       // r-values in C.
       return expr->isGLValue() ||
              expr->getType()->isFunctionType() ||
-             hasAggregateEvaluationKind(expr->getType());
+             CGF.hasAggregateEvaluationKind(expr->getType());
     }
 
     static OpaqueValueMappingData bind(CodeGenFunction &CGF,
                                        const OpaqueValueExpr *ov,
                                        const Expr *e) {
-      if (shouldBindAsLValue(ov))
+      if (shouldBindAsLValue(CGF, ov))
         return bind(CGF, ov, CGF.EmitLValue(e));
       return bind(CGF, ov, CGF.EmitAnyExpr(e));
     }
@@ -1175,7 +1175,7 @@ public:
     static OpaqueValueMappingData bind(CodeGenFunction &CGF,
                                        const OpaqueValueExpr *ov,
                                        const LValue &lv) {
-      assert(shouldBindAsLValue(ov));
+      assert(shouldBindAsLValue(CGF, ov));
       CGF.OpaqueLValues.insert(std::make_pair(ov, lv));
       return OpaqueValueMappingData(ov, true);
     }
@@ -1183,7 +1183,7 @@ public:
     static OpaqueValueMappingData bind(CodeGenFunction &CGF,
                                        const OpaqueValueExpr *ov,
                                        const RValue &rv) {
-      assert(!shouldBindAsLValue(ov));
+      assert(!shouldBindAsLValue(CGF, ov));
       CGF.OpaqueRValues.insert(std::make_pair(ov, rv));
 
       OpaqueValueMappingData data(ov, false);
@@ -1217,8 +1217,8 @@ public:
     OpaqueValueMappingData Data;
 
   public:
-    static bool shouldBindAsLValue(const Expr *expr) {
-      return OpaqueValueMappingData::shouldBindAsLValue(expr);
+    static bool shouldBindAsLValue(CodeGenFunction &CGF, const Expr *expr) {
+      return OpaqueValueMappingData::shouldBindAsLValue(CGF, expr);
     }
 
     /// Build the opaque value mapping for the given conditional
@@ -2278,14 +2278,27 @@ public:
   QualType TypeOfSelfObject();
 
   /// getEvaluationKind - Return the TypeEvaluationKind of QualType \c T.
-  static TypeEvaluationKind getEvaluationKind(QualType T);
+  static TypeEvaluationKind getEvaluationKind(ASTContext &Ctx, QualType T);
 
-  static bool hasScalarEvaluationKind(QualType T) {
-    return getEvaluationKind(T) == TEK_Scalar;
+  static bool hasScalarEvaluationKind(ASTContext &Ctx, QualType T) {
+    return getEvaluationKind(Ctx, T) == TEK_Scalar;
   }
 
-  static bool hasAggregateEvaluationKind(QualType T) {
-    return getEvaluationKind(T) == TEK_Aggregate;
+  static bool hasAggregateEvaluationKind(ASTContext& Ctx, QualType T) {
+    return getEvaluationKind(Ctx, T) == TEK_Aggregate;
+  }
+
+  /// getEvaluationKind - Return the TypeEvaluationKind of QualType \c T.
+  TypeEvaluationKind getEvaluationKind(QualType T) {
+    return getEvaluationKind(getContext(), T);
+  }
+
+  bool hasScalarEvaluationKind(QualType T) {
+    return hasScalarEvaluationKind(getContext(), T);
+  }
+
+  bool hasAggregateEvaluationKind(QualType T) {
+    return hasAggregateEvaluationKind(getContext(), T);
   }
 
   /// createBasicBlock - Create an LLVM basic block.
