@@ -141,7 +141,7 @@ static void addExtParameterInfosForCall(
 
 static CanQualType getAdjustedParameterType(ASTContext &Ctx, CanQualType T) {
   if (auto const *Parm = dyn_cast<ParameterType>(T))
-    T = Ctx.getCanonicalType(Parm->getAdjustedType());
+    T = Ctx.getCanonicalType(Parm->getAdjustedType(Ctx));
   return T;
 }
 
@@ -3991,7 +3991,7 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
 
   // Get the adjusted parameter type as needed.
   if (type->isParameterType())
-    type = cast<ParameterType>(type)->getAdjustedType();
+    type = cast<ParameterType>(type)->getAdjustedType(getContext());
 
   // Ignore parameter adjustments.
   if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E))

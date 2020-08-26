@@ -6594,18 +6594,14 @@ class ParameterType : public Type, public llvm::FoldingSetNode {
   /// The underlying parameter type.
   QualType ParmType;
 
-  /// The adjusted parameter type. This is used during code generation to
-  /// lower declarations to their corresponding "as if ..." modes.
-  QualType AdjType;
-
   /// The parameter passing mode.
   ParameterPassingKind PassingMode;
 
 protected:
   ParameterType(TypeClass tc, QualType Parm, QualType CanonicalParm,
-                ParameterPassingKind PPK, QualType Adjusted)
+                ParameterPassingKind PPK)
       : Type(tc, CanonicalParm, Parm->getDependence(), false),
-        ParmType(Parm), AdjType(Adjusted), PassingMode(PPK) {
+        ParmType(Parm), PassingMode(PPK) {
     ParameterTypeBits.PassingMode = PPK;
   }
 
@@ -6616,9 +6612,12 @@ public:
   bool isInOutParameter() const { return PassingMode == PPK_inout; }
   bool isMoveParameter() const { return PassingMode == PPK_move; }
 
+  /// Returns the underlying type of the parameter.
   QualType getParameterType() const { return ParmType; }
 
-  QualType getAdjustedType() const { return AdjType; }
+  /// Returns the adjusted parameter type used for overloading, initialization,
+  /// and code generation.
+  QualType getAdjustedType(const ASTContext &Ctx) const;
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, ParmType, PassingMode);
@@ -6643,11 +6642,19 @@ public:
 class InParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  InParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
-    : ParameterType(InParameter, Parm, Canonical, PassingMode, Adjusted) {}
+  InParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(InParameter, Parm, Canonical, PassingMode) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_in;
+
+  /// Returns true if `T` should be passed by value.
+  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
@@ -6661,8 +6668,8 @@ public:
 class OutParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  OutParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
-    : ParameterType(OutParameter, Parm, Canonical, PassingMode, Adjusted) {}
+  OutParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(OutParameter, Parm, Canonical, PassingMode) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_out;
@@ -6679,8 +6686,8 @@ public:
 class InOutParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  InOutParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
-    : ParameterType(InOutParameter, Parm, Canonical, PassingMode, Adjusted) {}
+  InOutParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(InOutParameter, Parm, Canonical, PassingMode) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_inout;
@@ -6697,11 +6704,20 @@ public:
 class MoveParameterType : public ParameterType {
   friend class ASTContext; // ASTContext creates these
 
-  MoveParameterType(QualType Parm, QualType Canonical, QualType Adjusted)
-    : ParameterType(MoveParameter, Parm, Canonical, PassingMode, Adjusted) {}
+  MoveParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(MoveParameter, Parm, Canonical, PassingMode) {}
 
 public:
   static constexpr ParameterPassingKind PassingMode = PPK_move;
+
+  /// Returns true if `T` should be passed by value, presumably in registers.
+  /// If false, arguments are passed by reference.
+  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }

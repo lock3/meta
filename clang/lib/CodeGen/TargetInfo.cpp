@@ -75,8 +75,8 @@ static void AssignToArrayRange(CodeGen::CGBuilderTy &Builder,
   }
 }
 
-static bool isAggregateTypeForABI(QualType T) {
-  return !CodeGenFunction::hasScalarEvaluationKind(T) ||
+static bool isAggregateTypeForABI(ASTContext &Ctx, QualType T) {
+  return !CodeGenFunction::hasScalarEvaluationKind(Ctx, T) ||
          T->isMemberFunctionPointerType();
 }
 
@@ -617,7 +617,7 @@ static const Type *isSingleElementStruct(QualType T, ASTContext &Context) {
       FT = AT->getElementType();
     }
 
-    if (!isAggregateTypeForABI(FT)) {
+    if (!isAggregateTypeForABI(Context, FT)) {
       Found = FT.getTypePtr();
     } else {
       Found = isSingleElementStruct(FT, Context);
@@ -716,7 +716,7 @@ public:
 ABIArgInfo DefaultABIInfo::classifyArgumentType(QualType Ty) const {
   Ty = useFirstFieldIfTransparentUnion(Ty);
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // passed by value.
     if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
@@ -745,7 +745,7 @@ ABIArgInfo DefaultABIInfo::classifyReturnType(QualType RetTy) const {
   if (RetTy->isVoidType())
     return ABIArgInfo::getIgnore();
 
-  if (isAggregateTypeForABI(RetTy))
+  if (isAggregateTypeForABI(getContext(), RetTy))
     return getNaturalAlignIndirect(RetTy);
 
   // Treat an enum type as its underlying type.
@@ -853,7 +853,7 @@ public:
 ABIArgInfo WebAssemblyABIInfo::classifyArgumentType(QualType Ty) const {
   Ty = useFirstFieldIfTransparentUnion(Ty);
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // passed by value.
     if (auto RAA = getRecordArgABI(Ty, getCXXABI()))
@@ -887,7 +887,7 @@ ABIArgInfo WebAssemblyABIInfo::classifyArgumentType(QualType Ty) const {
 }
 
 ABIArgInfo WebAssemblyABIInfo::classifyReturnType(QualType RetTy) const {
-  if (isAggregateTypeForABI(RetTy)) {
+  if (isAggregateTypeForABI(getContext(), RetTy)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // returned by value.
     if (!getRecordArgABI(RetTy, getCXXABI())) {
@@ -911,7 +911,7 @@ ABIArgInfo WebAssemblyABIInfo::classifyReturnType(QualType RetTy) const {
 
 Address WebAssemblyABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                                       QualType Ty) const {
-  bool IsIndirect = isAggregateTypeForABI(Ty) &&
+  bool IsIndirect = isAggregateTypeForABI(getContext(), Ty) &&
                     !isEmptyRecord(getContext(), Ty, true) &&
                     !isSingleElementStruct(Ty, getContext());
   return emitVoidPtrVAArg(CGF, VAListAddr, Ty, IsIndirect,
@@ -966,7 +966,7 @@ Address PNaClABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
 
 /// Classify argument of given type \p Ty.
 ABIArgInfo PNaClABIInfo::classifyArgumentType(QualType Ty) const {
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
       return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
     return getNaturalAlignIndirect(Ty);
@@ -992,7 +992,7 @@ ABIArgInfo PNaClABIInfo::classifyReturnType(QualType RetTy) const {
     return ABIArgInfo::getIgnore();
 
   // In the PNaCl ABI we always return records/structures on the stack.
-  if (isAggregateTypeForABI(RetTy))
+  if (isAggregateTypeForABI(getContext(), RetTy))
     return getNaturalAlignIndirect(RetTy);
 
   // Treat extended integers as integers if <=64, otherwise pass indirectly.
@@ -1511,7 +1511,7 @@ ABIArgInfo X86_32ABIInfo::classifyReturnType(QualType RetTy,
     return ABIArgInfo::getDirect();
   }
 
-  if (isAggregateTypeForABI(RetTy)) {
+  if (isAggregateTypeForABI(getContext(), RetTy)) {
     if (const RecordType *RT = RetTy->getAs<RecordType>()) {
       // Structures with flexible arrays are always indirect.
       if (RT->getDecl()->hasFlexibleArrayMember())
@@ -1685,7 +1685,7 @@ bool X86_32ABIInfo::shouldAggregateUseDirect(QualType Ty, CCState &State,
   // On Windows, aggregates other than HFAs are never passed in registers, and
   // they do not consume register slots. Homogenous floating-point aggregates
   // (HFAs) have already been dealt with at this point.
-  if (IsWin32StructABI && isAggregateTypeForABI(Ty))
+  if (IsWin32StructABI && isAggregateTypeForABI(getContext(), Ty))
     return false;
 
   NeedsPadding = false;
@@ -1798,7 +1798,7 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
     return getIndirectResult(Ty, /*ByVal=*/false, State);
   }
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Structures with flexible arrays are always indirect.
     // FIXME: This should not be byval!
     if (RT && RT->getDecl()->hasFlexibleArrayMember())
@@ -3136,7 +3136,7 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
 ABIArgInfo X86_64ABIInfo::getIndirectReturnResult(QualType Ty) const {
   // If this is a scalar LLVM value then assume LLVM will pass it in the right
   // place naturally.
-  if (!isAggregateTypeForABI(Ty)) {
+  if (!isAggregateTypeForABI(getContext(), Ty)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -3177,7 +3177,7 @@ ABIArgInfo X86_64ABIInfo::getIndirectResult(QualType Ty,
   // the argument in the free register. This does not seem to happen currently,
   // but this code would be much safer if we could mark the argument with
   // 'onstack'. See PR12193.
-  if (!isAggregateTypeForABI(Ty) && !IsIllegalVectorType(Ty) &&
+  if (!isAggregateTypeForABI(getContext(), Ty) && !IsIllegalVectorType(Ty) &&
       !Ty->isExtIntType()) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
@@ -4360,7 +4360,7 @@ Address WinX86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
 
   // MS x64 ABI requirement: "Any argument that doesn't fit in 8 bytes, or is
   // not 1, 2, 4, or 8 bytes, must be passed by reference."
-  if (isAggregateTypeForABI(Ty) || Ty->isMemberPointerType()) {
+  if (isAggregateTypeForABI(getContext(), Ty) || Ty->isMemberPointerType()) {
     uint64_t Width = getContext().getTypeSize(Ty);
     IsIndirect = Width > 64 || !llvm::isPowerOf2_64(Width);
   }
@@ -4518,7 +4518,7 @@ ABIArgInfo AIXABIInfo::classifyReturnType(QualType RetTy) const {
 
   // TODO:  Evaluate if AIX power alignment rule would have an impact on the
   // alignment here.
-  if (isAggregateTypeForABI(RetTy))
+  if (isAggregateTypeForABI(getContext(), RetTy))
     return getNaturalAlignIndirect(RetTy);
 
   return (isPromotableTypeForABI(RetTy) ? ABIArgInfo::getExtend(RetTy)
@@ -4536,7 +4536,7 @@ ABIArgInfo AIXABIInfo::classifyArgumentType(QualType Ty) const {
 
   // TODO:  Evaluate if AIX power alignment rule would have an impact on the
   // alignment here.
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // passed by value.
     if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
@@ -4665,7 +4665,7 @@ ABIArgInfo PPC32_SVR4_ABIInfo::classifyReturnType(QualType RetTy) const {
   uint64_t Size;
 
   // -msvr4-struct-return puts small aggregates in GPR3 and GPR4.
-  if (isAggregateTypeForABI(RetTy) && IsRetSmallStructInRegABI &&
+  if (isAggregateTypeForABI(getContext(), RetTy) && IsRetSmallStructInRegABI &&
       (Size = getContext().getTypeSize(RetTy)) <= 64) {
     // System V ABI (1995), page 3-22, specified:
     // > A structure or union whose size is less than or equal to 8 bytes
@@ -5069,7 +5069,7 @@ CharUnits PPC64_SVR4_ABIInfo::getParamTypeAlignment(QualType Ty) const {
   const Type *Base = nullptr;
   uint64_t Members = 0;
   if (!AlignAsType && Kind == ELFv2 &&
-      isAggregateTypeForABI(Ty) && isHomogeneousAggregate(Ty, Base, Members))
+      isAggregateTypeForABI(getContext(), Ty) && isHomogeneousAggregate(Ty, Base, Members))
     AlignAsType = Base;
 
   // With special case aggregates, only vector base types need alignment.
@@ -5084,7 +5084,7 @@ CharUnits PPC64_SVR4_ABIInfo::getParamTypeAlignment(QualType Ty) const {
 
   // Otherwise, we only need alignment for any aggregate type that
   // has an alignment requirement of >= 16 bytes.
-  if (isAggregateTypeForABI(Ty) && getContext().getTypeAlign(Ty) >= 128) {
+  if (isAggregateTypeForABI(getContext(), Ty) && getContext().getTypeAlign(Ty) >= 128) {
     if (HasQPX && getContext().getTypeAlign(Ty) >= 256)
       return CharUnits::fromQuantity(32);
     return CharUnits::fromQuantity(16);
@@ -5253,7 +5253,7 @@ PPC64_SVR4_ABIInfo::classifyArgumentType(QualType Ty) const {
     if (EIT->getNumBits() > 128)
       return getNaturalAlignIndirect(Ty, /*ByVal=*/true);
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
       return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
 
@@ -5329,7 +5329,7 @@ PPC64_SVR4_ABIInfo::classifyReturnType(QualType RetTy) const {
     if (EIT->getNumBits() > 128)
       return getNaturalAlignIndirect(RetTy, /*ByVal=*/false);
 
-  if (isAggregateTypeForABI(RetTy)) {
+  if (isAggregateTypeForABI(getContext(), RetTy)) {
     // ELFv2 homogeneous aggregates are returned as array types.
     const Type *Base = nullptr;
     uint64_t Members = 0;
@@ -5617,7 +5617,7 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty) const {
     return getNaturalAlignIndirect(Ty, /*ByVal=*/false);
   }
 
-  if (!isAggregateTypeForABI(Ty)) {
+  if (!isAggregateTypeForABI(getContext(), Ty)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -5698,7 +5698,7 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy,
   if (RetTy->isVectorType() && getContext().getTypeSize(RetTy) > 128)
     return getNaturalAlignIndirect(RetTy);
 
-  if (!isAggregateTypeForABI(RetTy)) {
+  if (!isAggregateTypeForABI(getContext(), RetTy)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
       RetTy = EnumTy->getDecl()->getIntegerType();
@@ -5968,7 +5968,7 @@ Address AArch64ABIInfo::EmitAAPCSVAArg(Address VAListAddr,
     // It might be right-aligned in its slot.
     CharUnits SlotSize = BaseAddr.getAlignment();
     if (CGF.CGM.getDataLayout().isBigEndian() && !IsIndirect &&
-        (IsHFA || !isAggregateTypeForABI(Ty)) &&
+        (IsHFA || !isAggregateTypeForABI(getContext(), Ty)) &&
         TySize < SlotSize) {
       CharUnits Offset = SlotSize - TySize;
       BaseAddr = CGF.Builder.CreateConstInBoundsByteGEP(BaseAddr, Offset);
@@ -6021,7 +6021,7 @@ Address AArch64ABIInfo::EmitAAPCSVAArg(Address VAListAddr,
   // Write the new value of __stack for the next call to va_arg
   CGF.Builder.CreateStore(NewStack, stack_p);
 
-  if (CGF.CGM.getDataLayout().isBigEndian() && !isAggregateTypeForABI(Ty) &&
+  if (CGF.CGM.getDataLayout().isBigEndian() && !isAggregateTypeForABI(getContext(), Ty) &&
       TySize < StackSlotSize) {
     CharUnits Offset = StackSlotSize - TySize;
     OnStackAddr = CGF.Builder.CreateConstInBoundsByteGEP(OnStackAddr, Offset);
@@ -6051,7 +6051,7 @@ Address AArch64ABIInfo::EmitDarwinVAArg(Address VAListAddr, QualType Ty,
   // The backend's lowering doesn't support va_arg for aggregates or
   // illegal vector types.  Lower VAArg here for these cases and use
   // the LLVM va_arg instruction for everything else.
-  if (!isAggregateTypeForABI(Ty) && !isIllegalVectorType(Ty))
+  if (!isAggregateTypeForABI(getContext(), Ty) && !isIllegalVectorType(Ty))
     return EmitVAArgInstr(CGF, VAListAddr, Ty, ABIArgInfo::getDirect());
 
   uint64_t PointerSize = getTarget().getPointerWidth(0) / 8;
@@ -6387,7 +6387,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
   if (isIllegalVectorType(Ty))
     return coerceIllegalVector(Ty);
 
-  if (!isAggregateTypeForABI(Ty)) {
+  if (!isAggregateTypeForABI(getContext(), Ty)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>()) {
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -6590,7 +6590,7 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy, bool isVariadic,
       return coerceIllegalVector(RetTy);
   }
 
-  if (!isAggregateTypeForABI(RetTy)) {
+  if (!isAggregateTypeForABI(getContext(), RetTy)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
       RetTy = EnumTy->getDecl()->getIntegerType();
@@ -6995,7 +6995,7 @@ ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
     Ty = EnumTy->getDecl()->getIntegerType();
 
   // Return aggregates type as indirect by value
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Under CUDA device compilation, tex/surf builtin types are replaced with
     // object types and passed directly.
     if (getContext().getLangOpts().CUDAIsDevice) {
@@ -7202,7 +7202,7 @@ bool SystemZABIInfo::isPromotableIntegerTypeForABI(QualType Ty) const {
 bool SystemZABIInfo::isCompoundType(QualType Ty) const {
   return (Ty->isAnyComplexType() ||
           Ty->isVectorType() ||
-          isAggregateTypeForABI(Ty));
+          isAggregateTypeForABI(getContext(), Ty));
 }
 
 bool SystemZABIInfo::isVectorArgumentType(QualType Ty) const {
@@ -7759,7 +7759,7 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
   unsigned CurrOffset = llvm::alignTo(Offset, Align);
   Offset = CurrOffset + llvm::alignTo(TySize, Align * 8) / 8;
 
-  if (isAggregateTypeForABI(Ty) || Ty->isVectorType()) {
+  if (isAggregateTypeForABI(getContext(), Ty) || Ty->isVectorType()) {
     // Ignore empty aggregates.
     if (TySize == 0)
       return ABIArgInfo::getIgnore();
@@ -7851,7 +7851,7 @@ ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
   if (!IsO32 && Size == 0)
     return ABIArgInfo::getIgnore();
 
-  if (isAggregateTypeForABI(RetTy) || RetTy->isVectorType()) {
+  if (isAggregateTypeForABI(getContext(), RetTy) || RetTy->isVectorType()) {
     if (Size <= 128) {
       if (RetTy->isAnyComplexType())
         return ABIArgInfo::getDirect();
@@ -8166,7 +8166,7 @@ static bool HexagonAdjustRegsLeft(uint64_t Size, unsigned *RegsLeft) {
 
 ABIArgInfo HexagonABIInfo::classifyArgumentType(QualType Ty,
                                                 unsigned *RegsLeft) const {
-  if (!isAggregateTypeForABI(Ty)) {
+  if (!isAggregateTypeForABI(getContext(), Ty)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -8226,7 +8226,7 @@ ABIArgInfo HexagonABIInfo::classifyReturnType(QualType RetTy) const {
       return getNaturalAlignIndirect(RetTy);
   }
 
-  if (!isAggregateTypeForABI(RetTy)) {
+  if (!isAggregateTypeForABI(getContext(), RetTy)) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
       RetTy = EnumTy->getDecl()->getIntegerType();
@@ -8570,7 +8570,7 @@ ABIArgInfo LanaiABIInfo::classifyArgumentType(QualType Ty,
     }
   }
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Structures with flexible arrays are always indirect.
     if (RT && RT->getDecl()->hasFlexibleArrayMember())
       return getIndirectResult(Ty, /*ByVal=*/true, State);
@@ -8754,7 +8754,7 @@ Address AMDGPUABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
 }
 
 ABIArgInfo AMDGPUABIInfo::classifyReturnType(QualType RetTy) const {
-  if (isAggregateTypeForABI(RetTy)) {
+  if (isAggregateTypeForABI(getContext(), RetTy)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // returned by value.
     if (!getRecordArgABI(RetTy, getCXXABI())) {
@@ -8819,7 +8819,7 @@ ABIArgInfo AMDGPUABIInfo::classifyKernelArgumentType(QualType Ty) const {
   // to global address space when using byref. This would require implementing a
   // new kind of coercion of the in-memory type when for indirect arguments.
   if (!getContext().getLangOpts().OpenCL && LTy == OrigLTy &&
-      isAggregateTypeForABI(Ty)) {
+      isAggregateTypeForABI(getContext(), Ty)) {
     return ABIArgInfo::getIndirectAliased(
         getContext().getTypeAlignInChars(Ty),
         getContext().getTargetAddressSpace(LangAS::opencl_constant),
@@ -8838,7 +8838,7 @@ ABIArgInfo AMDGPUABIInfo::classifyArgumentType(QualType Ty,
 
   Ty = useFirstFieldIfTransparentUnion(Ty);
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Records with non-trivial destructors/copy-constructors should not be
     // passed by value.
     if (auto RAA = getRecordArgABI(Ty, getCXXABI()))
@@ -9334,7 +9334,7 @@ SparcV9ABIInfo::classifyType(QualType Ty, unsigned SizeLimit) const {
       return ABIArgInfo::getExtend(Ty);
 
   // Other non-aggregates go in registers.
-  if (!isAggregateTypeForABI(Ty))
+  if (!isAggregateTypeForABI(getContext(), Ty))
     return ABIArgInfo::getDirect();
 
   // If a C++ object has either a non-trivial copy constructor or a non-trivial
@@ -9563,7 +9563,7 @@ ABIArgInfo ARCABIInfo::classifyArgumentType(QualType Ty,
 
   auto SizeInRegs = llvm::alignTo(getContext().getTypeSize(Ty), 32) / 32;
 
-  if (isAggregateTypeForABI(Ty)) {
+  if (isAggregateTypeForABI(getContext(), Ty)) {
     // Structures with flexible arrays are always indirect.
     if (RT && RT->getDecl()->hasFlexibleArrayMember())
       return getIndirectByValue(Ty);
@@ -10635,7 +10635,7 @@ ABIArgInfo RISCVABIInfo::classifyArgumentType(QualType Ty, bool IsFixed,
 
   ArgGPRsLeft -= NeededArgGPRs;
 
-  if (!isAggregateTypeForABI(Ty) && !Ty->isVectorType()) {
+  if (!isAggregateTypeForABI(getContext(), Ty) && !Ty->isVectorType()) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();

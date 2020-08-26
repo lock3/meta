@@ -5256,7 +5256,7 @@ TryParameterConversion(Sema &S, Expr *From, QualType ToType,
   const ParameterType *ParmType = cast<ParameterType>(ToType);
 
   // Perform the conversion/initialization on the adjusted type.
-  ToType = ParmType->getAdjustedType();
+  ToType = ParmType->getAdjustedType(S.Context);
 
   auto Seq = TryCopyInitialization(S, From, ToType, SuppressUserConversions, 
                                    InOverloadResolution,

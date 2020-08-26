@@ -2995,7 +2995,7 @@ ARCExprEmitter<Impl,Result>::visitPseudoObjectExpr(const PseudoObjectExpr *E) {
       // If this semantic is the result of the pseudo-object
       // expression, try to evaluate the source as +1.
       if (ov == resultExpr) {
-        assert(!OVMA::shouldBindAsLValue(ov));
+        assert(!OVMA::shouldBindAsLValue(CGF, ov));
         result = asImpl().visit(ov->getSourceExpr());
         opaqueData = OVMA::bind(CGF, ov,
                             RValue::get(asImpl().getValueOfResult(result)));
