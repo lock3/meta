@@ -3941,7 +3941,6 @@ recurse:
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
-  case Expr::CXXFragmentExprClass:
   case Expr::CXXFragmentCaptureExprClass:
   {
     if (!NullOut) {
@@ -3956,14 +3955,25 @@ recurse:
   }
 
   case Expr::CXXReflectExprClass: {
-    Out << "Re";
-
-    const CXXReflectExpr *RE = cast<CXXReflectExpr>(E);
+    const auto *RE = cast<CXXReflectExpr>(E);
     const ReflectionOperand &Op = RE->getOperand();
 
+    Out << "Re";
     mangleReflectionOp(Op);
     break;
- }
+  }
+
+  case Expr::CXXFragmentExprClass: {
+    const auto *FE = cast<CXXFragmentExpr>(E);
+
+    Out << "ReF";
+    Out << reinterpret_cast<std::uintmax_t>(FE);
+    for (Expr *E : FE->captures()) {
+      Out << "C";
+      mangleExpression(E);
+    }
+    break;
+  }
 
   case Expr::CXXUuidofExprClass: {
     const CXXUuidofExpr *UE = cast<CXXUuidofExpr>(E);

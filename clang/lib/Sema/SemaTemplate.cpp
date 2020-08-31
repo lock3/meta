@@ -6890,7 +6890,8 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
       break;
-    case APValue::Reflection: {
+    case APValue::Reflection:
+    case APValue::Fragment: {
       assert(ParamType->isReflectionType());
 
       // FIXME: This conversion seems wrong. However, without
@@ -6906,10 +6907,6 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Converted = TemplateArgument(CE, TemplateArgument::Expression);
       break;
     }
-    case APValue::Fragment:
-      // Not yet supported, returning an error will drop this candidate from the overload
-      // set, rather than causing a hard crash via an unreachable.
-      return ExprError();
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
 

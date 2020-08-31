@@ -73,3 +73,19 @@ void test1() {
 }
 
 }
+
+namespace fragment_reflection {
+
+void test1() {
+  // CHECK: define internal i32 @_Z3fooIXReF{{[0-9]+}}EEDav(
+  foo<fragment class { int k; }>();
+}
+
+void test2() {
+  // CHECK: define internal i32 @_Z3fooIXReF{{[0-9]+}}CL_ZZN19fragment_reflection5test2EvE7var_capEEEDav(
+  constexpr int var_cap = 344;
+  foo<fragment class { int k = %{var_cap}; }>();
+}
+
+}
+
