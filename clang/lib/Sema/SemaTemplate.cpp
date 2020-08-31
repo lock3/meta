@@ -6884,8 +6884,18 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       break;
     case APValue::Reflection: {
       assert(ParamType->isReflectionType());
-      ExprResult ReflExpr = BuildCXXReflectExpr(Value, StartLoc);
-      Converted = TemplateArgument(ReflExpr.get(), TemplateArgument::Expression);
+
+      // FIXME: This conversion seems wrong. However, without
+      // converting this expression, subsequent evaluations of the
+      // constant expression are lvalue evaluations -- incompatible
+      // with the value kind of the produced expression (rvalue), that
+      // we need for use of reflections as a template arguments.
+      ExprResult ConvertedArg = DefaultFunctionArrayLvalueConversion(Arg);
+      if (ConvertedArg.isInvalid())
+        return ExprError();
+
+      auto *CE = ConstantExpr::Create(Context, ConvertedArg.get(), Value);
+      Converted = TemplateArgument(CE, TemplateArgument::Expression);
       break;
     }
     case APValue::MemberPointer: {
