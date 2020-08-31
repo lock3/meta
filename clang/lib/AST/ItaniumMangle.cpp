@@ -3589,7 +3589,7 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
 }
 
 void CXXNameMangler::mangleType(const ReflectedType *T) {
-  // <type> ::= RT <expression> E  # decltype of an expression
+  // <type> ::= RT <expression> E  # typename of an expression
   Out << "RT";
   mangleExpression(T->getReflection());
   Out << 'E';
@@ -3797,7 +3797,7 @@ void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
   switch (Op.getKind()) {
   case ReflectionOperand::Type: {
     Out << "Ty";
-    mangleType(Op.getAsType());
+    mangleType(Op.getAsType().getCanonicalType());
     return;
   }
   case ReflectionOperand::Template: {
@@ -3814,17 +3814,18 @@ void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
     }
     return;
   }
-  case ReflectionOperand::Declaration: {
-    NamedDecl *ND = cast<NamedDecl>(Op.getAsDeclaration());
-    mangleName(ND);
-    return;
-  }
-  case ReflectionOperand::Invalid:
-  case ReflectionOperand::Expression:
-  case ReflectionOperand::BaseSpecifier: {
+  case ReflectionOperand::Expression: {
     Out << reinterpret_cast<std::uintmax_t>(Op.getOpaqueReflectionValue());
     return;
   }
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Declaration:
+  case ReflectionOperand::BaseSpecifier: {
+    // These reflections should never show up in the mangler, as there
+    // isn't a way to directly reflect them.
+    llvm_unreachable("invalid reflection kind");
+  }
+
   }
 
   llvm_unreachable("unhandled reflection kind");

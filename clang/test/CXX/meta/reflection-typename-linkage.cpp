@@ -15,7 +15,7 @@ void test1() {
 // Check for slightly different reflection mangling:
 //
 // CHECK: define {{.*}} @_Z5test1v()
-// CHECK:    call i32 @_Z14get_typename_tIiERTReTyT_ET_(i32 1)
+// CHECK:    call i32 @_Z14get_typename_tIiERTReTyT_ES0_(i32 1)
 
 
 // CHECK: define i32 @_Z7get_numv() #0 {

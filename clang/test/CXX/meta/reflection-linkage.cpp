@@ -7,61 +7,69 @@ namespace meta {
 }
 
 template<meta::info refl>
-auto do_the_thing() {
+auto foo() {
   return 0;
 }
 
-void test1() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXRe{{[0-9]+}}EEDav(
-  do_the_thing<__invalid_reflection("Abc")>();
-}
+struct PubType {
+};
 
 namespace {
   struct PrivType {
   };
 }
 
+template<int x>
+class bar {
+};
+
+namespace type_reflection {
+
+void test1() {
+  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy7PubTypeEEDav(
+  foo<reflexpr(PubType)>();
+}
+
 void test2() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXReTyN12_GLOBAL__N_18PrivTypeEEEDav(
-  do_the_thing<reflexpr(PrivType)>();
+  // CHECK: define internal i32 @_Z3fooIXReTyN12_GLOBAL__N_18PrivTypeEEEDav(
+  foo<reflexpr(PrivType)>();
 }
 
 void test3() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXReN12_GLOBAL__N_18PrivTypeEEEDav(
-  do_the_thing<__reflect(query_get_definition, reflexpr(PrivType))>();
+  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy3barILi1EEEEDav(
+  foo<reflexpr(bar<1>)>();
 }
 
-struct PubType {
-};
-
-void test4() {
-  // CHECK: define linkonce_odr i32 @_Z12do_the_thingIXReTy7PubTypeEEDav(
-  do_the_thing<reflexpr(PubType)>();
 }
 
-void test5() {
-  // CHECK: define linkonce_odr i32 @_Z12do_the_thingIXRe7PubTypeEEDav(
-  do_the_thing<__reflect(query_get_definition, reflexpr(PubType))>();
+namespace template_reflection {
+
+void test3() {
+  // CHECK: define linkonce_odr i32 @_Z3fooIXRe3barEEDav(
+  foo<reflexpr(bar)>();
 }
 
-namespace foo {
-  template<typename T>
-  void tmpl() { }
 }
 
-void test6() {
-  // CHECK: define linkonce_odr i32 @_Z12do_the_thingIXReN3foo4tmplEEEDav(
-  do_the_thing<__reflect(query_get_begin, reflexpr(foo))>();
+namespace namespace_reflection {
+
+void test1() {
+  // CHECK: define internal i32 @_Z3fooIXReTuEEDav(
+  foo<reflexpr(::)>();
 }
 
-void test7() {
-  // CHECK: define linkonce_odr i32 @_Z12do_the_thingIXRe3fooEEDav(
-  do_the_thing<reflexpr(foo)>();
+void test2() {
+  // CHECK: define linkonce_odr i32 @_Z3fooIXRe20namespace_reflectionEEDav(
+  foo<reflexpr(::namespace_reflection)>();
 }
 
-void test8() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXRe{{[0-9]+}}EEDav(
-  do_the_thing<reflexpr(1 + 2)>();
 }
 
-// FIXME: Add test for base specifier.
+namespace expr_reflection {
+
+void test1() {
+  // CHECK: define internal i32 @_Z3fooIXRe{{[0-9]+}}EEDav(
+  foo<reflexpr(1 + 2)>();
+}
+
+}
