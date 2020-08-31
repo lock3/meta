@@ -3810,17 +3810,18 @@ void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
     }
     return;
   }
-  case ReflectionOperand::Declaration: {
-    NamedDecl *ND = cast<NamedDecl>(Op.getAsDeclaration());
-    mangleName(ND);
-    return;
-  }
-  case ReflectionOperand::Invalid:
-  case ReflectionOperand::Expression:
-  case ReflectionOperand::BaseSpecifier: {
+  case ReflectionOperand::Expression: {
     Out << reinterpret_cast<std::uintmax_t>(Op.getOpaqueReflectionValue());
     return;
   }
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Declaration:
+  case ReflectionOperand::BaseSpecifier: {
+    // These reflections should never show up in the mangler, as there
+    // isn't a way to directly reflect them.
+    llvm_unreachable("invalid reflection kind");
+  }
+
   }
 
   llvm_unreachable("unhandled reflection kind");
