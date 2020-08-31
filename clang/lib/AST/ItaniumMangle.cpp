@@ -3585,7 +3585,7 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
 }
 
 void CXXNameMangler::mangleType(const ReflectedType *T) {
-  // <type> ::= RT <expression> E  # decltype of an expression
+  // <type> ::= RT <expression> E  # typename of an expression
   Out << "RT";
   mangleExpression(T->getReflection());
   Out << 'E';
@@ -3793,7 +3793,7 @@ void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
   switch (Op.getKind()) {
   case ReflectionOperand::Type: {
     Out << "Ty";
-    mangleType(Op.getAsType());
+    mangleType(Op.getAsType().getCanonicalType());
     return;
   }
   case ReflectionOperand::Template: {
