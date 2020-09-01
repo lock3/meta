@@ -953,31 +953,33 @@ next(ForwardIterator it,
 
 #if __cplusplus >= 201103L
 namespace std {
-  template <typename T> // TODO: Implement the stub for deleter.
-  class unique_ptr {
-  public:
-    unique_ptr() noexcept {}
-    unique_ptr(T *) noexcept {}
-    unique_ptr(const unique_ptr &) noexcept = delete;
-    unique_ptr(unique_ptr &&) noexcept;
 
+template <typename T> // TODO: Implement the stub for deleter.
+class unique_ptr {
+public:
+  unique_ptr() noexcept {}
+  unique_ptr(T *) noexcept {}
+  unique_ptr(const unique_ptr &) noexcept = delete;
+  unique_ptr(unique_ptr &&) noexcept;
 
-    T *get() const noexcept;
-    T *release() const noexcept;
-    void reset(T *p = nullptr) const noexcept;
-    void swap(unique_ptr<T> &p) const noexcept;
+  T *get() const noexcept;
+  T *release() const noexcept;
+  void reset(T *p = nullptr) const noexcept;
+  void swap(unique_ptr<T> &p) const noexcept;
 
-    typename std::add_lvalue_reference<T>::type operator*() const;
-    T *operator->() const noexcept;
-    operator bool() const noexcept;
-    unique_ptr<T> &operator=(unique_ptr<T> &&p) noexcept;
-  };
+  typename std::add_lvalue_reference<T>::type operator*() const;
+  T *operator->() const noexcept;
+  operator bool() const noexcept;
+  unique_ptr<T> &operator=(unique_ptr<T> &&p) noexcept;
+  unique_ptr<T> &operator=(nullptr_t) noexcept;
+};
 
-  // TODO :: Once the deleter parameter is added update with additional template parameter.
-  template <typename T>
-  void swap(unique_ptr<T> &x, unique_ptr<T> &y) noexcept {
-    x.swap(y);
-  }
+// TODO :: Once the deleter parameter is added update with additional template parameter.
+template <typename T>
+void swap(unique_ptr<T> &x, unique_ptr<T> &y) noexcept {
+  x.swap(y);
+}
+
 } // namespace std
 #endif
 

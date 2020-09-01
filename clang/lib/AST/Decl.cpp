@@ -339,7 +339,8 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
         Reflection Refl(Ctx, Result.Val);
         switch (Refl.getKind()) {
         case RK_type: {
-          LV.merge(getLVForType(*Refl.getAsType(), computation));
+          QualType ReflTy = Refl.getAsType().getCanonicalType();
+          LV.merge(getLVForType(*ReflTy, computation));
           continue;
         }
         case RK_declaration: {
