@@ -390,8 +390,10 @@ static bool checkTargetOptions(const TargetOptions &TargetOpts,
   // We can tolerate different CPUs in many cases, notably when one CPU
   // supports a strict superset of another. When allowing compatible
   // differences skip this check.
-  if (!AllowCompatibleDifferences)
+  if (!AllowCompatibleDifferences) {
     CHECK_TARGET_OPT(CPU, "target CPU");
+    CHECK_TARGET_OPT(TuneCPU, "tune CPU");
+  }
 
 #undef CHECK_TARGET_OPT
 
@@ -4987,10 +4989,10 @@ void ASTReader::InitializeContext() {
                         /*ImportLoc=*/Import.ImportLoc);
       if (Import.ImportLoc.isValid())
         PP.makeModuleVisible(Imported, Import.ImportLoc);
-      // FIXME: should we tell Sema to make the module visible too?
+      // This updates visibility for Preprocessor only. For Sema, which can be
+      // nullptr here, we do the same later, in UpdateSema().
     }
   }
-  ImportedModules.clear();
 }
 
 void ASTReader::finalizeForWriting() {
@@ -5779,6 +5781,7 @@ bool ASTReader::ParseTargetOptions(const RecordData &Record, bool Complain,
   TargetOptions TargetOpts;
   TargetOpts.Triple = ReadString(Record, Idx);
   TargetOpts.CPU = ReadString(Record, Idx);
+  TargetOpts.TuneCPU = ReadString(Record, Idx);
   TargetOpts.ABI = ReadString(Record, Idx);
   for (unsigned N = Record[Idx++]; N; --N) {
     TargetOpts.FeaturesAsWritten.push_back(ReadString(Record, Idx));
@@ -7968,6 +7971,15 @@ void ASTReader::UpdateSema() {
       SemaObj->FpPragmaStack.CurrentPragmaLocation = FpPragmaCurrentLocation;
     }
   }
+
+  // For non-modular AST files, restore visiblity of modules.
+  for (auto &Import : ImportedModules) {
+    if (Import.ImportLoc.isInvalid())
+      continue;
+    if (Module *Imported = getSubmodule(Import.ID)) {
+      SemaObj->makeModuleVisible(Imported, Import.ImportLoc);
+    }
+  }
 }
 
 IdentifierInfo *ASTReader::get(StringRef Name) {
@@ -8966,7 +8978,7 @@ ASTReader::ReadSourceRange(ModuleFile &F, const RecordData &Record,
   return SourceRange(beg, end);
 }
 
-static FixedPointSemantics
+static llvm::FixedPointSemantics
 ReadFixedPointSemantics(const SmallVectorImpl<uint64_t> &Record,
                         unsigned &Idx) {
   unsigned Width = Record[Idx++];
@@ -8975,8 +8987,8 @@ ReadFixedPointSemantics(const SmallVectorImpl<uint64_t> &Record,
   bool IsSigned = Tmp & 0x1;
   bool IsSaturated = Tmp & 0x2;
   bool HasUnsignedPadding = Tmp & 0x4;
-  return FixedPointSemantics(Width, Scale, IsSigned, IsSaturated,
-                             HasUnsignedPadding);
+  return llvm::FixedPointSemantics(Width, Scale, IsSigned, IsSaturated,
+                                   HasUnsignedPadding);
 }
 
 static const llvm::fltSemantics &
@@ -8999,8 +9011,8 @@ APValue ASTRecordReader::readAPValue() {
     return APValue(readAPFloat(FloatSema));
   }
   case APValue::FixedPoint: {
-    FixedPointSemantics FPSema = ReadFixedPointSemantics(Record, Idx);
-    return APValue(APFixedPoint(readAPInt(), FPSema));
+    llvm::FixedPointSemantics FPSema = ReadFixedPointSemantics(Record, Idx);
+    return APValue(llvm::APFixedPoint(readAPInt(), FPSema));
   }
   case APValue::ComplexInt: {
     llvm::APSInt First = readAPSInt();

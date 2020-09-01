@@ -17,6 +17,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libunwind.h"
+#include "config.h"
+#include "dwarf2.h"
+#include "EHHeaderParser.hpp"
+#include "Registers.hpp"
+
 #ifndef _LIBUNWIND_USE_DLADDR
   #if !defined(_LIBUNWIND_IS_BAREMETAL) && !defined(_WIN32)
     #define _LIBUNWIND_USE_DLADDR 1
@@ -38,12 +44,6 @@ struct EHABIIndexEntry {
   uint32_t data;
 };
 #endif
-
-#include "libunwind.h"
-#include "config.h"
-#include "dwarf2.h"
-#include "EHHeaderParser.hpp"
-#include "Registers.hpp"
 
 #ifdef __APPLE__
 
@@ -411,10 +411,13 @@ struct _LIBUNWIND_HIDDEN dl_iterate_cb_data {
     #error "_LIBUNWIND_SUPPORT_DWARF_UNWIND requires _LIBUNWIND_SUPPORT_DWARF_INDEX on this platform."
   #endif
 
+#if defined(_LIBUNWIND_USE_FRAME_HEADER_CACHE)
 #include "FrameHeaderCache.hpp"
 
-// There should be just one of these per process.
-static FrameHeaderCache ProcessFrameHeaderCache;
+// Typically there is one cache per process, but when libunwind is built as a
+// hermetic static library, then each shared object may have its own cache.
+static FrameHeaderCache TheFrameHeaderCache;
+#endif
 
 static bool checkAddrInSegment(const Elf_Phdr *phdr, size_t image_base,
                                dl_iterate_cb_data *cbdata) {
@@ -430,13 +433,18 @@ static bool checkAddrInSegment(const Elf_Phdr *phdr, size_t image_base,
   return false;
 }
 
-int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo, size_t pinfo_size,
-                             void *data) {
+static int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo,
+                                    size_t pinfo_size, void *data) {
   auto cbdata = static_cast<dl_iterate_cb_data *>(data);
   if (pinfo->dlpi_phnum == 0 || cbdata->targetAddr < pinfo->dlpi_addr)
     return 0;
-  if (ProcessFrameHeaderCache.find(pinfo, pinfo_size, data))
+#if defined(_LIBUNWIND_USE_FRAME_HEADER_CACHE)
+  if (TheFrameHeaderCache.find(pinfo, pinfo_size, data))
     return 1;
+#else
+  // Avoid warning about unused variable.
+  (void)pinfo_size;
+#endif
 
   Elf_Addr image_base = calculateImageBase(pinfo);
   bool found_obj = false;
@@ -464,7 +472,9 @@ int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo, size_t pinfo_size,
       found_obj = checkAddrInSegment(phdr, image_base, cbdata);
     }
     if (found_obj && found_hdr) {
-      ProcessFrameHeaderCache.add(cbdata->sects);
+#if defined(_LIBUNWIND_USE_FRAME_HEADER_CACHE)
+      TheFrameHeaderCache.add(cbdata->sects);
+#endif
       return 1;
     }
   }
@@ -476,7 +486,8 @@ int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo, size_t pinfo_size,
 // Given all the #ifdef's above, the code here is for
 // defined(LIBUNWIND_ARM_EHABI)
 
-int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo, size_t, void *data) {
+static int findUnwindSectionsByPhdr(struct dl_phdr_info *pinfo, size_t,
+                                    void *data) {
   auto *cbdata = static_cast<dl_iterate_cb_data *>(data);
   bool found_obj = false;
   bool found_hdr = false;
