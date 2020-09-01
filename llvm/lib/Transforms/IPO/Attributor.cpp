@@ -97,11 +97,20 @@ static cl::opt<bool>
                               "derived from non-exact functions via cloning"),
                      cl::init(false));
 
+// These options can only used for debug builds.
+#ifndef NDEBUG
 static cl::list<std::string>
     SeedAllowList("attributor-seed-allow-list", cl::Hidden,
-                  cl::desc("Comma seperated list of attrbute names that are "
+                  cl::desc("Comma seperated list of attribute names that are "
                            "allowed to be seeded."),
                   cl::ZeroOrMore, cl::CommaSeparated);
+
+static cl::list<std::string> FunctionSeedAllowList(
+    "attributor-function-seed-allow-list", cl::Hidden,
+    cl::desc("Comma seperated list of function names that are "
+             "allowed to be seeded."),
+    cl::ZeroOrMore, cl::CommaSeparated);
+#endif
 
 static cl::opt<bool>
     DumpDepGraph("attributor-dump-dep-graph", cl::Hidden,
@@ -901,13 +910,15 @@ bool Attributor::checkForAllInstructions(function_ref<bool(Instruction &)> Pred,
 
   // TODO: use the function scope once we have call site AAReturnedValues.
   const IRPosition &QueryIRP = IRPosition::function(*AssociatedFunction);
-  const auto &LivenessAA =
-      getAAFor<AAIsDead>(QueryingAA, QueryIRP, /* TrackDependence */ false);
+  const auto *LivenessAA =
+      CheckBBLivenessOnly ? nullptr
+                          : &(getAAFor<AAIsDead>(QueryingAA, QueryIRP,
+                                                 /* TrackDependence */ false));
 
   auto &OpcodeInstMap =
       InfoCache.getOpcodeInstMapForFunction(*AssociatedFunction);
   if (!checkForAllInstructionsImpl(this, OpcodeInstMap, Pred, &QueryingAA,
-                                   &LivenessAA, Opcodes, CheckBBLivenessOnly))
+                                   LivenessAA, Opcodes, CheckBBLivenessOnly))
     return false;
 
   return true;
@@ -1289,8 +1300,14 @@ ChangeStatus Attributor::cleanupIR() {
   for (Function *Fn : CGModifiedFunctions)
     CGUpdater.reanalyzeFunction(*Fn);
 
-  for (Function *Fn : ToBeDeletedFunctions)
+  for (Function *Fn : ToBeDeletedFunctions) {
+    if (!Functions.count(Fn))
+      continue;
     CGUpdater.removeFunction(*Fn);
+  }
+
+  if (!ToBeDeletedFunctions.empty())
+    ManifestChange = ChangeStatus::CHANGED;
 
   NumFnDeleted += ToBeDeletedFunctions.size();
 
@@ -1311,7 +1328,7 @@ ChangeStatus Attributor::cleanupIR() {
 ChangeStatus Attributor::run() {
   TimeTraceScope TimeScope("Attributor::run");
 
-  SeedingPeriod = false;
+  Phase = AttributorPhase::UPDATE;
   runTillFixpoint();
 
   // dump graphs on demand
@@ -1324,13 +1341,19 @@ ChangeStatus Attributor::run() {
   if (PrintDependencies)
     DG.print();
 
+  Phase = AttributorPhase::MANIFEST;
   ChangeStatus ManifestChange = manifestAttributes();
+
+  Phase = AttributorPhase::CLEANUP;
   ChangeStatus CleanupChange = cleanupIR();
+
   return ManifestChange | CleanupChange;
 }
 
 ChangeStatus Attributor::updateAA(AbstractAttribute &AA) {
   TimeTraceScope TimeScope(AA.getName() + "::updateAA");
+  assert(Phase == AttributorPhase::UPDATE &&
+         "We can update AA only in the update stage!");
 
   // Use a new dependence vector for this update.
   DependenceVector DV;
@@ -1568,9 +1591,17 @@ bool Attributor::registerFunctionSignatureRewrite(
 }
 
 bool Attributor::shouldSeedAttribute(AbstractAttribute &AA) {
-  if (SeedAllowList.size() == 0)
-    return true;
-  return std::count(SeedAllowList.begin(), SeedAllowList.end(), AA.getName());
+  bool Result = true;
+#ifndef NDEBUG
+  if (SeedAllowList.size() != 0)
+    Result =
+        std::count(SeedAllowList.begin(), SeedAllowList.end(), AA.getName());
+  Function *Fn = AA.getAnchorScope();
+  if (FunctionSeedAllowList.size() != 0 && Fn)
+    Result &= std::count(FunctionSeedAllowList.begin(),
+                         FunctionSeedAllowList.end(), Fn->getName());
+#endif
+  return Result;
 }
 
 ChangeStatus Attributor::rewriteFunctionSignatures(
@@ -1581,7 +1612,7 @@ ChangeStatus Attributor::rewriteFunctionSignatures(
     Function *OldFn = It.getFirst();
 
     // Deleted functions do not require rewrites.
-    if (ToBeDeletedFunctions.count(OldFn))
+    if (!Functions.count(OldFn) || ToBeDeletedFunctions.count(OldFn))
       continue;
 
     const SmallVectorImpl<std::unique_ptr<ArgumentReplacementInfo>> &ARIs =
@@ -1934,6 +1965,9 @@ void Attributor::identifyDefaultAbstractAttributes(Function &F) {
     // Every function might be simplified.
     getOrCreateAAFor<AAValueSimplify>(RetPos);
 
+    // Every returned value might be marked noundef.
+    getOrCreateAAFor<AANoUndef>(RetPos);
+
     if (ReturnType->isPointerTy()) {
 
       // Every function with pointer return type might be marked align.
@@ -1959,6 +1993,9 @@ void Attributor::identifyDefaultAbstractAttributes(Function &F) {
 
     // Every argument might be dead.
     getOrCreateAAFor<AAIsDead>(ArgPos);
+
+    // Every argument might be marked noundef.
+    getOrCreateAAFor<AANoUndef>(ArgPos);
 
     if (Arg.getType()->isPointerTy()) {
       // Every argument with pointer type might be marked nonnull.
@@ -2026,6 +2063,9 @@ void Attributor::identifyDefaultAbstractAttributes(Function &F) {
 
       // Call site argument might be simplified.
       getOrCreateAAFor<AAValueSimplify>(CBArgPos);
+
+      // Every call site argument might be marked "noundef".
+      getOrCreateAAFor<AANoUndef>(CBArgPos);
 
       if (!CB.getArgOperand(I)->getType()->isPointerTy())
         continue;
@@ -2139,9 +2179,12 @@ raw_ostream &llvm::operator<<(raw_ostream &OS,
   OS << "set-state(< {";
   if (!S.isValidState())
     OS << "full-set";
-  else
+  else {
     for (auto &it : S.getAssumedSet())
       OS << it << ", ";
+    if (S.undefIsContained())
+      OS << "undef ";
+  }
   OS << "} >)";
 
   return OS;
@@ -2214,7 +2257,7 @@ static bool runAttributorOnFunctions(InformationCache &InfoCache,
         Functions.insert(NewF);
 
         // Update call graph
-        CGUpdater.registerOutlinedFunction(*NewF);
+        CGUpdater.replaceFunctionWith(*F, *NewF);
         for (const Use &U : NewF->uses())
           if (CallBase *CB = dyn_cast<CallBase>(U.getUser())) {
             auto *CallerF = CB->getCaller();
@@ -2324,7 +2367,9 @@ PreservedAnalyses AttributorCGSCCPass::run(LazyCallGraph::SCC &C,
   InformationCache InfoCache(M, AG, Allocator, /* CGSCC */ &Functions);
   if (runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater)) {
     // FIXME: Think about passes we will preserve and add them here.
-    return PreservedAnalyses::none();
+    PreservedAnalyses PA;
+    PA.preserve<FunctionAnalysisManagerCGSCCProxy>();
+    return PA;
   }
   return PreservedAnalyses::all();
 }

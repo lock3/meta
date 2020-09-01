@@ -13,8 +13,8 @@
 #ifndef LLVM_CLANG_AST_APVALUE_H
 #define LLVM_CLANG_AST_APVALUE_H
 
-#include "clang/Basic/FixedPoint.h"
 #include "clang/Basic/LLVM.h"
+#include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -33,6 +33,7 @@ namespace clang {
   class FieldDecl;
   class CXXBaseSpecifier;
   class Type;
+  class ValueDecl;
   class QualType;
   struct PrintingPolicy;
   struct InvalidReflection;
@@ -144,6 +145,7 @@ namespace clang {
 /// [APSInt] [APFloat], [Complex APSInt] [Complex APFloat], [Expr + Offset],
 /// [Vector: N * APValue], [Array: N * APValue]
 class APValue {
+  typedef llvm::APFixedPoint APFixedPoint;
   typedef llvm::APSInt APSInt;
   typedef llvm::APFloat APFloat;
 public:

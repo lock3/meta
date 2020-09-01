@@ -835,6 +835,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
       llvm::is_contained(DebugEntryValueArchs, T.getArch()))
     Opts.EmitCallSiteInfo = true;
 
+  Opts.ValueTrackingVariableLocations =
+      Args.hasArg(OPT_fexperimental_debug_variable_locations);
+
   Opts.DisableO0ImplyOptNone = Args.hasArg(OPT_disable_O0_optnone);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
   Opts.IndirectTlsSegRefs = Args.hasArg(OPT_mno_tls_direct_seg_refs);
@@ -1029,6 +1032,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.ThinLinkBitcodeFile =
       std::string(Args.getLastArgValue(OPT_fthin_link_bitcode_EQ));
+
+  Opts.HeapProf = Args.hasArg(OPT_fmemprof);
 
   Opts.MSVolatile = Args.hasArg(OPT_fms_volatile);
 
@@ -2947,8 +2952,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // Recovery AST still heavily relies on dependent-type machinery.
   Opts.RecoveryAST =
       Args.hasFlag(OPT_frecovery_ast, OPT_fno_recovery_ast, Opts.CPlusPlus);
-  Opts.RecoveryASTType =
-      Args.hasFlag(OPT_frecovery_ast_type, OPT_fno_recovery_ast_type, false);
+  Opts.RecoveryASTType = Args.hasFlag(
+      OPT_frecovery_ast_type, OPT_fno_recovery_ast_type, Opts.CPlusPlus);
   Opts.HeinousExtensions = Args.hasArg(OPT_fheinous_gnu_extensions);
   Opts.AccessControl = !Args.hasArg(OPT_fno_access_control);
   Opts.ElideConstructors = !Args.hasArg(OPT_fno_elide_constructors);
@@ -3671,6 +3676,7 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args,
       Opts.EABIVersion = EABIVersion;
   }
   Opts.CPU = std::string(Args.getLastArgValue(OPT_target_cpu));
+  Opts.TuneCPU = std::string(Args.getLastArgValue(OPT_tune_cpu));
   Opts.FPMath = std::string(Args.getLastArgValue(OPT_mfpmath));
   Opts.FeaturesAsWritten = Args.getAllArgValues(OPT_target_feature);
   Opts.LinkerVersion =
@@ -3886,7 +3892,7 @@ std::string CompilerInvocation::getModuleHash() const {
 
   // Extend the signature with the target options.
   code = hash_combine(code, TargetOpts->Triple, TargetOpts->CPU,
-                      TargetOpts->ABI);
+                      TargetOpts->TuneCPU, TargetOpts->ABI);
   for (const auto &FeatureAsWritten : TargetOpts->FeaturesAsWritten)
     code = hash_combine(code, FeatureAsWritten);
 

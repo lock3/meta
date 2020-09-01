@@ -926,8 +926,13 @@ void Verifier::visitDIEnumerator(const DIEnumerator &N) {
 
 void Verifier::visitDIBasicType(const DIBasicType &N) {
   AssertDI(N.getTag() == dwarf::DW_TAG_base_type ||
-               N.getTag() == dwarf::DW_TAG_unspecified_type,
+               N.getTag() == dwarf::DW_TAG_unspecified_type ||
+               N.getTag() == dwarf::DW_TAG_string_type,
            "invalid tag", &N);
+}
+
+void Verifier::visitDIStringType(const DIStringType &N) {
+  AssertDI(N.getTag() == dwarf::DW_TAG_string_type, "invalid tag", &N);
   AssertDI(!(N.isBigEndian() && N.isLittleEndian()) ,
             "has conflicting flags", &N);
 }
@@ -2913,8 +2918,8 @@ void Verifier::visitAddrSpaceCastInst(AddrSpaceCastInst &I) {
   Assert(SrcTy->getPointerAddressSpace() != DestTy->getPointerAddressSpace(),
          "AddrSpaceCast must be between different address spaces", &I);
   if (auto *SrcVTy = dyn_cast<VectorType>(SrcTy))
-    Assert(SrcVTy->getNumElements() ==
-               cast<VectorType>(DestTy)->getNumElements(),
+    Assert(cast<FixedVectorType>(SrcVTy)->getNumElements() ==
+               cast<FixedVectorType>(DestTy)->getNumElements(),
            "AddrSpaceCast vector pointer number of elements mismatch", &I);
   visitInstruction(I);
 }
@@ -5056,7 +5061,7 @@ void Verifier::visitIntrinsicCall(Intrinsic::ID ID, CallBase &Call) {
              "Vector element type mismatch of the result and second operand "
              "vector!", IF);
 
-    Assert(ResultTy->getNumElements() ==
+    Assert(cast<FixedVectorType>(ResultTy)->getNumElements() ==
                NumRows->getZExtValue() * NumColumns->getZExtValue(),
            "Result of a matrix operation does not fit in the returned vector!");
 
@@ -5142,7 +5147,7 @@ void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
     Assert(Operand->getType()->isFPOrFPVectorTy(),
            "Intrinsic first argument must be floating point", &FPI);
     if (auto *OperandT = dyn_cast<VectorType>(Operand->getType())) {
-      NumSrcElem = OperandT->getNumElements();
+      NumSrcElem = cast<FixedVectorType>(OperandT)->getNumElements();
     }
 
     Operand = &FPI;
@@ -5151,7 +5156,7 @@ void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
     Assert(Operand->getType()->isIntOrIntVectorTy(),
            "Intrinsic result must be an integer", &FPI);
     if (auto *OperandT = dyn_cast<VectorType>(Operand->getType())) {
-      Assert(NumSrcElem == OperandT->getNumElements(),
+      Assert(NumSrcElem == cast<FixedVectorType>(OperandT)->getNumElements(),
              "Intrinsic first argument and result vector lengths must be equal",
              &FPI);
     }
@@ -5165,7 +5170,7 @@ void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
     Assert(Operand->getType()->isIntOrIntVectorTy(),
            "Intrinsic first argument must be integer", &FPI);
     if (auto *OperandT = dyn_cast<VectorType>(Operand->getType())) {
-      NumSrcElem = OperandT->getNumElements();
+      NumSrcElem = cast<FixedVectorType>(OperandT)->getNumElements();
     }
 
     Operand = &FPI;
@@ -5174,7 +5179,7 @@ void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
     Assert(Operand->getType()->isFPOrFPVectorTy(),
            "Intrinsic result must be a floating point", &FPI);
     if (auto *OperandT = dyn_cast<VectorType>(Operand->getType())) {
-      Assert(NumSrcElem == OperandT->getNumElements(),
+      Assert(NumSrcElem == cast<FixedVectorType>(OperandT)->getNumElements(),
              "Intrinsic first argument and result vector lengths must be equal",
              &FPI);
     }
@@ -5193,9 +5198,8 @@ void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
     Assert(OperandTy->isVectorTy() == ResultTy->isVectorTy(),
            "Intrinsic first argument and result disagree on vector use", &FPI);
     if (OperandTy->isVectorTy()) {
-      auto *OperandVecTy = cast<VectorType>(OperandTy);
-      auto *ResultVecTy = cast<VectorType>(ResultTy);
-      Assert(OperandVecTy->getNumElements() == ResultVecTy->getNumElements(),
+      Assert(cast<FixedVectorType>(OperandTy)->getNumElements() ==
+                 cast<FixedVectorType>(ResultTy)->getNumElements(),
              "Intrinsic first argument and result vector lengths must be equal",
              &FPI);
     }

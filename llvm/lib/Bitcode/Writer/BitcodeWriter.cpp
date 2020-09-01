@@ -301,6 +301,8 @@ private:
                          SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIBasicType(const DIBasicType *N, SmallVectorImpl<uint64_t> &Record,
                         unsigned Abbrev);
+  void writeDIStringType(const DIStringType *N,
+                         SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIDerivedType(const DIDerivedType *N,
                           SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDICompositeType(const DICompositeType *N,
@@ -968,7 +970,7 @@ void ModuleBitcodeWriter::writeTypeTable() {
       // VECTOR [numelts, eltty] or
       //        [numelts, eltty, scalable]
       Code = bitc::TYPE_CODE_VECTOR;
-      TypeVals.push_back(VT->getElementCount().Min);
+      TypeVals.push_back(VT->getElementCount().getKnownMinValue());
       TypeVals.push_back(VE.getTypeID(VT->getElementType()));
       if (isa<ScalableVectorType>(VT))
         TypeVals.push_back(true);
@@ -1587,6 +1589,22 @@ void ModuleBitcodeWriter::writeDIBasicType(const DIBasicType *N,
   Record.push_back(N->getFlags());
 
   Stream.EmitRecord(bitc::METADATA_BASIC_TYPE, Record, Abbrev);
+  Record.clear();
+}
+
+void ModuleBitcodeWriter::writeDIStringType(const DIStringType *N,
+                                            SmallVectorImpl<uint64_t> &Record,
+                                            unsigned Abbrev) {
+  Record.push_back(N->isDistinct());
+  Record.push_back(N->getTag());
+  Record.push_back(VE.getMetadataOrNullID(N->getRawName()));
+  Record.push_back(VE.getMetadataOrNullID(N->getStringLength()));
+  Record.push_back(VE.getMetadataOrNullID(N->getStringLengthExp()));
+  Record.push_back(N->getSizeInBits());
+  Record.push_back(N->getAlignInBits());
+  Record.push_back(N->getEncoding());
+
+  Stream.EmitRecord(bitc::METADATA_STRING_TYPE, Record, Abbrev);
   Record.clear();
 }
 
@@ -4834,6 +4852,9 @@ void llvm::EmbedBitcodeInModule(llvm::Module &M, llvm::MemoryBufferRef Buf,
       M, ModuleConstant->getType(), true, llvm::GlobalValue::PrivateLinkage,
       ModuleConstant);
   GV->setSection(getSectionNameForBitcode(T));
+  // Set alignment to 1 to prevent padding between two contributions from input
+  // sections after linking.
+  GV->setAlignment(Align(1));
   UsedArray.push_back(
       ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, UsedElementType));
   if (llvm::GlobalVariable *Old =
@@ -4857,6 +4878,7 @@ void llvm::EmbedBitcodeInModule(llvm::Module &M, llvm::MemoryBufferRef Buf,
                                   llvm::GlobalValue::PrivateLinkage,
                                   CmdConstant);
     GV->setSection(getSectionNameForCommandline(T));
+    GV->setAlignment(Align(1));
     UsedArray.push_back(
         ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, UsedElementType));
     if (llvm::GlobalVariable *Old = M.getGlobalVariable("llvm.cmdline", true)) {

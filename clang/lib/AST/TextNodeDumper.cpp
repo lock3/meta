@@ -1421,6 +1421,12 @@ void TextNodeDumper::VisitVectorType(const VectorType *T) {
   case VectorType::NeonPolyVector:
     OS << " neon poly";
     break;
+  case VectorType::SveFixedLengthDataVector:
+    OS << " fixed-length sve data vector";
+    break;
+  case VectorType::SveFixedLengthPredicateVector:
+    OS << " fixed-length sve predicate vector";
+    break;
   }
   OS << " " << T->getNumElements();
 }
