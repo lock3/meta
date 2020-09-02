@@ -18,7 +18,9 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/StmtVisitor.h"
 #include "llvm/ADT/DenseMap.h" 
+#include "TreeTransform.h"
 #include <vector>
 
 using namespace clang;
@@ -39,135 +41,624 @@ namespace {
     return false;
   }
 
-  // Returns the referenced parameter if `S` refers to one.
-  static const ParmVarDecl *maybeGetInParameter(ASTContext &Ctx, const Stmt *S) {
-    if (auto *E = dyn_cast<DeclRefExpr>(S)) {
-      if (auto *P = dyn_cast<ParmVarDecl>(E->getDecl()))
-        if (isMovableInParameter(Ctx, P))
-          return P;
-    }
-    return nullptr;
+  // Represents the last use of a variable. This can be definite or indefinite.
+  struct LastUse {
+
+    /// Constructs an indefinite last use.    
+    LastUse() : Def(false), Ref() { }
+
+    /// Constructs a definite last use.
+    LastUse(const Expr *E) : Def(true), Ref(E) { }
+
+    bool isDefinite() const { return Def; }
+
+    const Expr *getUse() const { return Ref; }
+
+    bool Def;
+    const Expr *Ref;
+  };
+
+  /// A mapping of parameters to their last use.
+  using UseMap = llvm::SmallDenseMap<const Decl *, LastUse>;
+
+  /// The computed set of expressions constituting last uses.
+  using UseSet = llvm::SmallDenseSet<const Expr *>;
+
+  // Merge the uses of B into A where the uses in A are sequenced before those
+  // of B. A last use of B will replace the a last use in A. That is, we simply
+  // overwrite existing uses.
+  void mergeSequencedBefore(UseMap& A, const UseMap& B) {
+    for (const auto &X : B)
+      A[X.first] = X.second;
   }
+
+  // Merge the uses of B into A where the uses in A are sequenced after those
+  // of B. Last uses of B will not replace those already in A. That is, we
+  // only inesrt new uses, we never replace existing ones.
+  void mergeSequencedAfter(UseMap& A, const UseMap& B) {
+    for (const auto &X : B) {
+      auto Iter = A.find(X.first);
+      if (Iter == A.end())
+        A.insert(X);
+    }
+  }
+
+  // Merge the uses of B into A where A and B are the use maps of unsequenced
+  // operands or function arguments. If a use of P occurs in both, then its
+  // use is unsequenced.
+  void mergeUnsequenced(UseMap& A, const UseMap& B) {
+    for (const auto &X : B) {
+      auto Iter = A.find(X.first);
+      if (Iter == A.end())
+        A.insert(X);
+      else
+        Iter->second = LastUse();
+    }
+  }
+
+  template<typename MergeFn>
+  UseMap mergeUses(const llvm::SmallVectorImpl<UseMap> &Vec, MergeFn Merge) {
+    assert(!Vec.empty());
+    UseMap Uses = Vec.front();
+    for (auto Iter = Vec.begin() + 1; Iter != Vec.end(); Iter++)
+      Merge(Uses, *Iter);
+    return Uses;
+  }
+
+  /// A mapping of a use to the statement in which the use occurs.
+  using StmtMap = llvm::SmallDenseMap<const Expr *, const Stmt *>;
+
+  /// A set of declarations.
+  using DeclSet = llvm::SmallDenseSet<const Decl *>;
+
+  /// Recursively compute the last use sets for in parameters of the function.
+  struct UseVisitor : ConstStmtVisitor<UseVisitor, UseMap> {
+    Sema &SemaRef;
+
+    UseVisitor(Sema &S) : SemaRef(S) {}
+
+    enum EvaluationOrder {
+      Unsequenced,
+      LeftToRight,
+      RightToLeft,
+    };
+
+    /// Compute the use map for the arguments of function call or construction.
+    template<typename T>
+    UseMap getArgumentUses(const T *E, EvaluationOrder Order) {
+      if (E->getNumArgs() == 0)
+        return UseMap();
+
+      // Compute the last uses of each argument ...
+      llvm::SmallVector<UseMap, 8> Uses;
+      Uses.resize(E->getNumArgs());
+      int I = 0;
+      for (const Expr *A : E->arguments()) {
+        Uses[I++] = Visit(A);
+      }
+
+      // ... and then combine them.
+      if (Order == Unsequenced)
+        return mergeUses(Uses, mergeUnsequenced);
+      else if (Order == LeftToRight)
+        return mergeUses(Uses, mergeSequencedBefore);
+      else
+        return mergeUses(Uses, mergeSequencedAfter);
+    }
+
+    UseMap VisitDeclRefExpr(const DeclRefExpr *E) {
+      // If the declaration is an in parameter, add a use map.
+      if (const auto *P = dyn_cast<ParmVarDecl>(E->getDecl())) {
+        if (isMovableInParameter(SemaRef.Context, P)) {
+          UseMap Uses;
+          Uses.try_emplace(P, E);
+          return Uses;
+        }
+      }
+      return UseMap();
+    }
+
+    static bool isAssignmentOperator(OverloadedOperatorKind K) {
+      return CXXOperatorCallExpr::isAssignmentOp(K);
+    }
+
+    static bool isLogicalOperator(OverloadedOperatorKind K) {
+      return K == OO_AmpAmp || K == OO_PipePipe;
+    }
+
+    static bool isShiftOperator(OverloadedOperatorKind K) {
+      return K == OO_LessLess || K == OO_GreaterGreater;
+    }
+
+    static EvaluationOrder getEvaluationOrder(const CallExpr *E) {
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(E)) {
+        OverloadedOperatorKind K = Call->getOperator();
+        if (isAssignmentOperator(K))
+          return RightToLeft;
+        else if (isLogicalOperator(K))
+          return LeftToRight;
+        else if (isShiftOperator(K))
+          return LeftToRight;
+        else if (K == OO_Subscript)
+          return LeftToRight;
+        else if (K == OO_ArrowStar)
+          return LeftToRight;
+        else
+          return Unsequenced;
+      }
+      return Unsequenced;
+    }
+
+    UseMap VisitCallExpr(const CallExpr *E) {
+      // Compute last uses for the call. Note that the evaluation of the callee
+      // is sequenced before the arguments, but the evaluation of arguments are
+      // unsequenced.
+      UseMap Uses = Visit(E->getCallee());
+      UseMap ArgUses = getArgumentUses(E, getEvaluationOrder(E));
+      mergeSequencedBefore(Uses, ArgUses);
+      return Uses;
+    }
+
+    UseMap VisitFullExpr(const FullExpr *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitCastExpr(const CastExpr *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitCXXConstructExpr(const CXXConstructExpr *E) {
+      return getArgumentUses(E, Unsequenced);
+    }
+
+    UseMap VisitStmt(const Stmt *S) {
+      S->dump();
+      llvm_unreachable("Unknown expression");
+    }
+
+    // Statements
+
+    UseMap VisitDeclStmt(const DeclStmt *S) {
+      const DeclGroupRef Decls = S->getDeclGroup();
+      for (const Decl *D : Decls) {
+        if (const auto *Var = dyn_cast<VarDecl>(D)) {
+          if (const Expr *E = Var->getAnyInitializer())
+            return Visit(E);
+        }
+      }
+      return UseMap();
+    }
+
+    UseMap VisitReturnStmt(const ReturnStmt *S) {
+      if (const Expr *E = S->getRetValue()) 
+        return Visit(E);
+      return UseMap();
+    }
+  };
 
   /// Maintains per-block information about the last use of movable input
   /// variables.
   struct LastUseSearch {
+
+    Sema &SemaRef;
+    FunctionDecl *Fn;
+    CFG *G;
+
+    LastUseSearch(Sema &S, FunctionDecl *D, CFG *G)
+      : SemaRef(S), Fn(D), G(G) {}
+
+    /// Stores the top-level statements in a block.
+    using StmtSeq = llvm::SmallVector<const Stmt *, 8>;
+    llvm::SmallDenseMap<CFGBlock *, StmtSeq> BlockStmts;
+
+    /// Stores the set of statements in the function.
+    using StmtSet = llvm::SmallDenseSet<const Stmt *>;
+    StmtSet KnownStmts;
+
+    /// Associates each statement with a set of last-used parameters.
+    using StmtParmMap = llvm::SmallDenseMap<const Stmt *, DeclSet>;
+    StmtParmMap StmtParms;
+
+    // Search the block for all top-level statements. Also remember for all
+    // blocks, which statements are, in fact, statements.
+    void findStatements(CFGBlock *B, llvm::SmallVectorImpl<const Stmt *> &SS) {
+      llvm::SmallDenseMap<const Stmt*, bool> Map;
+
+      // Mark subexpressions of each element in the block.
+      for (auto I = B->begin(); I != B->end(); ++I) {
+        CFGElement E = *I;
+        if (auto SE = E.getAs<CFGStmt>()) {
+          const Stmt *S = SE->getStmt();
+          for (const Stmt *K : S->children())
+            Map[K] = true;
+        }
+      }
+
+      // Any expressions not in Map are statements.
+      for (auto I = B->begin(); I != B->end(); ++I) {
+        CFGElement E = *I;
+        if (auto SE = E.getAs<CFGStmt>()) {
+          const Stmt *S = SE->getStmt();
+          if (Map.find(S) == Map.end()) {
+            SS.push_back(S);
+            KnownStmts.insert(S);
+          }
+        }
+      }
+    }
+
+    /// Stores usage in formation on a per-block basis.
+    using BlockUseMap = llvm::SmallDenseMap<CFGBlock *, UseMap>;
+    BlockUseMap BlockUses;
+
+    /// Stores which statements an expression whas used int.
+    StmtMap UsedIn;
+
+    // Compute the last uses of variables within a block and store those in
+    // its corresponding last-use map.
+    void computeLastUses(CFGBlock *B) {
+      // Get the top-level statements for the block.
+      llvm::SmallVectorImpl<const Stmt *>& Stmts = BlockStmts[B];
+      findStatements(B, Stmts);
+
+      UseMap& CurrentUses = BlockUses[B];
+      for (const Stmt *S : Stmts) {
+        // Compute the last uses of S and merge those into the block.
+        UseVisitor V(SemaRef);
+        UseMap StmtUses = V.Visit(S);
+        mergeSequencedBefore(CurrentUses, StmtUses);
+
+        // Associate each initial use with the statement in which it occurs.
+        for (const auto& X : StmtUses) {
+          LastUse Use = X.second;
+          if (Use.isDefinite())
+            UsedIn[Use.getUse()] = S;
+        }
+      }
+
+      llvm::outs() << "INITIAL LAST USES " << B->getBlockID() << '\n';
+      for (const auto& X : CurrentUses) {
+        X.first->dump();
+        if (X.second.isDefinite())
+          X.second.getUse()->dump();
+        else
+          llvm::outs() << "indefinite\n";
+      }
+    }
+
     // Vertex colors for a DFS.
     enum class Color {
       Black, White, Gray
     };
 
-    /// Whether the last use of a parameter is known or not.
-    ///
-    enum class LastUse {
-      Unknown, // The last use is not yet known.
-      Known,   // The last use is known.
-      Indeterminate // There is no definite last use.
-    };
-
-    using UseMap = llvm::SmallDenseMap<const Decl *, LastUse>;
-    using UseSet = llvm::SmallDenseSet<const Expr *>;
-
-    LastUseSearch(Sema &S, FunctionDecl *D, CFG *G)
-        : SemaRef(S), Fn(D), G(G), ColorMap(G->size()) {
-      // Mark all nodes unvisited.
-      for (CFGBlock *B : *G)
-        getColor(B) = Color::White;
-    }
+    using ColorMap = llvm::SmallVectorImpl<Color>;
 
     // Returns the color of a block.
-    Color& getColor(CFGBlock *B) {
-      return ColorMap[B->getBlockID()];
+    Color& getColor(ColorMap &Colors, CFGBlock *B) {
+      return Colors[B->getBlockID()];
     }
 
-    // Visit a statement (expression) to determine if it constitutes the last
-    // use of a statement.
-    void visitStmt(int I, CFGStmt Elem, UseMap& Uses) {
-      llvm::outs() << "STMT " << I << "\n";
-      Elem.dump();
-      // Elem.getStmt()->dump();
-      ASTContext &Ctx = SemaRef.Context;
-      if (const ParmVarDecl *P = maybeGetInParameter(Ctx, Elem.getStmt())) {
-        auto Iter = Uses.find(P);
-        if (Iter == Uses.end()) {
-          // The first reference to parameter is likely to be its last use.
-          //
-          // FIXME: This is not entirely true. See below.
-          Uses.try_emplace(P, LastUse::Known);
-          llvm::outs() << "LAST!\n";
-          Elem.getStmt()->dump();
-          LastUses.insert(cast<DeclRefExpr>(Elem.getStmt()));
-        }
-      }
-
-      // FIXME: For all other expressions, we might need to check whether
-      // the last use was indeterminate or not. For example:
-      //
-      //    void f(in x) {
-      //      return g(x, x);  
-      //
-      // Neither x can be considered the last use because the order of is 
-      // unspecified. In this case, there should be no definite last use of x.
+    void searchSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &Uses) {
+      for (CFGBlock *S : B->succs())
+        if (getColor(Colors, S) == Color::White)
+          findSuccessiveUses(S, Colors, Uses);
     }
 
-    // Iterate over the elements of a CFG block in reverse. Note that this
-    // effectively gives us a preorder traversal of expressions in a statement.
-    void visitStatements(CFGBlock *B, UseMap& Uses) {
-      int I = 0;
-      for (auto Iter = B->rbegin(); Iter != B->rend(); ++Iter) {
-        CFGElement Elem = *Iter;
-        if (auto StmtElem = Elem.getAs<CFGStmt>()) {
-          visitStmt(++I, *StmtElem, Uses);
-        }
-      }
+    void findSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &Uses) {
+      getColor(Colors, B) = Color::Gray;
+
+      // Remove from Uses any last use occurring in this succesor.
+      UseMap &CurrentUses = BlockUses[B];
+      for (auto X : CurrentUses)
+        Uses.erase(X.first);
+
+      searchSuccessiveUses(B, Colors, CurrentUses);
+
+      getColor(Colors, B) = Color::Black;
     }
 
-    // Recursively visit B and all blocks reachable from B.
+    // Perform a DFS starting at B to determine if there are any subsequent
+    // uses of each parameter. Note that we don't initially color B as the
+    // starting node. That allows back edges to find this node, inherently
+    // removing all uses. This ensures that uses within a loop body are never
+    // last uses.
     //
-    // Note that the map is copied from its parent in the tree so that local
-    // changes in this and reachable blocks do not modify the paren't view of
-    // which expressions are the last use of a parameter.
-    void visitBlock(CFGBlock *B, UseMap Uses) {
-      getColor(B) = Color::Gray;
+    // TODO: This is a quadratic algorithm. We could probably phrase this as
+    // a set of data flow equations and have the solution converge rather
+    // quickly. Of course, I'd actually have to design that algorithm.
+    //
+    // We might be able to do this with two sets. One that holds known last
+    // uses, and one that holds propagated last uses. Each block "pushes" its
+    // last uses to its predecessors. When pushed, we remove from the actual
+    // last uses those that overlap.
+    void verifyLastUses(CFGBlock *B) {
+      llvm::SmallVector<Color, 8> Colors(G->size());
+      
+      // Mark all nodes unvisited.
+      for (CFGBlock *B : *G)
+        getColor(Colors, B) = Color::White;
 
-      llvm::outs() << "EXAMINE " << B->getBlockID() << '\n';
-      B->dump();
-      visitStatements(B, Uses);
+      // Search through successors.
+      UseMap &CurrentUses = BlockUses[B];
+      searchSuccessiveUses(B, Colors, CurrentUses);
 
-      for (auto &Adj : B->preds())
-        if (getColor(Adj) == Color::White)
-          visitBlock(Adj, Uses);
-
-      getColor(B) = Color::Black;
+      llvm::outs() << "FINAL LAST USES " << B->getBlockID() << '\n';
+      for (auto X : CurrentUses) {
+        X.first->dump();
+        if (X.second.isDefinite())
+          X.second.getUse()->dump();
+        else
+          llvm::outs() << "indefinite\n";
+      }
     }
 
-    void start() {
-      UseMap Uses;
-      visitBlock(&G->getExit(), Uses);
-    }
-
-    Sema &SemaRef;
-    FunctionDecl *Fn;
-    CFG *G;
-    std::vector<Color> ColorMap;
+    /// This value is computed as one of the "return" values of the search.
     UseSet LastUses;
+
+    /// Add definite last uses in B to Uses.
+    void collectLastUses(CFGBlock *B) {
+      UseMap &LocalUses = BlockUses[B];
+      for (auto X : LocalUses) {
+        if (X.second.isDefinite()) {
+          const Expr *E = X.second.getUse();
+
+          // Record the definite last use.
+          LastUses.insert(E);
+
+          // Get the statement containing the expression and add the input
+          // parameter to the statements parameter set.
+          const Stmt *S = UsedIn[E];
+          StmtParms[S].insert(X.first);
+        }
+      }
+    }
+
+    void computeLastUses() {
+      // Compute the initial set of last uses.
+      for (auto Iter = G->begin(); Iter != G->end(); ++Iter)
+        computeLastUses(*Iter);
+      
+      // Remove non-last uses.
+      for (auto Iter = G->begin(); Iter != G->end(); ++Iter)
+        verifyLastUses(*Iter);
+
+      // Collect the set of statements comprising last uses.
+      for (auto Iter = G->begin(); Iter != G->end(); ++Iter)
+        collectLastUses(*Iter);
+    }
   };
 
-  // Perform a depth-first search on the CFG, starting at the exit block and
-  // proceeding along predecessor paths.
-  void findLastUses(Sema &SemaRef, FunctionDecl *D, CFG *G) {
-    LastUseSearch S(SemaRef, D, G);
-    S.start();
-  }
+  /// A tree transform that rewrites the function body, substituting last uses
+  /// wherever they occur in the program.
+  ///
+  /// FIXME: This isn't right. We need to emit a conditional expression that
+  /// tests a parameter that doesn't yet exist. We should just attach the use
+  /// set to the context and then build the approrpiate conversions on the
+  /// fly in codegen.
+  ///
+  /// To make it worse, we *can't* entirely defer the rewrite because we
+  /// have to perform overload resolution here.
+  struct Rewriter : TreeTransform<Rewriter> {
+    using BaseType = TreeTransform<Rewriter>;
+
+    /// Provides context for the rewriting.
+    LastUseSearch &LU;
+
+    Rewriter(Sema &SemaRef, LastUseSearch &LU)
+      : BaseType(SemaRef), LU(LU) {}
+
+    ExprResult TransformReferenceToMove(DeclRefExpr *E) {
+      SourceLocation Loc = E->getExprLoc();
+      ASTContext &Ctx = getSema().Context;
+      QualType T = E->getType().getUnqualifiedType();
+
+      // const_cast<T&>(x)
+      QualType T1 = Ctx.getLValueReferenceType(T);
+      TypeSourceInfo *TI1 = Ctx.getTrivialTypeSourceInfo(T1, Loc);
+      auto E1 = getSema().BuildCXXNamedCast(Loc, tok::kw_const_cast, TI1, E,
+                                            SourceRange(Loc, Loc),
+                                            SourceRange(Loc, Loc));
+
+      // static_cast<T&&>(e1)
+      QualType T2 = Ctx.getRValueReferenceType(T);
+      TypeSourceInfo *TI2 = Ctx.getTrivialTypeSourceInfo(T2, Loc);
+      return getSema().BuildCXXNamedCast(Loc, tok::kw_static_cast, TI2,
+                                         E1.get(), SourceRange(Loc, Loc),
+                                         SourceRange(Loc, Loc));
+    }
+
+    /// Returns true if E is a last use.
+    bool isLastUse(DeclRefExpr *E) {
+      return LU.LastUses.find(E) != LU.LastUses.end();
+    }
+
+    /// Returns true if we should transform E into a move.
+    bool shouldMove(DeclRefExpr *E) {
+      if (isLastUse(E)) {
+        const ValueDecl *D = E->getDecl();
+        return CurrentParms.find(D) != CurrentParms.end();
+      }
+      return false;
+    }
+
+    ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+      // If this is a last use of a parameter that is nominated for moving,
+      // transform the reference into a sequence of casts that move the object
+      // along. Otherwise, leave it as it is.
+      if (shouldMove(E)) {
+        ExprResult R = TransformReferenceToMove(E);
+        R.get()->dump();
+        return R;
+      }
+      E->dump();
+      return ExprResult(E);
+    }
+
+    // Statements
+
+    /// The current parameter for which we are rewriting an expression.
+    DeclSet CurrentParms;
+
+    // Suppose we have this:
+    //
+    //    void f(in T x, in T y) { return x + y; }
+    //
+    // This needs to become:
+    //
+    //    void f(T const& x, T const& y) {
+    //      if (x') {
+    //        if (y') {
+    //          return move(x) + move(y)
+    //        } else {
+    //          return move(x) + y;
+    //        }
+    //      } else {
+    //        if (y') {
+    //          return move(x) + move(y)
+    //        } else {
+    //          return move(x) + y;
+    //        }
+    //      }
+    //    }
+    //
+    // This function performs a recursive construction of the transformed
+    // statements.
+    //
+    // This is just a template to make the declaration shorter.
+    template<typename I>
+    StmtResult TransformConditionedStmt(Stmt *S, I Iter, I Last) {
+      // If this is the last of the parameters, then we transform the statement
+      // in the "normal" way, albeit with the current set of substitutions.
+      const Decl *D = *Iter;
+      if (std::next(Iter) == Last) {
+        CurrentParms.insert(D);
+        StmtResult S0 = BaseType::TransformStmt(S);
+        CurrentParms.erase(D);
+        StmtResult S1 = BaseType::TransformStmt(S);
+        return BuildConditionedStmt(D, S0.get(), S1.get());
+      } else {
+        CurrentParms.insert(D);
+        StmtResult S0 = TransformConditionedStmt(S, std::next(Iter), Last);
+        CurrentParms.erase(D);
+        StmtResult S1 = TransformConditionedStmt(S, std::next(Iter), Last);
+        return BuildConditionedStmt(D, S0.get(), S1.get());
+      }
+    }
+
+    StmtResult BuildConditionedStmt(const Decl *D, Stmt* S0, Stmt* S1) {
+      ASTContext &Cxt = SemaRef.Context;
+      SourceLocation Loc;
+      // FIXME: The condition is a placeholder expression that refers to a
+      // parametr that hasn't been created yet.
+      Expr *Cond = new (Cxt) CXXBoolLiteralExpr(true, Cxt.BoolTy, Loc);
+      return IfStmt::Create(Cxt, Loc, false, nullptr, nullptr, Cond, S0, Loc, S1);
+    }
+
+    /// Returns true if E is known to be a statement.
+    bool isStatement(Stmt *S) {
+      return LU.KnownStmts.find(S) != LU.KnownStmts.end();
+    }
+
+    StmtResult TransformStmt(Stmt *S, StmtDiscardKind SDK = SDK_Discarded) {
+      if (isStatement(S)) {
+        // FIXME: If this is a declstmt that declares a variable, we need
+        // to completely refactor the declaration so that it's allocated
+        // via placement new. For example:
+        //
+        //    foo g(in foo x) {
+        //      foo z = x;
+        //      return z;
+        //    }
+        //
+        // A naive transformation gives us this:
+        //
+        //    foo g(in foo x) {
+        //      if (<cond>)
+        //        foo z = move(x);
+        //      else
+        //        foo z = x;
+        //      return z;
+        //
+        // Which is clearly ill-formed. What we really want to do is this:
+        //
+        //    foo g(in foo x) {
+        //      foo* pz;
+        //      if (<cond>)
+        //        new (pz) foo(move(x));
+        //      else
+        //        new (pz) foo(x);
+        //      foo& z = *pz;
+        //      return z;
+        //
+        // Of course, that's probably going to be pretty hard.
+        //
+        // In the meantime int might be sufficient to just punt on these
+        // things and just generate normal code.
+        //
+        // Also, note that the naive implementation generates moves for both
+        // initializations of the variable. This is because we aren't
+        // generating new variables in each branches (and I don't think we
+        // want to).
+        if (isa<DeclStmt>(S))
+          return BaseType::TransformStmt(S, SDK);
+
+        // If this statement (or expression!) contains the last use of any
+        // parameters, then it needs to be conditioned.
+        const DeclSet &Decls = LU.StmtParms[S];
+        if (!Decls.empty())
+          return TransformConditionedStmt(S, Decls.begin(), Decls.end());
+      }
+      return BaseType::TransformStmt(S, SDK);
+    }
+
+    // Make sure the transform actually processes initializers.
+    Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+      if (auto *Var = dyn_cast<VarDecl>(D)) {
+        if (Var->hasInit()) {
+          // FIXME: We're not handling initializers correctly. For example,
+          // if this is direct or list initialization, the flags won't be
+          // set correctly, and we'll likely core dump.
+          ExprResult E = TransformInitializer(Var->getInit(), false);
+          getSema().AddInitializerToDecl(Var, E.get(), false);
+        }
+      }
+      return D;
+    }
+  };
 } // namespace
 
 void Sema::computeMoveOnLastUse(FunctionDecl *D) {
+  // Don't process function templates.
+  if (D->getPrimaryTemplate())
+    return;
+
   // Construct the analysis context with the default CFG build options.
   AnalysisDeclContext AC(nullptr, D);
   AC.getCFGBuildOptions().setAllAlwaysAdd();
 
-  // CFG *G = AC.getCFG();
-  // G->dump(Context.getLangOpts(), true);
-  // llvm::outs() << "----------------\n";
-  // findLastUses(*this, D, G);
+  CFG *G = AC.getCFG();
+  D->dump();
+  G->dump(Context.getLangOpts(), true);
+  llvm::outs() << "----------------\n";
+
+  LastUseSearch LU(*this, D, G);
+  LU.computeLastUses();
+  if (LU.LastUses.empty())
+    return;
+
+  // If there are last uses, rewrite the function body.
+  Rewriter R(*this, LU);
+  StmtResult S = R.TransformStmt(D->getBody());
+  D->setBody(S.get());
+  D->print(llvm::outs());
+  // D->dump();
+  // llvm::outs() << "=================\n";
 }
