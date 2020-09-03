@@ -357,6 +357,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ObjCSubscriptRefExprClass:
   case Stmt::RecoveryExprClass:
   case Stmt::CXXCompilerErrorExprClass:
+  case Stmt::CXXParameterInfoExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 

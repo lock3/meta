@@ -2614,6 +2614,8 @@ DEF_TRAVERSE_STMT(CompoundLiteralExpr, {
 DEF_TRAVERSE_STMT(CXXBindTemporaryExpr, {})
 DEF_TRAVERSE_STMT(CXXBoolLiteralExpr, {})
 
+DEF_TRAVERSE_STMT(CXXParameterInfoExpr, {})
+
 DEF_TRAVERSE_STMT(CXXDefaultArgExpr, {
   if (getDerived().shouldVisitImplicitCode())
     TRY_TO(TraverseStmt(S->getExpr()));

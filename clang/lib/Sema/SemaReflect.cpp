@@ -1596,7 +1596,7 @@ void Sema::BuildIdentifierSpliceTypeLoc(
     TypeLocBuilder &TLB, QualType T, SourceLocation TypenameLoc,
     NestedNameSpecifierLoc QualifierLoc,
     SourceLocation IdLoc, TemplateArgumentListInfo &TemplateArgs) {
-  if (const auto *DependentTy = T->getAs<DependentIdentifierSpliceType>()) {
+  if (T->getAs<DependentIdentifierSpliceType>()) {
     DependentIdentifierSpliceTypeLoc NewTL
         = TLB.push<DependentIdentifierSpliceTypeLoc>(T);
     NewTL.setTypenameKeywordLoc(TypenameLoc);
@@ -1610,7 +1610,7 @@ void Sema::BuildIdentifierSpliceTypeLoc(
     const auto *ElabTy = T->getAs<ElaboratedType>();
     QualType InnerT = ElabTy ? ElabTy->getNamedType() : T;
 
-    if (const auto *SpecTy = InnerT->getAs<TemplateSpecializationType>()) {
+    if (InnerT->getAs<TemplateSpecializationType>()) {
       TemplateSpecializationTypeLoc NewTL
         = TLB.push<TemplateSpecializationTypeLoc>(InnerT);
       NewTL.setTemplateKeywordLoc(SourceLocation());

@@ -1873,6 +1873,12 @@ void ASTStmtReader::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *E) {
   E->setLocation(readSourceLocation());
 }
 
+void ASTStmtReader::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
+  VisitExpr(E);
+  E->setDecl(Record.readDeclAs<ValueDecl>());
+  E->setLocation(readSourceLocation());
+}
+
 void ASTStmtReader::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
   VisitExpr(E);
   E->setSourceRange(readSourceRange());
@@ -3631,6 +3637,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case EXPR_CXX_NULL_PTR_LITERAL:
       S = new (Context) CXXNullPtrLiteralExpr(Empty);
+      break;
+
+    case EXPR_CXX_PARAMETER_INFO:
+      S = new (Context) CXXParameterInfoExpr(Empty);
       break;
 
     case EXPR_CXX_TYPEID_EXPR:

@@ -1873,6 +1873,8 @@ public:
       EXPR_CONCEPT_SPECIALIZATION,// ConceptSpecializationExpr
       EXPR_REQUIRES,              // RequiresExpr
 
+      EXPR_CXX_PARAMETER_INFO,    // CXXParameterInfo
+
       // CUDA
       EXPR_CUDA_KERNEL_CALL,       // CUDAKernelCallExpr
 

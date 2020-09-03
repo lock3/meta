@@ -3493,6 +3493,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXDependentVariadicReifierExprClass:
   case CXXSelectMemberExprClass:
   case CXXSelectPackExprClass:
+  case CXXParameterInfoExprClass:
     // These never have a side-effect.
     return false;
 

@@ -67,26 +67,28 @@ namespace {
   // Merge the uses of B into A where the uses in A are sequenced before those
   // of B. A last use of B will replace the a last use in A. That is, we simply
   // overwrite existing uses.
-  void mergeSequencedBefore(UseMap& A, const UseMap& B) {
+  UseMap& mergeSequencedBefore(UseMap& A, const UseMap& B) {
     for (const auto &X : B)
       A[X.first] = X.second;
+    return A;
   }
 
   // Merge the uses of B into A where the uses in A are sequenced after those
   // of B. Last uses of B will not replace those already in A. That is, we
   // only inesrt new uses, we never replace existing ones.
-  void mergeSequencedAfter(UseMap& A, const UseMap& B) {
+  UseMap& mergeSequencedAfter(UseMap& A, const UseMap& B) {
     for (const auto &X : B) {
       auto Iter = A.find(X.first);
       if (Iter == A.end())
         A.insert(X);
     }
+    return A;
   }
 
   // Merge the uses of B into A where A and B are the use maps of unsequenced
   // operands or function arguments. If a use of P occurs in both, then its
   // use is unsequenced.
-  void mergeUnsequenced(UseMap& A, const UseMap& B) {
+  UseMap& mergeUnsequenced(UseMap& A, const UseMap& B) {
     for (const auto &X : B) {
       auto Iter = A.find(X.first);
       if (Iter == A.end())
@@ -94,8 +96,10 @@ namespace {
       else
         Iter->second = LastUse();
     }
+    return A;
   }
 
+  /// Merge the uses in Vec using the function Merge.
   template<typename MergeFn>
   UseMap mergeUses(const llvm::SmallVectorImpl<UseMap> &Vec, MergeFn Merge) {
     assert(!Vec.empty());
@@ -146,6 +150,52 @@ namespace {
         return mergeUses(Uses, mergeSequencedAfter);
     }
 
+    UseMap VisitPredefinedExpr(const PredefinedExpr *E) {
+      return UseMap();
+    }
+
+    UseMap VisitIntegerLiteral(const IntegerLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitFloatingLiteral(const FloatingLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitFixedPointLiteral(const FixedPointLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitImaginaryLiteral(const ImaginaryLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitCharacterLiteral(const CharacterLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitStringLiteral(const StringLiteral *E) {
+      return UseMap();
+    }
+
+    UseMap VisitCXXBoolLiteralExpr(const CXXBoolLiteralExpr *E) {
+      return UseMap();
+    }
+
+    UseMap VisitCXXNullPtrLiteralExpr(const CXXNullPtrLiteralExpr *E) {
+      return UseMap();
+    }
+
+    UseMap VisitParenExpr(const ParenExpr *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
+      UseMap LeftUses = Visit(E->getLHS());
+      UseMap RightUses = Visit(E->getRHS());
+      return mergeSequencedBefore(LeftUses, RightUses);
+    }
+
     UseMap VisitDeclRefExpr(const DeclRefExpr *E) {
       // If the declaration is an in parameter, add a use map.
       if (const auto *P = dyn_cast<ParmVarDecl>(E->getDecl())) {
@@ -183,6 +233,8 @@ namespace {
           return LeftToRight;
         else if (K == OO_ArrowStar)
           return LeftToRight;
+        else if (K == OO_Comma)
+          return LeftToRight;
         else
           return Unsequenced;
       }
@@ -195,8 +247,47 @@ namespace {
       // unsequenced.
       UseMap Uses = Visit(E->getCallee());
       UseMap ArgUses = getArgumentUses(E, getEvaluationOrder(E));
-      mergeSequencedBefore(Uses, ArgUses);
-      return Uses;
+      return mergeSequencedBefore(Uses, ArgUses);
+    }
+
+    UseMap VisitMemberExpr(const MemberExpr *E) {
+      return Visit(E->getBase());
+    }
+
+    UseMap VisitBinaryOperator(const BinaryOperator *E) {
+      UseMap LeftUses = Visit(E->getLHS());
+      UseMap RightUses = Visit(E->getRHS());
+      switch (E->getOpcode()) {
+      case BO_LAnd:
+      case BO_LOr:
+      case BO_Comma:
+        return mergeSequencedBefore(LeftUses, RightUses);
+      
+      case BO_Assign:
+        return mergeSequencedAfter(LeftUses, RightUses);
+        break;
+
+      default:
+        return mergeUnsequenced(LeftUses, RightUses);
+      }
+    }
+
+    UseMap VisitCompoundAssignmentOperator(const BinaryOperator *E) {
+      UseMap LeftUses = Visit(E->getLHS());
+      UseMap RightUses = Visit(E->getRHS());
+      return mergeSequencedAfter(LeftUses, RightUses);
+    }
+
+    UseMap VisitUnaryOperator(const UnaryOperator *E) {
+      return Visit(E->getSubExpr());
+    }
+
+    UseMap VisitConditionalOperator(const ConditionalOperator *E) {
+      UseMap CondUses = Visit(E->getCond());
+      UseMap TrueUses = Visit(E->getTrueExpr());
+      UseMap FalseUses = Visit(E->getFalseExpr());
+      UseMap ResultUses = mergeUnsequenced(TrueUses, FalseUses);
+      return mergeSequencedBefore(CondUses, ResultUses);
     }
 
     UseMap VisitFullExpr(const FullExpr *E) {
@@ -217,6 +308,32 @@ namespace {
 
     UseMap VisitCXXConstructExpr(const CXXConstructExpr *E) {
       return getArgumentUses(E, Unsequenced);
+    }
+
+    UseMap VisitInitListExpr(const InitListExpr *E) {
+      if (E->getNumInits() == 0)
+        return UseMap();
+
+      if (E->getNumInits() == 1)
+        return Visit(E->getInit(0));
+
+      llvm::SmallVector<UseMap, 8> Uses;
+      Uses.resize(E->getNumInits());
+      for (std::size_t I = 0; I < E->getNumInits(); ++I)
+        Uses[I] = Visit(E->getInit(I));
+
+      // TODO: I *think* this is the right sequencing. This typically only
+      // applies during list initialization, so it's not clear if just having
+      // this expression is a reasonable surrogate for that condition.
+      return mergeUses(Uses, mergeSequencedBefore);
+    }
+
+    UseMap VisitDesignatedInitExpr(const DesignatedInitExpr *E) {
+      return Visit(E->getInit());
+    }
+
+    UseMap VisitVAArgExpr(const VAArgExpr *E) {
+      return UseMap();
     }
 
     UseMap VisitStmt(const Stmt *S) {
@@ -324,14 +441,14 @@ namespace {
         }
       }
 
-      llvm::outs() << "INITIAL LAST USES " << B->getBlockID() << '\n';
-      for (const auto& X : CurrentUses) {
-        X.first->dump();
-        if (X.second.isDefinite())
-          X.second.getUse()->dump();
-        else
-          llvm::outs() << "indefinite\n";
-      }
+      // llvm::outs() << "INITIAL LAST USES " << B->getBlockID() << '\n';
+      // for (const auto& X : CurrentUses) {
+      //   X.first->dump();
+      //   if (X.second.isDefinite())
+      //     X.second.getUse()->dump();
+      //   else
+      //     llvm::outs() << "indefinite\n";
+      // }
     }
 
     // Vertex colors for a DFS.
@@ -493,12 +610,8 @@ namespace {
       // If this is a last use of a parameter that is nominated for moving,
       // transform the reference into a sequence of casts that move the object
       // along. Otherwise, leave it as it is.
-      if (shouldMove(E)) {
-        ExprResult R = TransformReferenceToMove(E);
-        R.get()->dump();
-        return R;
-      }
-      E->dump();
+      if (shouldMove(E))
+        return TransformReferenceToMove(E);
       return ExprResult(E);
     }
 
@@ -506,6 +619,13 @@ namespace {
 
     /// The current parameter for which we are rewriting an expression.
     DeclSet CurrentParms;
+
+    StmtResult TransformInnermostStmt(Stmt *S, bool Cleanups) {
+      StmtResult R = BaseType::TransformStmt(S);
+      if (Cleanups)
+        R = SemaRef.MaybeCreateExprWithCleanups(cast<Expr>(R.get()));
+      return R;
+    }
 
     // Suppose we have this:
     //
@@ -534,21 +654,25 @@ namespace {
     //
     // This is just a template to make the declaration shorter.
     template<typename I>
-    StmtResult TransformConditionedStmt(Stmt *S, I Iter, I Last) {
+    StmtResult TransformConditionedStmt(Stmt *S, I Iter, I Last, bool Cleanups) {
       // If this is the last of the parameters, then we transform the statement
       // in the "normal" way, albeit with the current set of substitutions.
       const Decl *D = *Iter;
       if (std::next(Iter) == Last) {
+        // Build an if/else around the original statement, moving the current
+        // set of parameters. 
         CurrentParms.insert(D);
-        StmtResult S0 = BaseType::TransformStmt(S);
+        StmtResult S0 = TransformInnermostStmt(S, Cleanups);
         CurrentParms.erase(D);
-        StmtResult S1 = BaseType::TransformStmt(S);
+        StmtResult S1 = TransformInnermostStmt(S, Cleanups);
         return BuildConditionedStmt(D, S0.get(), S1.get());
       } else {
+        // Build an if/else for the current parameter.
+        ++Iter;
         CurrentParms.insert(D);
-        StmtResult S0 = TransformConditionedStmt(S, std::next(Iter), Last);
+        StmtResult S0 = TransformConditionedStmt(S, Iter, Last, Cleanups);
         CurrentParms.erase(D);
-        StmtResult S1 = TransformConditionedStmt(S, std::next(Iter), Last);
+        StmtResult S1 = TransformConditionedStmt(S, Iter, Last, Cleanups);
         return BuildConditionedStmt(D, S0.get(), S1.get());
       }
     }
@@ -556,9 +680,8 @@ namespace {
     StmtResult BuildConditionedStmt(const Decl *D, Stmt* S0, Stmt* S1) {
       ASTContext &Cxt = SemaRef.Context;
       SourceLocation Loc;
-      // FIXME: The condition is a placeholder expression that refers to a
-      // parametr that hasn't been created yet.
-      Expr *Cond = new (Cxt) CXXBoolLiteralExpr(true, Cxt.BoolTy, Loc);
+      ValueDecl *VD = const_cast<ValueDecl*>(cast<ValueDecl>(D));
+      Expr *Cond = new (Cxt) CXXParameterInfoExpr(VD, Cxt.BoolTy, Loc);
       return IfStmt::Create(Cxt, Loc, false, nullptr, nullptr, Cond, S0, Loc, S1);
     }
 
@@ -568,6 +691,16 @@ namespace {
     }
 
     StmtResult TransformStmt(Stmt *S, StmtDiscardKind SDK = SDK_Discarded) {
+      if (!S)
+        return StmtResult();
+
+      // See through cleanup expressions because they don't appear in blocks
+      // of the CFG. We'll need to rebuild the cleanups within the conditioned
+      // statement.
+      auto *Cleanups = dyn_cast<ExprWithCleanups>(S);
+      if (Cleanups)
+        S = Cleanups->getSubExpr();
+
       if (isStatement(S)) {
         // FIXME: If this is a declstmt that declares a variable, we need
         // to completely refactor the declaration so that it's allocated
@@ -614,7 +747,7 @@ namespace {
         // parameters, then it needs to be conditioned.
         const DeclSet &Decls = LU.StmtParms[S];
         if (!Decls.empty())
-          return TransformConditionedStmt(S, Decls.begin(), Decls.end());
+          return TransformConditionedStmt(S, Decls.begin(), Decls.end(), Cleanups);
       }
       return BaseType::TransformStmt(S, SDK);
     }
@@ -633,11 +766,12 @@ namespace {
       return D;
     }
   };
+
 } // namespace
 
 void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   // Don't process function templates.
-  if (D->getPrimaryTemplate())
+  if (D->getType()->isDependentType())
     return;
 
   // Construct the analysis context with the default CFG build options.
@@ -659,6 +793,4 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   StmtResult S = R.TransformStmt(D->getBody());
   D->setBody(S.get());
   D->print(llvm::outs());
-  // D->dump();
-  // llvm::outs() << "=================\n";
 }

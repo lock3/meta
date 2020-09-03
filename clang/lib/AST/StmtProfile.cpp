@@ -1787,6 +1787,11 @@ void StmtProfiler::VisitCXXNullPtrLiteralExpr(const CXXNullPtrLiteralExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCXXParameterInfoExpr(const CXXParameterInfoExpr *S) {
+  VisitExpr(S);
+  VisitDecl(S->getDecl());
+}
+
 void StmtProfiler::VisitCXXStdInitializerListExpr(
     const CXXStdInitializerListExpr *S) {
   VisitExpr(S);

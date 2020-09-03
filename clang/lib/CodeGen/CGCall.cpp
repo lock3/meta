@@ -3885,13 +3885,17 @@ void CodeGenFunction::EmitCallArgs(
       llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
       llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
       llvm::Value *V;
-      if (PT->isInParameter())
+      if (PT->isInParameter()) {
         // An input parameter is finally movable if it is passed as a prvalue
         // or xvalue.
         //
         // TODO: Can we move a const rvalue or xvalue? Can we even get const
         // expressions in these contexts?
         V = E->isRValue() || E->isXValue() ? True : False;
+        llvm::outs() << "SHOULD MOVE? " << (E->isRValue() || E->isXValue()) << '\n';
+        E->dump();
+        V->dump();
+      }
       else if (PT->isOutParameter())
         // An output parameter is either uninitialized or not.
         //

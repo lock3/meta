@@ -8707,14 +8707,10 @@ ExprResult InitializationSequence::Perform(Sema &S,
       //
       // We can't hack around this and just update ResultType, since there's
       // no guarantee it's actually provided.
-      //
-      // FIXME: The value category depends on the kind of parameter. For
-      // example, inputs should be rvalue, everything else lvalue?
       CurInit = ImplicitCastExpr::Create(S.Context, Step->Type,
                                          CK_ParameterQualification,
                                          CurInit.get(), nullptr,
-                                         VK_RValue);
-                                         // CurInit.get()->getValueKind());
+                                         CurInit.get()->getValueKind());
       break;
     }
     }
