@@ -6162,6 +6162,41 @@ public:
   }
 };
 
+/// Represents a query for information about a particular parameter.
+class CXXParameterInfoExpr : public Expr {
+  ValueDecl *Parm;
+  SourceLocation Loc;
+public:
+  CXXParameterInfoExpr(ValueDecl *D, QualType Ty, SourceLocation Loc)
+      : Expr(CXXParameterInfoExprClass, Ty, VK_RValue, OK_Ordinary), Parm(D),
+        Loc(Loc) {
+  }
+
+  explicit CXXParameterInfoExpr(EmptyShell Empty)
+      : Expr(CXXParameterInfoExprClass, Empty) {}
+
+  ValueDecl *getDecl() const { return Parm; }
+  void setDecl(ValueDecl *D) { Parm = D; }
+
+  SourceLocation getBeginLoc() const { return getLocation(); }
+  SourceLocation getEndLoc() const { return getLocation(); }
+
+  SourceLocation getLocation() const { return Loc; }
+  void setLocation(SourceLocation L) { Loc = L; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXParameterInfoExprClass;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

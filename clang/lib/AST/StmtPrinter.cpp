@@ -1986,6 +1986,10 @@ void StmtPrinter::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *Node) {
   OS << "nullptr";
 }
 
+void StmtPrinter::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *Node) {
+  OS << "<parameter info for " << Node->getDecl()->getName() << ">";
+}
+
 void StmtPrinter::VisitCXXThisExpr(CXXThisExpr *Node) {
   OS << "this";
 }

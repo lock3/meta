@@ -1809,6 +1809,13 @@ void ASTStmtWriter::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *E) {
   Code = serialization::EXPR_CXX_NULL_PTR_LITERAL;
 }
 
+void ASTStmtWriter::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
+  VisitExpr(E);
+  Record.AddDeclRef(E->getDecl());
+  Record.AddSourceLocation(E->getLocation());
+  Code = serialization::EXPR_CXX_PARAMETER_INFO;
+}
+
 void ASTStmtWriter::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
   VisitExpr(E);
   Record.AddSourceRange(E->getSourceRange());

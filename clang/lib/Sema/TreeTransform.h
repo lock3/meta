@@ -12624,6 +12624,17 @@ TreeTransform<Derived>::TransformCXXNullPtrLiteralExpr(
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
+  auto *D = cast<ValueDecl>(TransformDecl(E->getLocation(), E->getDecl()));
+  if (!getDerived().AlwaysRebuild() && D == E->getDecl())
+    return E;
+
+  ASTContext &Ctx = getSema().getASTContext();
+  return new (Ctx) CXXParameterInfoExpr(D, Ctx.BoolTy, E->getLocation());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCXXThisExpr(CXXThisExpr *E) {
   QualType T = getSema().getCurrentThisType();
 

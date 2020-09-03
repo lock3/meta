@@ -1417,6 +1417,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
+  case Expr::CXXParameterInfoExprClass:
     // These expressions can never throw.
     return CT_Cannot;
 
