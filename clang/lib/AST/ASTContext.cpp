@@ -5572,6 +5572,22 @@ ASTContext::getAutoType(QualType DeducedType, AutoTypeKeyword Keyword,
   return QualType(AT, 0);
 }
 
+QualType ASTContext::getAutoExpectType(QualType Expected) const {
+  // Look in the folding set for an existing type.
+  void *InsertPos = nullptr;
+  llvm::FoldingSetNodeID ID;
+  AutoType::Profile(ID, *this, Expected);
+  if (AutoType *AT = AutoTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(AT, 0);
+
+  void *Mem = Allocate(sizeof(AutoType), TypeAlignment);
+  auto *AT = new (Mem) AutoType(Expected);
+  Types.push_back(AT);
+  if (InsertPos)
+    AutoTypes.InsertNode(AT, InsertPos);
+  return QualType(AT, 0);
+}
+
 /// Return the uniqued reference to the deduced template specialization type
 /// which has been deduced to the given type, or to the canonical undeduced
 /// such type, or the canonical deduced-but-dependent such type.

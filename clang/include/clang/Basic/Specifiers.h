@@ -323,8 +323,8 @@ namespace clang {
     PPK_in,
     PPK_out,
     PPK_inout,
-    PPK_forward,
     PPK_move,
+    PPK_forward,
   };
 
   /// Describes the nullability of a particular type.

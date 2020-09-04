@@ -13453,17 +13453,21 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
 static QualType CheckParameterPassingMode(Sema &SemaRef,
                                           ParameterPassingKind PPK, 
                                           TypeSourceInfo *TSI) {
-  SourceRange Range = TSI->getTypeLoc().getSourceRange();
   QualType T = TSI->getType();
 
   // Don't adjust the type if there's no mode.
   if (PPK == PPK_unspecified)
     return T;
 
+  // We've already adjusted the type. Don't do it again.
+  if (PPK == PPK_forward)
+    return T;
+  
   // Parameter types cannot be cv- or ref-qualified. Diagnose the error
   // and remove the type qualifier, so we can continue analyzing the program.
   //
-  // TODO: Move add a fixit to remove the qualification.
+  // TODO: Add a fixit to remove the qualification.
+  SourceRange Range = TSI->getTypeLoc().getSourceRange();
   if (T->isReferenceType()) {
     SemaRef.Diag(Range.getBegin(), diag::err_ref_qualified_parameter_passing)
       << ((unsigned)PPK - 1) << Range;
@@ -13538,6 +13542,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
 
   // Adjust the type based on parameter passing mode.
+  //
+  // FIXME: We should probably be doing this in GetTypeForDeclarator. I really
+  // don't see a reason to do this outside of that function.
   if (PPK != PPK_unspecified) {
     // FIXME: We can probably do better than trivial soruce info.
     QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
