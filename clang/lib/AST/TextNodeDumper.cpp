@@ -1520,6 +1520,26 @@ void TextNodeDumper::VisitPackExpansionType(const PackExpansionType *T) {
     OS << " expansions " << *N;
 }
 
+void TextNodeDumper::VisitInParameterType(const InParameterType *T) {
+  if (Context)
+    Visit(T->getAdjustedType(*Context));
+}
+
+void TextNodeDumper::VisitOutParameterType(const OutParameterType *T) {
+  if (Context)
+    Visit(T->getAdjustedType(*Context));
+}
+
+void TextNodeDumper::VisitInOutParameterType(const InOutParameterType *T) {
+  if (Context)
+    Visit(T->getAdjustedType(*Context));
+}
+
+void TextNodeDumper::VisitMoveParameterType(const MoveParameterType *T) {
+  if (Context)
+    Visit(T->getAdjustedType(*Context));
+}
+
 void TextNodeDumper::VisitLabelDecl(const LabelDecl *D) { dumpName(D); }
 
 void TextNodeDumper::VisitTypedefDecl(const TypedefDecl *D) {

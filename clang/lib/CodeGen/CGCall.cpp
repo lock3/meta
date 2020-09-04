@@ -3892,9 +3892,6 @@ void CodeGenFunction::EmitCallArgs(
         // TODO: Can we move a const rvalue or xvalue? Can we even get const
         // expressions in these contexts?
         V = E->isRValue() || E->isXValue() ? True : False;
-        llvm::outs() << "SHOULD MOVE? " << (E->isRValue() || E->isXValue()) << '\n';
-        E->dump();
-        V->dump();
       }
       else if (PT->isOutParameter())
         // An output parameter is either uninitialized or not.
