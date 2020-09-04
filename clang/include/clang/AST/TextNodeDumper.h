@@ -318,6 +318,10 @@ public:
   void VisitInjectedClassNameType(const InjectedClassNameType *T);
   void VisitObjCInterfaceType(const ObjCInterfaceType *T);
   void VisitPackExpansionType(const PackExpansionType *T);
+  void VisitInParameterType(const InParameterType *T);
+  void VisitOutParameterType(const OutParameterType *T);
+  void VisitInOutParameterType(const InOutParameterType *T);
+  void VisitMoveParameterType(const MoveParameterType *T);
 
   void VisitLabelDecl(const LabelDecl *D);
   void VisitTypedefDecl(const TypedefDecl *D);

@@ -336,6 +336,11 @@ namespace {
       return UseMap();
     }
 
+    UseMap VisitRecoveryExpr(const RecoveryExpr *E) {
+      // Don't even try to analyze these things.
+      return UseMap();
+    }
+
     UseMap VisitStmt(const Stmt *S) {
       S->dump();
       llvm_unreachable("Unknown expression");
@@ -464,9 +469,12 @@ namespace {
     }
 
     void searchSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &Uses) {
-      for (CFGBlock *S : B->succs())
+      for (CFGBlock *S : B->succs()) {
+        if (!S)
+          continue;
         if (getColor(Colors, S) == Color::White)
           findSuccessiveUses(S, Colors, Uses);
+      }
     }
 
     void findSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &Uses) {
@@ -507,14 +515,14 @@ namespace {
       UseMap &CurrentUses = BlockUses[B];
       searchSuccessiveUses(B, Colors, CurrentUses);
 
-      llvm::outs() << "FINAL LAST USES " << B->getBlockID() << '\n';
-      for (auto X : CurrentUses) {
-        X.first->dump();
-        if (X.second.isDefinite())
-          X.second.getUse()->dump();
-        else
-          llvm::outs() << "indefinite\n";
-      }
+      // llvm::outs() << "FINAL LAST USES " << B->getBlockID() << '\n';
+      // for (auto X : CurrentUses) {
+      //   X.first->dump();
+      //   if (X.second.isDefinite())
+      //     X.second.getUse()->dump();
+      //   else
+      //     llvm::outs() << "indefinite\n";
+      // }
     }
 
     /// This value is computed as one of the "return" values of the search.
@@ -779,9 +787,11 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   AC.getCFGBuildOptions().setAllAlwaysAdd();
 
   CFG *G = AC.getCFG();
-  D->dump();
-  G->dump(Context.getLangOpts(), true);
-  llvm::outs() << "----------------\n";
+  if (!G)
+    return;
+  // D->dump();
+  // G->dump(Context.getLangOpts(), true);
+  // llvm::outs() << "----------------\n";
 
   LastUseSearch LU(*this, D, G);
   LU.computeLastUses();
@@ -792,5 +802,5 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   Rewriter R(*this, LU);
   StmtResult S = R.TransformStmt(D->getBody());
   D->setBody(S.get());
-  D->print(llvm::outs());
+  // D->print(llvm::outs());
 }

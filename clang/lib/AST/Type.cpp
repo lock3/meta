@@ -4572,10 +4572,12 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
 }
 
 QualType ParameterType::getAdjustedType(const ASTContext &Ctx)  const {
-  QualType T = getParameterType();
+  // Use the canonical type for forming the adjusted type. Otherwise, we might
+  // have sugar affecting the results of analyses.
+  QualType T = Ctx.getCanonicalType(getParameterType());
   switch (getParameterPassingMode()) {
   case PPK_in:
-    if (T->isClassType() && InParameterType::isPassByReference(Ctx, T))
+    if (InParameterType::isPassByReference(Ctx, T))
       T = Ctx.getLValueReferenceType(Ctx.getConstType(T));
     return T;
 
@@ -4584,7 +4586,7 @@ QualType ParameterType::getAdjustedType(const ASTContext &Ctx)  const {
     return Ctx.getLValueReferenceType(T);
 
   case PPK_move:
-    if (T->isClassType() && InParameterType::isPassByReference(Ctx, T))
+    if (InParameterType::isPassByReference(Ctx, T))
       T = Ctx.getRValueReferenceType(T);
     return T;
 
