@@ -4274,6 +4274,11 @@ def note_ovl_candidate_non_deduced_mismatch : Note<
 def note_ovl_candidate_non_deduced_mismatch_qualified : Note<
     "candidate template ignored: could not match %q0 against %q1">;
 
+// FIXME: This should probably provide more context about which parameter and
+// argument.
+def note_ovl_candidate_unexpected_deduction : Note<
+  "candidate ignored; expected deduced type %0 but got %1">;
+
 // Note that we don't treat templates differently for this diagnostic.
 def note_ovl_candidate_arity : Note<"candidate "
     "%sub{select_ovl_candidate_kind}0,1,2 not viable: "

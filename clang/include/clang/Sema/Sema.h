@@ -8221,6 +8221,8 @@ public:
     /// The deduced arguments did not satisfy the constraints associated
     /// with the template.
     TDK_ConstraintsNotSatisfied,
+    /// A deduced argument did not satisfy an expected decuction constraint.
+    TDK_UnexpectedDeduction,
     /// Deduction failed; that's all we know.
     TDK_MiscellaneousDeductionFailure,
     /// CUDA Target attributes do not match.

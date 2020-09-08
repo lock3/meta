@@ -1820,7 +1820,9 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // FIXME: This is going to get turned into an invented template parameter.
     // We need to propagate the value expectation to the template parameter
     // so that we can check it during template argument deduction.
-    Result = Context.getRValueReferenceType(Context.getAutoExpectType(Result));
+    QualType Expected = Context.getCanonicalType(Result);
+    Result = Context.getRValueReferenceType(
+        Context.getAutoExpectType(Expected));
   }
 
   assert(!Result.isNull() && "This function should not return a null type");
@@ -3175,6 +3177,9 @@ InventTemplateParameter(TypeProcessingState &state, QualType T,
           TemplateId->LAngleLoc.isValid() ? &TemplateArgsInfo : nullptr,
           InventedTemplateParam, D.getEllipsisLoc());
     }
+  } else if (Auto->hasExpectedDeduction()) {
+    // Attach the expected deduction to the template parameter.
+    InventedTemplateParam->setExpectedDeduction(Auto->getExpectedDeduction());
   }
 
   // Replace the 'auto' in the function parameter with this invented

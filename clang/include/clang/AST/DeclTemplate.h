@@ -1204,6 +1204,9 @@ class TemplateTypeParmDecl final : public TypeDecl,
       DefaultArgStorage<TemplateTypeParmDecl, TypeSourceInfo *>;
   DefArgStorage DefaultArgument;
 
+  /// An expected deduction constraint, if any.
+  QualType ExpectedDeduction;
+
   TemplateTypeParmDecl(DeclContext *DC, SourceLocation KeyLoc,
                        SourceLocation IdLoc, IdentifierInfo *Id,
                        bool Typename, bool HasTypeConstraint,
@@ -1352,6 +1355,20 @@ public:
   /// Determine whether this template parameter has a type-constraint.
   bool hasTypeConstraint() const {
     return HasTypeConstraint;
+  }
+
+  bool hasExpectedDeduction() const {
+    return !ExpectedDeduction.isNull();
+  }
+
+  QualType getExpectedDeduction() const {
+    assert(hasExpectedDeduction());
+    return ExpectedDeduction;
+  }
+
+  void setExpectedDeduction(QualType T) {
+    assert(!hasExpectedDeduction());
+    ExpectedDeduction = T;
   }
 
   /// \brief Get the associated-constraints of this template parameter.
