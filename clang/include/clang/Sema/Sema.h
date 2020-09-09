@@ -2573,6 +2573,9 @@ public:
   /// use of input parameters and rewrites that as a move.
   void computeMoveOnLastUse(FunctionDecl *D);
 
+  /// Returns true if D is a parameter that can be moved on last use.
+  bool isMovableParameter(const ParmVarDecl *D);
+
   /// ActOnFinishDelayedAttribute - Invoked when we have finished parsing an
   /// attribute for which parsing is delayed.
   void ActOnFinishDelayedAttribute(Scope *S, Decl *D, ParsedAttributes &Attrs);
