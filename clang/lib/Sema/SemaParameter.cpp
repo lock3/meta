@@ -18,6 +18,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/StmtVisitor.h"
 #include "llvm/ADT/DenseMap.h" 
 #include "TreeTransform.h"
@@ -282,11 +283,9 @@ struct UseVisitor : ConstStmtVisitor<UseVisitor, UseMap> {
   }
 
   UseMap VisitConditionalOperator(const ConditionalOperator *E) {
-    UseMap CondUses = Visit(E->getCond());
-    UseMap TrueUses = Visit(E->getTrueExpr());
-    UseMap FalseUses = Visit(E->getFalseExpr());
-    UseMap ResultUses = mergeUnsequenced(TrueUses, FalseUses);
-    return mergeSequencedBefore(CondUses, ResultUses);
+    // The operands of conditional operators are in different blocks,
+    // so report no initial uses here. We'll find them later.
+    return UseMap();
   }
 
   UseMap VisitFullExpr(const FullExpr *E) {
@@ -436,9 +435,6 @@ struct LastUseSearch {
 
     UseMap& CurrentUses = BlockUses[B];
     for (const Stmt *S : Stmts) {
-      llvm::outs() << "STMTS IN BLOCK " <<  B->getBlockID() << '\n';
-      S->dump();
-
       // Compute the last uses of S and merge those into the block.
       UseVisitor V(SemaRef);
       UseMap StmtUses = V.Visit(S);
@@ -452,14 +448,14 @@ struct LastUseSearch {
       }
     }
 
-    llvm::outs() << "INITIAL LAST USES " << B->getBlockID() << '\n';
-    for (const auto& X : CurrentUses) {
-      X.first->dump();
-      if (X.second.isDefinite())
-        X.second.getUse()->dump();
-      else
-        llvm::outs() << "indefinite\n";
-    }
+    // llvm::outs() << "INITIAL LAST USES " << B->getBlockID() << '\n';
+    // for (const auto& X : CurrentUses) {
+    //   X.first->dump();
+    //   if (X.second.isDefinite())
+    //     X.second.getUse()->dump();
+    //   else
+    //     llvm::outs() << "indefinite\n";
+    // }
   }
 
   // Vertex colors for a DFS.
@@ -483,15 +479,15 @@ struct LastUseSearch {
     }
   }
 
-  void findSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &Uses) {
+  void findSuccessiveUses(CFGBlock *B, ColorMap &Colors, UseMap &PotentialUses) {
     getColor(Colors, B) = Color::Gray;
 
-    // Remove from Uses any last use occurring in this succesor.
-    UseMap &CurrentUses = BlockUses[B];
-    for (auto X : CurrentUses)
-      Uses.erase(X.first);
+    // Remove from PotentialUses any last use occurring in this succesor.
+    UseMap &MyUses = BlockUses[B];
+    for (auto X : MyUses)
+      PotentialUses.erase(X.first);
 
-    searchSuccessiveUses(B, Colors, CurrentUses);
+    searchSuccessiveUses(B, Colors, PotentialUses);
 
     getColor(Colors, B) = Color::Black;
   }
@@ -518,17 +514,20 @@ struct LastUseSearch {
       getColor(Colors, B) = Color::White;
 
     // Search through successors.
-    UseMap &CurrentUses = BlockUses[B];
-    searchSuccessiveUses(B, Colors, CurrentUses);
+    //
+    // Note that we don't color this node gray so that it gets revisited
+    // in the case of loops.
+    UseMap &MyUses = BlockUses[B];
+    searchSuccessiveUses(B, Colors, MyUses);
 
-    llvm::outs() << "FINAL LAST USES " << B->getBlockID() << '\n';
-    for (auto X : CurrentUses) {
-      X.first->dump();
-      if (X.second.isDefinite())
-        X.second.getUse()->dump();
-      else
-        llvm::outs() << "indefinite\n";
-    }
+    // llvm::outs() << "FINAL LAST USES " << B->getBlockID() << '\n';
+    // for (auto X : MyUses) {
+    //   X.first->dump();
+    //   if (X.second.isDefinite())
+    //     X.second.getUse()->dump();
+    //   else
+    //     llvm::outs() << "indefinite\n";
+    // }
   }
 
   /// This value is computed as one of the "return" values of the search.
@@ -564,6 +563,20 @@ struct LastUseSearch {
     // Collect the set of statements comprising last uses.
     for (auto Iter = G->begin(); Iter != G->end(); ++Iter)
       collectLastUses(*Iter);
+  }
+};
+
+struct LastUseFinder : RecursiveASTVisitor<LastUseFinder> {
+  LastUseSearch &LU;
+  DeclSet &Decls;
+
+  LastUseFinder(LastUseSearch &LU, DeclSet &DS) : LU(LU), Decls(DS) {}
+
+  bool VisitDeclRefExpr(DeclRefExpr *E)
+  {
+    if (LU.LastUses.find(E) != LU.LastUses.end())
+      Decls.insert(E->getDecl());
+    return true;
   }
 };
 
@@ -630,10 +643,61 @@ struct Rewriter : TreeTransform<Rewriter> {
 
   // Statements
 
+  StmtResult TransformStmt(Stmt *S, StmtDiscardKind SDK = SDK_Discarded) {
+    if (!S)
+      return StmtResult();
+    if (isa<Expr>(S))
+      return TransformExprStmt(S);
+    return BaseType::TransformStmt(S, SDK);
+  }
+
+  StmtResult TransformDeclStmt(DeclStmt *S)
+  {
+    // FIXME: If this is a declstmt that declares a variable, we need
+    // to completely refactor the declaration so that it's allocated
+    // via placement new. For example:
+    //
+    //    foo g(in foo x) {
+    //      foo z = x;
+    //      return z;
+    //    }
+    //
+    // A naive transformation gives us this:
+    //
+    //    foo g(in foo x) {
+    //      if (<cond>)
+    //        foo z = move(x);
+    //      else
+    //        foo z = x;
+    //      return z;
+    //
+    // Which is clearly ill-formed. What we really want to do is this:
+    //
+    //    foo g(in foo x) {
+    //      foo* pz;
+    //      if (<cond>)
+    //        new (pz) foo(move(x));
+    //      else
+    //        new (pz) foo(x);
+    //      foo& z = *pz;
+    //      return z;
+    //
+    // Of course, that's probably going to be pretty hard.
+    //
+    // In the meantime int might be sufficient to just punt on these
+    // things and just generate normal code.
+    //
+    // Also, note that the naive implementation generates moves for both
+    // initializations of the variable. This is because we aren't
+    // generating new variables in each branches (and I don't think we
+    // want to).
+    return BaseType::TransformDeclStmt(S);
+  }
+
   /// The current parameter for which we are rewriting an expression.
   DeclSet CurrentParms;
 
-  StmtResult TransformInnermostStmt(Stmt *S, bool Cleanups) {
+  StmtResult RewriteInnermostStmt(Stmt *S, bool Cleanups) {
     StmtResult R = BaseType::TransformStmt(S);
     if (Cleanups)
       R = SemaRef.MaybeCreateExprWithCleanups(cast<Expr>(R.get()));
@@ -667,7 +731,7 @@ struct Rewriter : TreeTransform<Rewriter> {
   //
   // This is just a template to make the declaration shorter.
   template<typename I>
-  StmtResult TransformConditionedStmt(Stmt *S, I Iter, I Last, bool Cleanups) {
+  StmtResult RewriteStmt(Stmt *S, I Iter, I Last, bool Cleanups) {
     // If this is the last of the parameters, then we transform the statement
     // in the "normal" way, albeit with the current set of substitutions.
     const auto *D = cast<ParmVarDecl>(*Iter);
@@ -680,27 +744,27 @@ struct Rewriter : TreeTransform<Rewriter> {
         // Build an if/else around the original statement, moving the current
         // set of parameters. 
         CurrentParms.insert(D);
-        StmtResult S0 = TransformInnermostStmt(S, Cleanups);
+        StmtResult S0 = RewriteInnermostStmt(S, Cleanups);
         CurrentParms.erase(D);
-        StmtResult S1 = TransformInnermostStmt(S, Cleanups);
+        StmtResult S1 = RewriteInnermostStmt(S, Cleanups);
         return BuildConditionedStmt(D, S0.get(), S1.get());
       } else {
         // Build an if/else for the current parameter.
         ++Iter;
         CurrentParms.insert(D);
-        StmtResult S0 = TransformConditionedStmt(S, Iter, Last, Cleanups);
+        StmtResult S0 = RewriteStmt(S, Iter, Last, Cleanups);
         CurrentParms.erase(D);
-        StmtResult S1 = TransformConditionedStmt(S, Iter, Last, Cleanups);
+        StmtResult S1 = RewriteStmt(S, Iter, Last, Cleanups);
         return BuildConditionedStmt(D, S0.get(), S1.get());
       }
     }
 
-    // For move parameters, there is only one possible transformation.
+    // Always rewrite last uses for move parameters.
     if (T->isMoveParameter()) {
       CurrentParms.insert(D);
       StmtResult R = (std::next(Iter) == Last) ?
-          TransformInnermostStmt(S, Cleanups) :
-          TransformConditionedStmt(S, Iter, Last, Cleanups);
+          RewriteInnermostStmt(S, Cleanups) :
+          RewriteStmt(S, Iter, Last, Cleanups);
       CurrentParms.erase(D);
       return R;
     }
@@ -716,72 +780,34 @@ struct Rewriter : TreeTransform<Rewriter> {
     return IfStmt::Create(Cxt, Loc, false, nullptr, nullptr, Cond, S0, Loc, S1);
   }
 
-  /// Returns true if E is known to be a statement.
-  bool isStatement(Stmt *S) {
-    return LU.KnownStmts.find(S) != LU.KnownStmts.end();
+  /// Finds any last uses in S, storing them in Decls. Returns true if Decls
+  /// is non-empty.
+  bool containsLastUses(Stmt *S, DeclSet& Decls)
+  {
+    LastUseFinder F(LU, Decls);
+    F.TraverseStmt(S);
+    return !Decls.empty();
   }
 
-  StmtResult TransformStmt(Stmt *S, StmtDiscardKind SDK = SDK_Discarded) {
-    if (!S)
-      return StmtResult();
+  StmtResult TransformExprStmt(Stmt *S) {
+    // Recursively search the expression for last uses. If any, then we need
+    // to rewrite the entire statement.
+    DeclSet Decls;
+    if (containsLastUses(S, Decls)) {
+      // Note the presence of cleanups here. We need to add them to the
+      // innermost rewritten statment.
+      auto *Cleanups = dyn_cast<ExprWithCleanups>(S);
+      if (Cleanups)
+        S = Cleanups->getSubExpr();
 
-    // See through cleanup expressions because they don't appear in blocks
-    // of the CFG. We'll need to rebuild the cleanups within the conditioned
-    // statement.
-    auto *Cleanups = dyn_cast<ExprWithCleanups>(S);
-    if (Cleanups)
-      S = Cleanups->getSubExpr();
-
-    if (isStatement(S)) {
-      // FIXME: If this is a declstmt that declares a variable, we need
-      // to completely refactor the declaration so that it's allocated
-      // via placement new. For example:
-      //
-      //    foo g(in foo x) {
-      //      foo z = x;
-      //      return z;
-      //    }
-      //
-      // A naive transformation gives us this:
-      //
-      //    foo g(in foo x) {
-      //      if (<cond>)
-      //        foo z = move(x);
-      //      else
-      //        foo z = x;
-      //      return z;
-      //
-      // Which is clearly ill-formed. What we really want to do is this:
-      //
-      //    foo g(in foo x) {
-      //      foo* pz;
-      //      if (<cond>)
-      //        new (pz) foo(move(x));
-      //      else
-      //        new (pz) foo(x);
-      //      foo& z = *pz;
-      //      return z;
-      //
-      // Of course, that's probably going to be pretty hard.
-      //
-      // In the meantime int might be sufficient to just punt on these
-      // things and just generate normal code.
-      //
-      // Also, note that the naive implementation generates moves for both
-      // initializations of the variable. This is because we aren't
-      // generating new variables in each branches (and I don't think we
-      // want to).
-      if (isa<DeclStmt>(S))
-        return BaseType::TransformStmt(S, SDK);
-
-      // If this statement (or expression!) contains the last use of any in
-      // parameters, then it needs to be conditioned.
-      const DeclSet &Decls = LU.StmtParms[S];
-      if (!Decls.empty())
-        return TransformConditionedStmt(S, Decls.begin(), Decls.end(), Cleanups);
+      return RewriteStmt(S, Decls.begin(), Decls.end(), Cleanups);
     }
-    return BaseType::TransformStmt(S, SDK);
+
+    // Otherwise, we don't need to change anything.
+    return BaseType::TransformStmt(S);
   }
+
+  // FIXME: We need to check a bunch of other statements.
 
   // Make sure the transform actually processes initializers.
   Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
@@ -812,9 +838,9 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   CFG *G = AC.getCFG();
   if (!G)
     return;
-  D->dump();
-  G->dump(Context.getLangOpts(), true);
-  llvm::outs() << "----------------\n";
+  // D->dump();
+  // G->dump(Context.getLangOpts(), true);
+  // llvm::outs() << "****************\n";
 
   LastUseSearch LU(*this, D, G);
   LU.computeLastUses();
@@ -825,5 +851,5 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   Rewriter R(*this, LU);
   StmtResult S = R.TransformStmt(D->getBody());
   D->setBody(S.get());
-  D->print(llvm::outs());
+  // D->print(llvm::outs());
 }
