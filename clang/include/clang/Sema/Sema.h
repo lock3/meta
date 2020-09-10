@@ -2622,6 +2622,9 @@ public:
   /// use of input parameters and rewrites that as a move.
   void computeMoveOnLastUse(FunctionDecl *D);
 
+  /// Returns true if D is a parameter that can be moved on last use.
+  bool isMovableParameter(const ParmVarDecl *D);
+
   /// ActOnFinishDelayedAttribute - Invoked when we have finished parsing an
   /// attribute for which parsing is delayed.
   void ActOnFinishDelayedAttribute(Scope *S, Decl *D, ParsedAttributes &Attrs);
@@ -8306,6 +8309,8 @@ public:
     /// The deduced arguments did not satisfy the constraints associated
     /// with the template.
     TDK_ConstraintsNotSatisfied,
+    /// A deduced argument did not satisfy an expected decuction constraint.
+    TDK_UnexpectedDeduction,
     /// Deduction failed; that's all we know.
     TDK_MiscellaneousDeductionFailure,
     /// CUDA Target attributes do not match.

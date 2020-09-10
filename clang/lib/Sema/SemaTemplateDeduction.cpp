@@ -1540,6 +1540,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     if (RecanonicalizeArg)
       DeducedType = S.Context.getCanonicalType(DeducedType);
 
+
     DeducedTemplateArgument NewDeduced(DeducedType, DeducedFromArrayBound);
     DeducedTemplateArgument Result = checkDeducedTemplateArguments(S.Context,
                                                                  Deduced[Index],
@@ -1549,6 +1550,17 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       Info.FirstArg = Deduced[Index];
       Info.SecondArg = NewDeduced;
       return Sema::TDK_Inconsistent;
+    }
+
+    // If the template type parameter has a deduction constraint, make sure
+    // the deduced type matches.
+    auto *PD = cast<TemplateTypeParmDecl>(TemplateParams->getParam(Index));
+    if (PD->hasExpectedDeduction()) {
+      if (PD->getExpectedDeduction() != DeducedType) {
+        Info.Param = makeTemplateParameter(PD);
+        Info.FirstArg = NewDeduced;
+        return Sema::TDK_UnexpectedDeduction;
+      }
     }
 
     Deduced[Index] = Result;

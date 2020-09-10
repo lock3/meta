@@ -1814,6 +1814,17 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       Result = Qualified;
   }
 
+  // Forwarding parameters are... fun. A parameter of the type 'forward int x'
+  // is really shorthand notation 'std::same_as<int> auto&& x'. 
+  if (DS.getParameterPassingSpecifier() == PPK_forward) {
+    // FIXME: This is going to get turned into an invented template parameter.
+    // We need to propagate the value expectation to the template parameter
+    // so that we can check it during template argument deduction.
+    QualType Expected = Context.getCanonicalType(Result);
+    Result = Context.getRValueReferenceType(
+        Context.getAutoExpectType(Expected));
+  }
+
   assert(!Result.isNull() && "This function should not return a null type");
   return Result;
 }
@@ -3216,6 +3227,9 @@ InventTemplateParameter(TypeProcessingState &state, QualType T,
           TemplateId->LAngleLoc.isValid() ? &TemplateArgsInfo : nullptr,
           InventedTemplateParam, D.getEllipsisLoc());
     }
+  } else if (Auto->hasExpectedDeduction()) {
+    // Attach the expected deduction to the template parameter.
+    InventedTemplateParam->setExpectedDeduction(Auto->getExpectedDeduction());
   }
 
   // Replace the 'auto' in the function parameter with this invented

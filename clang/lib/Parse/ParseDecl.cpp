@@ -4062,7 +4062,8 @@ bool Parser::isParameterPassingSpecifier() {
     return II->isStr("in")
         || II->isStr("out")
         || II->isStr("inout")
-        || II->isStr("move");
+        || II->isStr("move")
+        || II->isStr("forward");
   }
   return false;
 }
@@ -4086,6 +4087,8 @@ void Parser::ParseParameterPassingSpecifier(DeclSpec &DS) {
       return SetParmSpec(DS, PPK_inout, ConsumeIdentifier());
     if (II->isStr("move"))
       return SetParmSpec(DS, PPK_move, ConsumeIdentifier());
+    if (II->isStr("forward"))
+      return SetParmSpec(DS, PPK_forward, ConsumeIdentifier());
   }
 }
 

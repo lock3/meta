@@ -4559,6 +4559,15 @@ AutoType::AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
   }
 }
 
+AutoType::AutoType(QualType Expected)
+    : DeducedType(Auto, QualType(), TypeDependence::None) {
+  AutoTypeBits.Keyword = (unsigned)AutoTypeKeyword::Auto;
+  AutoTypeBits.NumArgs = 0;
+  TypeConstraintConcept = nullptr;
+  ExpectedDeduction = Expected;
+}
+
+
 void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
@@ -4569,6 +4578,11 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
   ID.AddPointer(CD);
   for (const TemplateArgument &Arg : Arguments)
     Arg.Profile(ID, Context);
+}
+
+void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      QualType Expected) {
+  Expected.Profile(ID);
 }
 
 QualType ParameterType::getAdjustedType(const ASTContext &Ctx)  const {

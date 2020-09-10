@@ -13523,17 +13523,21 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
 static QualType CheckParameterPassingMode(Sema &SemaRef,
                                           ParameterPassingKind PPK, 
                                           TypeSourceInfo *TSI) {
-  SourceRange Range = TSI->getTypeLoc().getSourceRange();
   QualType T = TSI->getType();
 
   // Don't adjust the type if there's no mode.
   if (PPK == PPK_unspecified)
     return T;
 
+  // We've already adjusted the type. Don't do it again.
+  if (PPK == PPK_forward)
+    return T;
+  
   // Parameter types cannot be cv- or ref-qualified. Diagnose the error
   // and remove the type qualifier, so we can continue analyzing the program.
   //
-  // TODO: Move add a fixit to remove the qualification.
+  // TODO: Add a fixit to remove the qualification.
+  SourceRange Range = TSI->getTypeLoc().getSourceRange();
   if (T->isReferenceType()) {
     SemaRef.Diag(Range.getBegin(), diag::err_ref_qualified_parameter_passing)
       << ((unsigned)PPK - 1) << Range;
@@ -13608,6 +13612,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
 
   // Adjust the type based on parameter passing mode.
+  //
+  // FIXME: We should probably be doing this in GetTypeForDeclarator. I really
+  // don't see a reason to do this outside of that function.
   if (PPK != PPK_unspecified) {
     // FIXME: We can probably do better than trivial soruce info.
     QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
@@ -14348,21 +14355,10 @@ static void diagnoseImplicitlyRetainedSelf(Sema &S) {
           << FixItHint::CreateInsertion(P.first, "self->");
 }
 
-// Returns true if D is a movable input parameter, which is only the case
-// when D is nontrivial.
-static bool isMovableInParameter(ASTContext &Ctx, ParmVarDecl *D) {
-  QualType T = D->getType();
-  if (const auto *PT = dyn_cast<ParameterType>(T))
-    if (PT->isInParameter())
-      return !InParameterType::isPassByValue(Ctx, PT->getParameterType());
-  return false;
-}
-
 // Returns true if D has any in parameters that can be moved.
-static bool hasMovableInParameters(ASTContext &Ctx, FunctionDecl *D)
-{
+static bool hasMovableParameters(Sema &SemaRef, FunctionDecl *D) {
   for (std::size_t I = 0; I < D->getNumParams(); ++I)
-    if (isMovableInParameter(Ctx, D->getParamDecl(I)))
+    if (SemaRef.isMovableParameter(D->getParamDecl(I)))
       return true;
   return false;
 }
@@ -14396,7 +14392,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     FD->setBody(Body);
     FD->setWillHaveBody(false);
 
-    if (hasMovableInParameters(Context, FD))
+    if (hasMovableParameters(*this, FD))
       computeMoveOnLastUse(FD);
 
     if (getLangOpts().CPlusPlus14) {

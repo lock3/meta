@@ -5193,11 +5193,17 @@ public:
 class alignas(8) AutoType : public DeducedType, public llvm::FoldingSetNode {
   friend class ASTContext; // ASTContext creates these
 
+  /// TODO: Put this into a union with the matched type.
   ConceptDecl *TypeConstraintConcept;
+
+  /// Implicitly equivalent to std::same_as<T>.
+  QualType ExpectedDeduction;
 
   AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
            TypeDependence ExtraDependence, ConceptDecl *CD,
            ArrayRef<TemplateArgument> TypeConstraintArgs);
+
+  AutoType(QualType Expected);
 
   const TemplateArgument *getArgBuffer() const {
     return reinterpret_cast<const TemplateArgument*>(this+1);
@@ -5240,6 +5246,15 @@ public:
     return (AutoTypeKeyword)AutoTypeBits.Keyword;
   }
 
+  bool hasExpectedDeduction() const {
+    return !ExpectedDeduction.isNull();
+  }
+
+  QualType getExpectedDeduction() const {
+    assert(hasExpectedDeduction());
+    return ExpectedDeduction;
+  }
+
   void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context) {
     Profile(ID, Context, getDeducedType(), getKeyword(), isDependentType(),
             getTypeConstraintConcept(), getTypeConstraintArguments());
@@ -5249,6 +5264,9 @@ public:
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
                       ArrayRef<TemplateArgument> Arguments);
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      QualType Expected);
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == Auto;
