@@ -832,6 +832,7 @@ public:
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
 
   Decl *InjectNamespaceDecl(NamespaceDecl *D);
+  Decl *InjectUsingDirectiveDecl(UsingDirectiveDecl *D);
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
   Decl *InjectFunctionDecl(FunctionDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
@@ -1229,6 +1230,36 @@ Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   }
 
   return Ns;
+}
+
+Decl *InjectionContext::InjectUsingDirectiveDecl(UsingDirectiveDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  // Transform the parts to rebuild the UsingDirectiveDecl
+  NestedNameSpecifierLoc QualifierLoc = TransformNestedNameSpecifierLoc(
+      D->getQualifierLoc());
+
+  NamedDecl *NewNS = dyn_cast_or_null<NamedDecl>(
+      TransformDecl(D->getLocation(), D->getNominatedNamespace()));
+  if (!NewNS)
+    return nullptr;
+
+  Decl *NewAncestor = TransformDecl(
+      D->getLocation(), Decl::castFromDeclContext(D->getCommonAncestor()));
+  if (!NewAncestor)
+    return nullptr;
+
+  // Build the new UsingDirectiveDecl
+  auto *UD = UsingDirectiveDecl::Create(
+      getContext(), Owner, D->getUsingLoc(), D->getNamespaceKeyLocation(),
+      QualifierLoc, D->getIdentLocation(), NewNS,
+      Decl::castToDeclContext(NewAncestor));
+
+  // Always add to the context, we shouldn't be instantiating anything
+  // at this point, so a straight copy should be correct.
+  Owner->addDecl(UD);
+
+  return UD;
 }
 
 Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
@@ -2036,6 +2067,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   switch (D->getKind()) {
   case Decl::Namespace:
     return InjectNamespaceDecl(cast<NamespaceDecl>(D));
+  case Decl::UsingDirective:
+    return InjectUsingDirectiveDecl(cast<UsingDirectiveDecl>(D));
   case Decl::Typedef:
   case Decl::TypeAlias:
     return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
@@ -3718,14 +3751,18 @@ static bool isInjectingIntoNamespace(const Decl *Injectee) {
   return Decl::castToDeclContext(Injectee)->isFileContext();
 }
 
-static CXXInjectionContextSpecifier
-GetDelayedNamespaceContext(const CXXInjectionContextSpecifier &CurSpecifier) {
+static CXXInjectionContextSpecifier GetDelayedNamespaceContext(
+    const CXXInjectionContextSpecifier &CurSpecifier, Decl *NSDecl) {
   switch (CurSpecifier.getContextKind()) {
   case CXXInjectionContextSpecifier::CurrentContext:
     llvm_unreachable("injection should not be delayed");
 
   case CXXInjectionContextSpecifier::ParentNamespace: {
-    return CXXInjectionContextSpecifier();
+    // Rewrite this to explicit target the correct namespace.  This is
+    // particularly important for templates which may be instantiated
+    // from many different locations.
+    return CXXInjectionContextSpecifier(
+        CurSpecifier.getBeginLoc(), NSDecl, CurSpecifier.getEndLoc());
   }
 
   case CXXInjectionContextSpecifier::SpecifiedNamespace:
@@ -3850,7 +3887,8 @@ bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
   if (isInsideRecord(CurContext) && isInjectingIntoNamespace(Injectee)) {
     // Push a modified injection effect with an adjusted context for replay
     // after completion of the current record.
-    auto &&NewSpecifier = GetDelayedNamespaceContext(IE.ContextSpecifier);
+    auto &&NewSpecifier = GetDelayedNamespaceContext(
+        IE.ContextSpecifier, Injectee);
     InjectionEffect NewEffect(IE, NewSpecifier);
     PendingNamespaceInjections.push_back({MD, NewEffect});
     return true;

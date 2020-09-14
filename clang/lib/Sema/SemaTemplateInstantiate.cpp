@@ -2999,6 +2999,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     else if (MightHaveConstexprVirtualFunctions)
       MarkVirtualMembersReferenced(PointOfInstantiation, Instantiation,
                                    /*ConstexprOnly*/ true);
+
+    // Inject any namespace definitions waiting upon the completion of
+    // the record.
+    InjectPendingNamespaceInjections();
   }
 
   return Instantiation->isInvalidDecl();
