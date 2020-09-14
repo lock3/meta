@@ -6634,11 +6634,21 @@ public:
   static constexpr ParameterPassingKind PassingMode = PPK_in;
 
   /// Returns true if `T` should be passed by value.
-  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+  static bool isPassByValue(const ASTContext &Ctx, QualType T);
 
   /// Returns true if `T` should be passed by reference.
-  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
-    return !isPassByValue(Cxt, T);
+  static bool isPassByReference(const ASTContext &Ctx, QualType T) {
+    return !isPassByValue(Ctx, T);
+  }
+
+  /// Returns true if this parameter type should be passed by value.
+  bool isPassByValue(const ASTContext &Ctx) const {
+    return isPassByValue(Ctx, getParameterType());
+  }
+
+  /// Returns true if this parameter type should be passed by reference.
+  bool isPassByReference(const ASTContext &Ctx) const {
+    return isPassByReference(Ctx, getParameterType());
   }
 
   bool isSugared() const { return false; }
@@ -6697,11 +6707,21 @@ public:
 
   /// Returns true if `T` should be passed by value, presumably in registers.
   /// If false, arguments are passed by reference.
-  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+  static bool isPassByValue(const ASTContext &Ctx, QualType T);
 
   /// Returns true if `T` should be passed by reference.
-  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
-    return !isPassByValue(Cxt, T);
+  static bool isPassByReference(const ASTContext &Ctx, QualType T) {
+    return !isPassByValue(Ctx, T);
+  }
+
+  /// Returns true if this parameter type should be passed by value.
+  bool isPassByValue(const ASTContext &Ctx) const {
+    return isPassByValue(Ctx, getParameterType());
+  }
+
+  /// Returns true if this parameter type should be passed by reference.
+  bool isPassByReference(const ASTContext &Ctx) const {
+    return isPassByReference(Ctx, getParameterType());
   }
 
   bool isSugared() const { return false; }

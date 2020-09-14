@@ -145,6 +145,14 @@ static CanQualType getAdjustedParameterType(ASTContext &Ctx, CanQualType T) {
   return T;
 }
 
+static bool needsPassingInfoParameter(ASTContext &Ctx, const Type* T) {
+  if (const auto *P = dyn_cast<InParameterType>(T))
+    return P->isPassByReference(Ctx);
+  if (isa<OutParameterType>(T))
+    return true;
+  return false;
+}
+
 /// Adds the formal parameters in FPT to the given prefix. If any parameter in
 /// FPT has pass_object_size attrs, then we'll add parameters for those, too.
 /// Same for in- and out-parameters.
@@ -165,7 +173,7 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
 
       // If the original was an input or output parameter, add a new parameter
       // to communicate call-site information to function.
-      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT))
+      if (needsPassingInfoParameter(Ctx, PT.getTypePtr()))
         prefix.push_back(Ctx.BoolTy);
     }
     return;
@@ -3796,6 +3804,12 @@ void CodeGenFunction::EmitNonNullArgCheck(RValue RV, QualType ArgType,
   EmitCheck(std::make_pair(Cond, CheckKind), Handler, StaticData, None);
 }
 
+static bool isMovableInParameter(ASTContext &Ctx, const ParameterType *T) {
+  if (auto *P = dyn_cast<InParameterType>(T))
+    return P->isPassByReference(Ctx);
+  return false;
+}
+
 void CodeGenFunction::EmitCallArgs(
     CallArgList &Args, ArrayRef<QualType> ArgTypes,
     llvm::iterator_range<CallExpr::const_arg_iterator> ArgRange,
@@ -3885,7 +3899,7 @@ void CodeGenFunction::EmitCallArgs(
       llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
       llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
       llvm::Value *V;
-      if (PT->isInParameter()) {
+      if (isMovableInParameter(getContext(), PT)) {
         // An input parameter is finally movable if it is passed as a prvalue
         // or xvalue.
         //

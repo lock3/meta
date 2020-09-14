@@ -1197,6 +1197,15 @@ static void TryMarkNoThrow(llvm::Function *F) {
   F->setDoesNotThrow();
 }
 
+// FIXME: A version of this lives in CGCall.cpp too.
+static bool needsPassingInfoParameter(ASTContext &Ctx, QualType T) {
+  if (const auto *P = dyn_cast<InParameterType>(T))
+    return P->isPassByReference(Ctx);
+  if (isa<OutParameterType>(T))
+    return true;
+  return false;
+}
+
 QualType CodeGenFunction::BuildFunctionArgList(GlobalDecl GD,
                                                FunctionArgList &Args) {
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
@@ -1226,7 +1235,7 @@ QualType CodeGenFunction::BuildFunctionArgList(GlobalDecl GD,
 
       // Add extra boolean parameters for in/out parameters.
       QualType T = Param->getType();
-      if (isa<InParameterType>(T) || isa<OutParameterType>(T)) {
+      if (needsPassingInfoParameter(getContext(), T)) {
         auto *Implicit = ImplicitParamDecl::Create(
             getContext(), Param->getDeclContext(), Param->getLocation(),
             /*Id=*/nullptr, getContext().BoolTy, ImplicitParamDecl::Other);
