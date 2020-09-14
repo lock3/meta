@@ -11041,7 +11041,7 @@ Decl *Sema::ActOnStartNamespaceDef(
     // declarations semantically contained within an anonymous
     // namespace internal linkage.
 
-    if (!PrevNS) {
+    if (!PrevNS && !Parent->isFragment()) {
       UD = UsingDirectiveDecl::Create(Context, Parent,
                                       /* 'using' */ LBrace,
                                       /* 'namespace' */ SourceLocation(),
