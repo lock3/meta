@@ -1070,7 +1070,7 @@ private:
                            std::string &CollectString);
 
   bool AddNextRegisterToList(unsigned& Reg, unsigned& RegWidth,
-                             RegisterKind RegKind, unsigned Reg1);
+                             RegisterKind RegKind, unsigned Reg1, SMLoc Loc);
   bool ParseAMDGPURegister(RegisterKind &RegKind, unsigned &Reg,
                            unsigned &RegNum, unsigned &RegWidth,
                            bool RestoreOnFailure = false);
@@ -1088,7 +1088,8 @@ private:
   bool ParseRegRange(unsigned& Num, unsigned& Width);
   unsigned getRegularReg(RegisterKind RegKind,
                          unsigned RegNum,
-                         unsigned RegWidth);
+                         unsigned RegWidth,
+                         SMLoc Loc);
 
   bool isRegister();
   bool isRegister(const AsmToken &Token, const AsmToken &NextToken) const;
@@ -1340,7 +1341,6 @@ private:
                      const int64_t Width,
                      const SMLoc Loc);
 
-  void errorExpTgt();
   OperandMatchResultTy parseExpTgtImpl(StringRef Str, uint8_t &Val);
   SMLoc getFlatOffsetLoc(const OperandVector &Operands) const;
   SMLoc getSMEMOffsetLoc(const OperandVector &Operands) const;
@@ -2066,7 +2066,8 @@ OperandMatchResultTy AMDGPUAsmParser::tryParseRegister(unsigned &RegNo,
 }
 
 bool AMDGPUAsmParser::AddNextRegisterToList(unsigned &Reg, unsigned &RegWidth,
-                                            RegisterKind RegKind, unsigned Reg1) {
+                                            RegisterKind RegKind, unsigned Reg1,
+                                            SMLoc Loc) {
   switch (RegKind) {
   case IS_SPECIAL:
     if (Reg == AMDGPU::EXEC_LO && Reg1 == AMDGPU::EXEC_HI) {
@@ -2099,12 +2100,14 @@ bool AMDGPUAsmParser::AddNextRegisterToList(unsigned &Reg, unsigned &RegWidth,
       RegWidth = 2;
       return true;
     }
+    Error(Loc, "register does not fit in the list");
     return false;
   case IS_VGPR:
   case IS_SGPR:
   case IS_AGPR:
   case IS_TTMP:
     if (Reg1 != Reg + RegWidth) {
+      Error(Loc, "registers in a list must have consecutive indices");
       return false;
     }
     RegWidth++;
@@ -2187,7 +2190,8 @@ AMDGPUAsmParser::isRegister()
 unsigned
 AMDGPUAsmParser::getRegularReg(RegisterKind RegKind,
                                unsigned RegNum,
-                               unsigned RegWidth) {
+                               unsigned RegWidth,
+                               SMLoc Loc) {
 
   assert(isRegularReg(RegKind));
 
@@ -2198,18 +2202,24 @@ AMDGPUAsmParser::getRegularReg(RegisterKind RegKind,
     AlignSize = std::min(RegWidth, 4u);
   }
 
-  if (RegNum % AlignSize != 0)
+  if (RegNum % AlignSize != 0) {
+    Error(Loc, "invalid register alignment");
     return AMDGPU::NoRegister;
+  }
 
   unsigned RegIdx = RegNum / AlignSize;
   int RCID = getRegClass(RegKind, RegWidth);
-  if (RCID == -1)
+  if (RCID == -1) {
+    Error(Loc, "invalid or unsupported register size");
     return AMDGPU::NoRegister;
+  }
 
   const MCRegisterInfo *TRI = getContext().getRegisterInfo();
   const MCRegisterClass RC = TRI->getRegClass(RCID);
-  if (RegIdx >= RC.getNumRegs())
+  if (RegIdx >= RC.getNumRegs()) {
+    Error(Loc, "register index is out of range");
     return AMDGPU::NoRegister;
+  }
 
   return RC.getRegister(RegIdx);
 }
@@ -2217,24 +2227,40 @@ AMDGPUAsmParser::getRegularReg(RegisterKind RegKind,
 bool
 AMDGPUAsmParser::ParseRegRange(unsigned& Num, unsigned& Width) {
   int64_t RegLo, RegHi;
-  if (!trySkipToken(AsmToken::LBrac))
+  if (!skipToken(AsmToken::LBrac, "missing register index"))
     return false;
+
+  SMLoc FirstIdxLoc = getLoc();
+  SMLoc SecondIdxLoc;
 
   if (!parseExpr(RegLo))
     return false;
 
   if (trySkipToken(AsmToken::Colon)) {
+    SecondIdxLoc = getLoc();
     if (!parseExpr(RegHi))
       return false;
   } else {
     RegHi = RegLo;
   }
 
-  if (!trySkipToken(AsmToken::RBrac))
+  if (!skipToken(AsmToken::RBrac, "expected a closing square bracket"))
     return false;
 
-  if (!isUInt<32>(RegLo) || !isUInt<32>(RegHi) || RegLo > RegHi)
+  if (!isUInt<32>(RegLo)) {
+    Error(FirstIdxLoc, "invalid register index");
     return false;
+  }
+
+  if (!isUInt<32>(RegHi)) {
+    Error(SecondIdxLoc, "invalid register index");
+    return false;
+  }
+
+  if (RegLo > RegHi) {
+    Error(FirstIdxLoc, "first register index should not exceed second index");
+    return false;
+  }
 
   Num = static_cast<unsigned>(RegLo);
   Width = (RegHi - RegLo) + 1;
@@ -2261,10 +2287,14 @@ unsigned AMDGPUAsmParser::ParseRegularReg(RegisterKind &RegKind,
                                           SmallVectorImpl<AsmToken> &Tokens) {
   assert(isToken(AsmToken::Identifier));
   StringRef RegName = getTokenStr();
+  auto Loc = getLoc();
 
   const RegInfo *RI = getRegularRegInfo(RegName);
-  if (!RI)
+  if (!RI) {
+    Error(Loc, "invalid register name");
     return AMDGPU::NoRegister;
+  }
+
   Tokens.push_back(getToken());
   lex(); // skip register name
 
@@ -2272,8 +2302,10 @@ unsigned AMDGPUAsmParser::ParseRegularReg(RegisterKind &RegKind,
   StringRef RegSuffix = RegName.substr(RI->Name.size());
   if (!RegSuffix.empty()) {
     // Single 32-bit register: vXX.
-    if (!getRegNum(RegSuffix, RegNum))
+    if (!getRegNum(RegSuffix, RegNum)) {
+      Error(Loc, "invalid register index");
       return AMDGPU::NoRegister;
+    }
     RegWidth = 1;
   } else {
     // Range of registers: v[XX:YY]. ":YY" is optional.
@@ -2281,44 +2313,59 @@ unsigned AMDGPUAsmParser::ParseRegularReg(RegisterKind &RegKind,
       return AMDGPU::NoRegister;
   }
 
-  return getRegularReg(RegKind, RegNum, RegWidth);
+  return getRegularReg(RegKind, RegNum, RegWidth, Loc);
 }
 
 unsigned AMDGPUAsmParser::ParseRegList(RegisterKind &RegKind, unsigned &RegNum,
                                        unsigned &RegWidth,
                                        SmallVectorImpl<AsmToken> &Tokens) {
   unsigned Reg = AMDGPU::NoRegister;
+  auto ListLoc = getLoc();
 
-  if (!trySkipToken(AsmToken::LBrac))
+  if (!skipToken(AsmToken::LBrac,
+                 "expected a register or a list of registers")) {
     return AMDGPU::NoRegister;
+  }
 
   // List of consecutive registers, e.g.: [s0,s1,s2,s3]
 
+  auto Loc = getLoc();
   if (!ParseAMDGPURegister(RegKind, Reg, RegNum, RegWidth))
     return AMDGPU::NoRegister;
-  if (RegWidth != 1)
+  if (RegWidth != 1) {
+    Error(Loc, "expected a single 32-bit register");
     return AMDGPU::NoRegister;
+  }
 
   for (; trySkipToken(AsmToken::Comma); ) {
     RegisterKind NextRegKind;
     unsigned NextReg, NextRegNum, NextRegWidth;
+    Loc = getLoc();
 
-    if (!ParseAMDGPURegister(NextRegKind, NextReg, NextRegNum, NextRegWidth,
-                             Tokens))
+    if (!ParseAMDGPURegister(NextRegKind, NextReg,
+                             NextRegNum, NextRegWidth,
+                             Tokens)) {
       return AMDGPU::NoRegister;
-    if (NextRegWidth != 1)
+    }
+    if (NextRegWidth != 1) {
+      Error(Loc, "expected a single 32-bit register");
       return AMDGPU::NoRegister;
-    if (NextRegKind != RegKind)
+    }
+    if (NextRegKind != RegKind) {
+      Error(Loc, "registers in a list must be of the same kind");
       return AMDGPU::NoRegister;
-    if (!AddNextRegisterToList(Reg, RegWidth, RegKind, NextReg))
+    }
+    if (!AddNextRegisterToList(Reg, RegWidth, RegKind, NextReg, Loc))
       return AMDGPU::NoRegister;
   }
 
-  if (!trySkipToken(AsmToken::RBrac))
+  if (!skipToken(AsmToken::RBrac,
+                 "expected a comma or a closing square bracket")) {
     return AMDGPU::NoRegister;
+  }
 
   if (isRegularReg(RegKind))
-    Reg = getRegularReg(RegKind, RegNum, RegWidth);
+    Reg = getRegularReg(RegKind, RegNum, RegWidth, ListLoc);
 
   return Reg;
 }
@@ -2326,6 +2373,7 @@ unsigned AMDGPUAsmParser::ParseRegList(RegisterKind &RegKind, unsigned &RegNum,
 bool AMDGPUAsmParser::ParseAMDGPURegister(RegisterKind &RegKind, unsigned &Reg,
                                           unsigned &RegNum, unsigned &RegWidth,
                                           SmallVectorImpl<AsmToken> &Tokens) {
+  auto Loc = getLoc();
   Reg = AMDGPU::NoRegister;
 
   if (isToken(AsmToken::Identifier)) {
@@ -2337,12 +2385,26 @@ bool AMDGPUAsmParser::ParseAMDGPURegister(RegisterKind &RegKind, unsigned &Reg,
   }
 
   const MCRegisterInfo *TRI = getContext().getRegisterInfo();
-  return Reg != AMDGPU::NoRegister && subtargetHasRegister(*TRI, Reg);
+  if (Reg == AMDGPU::NoRegister) {
+    assert(Parser.hasPendingError());
+    return false;
+  }
+
+  if (!subtargetHasRegister(*TRI, Reg)) {
+    if (Reg == AMDGPU::SGPR_NULL) {
+      Error(Loc, "'null' operand is not supported on this GPU");
+    } else {
+      Error(Loc, "register not available on this GPU");
+    }
+    return false;
+  }
+
+  return true;
 }
 
 bool AMDGPUAsmParser::ParseAMDGPURegister(RegisterKind &RegKind, unsigned &Reg,
                                           unsigned &RegNum, unsigned &RegWidth,
-                                          bool RestoreOnFailure) {
+                                          bool RestoreOnFailure /*=false*/) {
   Reg = AMDGPU::NoRegister;
 
   SmallVector<AsmToken, 1> Tokens;
@@ -2414,8 +2476,6 @@ AMDGPUAsmParser::parseRegister(bool RestoreOnFailure) {
   unsigned Reg, RegNum, RegWidth;
 
   if (!ParseAMDGPURegister(RegKind, Reg, RegNum, RegWidth)) {
-    //FIXME: improve error messages (bug 41303).
-    Error(StartLoc, "not a valid operand.");
     return nullptr;
   }
   if (AMDGPU::IsaInfo::hasCodeObjectV3(&getSTI())) {
@@ -2481,7 +2541,7 @@ AMDGPUAsmParser::parseImm(OperandVector &Operands, bool HasSP3AbsModifier) {
       // This syntax is not compatible with syntax of standard
       // MC expressions (due to the trailing '|').
       SMLoc EndLoc;
-      if (getParser().parsePrimaryExpr(Expr, EndLoc))
+      if (getParser().parsePrimaryExpr(Expr, EndLoc, nullptr))
         return MatchOperand_ParseFail;
     } else {
       if (Parser.parseExpression(Expr))
@@ -4705,22 +4765,18 @@ bool AMDGPUAsmParser::ParseInstruction(ParseInstructionInfo &Info,
     if (getLexer().is(AsmToken::Comma))
       Parser.Lex();
 
-    switch (Res) {
-      case MatchOperand_Success: break;
-      case MatchOperand_ParseFail:
+    if (Res != MatchOperand_Success) {
+      if (!Parser.hasPendingError()) {
         // FIXME: use real operand location rather than the current location.
-        Error(getLexer().getLoc(), "failed parsing operand.");
-        while (!getLexer().is(AsmToken::EndOfStatement)) {
-          Parser.Lex();
-        }
-        return true;
-      case MatchOperand_NoMatch:
-        // FIXME: use real operand location rather than the current location.
-        Error(getLexer().getLoc(), "not a valid operand.");
-        while (!getLexer().is(AsmToken::EndOfStatement)) {
-          Parser.Lex();
-        }
-        return true;
+        StringRef Msg =
+          (Res == MatchOperand_ParseFail) ? "failed parsing operand." :
+                                            "not a valid operand.";
+        Error(getLexer().getLoc(), Msg);
+      }
+      while (!getLexer().is(AsmToken::EndOfStatement)) {
+        Parser.Lex();
+      }
+      return true;
     }
   }
 
@@ -5004,8 +5060,10 @@ AMDGPUAsmParser::parseSymbolicSplitFormat(StringRef FormatStr,
     }
     if (Dfmt == DFMT_UNDEF) {
       Error(Loc, "duplicate numeric format");
-    } else if (Nfmt == NFMT_UNDEF){
+      return MatchOperand_ParseFail;
+    } else if (Nfmt == NFMT_UNDEF) {
       Error(Loc, "duplicate data format");
+      return MatchOperand_ParseFail;
     }
   }
 
@@ -5014,8 +5072,10 @@ AMDGPUAsmParser::parseSymbolicSplitFormat(StringRef FormatStr,
 
   if (isGFX10()) {
     auto Ufmt = convertDfmtNfmt2Ufmt(Dfmt, Nfmt);
-    if (Ufmt == UFMT_UNDEF)
+    if (Ufmt == UFMT_UNDEF) {
       Error(FormatLoc, "unsupported format");
+      return MatchOperand_ParseFail;
+    }
     Format = Ufmt;
   } else {
     Format = encodeDfmtNfmt(Dfmt, Nfmt);
@@ -5077,7 +5137,9 @@ AMDGPUAsmParser::parseSymbolicOrNumericFormat(int64_t &Format) {
     if (Res != MatchOperand_Success)
       return Res;
 
-    skipToken(AsmToken::RBrac, "expected a closing square bracket");
+    if (!skipToken(AsmToken::RBrac, "expected a closing square bracket"))
+      return MatchOperand_ParseFail;
+
     return MatchOperand_Success;
   }
 
@@ -5119,7 +5181,10 @@ AMDGPUAsmParser::parseFORMAT(OperandVector &Operands) {
   trySkipToken(AsmToken::Comma);
 
   if (!FormatFound) {
-    if (parseSymbolicOrNumericFormat(Format) == MatchOperand_Success) {
+    Res = parseSymbolicOrNumericFormat(Format);
+    if (Res == MatchOperand_ParseFail)
+      return Res;
+    if (Res == MatchOperand_Success) {
       auto Size = Operands.size();
       AMDGPUOperand &Op = static_cast<AMDGPUOperand &>(*Operands[Size - 2]);
       assert(Op.isImm() && Op.getImmTy() == AMDGPUOperand::ImmTyFORMAT);
@@ -5340,12 +5405,14 @@ AMDGPUAsmParser::parseSWaitCntOps(OperandVector &Operands) {
   int64_t Waitcnt = getWaitcntBitMask(ISA);
   SMLoc S = getLoc();
 
-  // If parse failed, do not return error code
-  // to avoid excessive error messages.
   if (isToken(AsmToken::Identifier) && peekToken().is(AsmToken::LParen)) {
-    while (parseCnt(Waitcnt) && !isToken(AsmToken::EndOfStatement));
+    while (!isToken(AsmToken::EndOfStatement)) {
+      if (!parseCnt(Waitcnt))
+        return MatchOperand_ParseFail;
+    }
   } else {
-    parseExpr(Waitcnt);
+    if (!parseExpr(Waitcnt))
+      return MatchOperand_ParseFail;
   }
 
   Operands.push_back(AMDGPUOperand::CreateImm(this, Waitcnt, S));
@@ -5419,8 +5486,6 @@ AMDGPUAsmParser::parseHwreg(OperandVector &Operands) {
   int64_t ImmVal = 0;
   SMLoc Loc = getLoc();
 
-  // If parse failed, do not return error code
-  // to avoid excessive error messages.
   if (trySkipId("hwreg", AsmToken::LParen)) {
     OperandInfoTy HwReg(ID_UNKNOWN_);
     int64_t Offset = OFFSET_DEFAULT_;
@@ -5428,10 +5493,16 @@ AMDGPUAsmParser::parseHwreg(OperandVector &Operands) {
     if (parseHwregBody(HwReg, Offset, Width) &&
         validateHwreg(HwReg, Offset, Width, Loc)) {
       ImmVal = encodeHwreg(HwReg.Id, Offset, Width);
+    } else {
+      return MatchOperand_ParseFail;
     }
   } else if (parseExpr(ImmVal)) {
-    if (ImmVal < 0 || !isUInt<16>(ImmVal))
+    if (ImmVal < 0 || !isUInt<16>(ImmVal)) {
       Error(Loc, "invalid immediate: only 16-bit values are legal");
+      return MatchOperand_ParseFail;
+    }
+  } else {
+    return MatchOperand_ParseFail;
   }
 
   Operands.push_back(AMDGPUOperand::CreateImm(this, ImmVal, Loc, AMDGPUOperand::ImmTyHwreg));
@@ -5518,8 +5589,6 @@ AMDGPUAsmParser::parseSendMsgOp(OperandVector &Operands) {
   int64_t ImmVal = 0;
   SMLoc Loc = getLoc();
 
-  // If parse failed, do not return error code
-  // to avoid excessive error messages.
   if (trySkipId("sendmsg", AsmToken::LParen)) {
     OperandInfoTy Msg(ID_UNKNOWN_);
     OperandInfoTy Op(OP_NONE_);
@@ -5527,10 +5596,16 @@ AMDGPUAsmParser::parseSendMsgOp(OperandVector &Operands) {
     if (parseSendMsgBody(Msg, Op, Stream) &&
         validateSendMsg(Msg, Op, Stream, Loc)) {
       ImmVal = encodeMsg(Msg.Id, Op.Id, Stream.Id);
+    } else {
+      return MatchOperand_ParseFail;
     }
   } else if (parseExpr(ImmVal)) {
-    if (ImmVal < 0 || !isUInt<16>(ImmVal))
+    if (ImmVal < 0 || !isUInt<16>(ImmVal)) {
       Error(Loc, "invalid immediate: only 16-bit values are legal");
+      return MatchOperand_ParseFail;
+    }
+  } else {
+    return MatchOperand_ParseFail;
   }
 
   Operands.push_back(AMDGPUOperand::CreateImm(this, ImmVal, Loc, AMDGPUOperand::ImmTySendMsg));
@@ -5594,7 +5669,7 @@ OperandMatchResultTy AMDGPUAsmParser::parseInterpAttr(OperandVector &Operands) {
   Parser.Lex();
   if (Attr > 63) {
     Error(S, "out of bounds attr");
-    return MatchOperand_Success;
+    return MatchOperand_ParseFail;
   }
 
   SMLoc SChan = SMLoc::getFromPointer(Chan.data());
@@ -5609,10 +5684,6 @@ OperandMatchResultTy AMDGPUAsmParser::parseInterpAttr(OperandVector &Operands) {
 //===----------------------------------------------------------------------===//
 // exp
 //===----------------------------------------------------------------------===//
-
-void AMDGPUAsmParser::errorExpTgt() {
-  Error(Parser.getTok().getLoc(), "invalid exp target");
-}
 
 OperandMatchResultTy AMDGPUAsmParser::parseExpTgtImpl(StringRef Str,
                                                       uint8_t &Val) {
@@ -5631,8 +5702,10 @@ OperandMatchResultTy AMDGPUAsmParser::parseExpTgtImpl(StringRef Str,
     if (Str.getAsInteger(10, Val))
       return MatchOperand_ParseFail;
 
-    if (Val > 7)
-      errorExpTgt();
+    if (Val > 7) {
+      Error(getLoc(), "invalid exp target");
+      return MatchOperand_ParseFail;
+    }
 
     return MatchOperand_Success;
   }
@@ -5642,8 +5715,10 @@ OperandMatchResultTy AMDGPUAsmParser::parseExpTgtImpl(StringRef Str,
     if (Str.getAsInteger(10, Val))
       return MatchOperand_ParseFail;
 
-    if (Val > 4 || (Val == 4 && !isGFX10()))
-      errorExpTgt();
+    if (Val > 4 || (Val == 4 && !isGFX10())) {
+      Error(getLoc(), "invalid exp target");
+      return MatchOperand_ParseFail;
+    }
 
     Val += 12;
     return MatchOperand_Success;
@@ -5659,8 +5734,10 @@ OperandMatchResultTy AMDGPUAsmParser::parseExpTgtImpl(StringRef Str,
     if (Str.getAsInteger(10, Val))
       return MatchOperand_ParseFail;
 
-    if (Val >= 32)
-      errorExpTgt();
+    if (Val >= 32) {
+      Error(getLoc(), "invalid exp target");
+      return MatchOperand_ParseFail;
+    }
 
     Val += 32;
     return MatchOperand_Success;
@@ -5671,8 +5748,8 @@ OperandMatchResultTy AMDGPUAsmParser::parseExpTgtImpl(StringRef Str,
     if (Str.getAsInteger(10, Val))
       return MatchOperand_ParseFail;
 
-    errorExpTgt();
-    return MatchOperand_Success;
+    Error(getLoc(), "invalid exp target");
+    return MatchOperand_ParseFail;
   }
 
   return MatchOperand_NoMatch;
@@ -6107,12 +6184,12 @@ int64_t AMDGPUAsmParser::parseGPRIdxMacro() {
       Error(S, (Imm == 0)?
                "expected a VGPR index mode or a closing parenthesis" :
                "expected a VGPR index mode");
-      break;
+      return UNDEF;
     }
 
     if (Imm & Mode) {
       Error(S, "duplicate VGPR index mode");
-      break;
+      return UNDEF;
     }
     Imm |= Mode;
 
@@ -6120,7 +6197,7 @@ int64_t AMDGPUAsmParser::parseGPRIdxMacro() {
       break;
     if (!skipToken(AsmToken::Comma,
                    "expected a comma or a closing parenthesis"))
-      break;
+      return UNDEF;
   }
 
   return Imm;
@@ -6128,6 +6205,8 @@ int64_t AMDGPUAsmParser::parseGPRIdxMacro() {
 
 OperandMatchResultTy
 AMDGPUAsmParser::parseGPRIdxMode(OperandVector &Operands) {
+
+  using namespace llvm::AMDGPU::VGPRIndexMode;
 
   int64_t Imm = 0;
   SMLoc S = Parser.getTok().getLoc();
@@ -6139,15 +6218,16 @@ AMDGPUAsmParser::parseGPRIdxMode(OperandVector &Operands) {
     Parser.Lex();
     Parser.Lex();
 
-    // If parse failed, trigger an error but do not return error code
-    // to avoid excessive error messages.
     Imm = parseGPRIdxMacro();
+    if (Imm == UNDEF)
+      return MatchOperand_ParseFail;
 
   } else {
     if (getParser().parseAbsoluteExpression(Imm))
-      return MatchOperand_NoMatch;
+      return MatchOperand_ParseFail;
     if (Imm < 0 || !isUInt<4>(Imm)) {
       Error(S, "invalid immediate: only 4-bit values are legal");
+      return MatchOperand_ParseFail;
     }
   }
 
@@ -6173,22 +6253,22 @@ AMDGPUAsmParser::parseSOppBrTarget(OperandVector &Operands) {
   if (isRegister() || isModifier())
     return MatchOperand_NoMatch;
 
-  if (parseExpr(Operands)) {
+  if (!parseExpr(Operands))
+    return MatchOperand_ParseFail;
 
-    AMDGPUOperand &Opr = ((AMDGPUOperand &)*Operands[Operands.size() - 1]);
-    assert(Opr.isImm() || Opr.isExpr());
-    SMLoc Loc = Opr.getStartLoc();
+  AMDGPUOperand &Opr = ((AMDGPUOperand &)*Operands[Operands.size() - 1]);
+  assert(Opr.isImm() || Opr.isExpr());
+  SMLoc Loc = Opr.getStartLoc();
 
-    // Currently we do not support arbitrary expressions as branch targets.
-    // Only labels and absolute expressions are accepted.
-    if (Opr.isExpr() && !Opr.isSymbolRefExpr()) {
-      Error(Loc, "expected an absolute expression or a label");
-    } else if (Opr.isImm() && !Opr.isS16Imm()) {
-      Error(Loc, "expected a 16-bit signed jump offset");
-    }
+  // Currently we do not support arbitrary expressions as branch targets.
+  // Only labels and absolute expressions are accepted.
+  if (Opr.isExpr() && !Opr.isSymbolRefExpr()) {
+    Error(Loc, "expected an absolute expression or a label");
+  } else if (Opr.isImm() && !Opr.isS16Imm()) {
+    Error(Loc, "expected a 16-bit signed jump offset");
   }
 
-  return MatchOperand_Success; // avoid excessive error messages
+  return MatchOperand_Success;
 }
 
 //===----------------------------------------------------------------------===//

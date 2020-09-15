@@ -3017,22 +3017,23 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
 //
 // This is morally equivalent to creating a global string.
 // During codegen, that's exactly how this is interpreted.
-static Expr *
-MakeConstCharPointer(ASTContext& Ctx, const std::string &Str, SourceLocation Loc) {
-  QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
-                                               llvm::APInt(32, Str.size() + 1),
-                                               nullptr, ArrayType::Normal, 0);
+static Expr *MakeConstCharPointer(
+    ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(
+      Ctx.CharTy.withConst(), llvm::APInt(32, Str.size() + 1), nullptr,
+      ArrayType::Normal, 0);
 
   // Create a string literal of type const char [L] where L
   // is the number of characters in the StringRef.
-  StringLiteral *StrLit = StringLiteral::Create(Ctx, Str, StringLiteral::Ascii,
-                                                false, StrLitTy, Loc);
+  StringLiteral *StrLit = StringLiteral::Create(
+      Ctx, Str, StringLiteral::Ascii, false, StrLitTy, Loc);
 
   // Create an implicit cast expr so that we convert our const char [L]
   // into an actual const char * for proper evaluation.
   QualType StrTy = Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
-  return ImplicitCastExpr::Create(Ctx, StrTy, CK_ArrayToPointerDecay, StrLit,
-                                  /*BasePath=*/nullptr, VK_RValue);
+  return ImplicitCastExpr::Create(
+      Ctx, StrTy, CK_ArrayToPointerDecay, StrLit, /*BasePath=*/nullptr,
+      VK_RValue, FPOptionsOverride());
 }
 
 static bool getName(const Reflection R, APValue &Result) {

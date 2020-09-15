@@ -642,9 +642,11 @@ void MemRefDescriptor::setConstantStride(OpBuilder &builder, Location loc,
             createIndexAttrConstant(builder, loc, indexType, stride));
 }
 
-LLVM::LLVMType MemRefDescriptor::getElementType() {
-  return value.getType().cast<LLVM::LLVMType>().getStructElementType(
-      kAlignedPtrPosInMemRefDescriptor);
+LLVM::LLVMPointerType MemRefDescriptor::getElementPtrType() {
+  return value.getType()
+      .cast<LLVM::LLVMType>()
+      .getStructElementType(kAlignedPtrPosInMemRefDescriptor)
+      .cast<LLVM::LLVMPointerType>();
 }
 
 /// Creates a MemRef descriptor structure from a list of individual values
@@ -894,7 +896,7 @@ Value ConvertToLLVMPattern::getStridedElementPtr(
 Value ConvertToLLVMPattern::getDataPtr(
     Location loc, MemRefType type, Value memRefDesc, ValueRange indices,
     ConversionPatternRewriter &rewriter) const {
-  LLVM::LLVMType ptrType = MemRefDescriptor(memRefDesc).getElementType();
+  LLVM::LLVMType ptrType = MemRefDescriptor(memRefDesc).getElementPtrType();
   int64_t offset;
   SmallVector<int64_t, 4> strides;
   auto successStrides = getStridesAndOffset(type, strides, offset);
@@ -1110,6 +1112,8 @@ protected:
     TypeConverter::SignatureConversion result(funcOp.getNumArguments());
     auto llvmType = typeConverter.convertFunctionSignature(
         funcOp.getType(), varargsAttr && varargsAttr.getValue(), result);
+    if (!llvmType)
+      return nullptr;
 
     // Propagate argument attributes to all converted arguments obtained after
     // converting a given original argument.
@@ -1804,8 +1808,8 @@ struct AllocLikeOpLowering : public ConvertOpToLLVMPattern<AllocLikeOp> {
     if (!typeConverter.getOptions().useAlignedAlloc)
       return None;
 
-    if (allocOp.alignment())
-      return allocOp.alignment().getValue().getSExtValue();
+    if (Optional<uint64_t> alignment = allocOp.alignment())
+      return *alignment;
 
     // Whenever we don't have alignment set, we will use an alignment
     // consistent with the element type; since the allocation size has to be a
@@ -1843,8 +1847,7 @@ struct AllocLikeOpLowering : public ConvertOpToLLVMPattern<AllocLikeOp> {
       accessAlignment = nullptr;
       return rewriter.create<LLVM::AllocaOp>(
           loc, elementPtrType, cumulativeSize,
-          allocaOp.alignment() ? allocaOp.alignment().getValue().getSExtValue()
-                               : 0);
+          allocaOp.alignment() ? *allocaOp.alignment() : 0);
     }
 
     // Heap allocations.
@@ -1892,14 +1895,19 @@ struct AllocLikeOpLowering : public ConvertOpToLLVMPattern<AllocLikeOp> {
       callArgs = {alignedAllocAlignmentValue, cumulativeSize};
     } else {
       // Adjust the allocation size to consider alignment.
-      if (allocOp.alignment()) {
-        accessAlignment = createIndexConstant(
-            rewriter, loc, allocOp.alignment().getValue().getSExtValue());
-        cumulativeSize = rewriter.create<LLVM::SubOp>(
-            loc,
-            rewriter.create<LLVM::AddOp>(loc, cumulativeSize, accessAlignment),
-            one);
+      if (Optional<uint64_t> alignment = allocOp.alignment()) {
+        accessAlignment = createIndexConstant(rewriter, loc, *alignment);
+      } else if (!memRefType.getElementType().isSignlessIntOrIndexOrFloat()) {
+        // In the case where no alignment is specified, we may want to override
+        // `malloc's` behavior. `malloc` typically aligns at the size of the
+        // biggest scalar on a target HW. For non-scalars, use the natural
+        // alignment of the LLVM type given by the LLVM DataLayout.
+        accessAlignment =
+            this->getSizeInBytes(loc, memRefType.getElementType(), rewriter);
       }
+      if (accessAlignment)
+        cumulativeSize =
+            rewriter.create<LLVM::AddOp>(loc, cumulativeSize, accessAlignment);
       callArgs.push_back(cumulativeSize);
     }
     auto allocFuncSymbol = rewriter.getSymbolRefAttr(allocFunc);
@@ -2537,7 +2545,7 @@ struct PrefetchOpLowering : public LoadStoreOpLowering<PrefetchOp> {
         rewriter.getI32IntegerAttr(prefetchOp.isWrite()));
     auto localityHint = rewriter.create<LLVM::ConstantOp>(
         op->getLoc(), llvmI32Type,
-        rewriter.getI32IntegerAttr(prefetchOp.localityHint().getZExtValue()));
+        rewriter.getI32IntegerAttr(prefetchOp.localityHint()));
     auto isData = rewriter.create<LLVM::ConstantOp>(
         op->getLoc(), llvmI32Type,
         rewriter.getI32IntegerAttr(prefetchOp.isDataCache()));
@@ -3063,7 +3071,7 @@ struct AssumeAlignmentOpLowering
                   ConversionPatternRewriter &rewriter) const override {
     AssumeAlignmentOp::Adaptor transformed(operands);
     Value memref = transformed.memref();
-    unsigned alignment = cast<AssumeAlignmentOp>(op).alignment().getZExtValue();
+    unsigned alignment = cast<AssumeAlignmentOp>(op).alignment();
 
     MemRefDescriptor memRefDescriptor(memref);
     Value ptr = memRefDescriptor.alignedPtr(rewriter, memref.getLoc());
@@ -3382,7 +3390,7 @@ Type LLVMTypeConverter::packFunctionResults(ArrayRef<Type> types) {
   SmallVector<LLVM::LLVMType, 8> resultTypes;
   resultTypes.reserve(types.size());
   for (auto t : types) {
-    auto converted = convertType(t).dyn_cast<LLVM::LLVMType>();
+    auto converted = convertType(t).dyn_cast_or_null<LLVM::LLVMType>();
     if (!converted)
       return {};
     resultTypes.push_back(converted);

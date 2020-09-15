@@ -6512,23 +6512,23 @@ bool HandleOperatorDeleteCall(EvalInfo &Info, const CallExpr *E) {
 //
 // This is morally equivalent to creating a global string.
 // During codegen, that's exactly how this is interpreted.
-static Expr *
-MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
-  QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
-                                               llvm::APInt(32, Str.size() + 1),
-                                               nullptr,
-                                               ArrayType::Normal, 0);
+static Expr *MakeConstCharPointer(
+    ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(
+      Ctx.CharTy.withConst(), llvm::APInt(32, Str.size() + 1), nullptr,
+      ArrayType::Normal, 0);
 
   // Create a string literal of type const char [L] where L
   // is the number of characters in the StringRef.
-  StringLiteral *StrLit = StringLiteral::Create(Ctx, Str, StringLiteral::Ascii,
-                                                false, StrLitTy, Loc);
+  StringLiteral *StrLit = StringLiteral::Create(
+      Ctx, Str, StringLiteral::Ascii, false, StrLitTy, Loc);
 
   // Create an implicit cast expr so that we convert our const char [L]
   // into an actual const char * for proper evaluation.
   QualType StrTy = Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
-  return ImplicitCastExpr::Create(Ctx, StrTy, CK_ArrayToPointerDecay, StrLit,
-                                  /*BasePath=*/nullptr, VK_RValue);
+  return ImplicitCastExpr::Create(
+      Ctx, StrTy, CK_ArrayToPointerDecay, StrLit, /*BasePath=*/nullptr,
+      VK_RValue, FPOptionsOverride());
 }
 
 //===----------------------------------------------------------------------===//
@@ -6715,9 +6715,15 @@ class APValueToBufferConverter {
   }
 
   bool visitInt(const APSInt &Val, QualType Ty, CharUnits Offset) {
-    CharUnits Width = Info.ASTCtx.getTypeSizeInChars(Ty);
-    SmallVector<unsigned char, 8> Bytes(Width.getQuantity());
-    llvm::StoreIntToMemory(Val, &*Bytes.begin(), Width.getQuantity());
+    APSInt AdjustedVal = Val;
+    unsigned Width = AdjustedVal.getBitWidth();
+    if (Ty->isBooleanType()) {
+      Width = Info.ASTCtx.getTypeSize(Ty);
+      AdjustedVal = AdjustedVal.extend(Width);
+    }
+
+    SmallVector<unsigned char, 8> Bytes(Width / 8);
+    llvm::StoreIntToMemory(AdjustedVal, &*Bytes.begin(), Width / 8);
     Buffer.writeObject(Offset, Bytes);
     return true;
   }
@@ -6758,6 +6764,13 @@ class BufferToAPValueConverter {
     return None;
   }
 
+  llvm::NoneType unrepresentableValue(QualType Ty, const APSInt &Val) {
+    Info.FFDiag(BCE->getBeginLoc(),
+                diag::note_constexpr_bit_cast_unrepresentable_value)
+        << Ty << Val.toString(/*Radix=*/10);
+    return None;
+  }
+
   Optional<APValue> visit(const BuiltinType *T, CharUnits Offset,
                           const EnumType *EnumSugar = nullptr) {
     if (T->isNullPtrType()) {
@@ -6768,6 +6781,20 @@ class BufferToAPValueConverter {
     }
 
     CharUnits SizeOf = Info.ASTCtx.getTypeSizeInChars(T);
+
+    // Work around floating point types that contain unused padding bytes. This
+    // is really just `long double` on x86, which is the only fundamental type
+    // with padding bytes.
+    if (T->isRealFloatingType()) {
+      const llvm::fltSemantics &Semantics =
+          Info.ASTCtx.getFloatTypeSemantics(QualType(T, 0));
+      unsigned NumBits = llvm::APFloatBase::getSizeInBits(Semantics);
+      assert(NumBits % 8 == 0);
+      CharUnits NumBytes = CharUnits::fromQuantity(NumBits / 8);
+      if (NumBytes != SizeOf)
+        SizeOf = NumBytes;
+    }
+
     SmallVector<uint8_t, 8> Bytes;
     if (!Buffer.readObject(Offset, SizeOf, Bytes)) {
       // If this is std::byte or unsigned char, then its okay to store an
@@ -6792,6 +6819,15 @@ class BufferToAPValueConverter {
 
     if (T->isIntegralOrEnumerationType()) {
       Val.setIsSigned(T->isSignedIntegerOrEnumerationType());
+
+      unsigned IntWidth = Info.ASTCtx.getIntWidth(QualType(T, 0));
+      if (IntWidth != Val.getBitWidth()) {
+        APSInt Truncated = Val.trunc(IntWidth);
+        if (Truncated.extend(Val.getBitWidth()) != Val)
+          return unrepresentableValue(QualType(T, 0), Val);
+        Val = Truncated;
+      }
+
       return APValue(Val);
     }
 
@@ -7670,6 +7706,9 @@ public:
       }
     }
 
+    // FIXME: This is a duplicated function (in Reflection.cpp), and
+    // we should be able to operate more efficiently than creating an
+    // expression here.
     Expr *Str = MakeConstCharPointer(Info.ASTCtx, Buf, E->getBeginLoc());
     APValue Val;
     if (!Evaluate(Val, Info, Str))

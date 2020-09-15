@@ -904,12 +904,24 @@ class SignlessIntegerAttrBase<I attrValType, string descr> :
       descr> {
   let returnType = [{ ::llvm::APInt }];
 }
+// Base class for signless integer attributes of fixed width that have a
+// correpsonding C++ type.
+class TypedSignlessIntegerAttrBase<I attrValType, string retType, string descr>
+    : SignlessIntegerAttrBase<attrValType, descr> {
+  let returnType = retType;
+  let convertFromStorage = "$_self.getValue().getZExtValue()";
+}
 
-def I1Attr  : SignlessIntegerAttrBase<I1,  "1-bit signless integer attribute">;
-def I8Attr  : SignlessIntegerAttrBase<I8,  "8-bit signless integer attribute">;
-def I16Attr : SignlessIntegerAttrBase<I16, "16-bit signless integer attribute">;
-def I32Attr : SignlessIntegerAttrBase<I32, "32-bit signless integer attribute">;
-def I64Attr : SignlessIntegerAttrBase<I64, "64-bit signless integer attribute">;
+def I1Attr  : TypedSignlessIntegerAttrBase<
+    I1,  "bool",     "1-bit signless integer attribute">;
+def I8Attr  : TypedSignlessIntegerAttrBase<
+    I8,  "uint8_t",  "8-bit signless integer attribute">;
+def I16Attr : TypedSignlessIntegerAttrBase<
+    I16, "uint16_t", "16-bit signless integer attribute">;
+def I32Attr : TypedSignlessIntegerAttrBase<
+    I32, "uint32_t", "32-bit signless integer attribute">;
+def I64Attr : TypedSignlessIntegerAttrBase<
+    I64, "uint64_t", "64-bit signless integer attribute">;
 
 // Base class for signed integer attributes of fixed width.
 class SignedIntegerAttrBase<SI attrValType, string descr> :
@@ -921,17 +933,24 @@ class SignedIntegerAttrBase<SI attrValType, string descr> :
       descr> {
   let returnType = [{ ::llvm::APInt }];
 }
+// Base class for signed integer attributes of fixed width that have a
+// correpsonding C++ type.
+class TypedSignedIntegerAttrBase<SI attrValType, string retType, string descr>
+    : SignedIntegerAttrBase<attrValType, descr> {
+  let returnType = retType;
+  let convertFromStorage = "$_self.getValue().getSExtValue()";
+}
 
-def SI1Attr  : SignedIntegerAttrBase<
-    SI1,  "1-bit signed integer attribute">;
-def SI8Attr  : SignedIntegerAttrBase<
-    SI8,  "8-bit signed integer attribute">;
-def SI16Attr : SignedIntegerAttrBase<
-    SI16, "16-bit signed integer attribute">;
-def SI32Attr : SignedIntegerAttrBase<
-    SI32, "32-bit signed integer attribute">;
-def SI64Attr : SignedIntegerAttrBase<
-    SI64, "64-bit signed integer attribute">;
+def SI1Attr  : TypedSignedIntegerAttrBase<
+    SI1,  "bool",    "1-bit signed integer attribute">;
+def SI8Attr  : TypedSignedIntegerAttrBase<
+    SI8,  "int8_t",  "8-bit signed integer attribute">;
+def SI16Attr : TypedSignedIntegerAttrBase<
+    SI16, "int16_t", "16-bit signed integer attribute">;
+def SI32Attr : TypedSignedIntegerAttrBase<
+    SI32, "int32_t", "32-bit signed integer attribute">;
+def SI64Attr : TypedSignedIntegerAttrBase<
+    SI64, "int64_t", "64-bit signed integer attribute">;
 
 // Base class for unsigned integer attributes of fixed width.
 class UnsignedIntegerAttrBase<UI attrValType, string descr> :
@@ -943,17 +962,24 @@ class UnsignedIntegerAttrBase<UI attrValType, string descr> :
       descr> {
   let returnType = [{ ::llvm::APInt }];
 }
+// Base class for unsigned integer attributes of fixed width that have a
+// correpsonding C++ type.
+class TypedUnsignedIntegerAttrBase<UI attrValType, string retType, string descr>
+    : UnsignedIntegerAttrBase<attrValType, descr> {
+  let returnType = retType;
+  let convertFromStorage = "$_self.getValue().getZExtValue()";
+}
 
-def UI1Attr  : UnsignedIntegerAttrBase<
-    UI1,  "1-bit unsigned integer attribute">;
-def UI8Attr  : UnsignedIntegerAttrBase<
-    UI8,  "8-bit unsigned integer attribute">;
-def UI16Attr : UnsignedIntegerAttrBase<
-    UI16, "16-bit unsigned integer attribute">;
-def UI32Attr : UnsignedIntegerAttrBase<
-    UI32, "32-bit unsigned integer attribute">;
-def UI64Attr : UnsignedIntegerAttrBase<
-    UI64, "64-bit unsigned integer attribute">;
+def UI1Attr  : TypedUnsignedIntegerAttrBase<
+    UI1,  "bool",     "1-bit unsigned integer attribute">;
+def UI8Attr  : TypedUnsignedIntegerAttrBase<
+    UI8,  "uint8_t",  "8-bit unsigned integer attribute">;
+def UI16Attr : TypedUnsignedIntegerAttrBase<
+    UI16, "uint16_t", "16-bit unsigned integer attribute">;
+def UI32Attr : TypedUnsignedIntegerAttrBase<
+    UI32, "uint32_t", "32-bit unsigned integer attribute">;
+def UI64Attr : TypedUnsignedIntegerAttrBase<
+    UI64, "uint64_t", "64-bit unsigned integer attribute">;
 
 // Base class for float attributes of fixed width.
 class FloatAttrBase<F attrValType, string descr> :
@@ -1220,7 +1246,7 @@ class DictionaryAttrBase<Pred condition, string description> :
   let convertFromStorage = "$_self";
 }
 
-def DictionaryAttr 
+def DictionaryAttr
     : DictionaryAttrBase<CPred<"$_self.isa<::mlir::DictionaryAttr>()">,
                                "dictionary of named attribute values">;
 
@@ -1417,7 +1443,7 @@ class StructFieldAttr<string thisName, Attr thisType> {
 // Structured attribute that wraps a DictionaryAttr and provides both a
 // validation method and set of accessors for a fixed set of fields. This is
 // useful when representing data that would normally be in a structure.
-class StructAttr<string name, Dialect dialect,
+class StructAttr<string name, Dialect d,
                  list<StructFieldAttr> attributes> :
     DictionaryAttrBase<CPred<"$_self.isa<" # name # ">()">,
         "DictionaryAttr with field(s): " #
@@ -1433,7 +1459,7 @@ class StructAttr<string name, Dialect dialect,
   let storageType = name;
 
   // The dialect this StructAttr belongs to.
-  Dialect structDialect = dialect;
+  Dialect dialect = d;
 
   // List of fields that the StructAttr contains.
   list<StructFieldAttr> fields = attributes;
@@ -1646,7 +1672,7 @@ class OpTrait;
 // purpose to wrap around C++ symbol string with this class is to make
 // traits specified for ops in TableGen less alien and more integrated.
 class NativeOpTrait<string prop> : OpTrait {
-  string trait = "OpTrait::" # prop;
+  string trait = "::mlir::OpTrait::" # prop;
 }
 
 // ParamNativeOpTrait corresponds to the template-parameterized traits in the
@@ -1661,7 +1687,7 @@ class ParamNativeOpTrait<string prop, string params>
 // affects op definition generator internals, like how op builders and
 // operand/attribute/result getters are generated.
 class GenInternalOpTrait<string prop> : OpTrait {
-  string trait = "OpTrait::" # prop;
+  string trait = "::mlir::OpTrait::" # prop;
 }
 
 // PredOpTrait is an op trait implemented by way of a predicate on the op.

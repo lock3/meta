@@ -9863,7 +9863,7 @@ public:
   /// \#pragma STDC FENV_ACCESS
   void ActOnPragmaFEnvAccess(SourceLocation Loc, bool IsEnabled);
 
-  /// Called to set rounding mode for floating point operations.
+  /// Called to set constant rounding mode for floating point operations.
   void setRoundingMode(SourceLocation Loc, llvm::RoundingMode);
 
   /// Called to set exception behavior for floating point operations.
@@ -11659,10 +11659,6 @@ public:
                                        AssignmentAction Action,
                                        bool AllowExplicit = false);
   ExprResult PerformImplicitConversion(Expr *From, QualType ToType,
-                                       AssignmentAction Action,
-                                       bool AllowExplicit,
-                                       ImplicitConversionSequence& ICS);
-  ExprResult PerformImplicitConversion(Expr *From, QualType ToType,
                                        const ImplicitConversionSequence& ICS,
                                        AssignmentAction Action,
                                        CheckedConversionKind CCK
@@ -12877,6 +12873,7 @@ public:
 
   /// The struct behind the CFErrorRef pointer.
   RecordDecl *CFError = nullptr;
+  bool isCFError(RecordDecl *D);
 
   /// Retrieve the identifier "NSError".
   IdentifierInfo *getNSErrorIdent();

@@ -250,7 +250,7 @@ static void printMemoryAccessAttribute(
     MemoryOpTy memoryOp, OpAsmPrinter &printer,
     SmallVectorImpl<StringRef> &elidedAttrs,
     Optional<spirv::MemoryAccess> memoryAccessAtrrValue = None,
-    Optional<llvm::APInt> alignmentAttrValue = None) {
+    Optional<uint32_t> alignmentAttrValue = None) {
   // Print optional memory access attribute.
   if (auto memAccess = (memoryAccessAtrrValue ? memoryAccessAtrrValue
                                               : memoryOp.memory_access())) {
@@ -280,7 +280,7 @@ static void printSourceMemoryAccessAttribute(
     MemoryOpTy memoryOp, OpAsmPrinter &printer,
     SmallVectorImpl<StringRef> &elidedAttrs,
     Optional<spirv::MemoryAccess> memoryAccessAtrrValue = None,
-    Optional<llvm::APInt> alignmentAttrValue = None) {
+    Optional<uint32_t> alignmentAttrValue = None) {
 
   printer << ", ";
 
@@ -305,7 +305,12 @@ static void printSourceMemoryAccessAttribute(
 }
 
 static LogicalResult verifyCastOp(Operation *op,
-                                  bool requireSameBitWidth = true) {
+                                  bool requireSameBitWidth = true,
+                                  bool skipBitWidthCheck = false) {
+  // Some CastOps have no limit on bit widths for result and operand type.
+  if (skipBitWidthCheck)
+    return success();
+
   Type operandType = op->getOperand(0).getType();
   Type resultType = op->getResult(0).getType();
 
@@ -463,6 +468,19 @@ static LogicalResult verifyLoadStorePtrAndValTypes(LoadStoreOpTy op, Value ptr,
   // SPIR-V OpLoad/OpStore operations
   if (val.getType() !=
       ptr.getType().cast<spirv::PointerType>().getPointeeType()) {
+    return op.emitOpError("mismatch in result type and pointer type");
+  }
+  return success();
+}
+
+template <typename BlockReadWriteOpTy>
+static LogicalResult verifyBlockReadWritePtrAndValTypes(BlockReadWriteOpTy op,
+                                                        Value ptr, Value val) {
+  auto valType = val.getType();
+  if (auto valVecTy = valType.dyn_cast<VectorType>())
+    valType = valVecTy.getElementType();
+
+  if (valType != ptr.getType().cast<spirv::PointerType>().getPointeeType()) {
     return op.emitOpError("mismatch in result type and pointer type");
   }
   return success();
@@ -2026,6 +2044,93 @@ static LogicalResult verify(spirv::GroupNonUniformBallotOp ballotOp) {
 }
 
 //===----------------------------------------------------------------------===//
+// spv.SubgroupBlockReadINTEL
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseSubgroupBlockReadINTELOp(OpAsmParser &parser,
+                                                 OperationState &state) {
+  // Parse the storage class specification
+  spirv::StorageClass storageClass;
+  OpAsmParser::OperandType ptrInfo;
+  Type elementType;
+  if (parseEnumStrAttr(storageClass, parser) || parser.parseOperand(ptrInfo) ||
+      parser.parseColon() || parser.parseType(elementType)) {
+    return failure();
+  }
+
+  auto ptrType = spirv::PointerType::get(elementType, storageClass);
+  if (auto valVecTy = elementType.dyn_cast<VectorType>())
+    ptrType = spirv::PointerType::get(valVecTy.getElementType(), storageClass);
+
+  if (parser.resolveOperand(ptrInfo, ptrType, state.operands)) {
+    return failure();
+  }
+
+  state.addTypes(elementType);
+  return success();
+}
+
+static void print(spirv::SubgroupBlockReadINTELOp blockReadOp,
+                  OpAsmPrinter &printer) {
+  SmallVector<StringRef, 4> elidedAttrs;
+  printer << spirv::SubgroupBlockReadINTELOp::getOperationName() << " "
+          << blockReadOp.ptr();
+  printer << " : " << blockReadOp.getType();
+}
+
+static LogicalResult verify(spirv::SubgroupBlockReadINTELOp blockReadOp) {
+  if (failed(verifyBlockReadWritePtrAndValTypes(blockReadOp, blockReadOp.ptr(),
+                                                blockReadOp.value())))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// spv.SubgroupBlockWriteINTEL
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseSubgroupBlockWriteINTELOp(OpAsmParser &parser,
+                                                  OperationState &state) {
+  // Parse the storage class specification
+  spirv::StorageClass storageClass;
+  SmallVector<OpAsmParser::OperandType, 2> operandInfo;
+  auto loc = parser.getCurrentLocation();
+  Type elementType;
+  if (parseEnumStrAttr(storageClass, parser) ||
+      parser.parseOperandList(operandInfo, 2) || parser.parseColon() ||
+      parser.parseType(elementType)) {
+    return failure();
+  }
+
+  auto ptrType = spirv::PointerType::get(elementType, storageClass);
+  if (auto valVecTy = elementType.dyn_cast<VectorType>())
+    ptrType = spirv::PointerType::get(valVecTy.getElementType(), storageClass);
+
+  if (parser.resolveOperands(operandInfo, {ptrType, elementType}, loc,
+                             state.operands)) {
+    return failure();
+  }
+  return success();
+}
+
+static void print(spirv::SubgroupBlockWriteINTELOp blockWriteOp,
+                  OpAsmPrinter &printer) {
+  SmallVector<StringRef, 4> elidedAttrs;
+  printer << spirv::SubgroupBlockWriteINTELOp::getOperationName() << " "
+          << blockWriteOp.ptr() << ", " << blockWriteOp.value();
+  printer << " : " << blockWriteOp.value().getType();
+}
+
+static LogicalResult verify(spirv::SubgroupBlockWriteINTELOp blockWriteOp) {
+  if (failed(verifyBlockReadWritePtrAndValTypes(
+          blockWriteOp, blockWriteOp.ptr(), blockWriteOp.value())))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // spv.GroupNonUniformElectOp
 //===----------------------------------------------------------------------===//
 
@@ -3161,11 +3266,15 @@ namespace spirv {
 // TableGen'erated operation interfaces for querying versions, extensions, and
 // capabilities.
 #include "mlir/Dialect/SPIRV/SPIRVAvailability.cpp.inc"
+} // namespace spirv
+} // namespace mlir
 
 // TablenGen'erated operation definitions.
 #define GET_OP_CLASSES
 #include "mlir/Dialect/SPIRV/SPIRVOps.cpp.inc"
 
+namespace mlir {
+namespace spirv {
 // TableGen'erated operation availability interface implementations.
 #include "mlir/Dialect/SPIRV/SPIRVOpAvailabilityImpl.inc"
 

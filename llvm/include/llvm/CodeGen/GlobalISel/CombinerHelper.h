@@ -147,9 +147,10 @@ public:
   bool matchSextInRegOfLoad(MachineInstr &MI, std::tuple<Register, unsigned> &MatchInfo);
   bool applySextInRegOfLoad(MachineInstr &MI, std::tuple<Register, unsigned> &MatchInfo);
 
-  bool matchElideBrByInvertingCond(MachineInstr &MI);
-  void applyElideBrByInvertingCond(MachineInstr &MI);
-  bool tryElideBrByInvertingCond(MachineInstr &MI);
+  /// If a brcond's true block is not the fallthrough, make it so by inverting
+  /// the condition and swapping operands.
+  bool matchOptBrCondByInvertingCond(MachineInstr &MI);
+  void applyOptBrCondByInvertingCond(MachineInstr &MI);
 
   /// If \p MI is G_CONCAT_VECTORS, try to combine it.
   /// Returns true if MI changed.
@@ -243,6 +244,28 @@ public:
   bool applyCombineShiftToUnmerge(MachineInstr &MI, const unsigned &ShiftVal);
   bool tryCombineShiftToUnmerge(MachineInstr &MI, unsigned TargetShiftAmount);
 
+  /// Transform <ty,...> G_UNMERGE(G_MERGE ty X, Y, Z) -> ty X, Y, Z.
+  bool
+  matchCombineUnmergeMergeToPlainValues(MachineInstr &MI,
+                                        SmallVectorImpl<Register> &Operands);
+  bool
+  applyCombineUnmergeMergeToPlainValues(MachineInstr &MI,
+                                        SmallVectorImpl<Register> &Operands);
+
+  /// Transform G_UNMERGE Constant -> Constant1, Constant2, ...
+  bool matchCombineUnmergeConstant(MachineInstr &MI,
+                                   SmallVectorImpl<APInt> &Csts);
+  bool applyCombineUnmergeConstant(MachineInstr &MI,
+                                   SmallVectorImpl<APInt> &Csts);
+
+  /// Transform X, Y<dead> = G_UNMERGE Z -> X = G_TRUNC Z.
+  bool matchCombineUnmergeWithDeadLanesToTrunc(MachineInstr &MI);
+  bool applyCombineUnmergeWithDeadLanesToTrunc(MachineInstr &MI);
+
+  /// Transform X, Y = G_UNMERGE(G_ZEXT(Z)) -> X = G_ZEXT(Z); Y = G_CONSTANT 0
+  bool matchCombineUnmergeZExtToZExt(MachineInstr &MI);
+  bool applyCombineUnmergeZExtToZExt(MachineInstr &MI);
+
   /// Transform IntToPtr(PtrToInt(x)) to x if cast is in the same address space.
   bool matchCombineI2PToP2I(MachineInstr &MI, Register &Reg);
   bool applyCombineI2PToP2I(MachineInstr &MI, Register &Reg);
@@ -267,6 +290,13 @@ public:
                             std::tuple<Register, unsigned> &MatchInfo);
   bool applyCombineExtOfExt(MachineInstr &MI,
                             std::tuple<Register, unsigned> &MatchInfo);
+
+  /// Transform fneg(fneg(x)) to x.
+  bool matchCombineFNegOfFNeg(MachineInstr &MI, Register &Reg);
+
+  /// Match fabs(fabs(x)) to fabs(x).
+  bool matchCombineFAbsOfFAbs(MachineInstr &MI, Register &Src);
+  bool applyCombineFAbsOfFAbs(MachineInstr &MI, Register &Src);
 
   /// Return true if any explicit use operand on \p MI is defined by a
   /// G_IMPLICIT_DEF.
@@ -321,6 +351,9 @@ public:
   /// Check if operand \p OpIdx is zero.
   bool matchOperandIsZero(MachineInstr &MI, unsigned OpIdx);
 
+  /// Check if operand \p OpIdx is undef.
+  bool matchOperandIsUndef(MachineInstr &MI, unsigned OpIdx);
+
   /// Erase \p MI
   bool eraseInst(MachineInstr &MI);
 
@@ -356,8 +389,8 @@ public:
   bool matchRedundantSExtInReg(MachineInstr &MI);
 
   /// Combine inverting a result of a compare into the opposite cond code.
-  bool matchNotCmp(MachineInstr &MI, Register &CmpReg);
-  bool applyNotCmp(MachineInstr &MI, Register &CmpReg);
+  bool matchNotCmp(MachineInstr &MI, SmallVectorImpl<Register> &RegsToNegate);
+  bool applyNotCmp(MachineInstr &MI, SmallVectorImpl<Register> &RegsToNegate);
 
   /// Try to transform \p MI by using all of the above
   /// combine functions. Returns true if changed.
