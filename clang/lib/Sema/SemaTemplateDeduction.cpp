@@ -1555,7 +1555,9 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     // the deduced type matches.
     auto *PD = cast<TemplateTypeParmDecl>(TemplateParams->getParam(Index));
     if (PD->hasExpectedDeduction()) {
-      if (PD->getExpectedDeduction() != DeducedType) {
+      // Strip references and qualifiers before comparing.
+      QualType T = DeducedType.getNonReferenceType().getUnqualifiedType();
+      if (PD->getExpectedDeduction() != T) {
         Info.Param = makeTemplateParameter(PD);
         Info.FirstArg = NewDeduced;
         return Sema::TDK_UnexpectedDeduction;
