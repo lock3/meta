@@ -75,6 +75,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsWebAssembly.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/IR/Statepoint.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
@@ -1250,6 +1251,12 @@ bool SelectionDAGISel::PrepareEHLandingPad() {
   const MCInstrDesc &II = TII->get(TargetOpcode::EH_LABEL);
   BuildMI(*MBB, FuncInfo->InsertPt, SDB->getCurDebugLoc(), II)
     .addSym(Label);
+
+  // If the unwinder does not preserve all registers, ensure that the
+  // function marks the clobbered registers as used.
+  const TargetRegisterInfo &TRI = *MF->getSubtarget().getRegisterInfo();
+  if (auto *RegMask = TRI.getCustomEHPadPreservedMask(*MF))
+    MF->getRegInfo().addPhysRegsUsedFromRegMask(RegMask);
 
   if (Pers == EHPersonality::Wasm_CXX) {
     if (const auto *CPI = dyn_cast<CatchPadInst>(LLVMBB->getFirstNonPHI()))

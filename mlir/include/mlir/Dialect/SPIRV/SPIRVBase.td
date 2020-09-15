@@ -45,7 +45,7 @@ def SPIRV_Dialect : Dialect {
     high-level designs and implementation structures of the SPIR-V dialect.
   }];
 
-  let cppNamespace = "spirv";
+  let cppNamespace = "::mlir::spirv";
   let hasConstantMaterializer = 1;
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
@@ -226,26 +226,47 @@ class Capability<list<I32EnumAttrCase> capabilities> : Availability {
   let instance = "ref";
 }
 
+class SPIRVOpInterface<string name> : OpInterface<name> {
+  let cppNamespace = "::mlir::spirv";
+}
 // TODO: the following interfaces definitions are duplicating with the above.
 // Remove them once we are able to support dialect-specific contents in ODS.
-def QueryMinVersionInterface : OpInterface<"QueryMinVersionInterface"> {
+def QueryMinVersionInterface : SPIRVOpInterface<"QueryMinVersionInterface"> {
   let methods = [InterfaceMethod<"", "::mlir::spirv::Version", "getMinVersion">];
 }
-def QueryMaxVersionInterface : OpInterface<"QueryMaxVersionInterface"> {
+def QueryMaxVersionInterface : SPIRVOpInterface<"QueryMaxVersionInterface"> {
   let methods = [InterfaceMethod<"", "::mlir::spirv::Version", "getMaxVersion">];
 }
-def QueryExtensionInterface : OpInterface<"QueryExtensionInterface"> {
+def QueryExtensionInterface : SPIRVOpInterface<"QueryExtensionInterface"> {
   let methods = [InterfaceMethod<
     "",
     "::llvm::SmallVector<::llvm::ArrayRef<::mlir::spirv::Extension>, 1>",
     "getExtensions">];
 }
-def QueryCapabilityInterface : OpInterface<"QueryCapabilityInterface"> {
+def QueryCapabilityInterface : SPIRVOpInterface<"QueryCapabilityInterface"> {
   let methods = [InterfaceMethod<
     "",
     "::llvm::SmallVector<::llvm::ArrayRef<::mlir::spirv::Capability>, 1>",
     "getCapabilities">];
 }
+
+//===----------------------------------------------------------------------===//
+// SPIR-V target GPU vendor and device definitions
+//===----------------------------------------------------------------------===//
+
+// An accelerator other than GPU or CPU
+def SPV_DT_Other         : I32EnumAttrCase<"Other", 0>;
+def SPV_DT_IntegratedGPU : I32EnumAttrCase<"IntegratedGPU", 1>;
+def SPV_DT_DiscreteGPU   : I32EnumAttrCase<"DiscreteGPU", 2>;
+def SPV_DT_CPU           : I32EnumAttrCase<"CPU", 3>;
+// Information missing.
+def SPV_DT_Unknown       : I32EnumAttrCase<"Unknown", 0x7FFFFFFF>;
+
+def SPV_DeviceTypeAttr : SPV_I32EnumAttr<
+  "DeviceType", "valid SPIR-V device types", [
+    SPV_DT_Other, SPV_DT_IntegratedGPU, SPV_DT_DiscreteGPU,
+    SPV_DT_CPU, SPV_DT_Unknown
+  ]>;
 
 //===----------------------------------------------------------------------===//
 // SPIR-V extension definitions
@@ -3252,6 +3273,8 @@ def SPV_OC_OpCooperativeMatrixLoadNV   : I32EnumAttrCase<"OpCooperativeMatrixLoa
 def SPV_OC_OpCooperativeMatrixStoreNV  : I32EnumAttrCase<"OpCooperativeMatrixStoreNV", 5360>;
 def SPV_OC_OpCooperativeMatrixMulAddNV : I32EnumAttrCase<"OpCooperativeMatrixMulAddNV", 5361>;
 def SPV_OC_OpCooperativeMatrixLengthNV : I32EnumAttrCase<"OpCooperativeMatrixLengthNV", 5362>;
+def SPV_OC_OpSubgroupBlockReadINTEL    : I32EnumAttrCase<"OpSubgroupBlockReadINTEL", 5575>;
+def SPV_OC_OpSubgroupBlockWriteINTEL   : I32EnumAttrCase<"OpSubgroupBlockWriteINTEL", 5576>;
 
 def SPV_OpcodeAttr :
     SPV_I32EnumAttr<"Opcode", "valid SPIR-V instructions", [
@@ -3308,7 +3331,8 @@ def SPV_OpcodeAttr :
       SPV_OC_OpGroupNonUniformFMax, SPV_OC_OpSubgroupBallotKHR,
       SPV_OC_OpTypeCooperativeMatrixNV, SPV_OC_OpCooperativeMatrixLoadNV,
       SPV_OC_OpCooperativeMatrixStoreNV, SPV_OC_OpCooperativeMatrixMulAddNV,
-      SPV_OC_OpCooperativeMatrixLengthNV
+      SPV_OC_OpCooperativeMatrixLengthNV, SPV_OC_OpSubgroupBlockReadINTEL,
+      SPV_OC_OpSubgroupBlockWriteINTEL
     ]>;
 
 // End opcode section. Generated from SPIR-V spec; DO NOT MODIFY!

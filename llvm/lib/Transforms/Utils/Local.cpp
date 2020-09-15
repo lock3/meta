@@ -182,6 +182,8 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
       TheOnlyDest = SI->case_begin()->getCaseSuccessor();
     }
 
+    bool Changed = false;
+
     // Figure out which case it goes to.
     for (auto i = SI->case_begin(), e = SI->case_end(); i != e;) {
       // Found case matching a constant operand?
@@ -220,6 +222,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
         DefaultDest->removePredecessor(ParentBB);
         i = SI->removeCase(i);
         e = SI->case_end();
+        Changed = true;
         if (DTU)
           DTU->applyUpdatesPermissive(
               {{DominatorTree::Delete, ParentBB, DefaultDest}});
@@ -308,7 +311,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
       SI->eraseFromParent();
       return true;
     }
-    return false;
+    return Changed;
   }
 
   if (auto *IBI = dyn_cast<IndirectBrInst>(T)) {
@@ -2792,10 +2795,10 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
   if (Instruction *I = dyn_cast<Instruction>(V)) {
     // If this is an or instruction, it may be an inner node of the bswap.
     if (I->getOpcode() == Instruction::Or) {
-      auto &A = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                MatchBitReversals, BPS, Depth + 1);
-      auto &B = collectBitParts(I->getOperand(1), MatchBSwaps,
-                                MatchBitReversals, BPS, Depth + 1);
+      const auto &A = collectBitParts(I->getOperand(0), MatchBSwaps,
+                                      MatchBitReversals, BPS, Depth + 1);
+      const auto &B = collectBitParts(I->getOperand(1), MatchBSwaps,
+                                      MatchBitReversals, BPS, Depth + 1);
       if (!A || !B)
         return Result;
 
@@ -2827,8 +2830,8 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
       if (BitShift > BitWidth)
         return Result;
 
-      auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS, Depth + 1);
+      const auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
+                                        MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
       Result = Res;
@@ -2859,8 +2862,8 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
       if (!MatchBitReversals && NumMaskedBits % 8 != 0)
         return Result;
 
-      auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS, Depth + 1);
+      const auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
+                                        MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
       Result = Res;
@@ -2874,8 +2877,8 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
 
     // If this is a zext instruction zero extend the result.
     if (I->getOpcode() == Instruction::ZExt) {
-      auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS, Depth + 1);
+      const auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
+                                        MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
 
