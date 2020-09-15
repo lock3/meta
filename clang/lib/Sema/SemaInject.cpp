@@ -4442,7 +4442,7 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
   QualType PtrTy = Context.getPointerType(FunctionTy);
   ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
       Context, PtrTy, CK_FunctionToPointerDecay, Ref, /*BasePath=*/nullptr,
-      VK_RValue);
+      VK_RValue, Sema.CurFPFeatureOverrides());
 
   CallExpr *Call = CallExpr::Create(
       Context, Cast, ArrayRef<Expr *>(), Context.VoidTy, VK_RValue,
