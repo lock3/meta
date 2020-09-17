@@ -21,7 +21,8 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // Type constraint accepting standard integers, indices and wrapped LLVM integer
 // types.
 def IntLikeOrLLVMInt : TypeConstraint<
-  Or<[AnySignlessInteger.predicate, Index.predicate, LLVMInt.predicate]>,
+  Or<[AnySignlessInteger.predicate, Index.predicate,
+      LLVM_AnyInteger.predicate]>,
   "integer, index or LLVM dialect equivalent">;
 
 //===----------------------------------------------------------------------===//
@@ -739,6 +740,18 @@ def GPU_ModuleEndOp : GPU_Op<"module_end", [
 
   let parser = [{ return success(); }];
   let printer = [{ p << getOperationName(); }];
+}
+
+def GPU_HostRegisterOp : GPU_Op<"host_register">,
+    Arguments<(ins AnyUnrankedMemRef:$value)> {
+  let summary = "Registers a memref for access from device.";
+  let description = [{
+    This op registers the host memory pointed to by a memref to be accessed from
+    a device.
+  }];
+
+  let assemblyFormat = "$value attr-dict `:` type($value)";
+  let verifier = [{ return success(); }];
 }
 
 #endif // GPU_OPS

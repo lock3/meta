@@ -554,6 +554,18 @@ func @standard_instrs(tensor<4x4x?xf32>, f32, i32, index, i64, f16) {
   // CHECK: = fptosi {{.*}} : f16 to i64
   %162 = fptosi %half : f16 to i64
 
+  // CHECK: floorf %arg1 : f32
+  %163 = "std.floorf"(%f) : (f32) -> f32
+
+  // CHECK: %{{[0-9]+}} = floorf %arg1 : f32
+  %164 = floorf %f : f32
+
+  // CHECK: %{{[0-9]+}} = floorf %cst_8 : vector<4xf32>
+  %165 = floorf %vcf32 : vector<4xf32>
+
+  // CHECK: %{{[0-9]+}} = floorf %arg0 : tensor<4x4x?xf32>
+  %166 = floorf %t : tensor<4x4x?xf32>
+
   return
 }
 
@@ -649,17 +661,20 @@ func @extract_element(%arg0: tensor<*xi32>, %arg1 : tensor<4x4xf32>) -> i32 {
 // CHECK-LABEL: func @tensor_from_elements() {
 func @tensor_from_elements() {
   %c0 = "std.constant"() {value = 0: index} : () -> index
-  // CHECK: %0 = tensor_from_elements(%c0) : tensor<1xindex>
-  %0 = tensor_from_elements(%c0) : tensor<1xindex>
+  // CHECK: %0 = tensor_from_elements %c0 : tensor<1xindex>
+  %0 = tensor_from_elements %c0 : tensor<1xindex>
 
   %c1 = "std.constant"() {value = 1: index} : () -> index
-  // CHECK: %1 = tensor_from_elements(%c0, %c1) : tensor<2xindex>
-  %1 = tensor_from_elements(%c0, %c1) : tensor<2xindex>
+  // CHECK: %1 = tensor_from_elements %c0, %c1 : tensor<2xindex>
+  %1 = tensor_from_elements %c0, %c1 : tensor<2xindex>
 
   %c0_f32 = "std.constant"() {value = 0.0: f32} : () -> f32
   // CHECK: [[C0_F32:%.*]] = constant
-  // CHECK: %2 = tensor_from_elements([[C0_F32]]) : tensor<1xf32>
-  %2 = tensor_from_elements(%c0_f32) : tensor<1xf32>
+  // CHECK: %2 = tensor_from_elements [[C0_F32]] : tensor<1xf32>
+  %2 = tensor_from_elements %c0_f32 : tensor<1xf32>
+
+  // CHECK: tensor_from_elements : tensor<0xindex>
+  %3 = tensor_from_elements : tensor<0xindex>
 
   return
 }
@@ -702,6 +717,11 @@ func @memref_cast(%arg0: memref<4xf32>, %arg1 : memref<?xf32>, %arg2 : memref<64
   %5 = memref_cast %4 : memref<*xf32> to memref<4xf32>
   return
 }
+
+// Check that unranked memrefs with non-default memory space roundtrip
+// properly.
+// CHECK-LABEL: @unranked_memref_roundtrip(memref<*xf32, 4>)
+func @unranked_memref_roundtrip(memref<*xf32, 4>)
 
 // CHECK-LABEL: func @memref_view(%arg0
 func @memref_view(%arg0 : index, %arg1 : index, %arg2 : index) {
@@ -839,7 +859,8 @@ func @generic_atomic_rmw(%I: memref<1x2xf32>, %i : index, %j : index) {
       %c1 = constant 1.0 : f32
       %out = addf %c1, %old_value : f32
       atomic_yield %out : f32
-  }
+  // CHECK: index_attr = 8 : index
+  } { index_attr = 8 : index }
   return
 }
 

@@ -321,6 +321,11 @@ static cl::alias SymbolTableShort("t", cl::desc("Alias for --syms"),
                                   cl::NotHidden, cl::Grouping,
                                   cl::aliasopt(SymbolTable));
 
+static cl::opt<bool> SymbolizeOperands(
+    "symbolize-operands",
+    cl::desc("Symbolize instruction operands when disassembling"),
+    cl::cat(ObjdumpCat));
+
 static cl::opt<bool> DynamicSymbolTable(
     "dynamic-syms",
     cl::desc("Display the contents of the dynamic symbol table"),
@@ -1394,13 +1399,23 @@ static void addPltEntries(const ObjectFile *Obj,
     return;
   if (auto *ElfObj = dyn_cast<ELFObjectFileBase>(Obj)) {
     for (auto PltEntry : ElfObj->getPltAddresses()) {
-      SymbolRef Symbol(PltEntry.first, ElfObj);
-      uint8_t SymbolType = getElfSymbolType(Obj, Symbol);
-
-      StringRef Name = unwrapOrError(Symbol.getName(), Obj->getFileName());
-      if (!Name.empty())
-        AllSymbols[*Plt].emplace_back(
-            PltEntry.second, Saver.save((Name + "@plt").str()), SymbolType);
+      if (PltEntry.first) {
+        SymbolRef Symbol(*PltEntry.first, ElfObj);
+        uint8_t SymbolType = getElfSymbolType(Obj, Symbol);
+        if (Expected<StringRef> NameOrErr = Symbol.getName()) {
+          if (!NameOrErr->empty())
+            AllSymbols[*Plt].emplace_back(
+                PltEntry.second, Saver.save((*NameOrErr + "@plt").str()),
+                SymbolType);
+          continue;
+        } else {
+          // The warning has been reported in disassembleObject().
+          consumeError(NameOrErr.takeError());
+        }
+      }
+      reportWarning("PLT entry at 0x" + Twine::utohexstr(PltEntry.second) +
+                        " references an invalid symbol",
+                    Obj->getFileName());
     }
   }
 }
@@ -1568,6 +1583,52 @@ static SymbolInfoTy createDummySymbolInfo(const ObjectFile *Obj,
     return SymbolInfoTy(Addr, Name, Type);
 }
 
+static void
+collectLocalBranchTargets(ArrayRef<uint8_t> Bytes, const MCInstrAnalysis *MIA,
+                          MCDisassembler *DisAsm, MCInstPrinter *IP,
+                          const MCSubtargetInfo *STI, uint64_t SectionAddr,
+                          uint64_t Start, uint64_t End,
+                          std::unordered_map<uint64_t, std::string> &Labels) {
+  // So far only supports X86.
+  if (!STI->getTargetTriple().isX86())
+    return;
+
+  Labels.clear();
+  unsigned LabelCount = 0;
+  Start += SectionAddr;
+  End += SectionAddr;
+  uint64_t Index = Start;
+  while (Index < End) {
+    // Disassemble a real instruction and record function-local branch labels.
+    MCInst Inst;
+    uint64_t Size;
+    bool Disassembled = DisAsm->getInstruction(
+        Inst, Size, Bytes.slice(Index - SectionAddr), Index, nulls());
+    if (Size == 0)
+      Size = 1;
+
+    if (Disassembled && MIA) {
+      uint64_t Target;
+      bool TargetKnown = MIA->evaluateBranch(Inst, Index, Size, Target);
+      if (TargetKnown && (Target >= Start && Target < End) &&
+          !Labels.count(Target))
+        Labels[Target] = ("L" + Twine(LabelCount++)).str();
+    }
+
+    Index += Size;
+  }
+}
+
+static StringRef getSegmentName(const MachOObjectFile *MachO,
+                                const SectionRef &Section) {
+  if (MachO) {
+    DataRefImpl DR = Section.getRawDataRefImpl();
+    StringRef SegmentName = MachO->getSectionFinalSegmentName(DR);
+    return SegmentName;
+  }
+  return "";
+}
+
 static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
                               MCContext &Ctx, MCDisassembler *PrimaryDisAsm,
                               MCDisassembler *SecondaryDisAsm,
@@ -1594,8 +1655,12 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
   const StringRef FileName = Obj->getFileName();
   const MachOObjectFile *MachO = dyn_cast<const MachOObjectFile>(Obj);
   for (const SymbolRef &Symbol : Obj->symbols()) {
-    StringRef Name = unwrapOrError(Symbol.getName(), FileName);
-    if (Name.empty() && !(Obj->isXCOFF() && SymbolDescription))
+    Expected<StringRef> NameOrErr = Symbol.getName();
+    if (!NameOrErr) {
+      reportWarning(toString(NameOrErr.takeError()), FileName);
+      continue;
+    }
+    if (NameOrErr->empty() && !(Obj->isXCOFF() && SymbolDescription))
       continue;
 
     if (Obj->isELF() && getElfSymbolType(Obj, Symbol) == ELF::STT_SECTION)
@@ -1728,12 +1793,7 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
       }
     }
 
-    StringRef SegmentName = "";
-    if (MachO) {
-      DataRefImpl DR = Section.getRawDataRefImpl();
-      SegmentName = MachO->getSectionFinalSegmentName(DR);
-    }
-
+    StringRef SegmentName = getSegmentName(MachO, Section);
     StringRef SectionName = unwrapOrError(Section.getName(), Obj->getFileName());
     // If the section has no symbol at the start, just insert a dummy one.
     if (Symbols.empty() || Symbols[0].Addr != 0) {
@@ -1880,6 +1940,12 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
                              !DisassembleAll;
       bool DumpARMELFData = false;
       formatted_raw_ostream FOS(outs());
+
+      std::unordered_map<uint64_t, std::string> AllLabels;
+      if (SymbolizeOperands)
+        collectLocalBranchTargets(Bytes, MIA, DisAsm, IP, PrimarySTI,
+                                  SectionAddr, Index, End, AllLabels);
+
       while (Index < End) {
         // ARM and AArch64 ELF binaries can interleave data and text in the
         // same section. We rely on the markers introduced to understand what
@@ -1920,6 +1986,11 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
             }
           }
 
+          // Print local label if there's any.
+          auto Iter = AllLabels.find(SectionAddr + Index);
+          if (Iter != AllLabels.end())
+            FOS << "<" << Iter->second << ">:\n";
+
           // Disassemble a real instruction or a data when disassemble all is
           // provided
           MCInst Inst;
@@ -1953,7 +2024,9 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
                           Inst, SectionAddr + Index, Size)) {
                 Target = *MaybeTarget;
                 PrintTarget = true;
-                FOS << "  # " << Twine::utohexstr(Target);
+                // Do not print real address when symbolizing.
+                if (!SymbolizeOperands)
+                  FOS << "  # " << Twine::utohexstr(Target);
               }
             if (PrintTarget) {
               // In a relocatable object, the target's section must reside in
@@ -2003,17 +2076,30 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
                 }
               }
 
+              // Print the labels corresponding to the target if there's any.
+              bool LabelAvailable = AllLabels.count(Target);
               if (TargetSym != nullptr) {
                 uint64_t TargetAddress = TargetSym->Addr;
+                uint64_t Disp = Target - TargetAddress;
                 std::string TargetName = TargetSym->Name.str();
                 if (Demangle)
                   TargetName = demangle(TargetName);
 
-                FOS << " <" << TargetName;
-                uint64_t Disp = Target - TargetAddress;
-                if (Disp)
-                  FOS << "+0x" << Twine::utohexstr(Disp);
-                FOS << '>';
+                FOS << " <";
+                if (!Disp) {
+                  // Always Print the binary symbol precisely corresponding to
+                  // the target address.
+                  FOS << TargetName;
+                } else if (!LabelAvailable) {
+                  // Always Print the binary symbol plus an offset if there's no
+                  // local label corresponding to the target address.
+                  FOS << TargetName << "+0x" << Twine::utohexstr(Disp);
+                } else {
+                  FOS << AllLabels[Target];
+                }
+                FOS << ">";
+              } else if (LabelAvailable) {
+                FOS << " <" << AllLabels[Target] << ">";
               }
             }
           }
@@ -2089,6 +2175,10 @@ static void disassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   if (!AsmInfo)
     reportError(Obj->getFileName(),
                 "no assembly info for target " + TripleName);
+
+  if (MCPU.empty())
+    MCPU = Obj->tryGetCPUName().getValueOr("").str();
+
   std::unique_ptr<const MCSubtargetInfo> STI(
       TheTarget->createMCSubtargetInfo(TripleName, MCPU, Features.getString()));
   if (!STI)
@@ -2135,6 +2225,8 @@ static void disassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
                 "no instruction printer for target " + TripleName);
   IP->setPrintImmHex(PrintImmHex);
   IP->setPrintBranchImmAsAddress(true);
+  IP->setSymbolizeOperands(SymbolizeOperands);
+  IP->setMCInstrAnalysis(MIA.get());
 
   PrettyPrinter &PIP = selectPrettyPrinter(Triple(TripleName));
   SourcePrinter SP(Obj, TheTarget->getName());
@@ -2301,6 +2393,8 @@ void objdump::printSectionHeaders(const ObjectFile *Obj) {
 }
 
 void objdump::printSectionContents(const ObjectFile *Obj) {
+  const MachOObjectFile *MachO = dyn_cast<const MachOObjectFile>(Obj);
+
   for (const SectionRef &Section : ToolSectionFilter(*Obj)) {
     StringRef Name = unwrapOrError(Section.getName(), Obj->getFileName());
     uint64_t BaseAddr = Section.getAddress();
@@ -2308,7 +2402,11 @@ void objdump::printSectionContents(const ObjectFile *Obj) {
     if (!Size)
       continue;
 
-    outs() << "Contents of section " << Name << ":\n";
+    outs() << "Contents of section ";
+    StringRef SegmentName = getSegmentName(MachO, Section);
+    if (!SegmentName.empty())
+      outs() << SegmentName << ",";
+    outs() << Name << ":\n";
     if (Section.isBSS()) {
       outs() << format("<skipping contents of bss section at [%04" PRIx64
                        ", %04" PRIx64 ")>\n",
@@ -2466,11 +2564,9 @@ void objdump::printSymbol(const ObjectFile *O, const SymbolRef &Symbol,
   } else if (Section == O->section_end()) {
     outs() << "*UND*";
   } else {
-    if (MachO) {
-      DataRefImpl DR = Section->getRawDataRefImpl();
-      StringRef SegmentName = MachO->getSectionFinalSegmentName(DR);
+    StringRef SegmentName = getSegmentName(MachO, *Section);
+    if (!SegmentName.empty())
       outs() << SegmentName << ",";
-    }
     StringRef SectionName = unwrapOrError(Section->getName(), FileName);
     outs() << SectionName;
   }

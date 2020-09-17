@@ -300,10 +300,7 @@ void DwarfUnit::addLabel(DIELoc &Die, dwarf::Form Form, const MCSymbol *Label) {
 
 void DwarfUnit::addSectionOffset(DIE &Die, dwarf::Attribute Attribute,
                                  uint64_t Integer) {
-  if (DD->getDwarfVersion() >= 4)
-    addUInt(Die, Attribute, dwarf::DW_FORM_sec_offset, Integer);
-  else
-    addUInt(Die, Attribute, dwarf::DW_FORM_data4, Integer);
+  addUInt(Die, Attribute, DD->getDwarfSectionOffsetForm(), Integer);
 }
 
 unsigned DwarfTypeUnit::getOrCreateSourceID(const DIFile *File) {
@@ -635,6 +632,8 @@ DIE *DwarfUnit::createTypeDIE(const DIScope *Context, DIE &ContextDIE,
 
   if (auto *BT = dyn_cast<DIBasicType>(Ty))
     constructTypeDIE(TyDIE, BT);
+  else if (auto *ST = dyn_cast<DIStringType>(Ty))
+    constructTypeDIE(TyDIE, ST);
   else if (auto *STy = dyn_cast<DISubroutineType>(Ty))
     constructTypeDIE(TyDIE, STy);
   else if (auto *CTy = dyn_cast<DICompositeType>(Ty)) {
@@ -753,8 +752,9 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, const DIBasicType *BTy) {
   if (BTy->getTag() == dwarf::DW_TAG_unspecified_type)
     return;
 
-  addUInt(Buffer, dwarf::DW_AT_encoding, dwarf::DW_FORM_data1,
-          BTy->getEncoding());
+  if (BTy->getTag() != dwarf::DW_TAG_string_type)
+    addUInt(Buffer, dwarf::DW_AT_encoding, dwarf::DW_FORM_data1,
+            BTy->getEncoding());
 
   uint64_t Size = BTy->getSizeInBits() >> 3;
   addUInt(Buffer, dwarf::DW_AT_byte_size, None, Size);
@@ -763,6 +763,28 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, const DIBasicType *BTy) {
     addUInt(Buffer, dwarf::DW_AT_endianity, None, dwarf::DW_END_big);
   else if (BTy->isLittleEndian())
     addUInt(Buffer, dwarf::DW_AT_endianity, None, dwarf::DW_END_little);
+}
+
+void DwarfUnit::constructTypeDIE(DIE &Buffer, const DIStringType *STy) {
+  // Get core information.
+  StringRef Name = STy->getName();
+  // Add name if not anonymous or intermediate type.
+  if (!Name.empty())
+    addString(Buffer, dwarf::DW_AT_name, Name);
+
+  if (DIVariable *Var = STy->getStringLength()) {
+    if (auto *VarDIE = getDIE(Var))
+      addDIEEntry(Buffer, dwarf::DW_AT_string_length, *VarDIE);
+  } else {
+    uint64_t Size = STy->getSizeInBits() >> 3;
+    addUInt(Buffer, dwarf::DW_AT_byte_size, None, Size);
+  }
+
+  if (STy->getEncoding()) {
+    // For eventual Unicode support.
+    addUInt(Buffer, dwarf::DW_AT_encoding, dwarf::DW_FORM_data1,
+            STy->getEncoding());
+  }
 }
 
 void DwarfUnit::constructTypeDIE(DIE &Buffer, const DIDerivedType *DTy) {
@@ -891,6 +913,11 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, const DICompositeType *CTy) {
       }
     }
 
+    // Add template parameters to a class, structure or union types.
+    if (Tag == dwarf::DW_TAG_class_type ||
+        Tag == dwarf::DW_TAG_structure_type || Tag == dwarf::DW_TAG_union_type)
+      addTemplateParams(Buffer, CTy->getTemplateParams());
+
     // Add elements to structure type.
     DINodeArray Elements = CTy->getElements();
     for (const auto *Element : Elements) {
@@ -960,12 +987,6 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, const DICompositeType *CTy) {
     if (CTy->isObjcClassComplete())
       addFlag(Buffer, dwarf::DW_AT_APPLE_objc_complete_type);
 
-    // Add template parameters to a class, structure or union types.
-    // FIXME: The support isn't in the metadata for this yet.
-    if (Tag == dwarf::DW_TAG_class_type ||
-        Tag == dwarf::DW_TAG_structure_type || Tag == dwarf::DW_TAG_union_type)
-      addTemplateParams(Buffer, CTy->getTemplateParams());
-
     // Add the type's non-standard calling convention.
     uint8_t CC = 0;
     if (CTy->isTypePassByValue())
@@ -989,8 +1010,10 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, const DICompositeType *CTy) {
       Tag == dwarf::DW_TAG_class_type || Tag == dwarf::DW_TAG_structure_type ||
       Tag == dwarf::DW_TAG_union_type) {
     // Add size if non-zero (derived types might be zero-sized.)
+    // Ignore the size if it's a non-enum forward decl.
     // TODO: Do we care about size for enum forward declarations?
-    if (Size)
+    if (Size &&
+        (!CTy->isForwardDecl() || Tag == dwarf::DW_TAG_enumeration_type))
       addUInt(Buffer, dwarf::DW_AT_byte_size, None, Size);
     else if (!CTy->isForwardDecl())
       // Add zero size if it is not a forward declaration.
@@ -1398,8 +1421,10 @@ static bool hasVectorBeenPadded(const DICompositeType *CTy) {
          Elements[0]->getTag() == dwarf::DW_TAG_subrange_type &&
          "Invalid vector element array, expected one element of type subrange");
   const auto Subrange = cast<DISubrange>(Elements[0]);
-  const auto CI = Subrange->getCount().get<ConstantInt *>();
-  const int32_t NumVecElements = CI->getSExtValue();
+  const auto NumVecElements =
+      Subrange->getCount()
+          ? Subrange->getCount().get<ConstantInt *>()->getSExtValue()
+          : 0;
 
   // Ensure we found the element count and that the actual size is wide
   // enough to contain the requested size.
@@ -1667,15 +1692,15 @@ DIE *DwarfUnit::getOrCreateStaticMemberDIE(const DIDerivedType *DT) {
 
 void DwarfUnit::emitCommonHeader(bool UseOffsets, dwarf::UnitType UT) {
   // Emit size of content not including length itself
-  Asm->OutStreamer->AddComment("Length of Unit");
   if (!DD->useSectionsAsReferences()) {
     StringRef Prefix = isDwoUnit() ? "debug_info_dwo_" : "debug_info_";
     MCSymbol *BeginLabel = Asm->createTempSymbol(Prefix + "start");
     EndLabel = Asm->createTempSymbol(Prefix + "end");
-    Asm->emitLabelDifference(EndLabel, BeginLabel, 4);
+    Asm->emitDwarfUnitLength(EndLabel, BeginLabel, "Length of Unit");
     Asm->OutStreamer->emitLabel(BeginLabel);
   } else
-    Asm->emitInt32(getHeaderSize() + getUnitDie().getSize());
+    Asm->emitDwarfUnitLength(getHeaderSize() + getUnitDie().getSize(),
+                             "Length of Unit");
 
   Asm->OutStreamer->AddComment("DWARF version number");
   unsigned Version = DD->getDwarfVersion();
@@ -1695,7 +1720,7 @@ void DwarfUnit::emitCommonHeader(bool UseOffsets, dwarf::UnitType UT) {
   Asm->OutStreamer->AddComment("Offset Into Abbrev. Section");
   const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
   if (UseOffsets)
-    Asm->emitInt32(0);
+    Asm->emitDwarfLengthOrOffset(0);
   else
     Asm->emitDwarfSymbolReference(
         TLOF.getDwarfAbbrevSection()->getBeginSymbol(), false);
@@ -1714,16 +1739,14 @@ void DwarfTypeUnit::emitHeader(bool UseOffsets) {
   Asm->OutStreamer->emitIntValue(TypeSignature, sizeof(TypeSignature));
   Asm->OutStreamer->AddComment("Type DIE Offset");
   // In a skeleton type unit there is no type DIE so emit a zero offset.
-  Asm->OutStreamer->emitIntValue(Ty ? Ty->getOffset() : 0,
-                                 sizeof(Ty->getOffset()));
+  Asm->emitDwarfLengthOrOffset(Ty ? Ty->getOffset() : 0);
 }
 
 DIE::value_iterator
 DwarfUnit::addSectionDelta(DIE &Die, dwarf::Attribute Attribute,
                            const MCSymbol *Hi, const MCSymbol *Lo) {
   return Die.addValue(DIEValueAllocator, Attribute,
-                      DD->getDwarfVersion() >= 4 ? dwarf::DW_FORM_sec_offset
-                                                 : dwarf::DW_FORM_data4,
+                      DD->getDwarfSectionOffsetForm(),
                       new (DIEValueAllocator) DIEDelta(Hi, Lo));
 }
 
@@ -1731,10 +1754,7 @@ DIE::value_iterator
 DwarfUnit::addSectionLabel(DIE &Die, dwarf::Attribute Attribute,
                            const MCSymbol *Label, const MCSymbol *Sec) {
   if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
-    return addLabel(Die, Attribute,
-                    DD->getDwarfVersion() >= 4 ? dwarf::DW_FORM_sec_offset
-                                               : dwarf::DW_FORM_data4,
-                    Label);
+    return addLabel(Die, Attribute, DD->getDwarfSectionOffsetForm(), Label);
   return addSectionDelta(Die, Attribute, Label, Sec);
 }
 

@@ -3319,3 +3319,152 @@ define void @scatter_16i64_constant_indices(i32* %ptr, <16 x i1> %mask, <16 x i3
   call void @llvm.masked.scatter.v16i32.v16p0i32(<16 x i32> %src0, <16 x i32*> %gep, i32 4, <16 x i1> %mask)
   ret void
 }
+
+define <4 x i32> @splat_ptr_gather(i32* %ptr, <4 x i1> %mask, <4 x i32> %passthru) {
+; KNL_64-LABEL: splat_ptr_gather:
+; KNL_64:       # %bb.0:
+; KNL_64-NEXT:    # kill: def $xmm1 killed $xmm1 def $zmm1
+; KNL_64-NEXT:    vpslld $31, %xmm0, %xmm0
+; KNL_64-NEXT:    vptestmd %zmm0, %zmm0, %k0
+; KNL_64-NEXT:    kshiftlw $12, %k0, %k0
+; KNL_64-NEXT:    kshiftrw $12, %k0, %k1
+; KNL_64-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; KNL_64-NEXT:    vpgatherdd (%rdi,%zmm0,4), %zmm1 {%k1}
+; KNL_64-NEXT:    vmovdqa %xmm1, %xmm0
+; KNL_64-NEXT:    vzeroupper
+; KNL_64-NEXT:    retq
+;
+; KNL_32-LABEL: splat_ptr_gather:
+; KNL_32:       # %bb.0:
+; KNL_32-NEXT:    # kill: def $xmm1 killed $xmm1 def $zmm1
+; KNL_32-NEXT:    vpslld $31, %xmm0, %xmm0
+; KNL_32-NEXT:    vptestmd %zmm0, %zmm0, %k0
+; KNL_32-NEXT:    kshiftlw $12, %k0, %k0
+; KNL_32-NEXT:    kshiftrw $12, %k0, %k1
+; KNL_32-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; KNL_32-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; KNL_32-NEXT:    vpgatherdd (%eax,%zmm0,4), %zmm1 {%k1}
+; KNL_32-NEXT:    vmovdqa %xmm1, %xmm0
+; KNL_32-NEXT:    vzeroupper
+; KNL_32-NEXT:    retl
+;
+; SKX-LABEL: splat_ptr_gather:
+; SKX:       # %bb.0:
+; SKX-NEXT:    vpslld $31, %xmm0, %xmm0
+; SKX-NEXT:    vpmovd2m %xmm0, %k1
+; SKX-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; SKX-NEXT:    vpgatherdd (%rdi,%xmm0,4), %xmm1 {%k1}
+; SKX-NEXT:    vmovdqa %xmm1, %xmm0
+; SKX-NEXT:    retq
+;
+; SKX_32-LABEL: splat_ptr_gather:
+; SKX_32:       # %bb.0:
+; SKX_32-NEXT:    vpslld $31, %xmm0, %xmm0
+; SKX_32-NEXT:    vpmovd2m %xmm0, %k1
+; SKX_32-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; SKX_32-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; SKX_32-NEXT:    vpgatherdd (%eax,%xmm0,4), %xmm1 {%k1}
+; SKX_32-NEXT:    vmovdqa %xmm1, %xmm0
+; SKX_32-NEXT:    retl
+  %1 = insertelement <4 x i32*> undef, i32* %ptr, i32 0
+  %2 = shufflevector <4 x i32*> %1, <4 x i32*> undef, <4 x i32> zeroinitializer
+  %3 = call <4 x i32> @llvm.masked.gather.v4i32.v4p0i32(<4 x i32*> %2, i32 4, <4 x i1> %mask, <4 x i32> %passthru)
+  ret <4 x i32> %3
+}
+declare  <4 x i32> @llvm.masked.gather.v4i32.v4p0i32(<4 x i32*>, i32, <4 x i1>, <4 x i32>)
+
+define void @splat_ptr_scatter(i32* %ptr, <4 x i1> %mask, <4 x i32> %val) {
+; KNL_64-LABEL: splat_ptr_scatter:
+; KNL_64:       # %bb.0:
+; KNL_64-NEXT:    # kill: def $xmm1 killed $xmm1 def $zmm1
+; KNL_64-NEXT:    vpslld $31, %xmm0, %xmm0
+; KNL_64-NEXT:    vptestmd %zmm0, %zmm0, %k0
+; KNL_64-NEXT:    kshiftlw $12, %k0, %k0
+; KNL_64-NEXT:    kshiftrw $12, %k0, %k1
+; KNL_64-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; KNL_64-NEXT:    vpscatterdd %zmm1, (%rdi,%zmm0,4) {%k1}
+; KNL_64-NEXT:    vzeroupper
+; KNL_64-NEXT:    retq
+;
+; KNL_32-LABEL: splat_ptr_scatter:
+; KNL_32:       # %bb.0:
+; KNL_32-NEXT:    # kill: def $xmm1 killed $xmm1 def $zmm1
+; KNL_32-NEXT:    vpslld $31, %xmm0, %xmm0
+; KNL_32-NEXT:    vptestmd %zmm0, %zmm0, %k0
+; KNL_32-NEXT:    kshiftlw $12, %k0, %k0
+; KNL_32-NEXT:    kshiftrw $12, %k0, %k1
+; KNL_32-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; KNL_32-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; KNL_32-NEXT:    vpscatterdd %zmm1, (%eax,%zmm0,4) {%k1}
+; KNL_32-NEXT:    vzeroupper
+; KNL_32-NEXT:    retl
+;
+; SKX-LABEL: splat_ptr_scatter:
+; SKX:       # %bb.0:
+; SKX-NEXT:    vpslld $31, %xmm0, %xmm0
+; SKX-NEXT:    vpmovd2m %xmm0, %k1
+; SKX-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; SKX-NEXT:    vpscatterdd %xmm1, (%rdi,%xmm0,4) {%k1}
+; SKX-NEXT:    retq
+;
+; SKX_32-LABEL: splat_ptr_scatter:
+; SKX_32:       # %bb.0:
+; SKX_32-NEXT:    vpslld $31, %xmm0, %xmm0
+; SKX_32-NEXT:    vpmovd2m %xmm0, %k1
+; SKX_32-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; SKX_32-NEXT:    vpxor %xmm0, %xmm0, %xmm0
+; SKX_32-NEXT:    vpscatterdd %xmm1, (%eax,%xmm0,4) {%k1}
+; SKX_32-NEXT:    retl
+  %1 = insertelement <4 x i32*> undef, i32* %ptr, i32 0
+  %2 = shufflevector <4 x i32*> %1, <4 x i32*> undef, <4 x i32> zeroinitializer
+  call void @llvm.masked.scatter.v4i32.v4p0i32(<4 x i32> %val, <4 x i32*> %2, i32 4, <4 x i1> %mask)
+  ret void
+}
+
+%struct.foo = type { i8*, i64, i16, i16, i32 }
+
+; This used to cause fast-isel to generate bad copy instructions that would
+; cause an error in copyPhysReg.
+define <8 x i64> @pr45906(<8 x %struct.foo*> %ptr) {
+; KNL_64-LABEL: pr45906:
+; KNL_64:       # %bb.0: # %bb
+; KNL_64-NEXT:    vpaddq {{.*}}(%rip){1to8}, %zmm0, %zmm1
+; KNL_64-NEXT:    kxnorw %k0, %k0, %k1
+; KNL_64-NEXT:    vpgatherqq (,%zmm1), %zmm0 {%k1}
+; KNL_64-NEXT:    retq
+;
+; KNL_32-LABEL: pr45906:
+; KNL_32:       # %bb.0: # %bb
+; KNL_32-NEXT:    vpbroadcastd {{.*#+}} ymm1 = [4,4,4,4,4,4,4,4]
+; KNL_32-NEXT:    vpaddd %ymm1, %ymm0, %ymm1
+; KNL_32-NEXT:    kxnorw %k0, %k0, %k1
+; KNL_32-NEXT:    vpgatherdq (,%ymm1), %zmm0 {%k1}
+; KNL_32-NEXT:    retl
+;
+; SKX_SMALL-LABEL: pr45906:
+; SKX_SMALL:       # %bb.0: # %bb
+; SKX_SMALL-NEXT:    vpaddq {{.*}}(%rip){1to8}, %zmm0, %zmm1
+; SKX_SMALL-NEXT:    kxnorw %k0, %k0, %k1
+; SKX_SMALL-NEXT:    vpgatherqq (,%zmm1), %zmm0 {%k1}
+; SKX_SMALL-NEXT:    retq
+;
+; SKX_LARGE-LABEL: pr45906:
+; SKX_LARGE:       # %bb.0: # %bb
+; SKX_LARGE-NEXT:    movabsq ${{\.LCPI.*}}, %rax
+; SKX_LARGE-NEXT:    vpaddq (%rax){1to8}, %zmm0, %zmm1
+; SKX_LARGE-NEXT:    kxnorw %k0, %k0, %k1
+; SKX_LARGE-NEXT:    vpgatherqq (,%zmm1), %zmm0 {%k1}
+; SKX_LARGE-NEXT:    retq
+;
+; SKX_32-LABEL: pr45906:
+; SKX_32:       # %bb.0: # %bb
+; SKX_32-NEXT:    vpaddd {{\.LCPI.*}}{1to8}, %ymm0, %ymm1
+; SKX_32-NEXT:    kxnorw %k0, %k0, %k1
+; SKX_32-NEXT:    vpgatherdq (,%ymm1), %zmm0 {%k1}
+; SKX_32-NEXT:    retl
+bb:
+  %tmp = getelementptr inbounds %struct.foo, <8 x %struct.foo*> %ptr, i64 0, i32 1
+  %tmp1 = call <8 x i64> @llvm.masked.gather.v8i64.v8p0i64(<8 x i64*> %tmp, i32 8, <8 x i1> <i1 true, i1 true, i1 true, i1 true, i1 true, i1 true, i1 true, i1 true>, <8 x i64> undef)
+  ret <8 x i64> %tmp1
+}
+declare <8 x i64> @llvm.masked.gather.v8i64.v8p0i64(<8 x i64*>, i32, <8 x i1>, <8 x i64>)

@@ -15,10 +15,11 @@
 #define OPENMP_OPS
 
 include "mlir/IR/OpBase.td"
+include "mlir/Dialect/OpenMP/OmpCommon.td"
 
 def OpenMP_Dialect : Dialect {
   let name = "omp";
-  let cppNamespace = "omp";
+  let cppNamespace = "::mlir::omp";
 }
 
 class OpenMP_Op<string mnemonic, list<OpTrait> traits = []> :
@@ -39,18 +40,6 @@ def ClauseDefault : StrEnumAttr<
     "default clause",
     [ClauseDefaultPrivate, ClauseDefaultFirstPrivate, ClauseDefaultShared,
      ClauseDefaultNone]> {
-  let cppNamespace = "::mlir::omp";
-}
-
-// Possible values for the proc_bind clause
-def ClauseProcMaster : StrEnumAttrCase<"master">;
-def ClauseProcClose : StrEnumAttrCase<"close">;
-def ClauseProcSpread : StrEnumAttrCase<"spread">;
-
-def ClauseProcBind : StrEnumAttr<
-    "ClauseProcBind",
-    "procbind clause",
-    [ClauseProcMaster, ClauseProcClose, ClauseProcSpread]> {
   let cppNamespace = "::mlir::omp";
 }
 
@@ -87,7 +76,7 @@ def ParallelOp : OpenMP_Op<"parallel", [AttrSizedOperandSegments]> {
              Variadic<AnyType>:$firstprivate_vars,
              Variadic<AnyType>:$shared_vars,
              Variadic<AnyType>:$copyin_vars,
-             OptionalAttr<ClauseProcBind>:$proc_bind_val);
+             OptionalAttr<ProcBindKind>:$proc_bind_val);
 
   let regions = (region AnyRegion:$region);
 

@@ -186,23 +186,18 @@ public:
   bool useReductionIntrinsic(unsigned Opcode, Type *Ty,
                              TTI::ReductionFlags Flags) const;
 
+  bool preferInLoopReduction(unsigned Opcode, Type *Ty,
+                             TTI::ReductionFlags Flags) const;
+
+  bool preferPredicatedReductionSelect(unsigned Opcode, Type *Ty,
+                                       TTI::ReductionFlags Flags) const;
+
   bool shouldExpandReduction(const IntrinsicInst *II) const {
     switch (II->getIntrinsicID()) {
     case Intrinsic::experimental_vector_reduce_v2_fadd:
     case Intrinsic::experimental_vector_reduce_v2_fmul:
       // We don't have legalization support for ordered FP reductions.
-      if (!II->getFastMathFlags().allowReassoc())
-        return true;
-      // Can't legalize reductions with soft floats.
-      return TLI->useSoftFloat() || !TLI->getSubtarget()->hasFPRegs();
-
-    case Intrinsic::experimental_vector_reduce_fmin:
-    case Intrinsic::experimental_vector_reduce_fmax:
-      // Can't legalize reductions with soft floats, and NoNan will create
-      // fminimum which we do not know how to lower.
-      return TLI->useSoftFloat() || !TLI->getSubtarget()->hasFPRegs() ||
-             !II->getFastMathFlags().noNaNs();
-
+      return !II->getFastMathFlags().allowReassoc();
     default:
       // Don't expand anything else, let legalization deal with it.
       return false;
@@ -251,6 +246,7 @@ public:
                                   Align Alignment, TTI::TargetCostKind CostKind,
                                   const Instruction *I = nullptr);
 
+  bool maybeLoweredToCall(Instruction &I);
   bool isLoweredToCall(const Function *F);
   bool isHardwareLoopProfitable(Loop *L, ScalarEvolution &SE,
                                 AssumptionCache &AC,

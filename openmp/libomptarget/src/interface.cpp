@@ -11,13 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <omptarget.h>
-
 #include "device.h"
 #include "private.h"
 #include "rtl.h"
 
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 
@@ -26,8 +25,22 @@ kmp_target_offload_kind_t TargetOffloadPolicy = tgt_default;
 std::mutex TargetOffloadMtx;
 
 ////////////////////////////////////////////////////////////////////////////////
-/// manage the success or failure of a target construct
+/// dump a table of all the host-target pointer pairs on failure
+static void dumpTargetPointerMappings() {
+  for (const auto &Device : Devices) {
+    fprintf(stderr, "Device %d:\n", Device.DeviceID);
+    fprintf(stderr, "%-18s %-18s %s\n", "Host Ptr", "Target Ptr", "Size (B)");
+    for (const auto &HostTargetMap : Device.HostDataToTargetMap) {
+      fprintf(stderr, DPxMOD " " DPxMOD " %lu\n",
+              DPxPTR(HostTargetMap.HstPtrBegin),
+              DPxPTR(HostTargetMap.TgtPtrBegin),
+              HostTargetMap.HstPtrEnd - HostTargetMap.HstPtrBegin);
+    }
+  }
+}
 
+////////////////////////////////////////////////////////////////////////////////
+/// manage the success or failure of a target construct
 static void HandleDefaultTargetOffload() {
   TargetOffloadMtx.lock();
   if (TargetOffloadPolicy == tgt_default) {
@@ -62,6 +75,11 @@ static void HandleTargetOutcome(bool success) {
       break;
     case tgt_mandatory:
       if (!success) {
+        if (getInfoLevel() > 1)
+          dumpTargetPointerMappings();
+        else
+          FAILURE_MESSAGE("run with env LIBOMPTARGET_INFO>1 to dump tables\n");
+
         FATAL_MESSAGE0(1, "failure of target construct while offloading is mandatory");
       }
       break;
@@ -303,7 +321,7 @@ EXTERN int __tgt_target_mapper(int64_t device_id, void *host_ptr,
   }
 
   if (CheckDeviceAndCtors(device_id) != OFFLOAD_SUCCESS) {
-    DP("Failed to get device %" PRId64 " ready\n", device_id);
+    REPORT("Failed to get device %" PRId64 " ready\n", device_id);
     HandleTargetOutcome(false);
     return OFFLOAD_FAIL;
   }
@@ -363,7 +381,7 @@ EXTERN int __tgt_target_teams_mapper(int64_t device_id, void *host_ptr,
   }
 
   if (CheckDeviceAndCtors(device_id) != OFFLOAD_SUCCESS) {
-    DP("Failed to get device %" PRId64 " ready\n", device_id);
+    REPORT("Failed to get device %" PRId64 " ready\n", device_id);
     HandleTargetOutcome(false);
     return OFFLOAD_FAIL;
   }

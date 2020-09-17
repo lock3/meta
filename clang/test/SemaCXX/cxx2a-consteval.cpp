@@ -104,6 +104,87 @@ auto f1() {
 
 }
 
+namespace dependent_addressing {
+
+template<int y>
+consteval int t_f_eval(int i) {
+// expected-note@-1+ {{declared here}}
+  return i;
+}
+
+using func_type = int(int);
+
+template<int y>
+auto t_f_eval_proxy() {
+  return &t_f_eval<y>;
+// expected-error@-1 {{take address}}
+}
+
+template<int y>
+struct A {
+  consteval int f1(int i) const {
+// expected-note@-1 {{declared here}}
+    return i + y;
+  }
+  consteval A(int i);
+  consteval A() = default;
+  consteval ~A() = default; // expected-error {{destructor cannot be declared consteval}}
+};
+
+template<int y>
+constexpr auto l_eval = [](int i) consteval {
+// expected-note@-1+ {{declared here}}
+
+  return i + y;
+};
+
+template<int y>
+int test_templ() {
+  func_type* p1 = (&t_f_eval<y>);
+  // expected-error@-1+ {{cannot take address of consteval function 't_f_eval<1>' outside of an immediate invocation}}
+
+  auto ptr = &t_f_eval<y>;
+  // expected-error@-1 {{take address}}
+
+  // FIXME: AddressOfFunctionResolver breaks
+  // func_type* p7 = __builtin_addressof(t_f_eval<y>);
+
+  auto p = t_f_eval<y>;
+  // expected-error@-1 {{take address}}
+
+  auto m1 = &A<y>::f1;
+  // expected-error@-1 {{take address}}
+  auto l1 = &decltype(l_eval<y>)::operator();
+  // expected-error@-1 {{take address}}
+
+  auto pr = t_f_eval_proxy<y>();
+  // expected-note@-1 {{in instantiation of function template specialization}}
+
+  return 0;
+}
+
+auto tr = test_templ<1>();
+// expected-note@-1+ {{in instantiation of function template specialization}}
+
+} // namespace dependent_addressing
+
+namespace dependent_call {
+
+consteval int cf1(int y) {
+  return y;
+}
+
+template<int y>
+auto f1() {
+  constexpr int x = cf1(y);
+  return x;
+}
+
+auto f1r = f1<1>();
+
+} // namespace dependent_call
+
+
 namespace invalid_function {
 
 struct A {
@@ -593,4 +674,5 @@ void test() {
   { Copy* c; c = new Copy(to_lvalue_ref(std::move(Copy(&f_eval)))); }// expected-error {{is not a constant expression}} expected-note {{to a consteval}}
 }
 
-} // namespace special_ctor
+} // namespace copy_ctor
+

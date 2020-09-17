@@ -178,6 +178,11 @@ namespace {
       }
     }
 
+    MachineFunctionProperties getRequiredProperties() const override {
+      return MachineFunctionProperties()
+        .set(MachineFunctionProperties::Property::IsSSA);
+    }
+
     /// Track Def -> Use info used for rewriting copies.
     using RewriteMapTy = SmallDenseMap<RegSubRegPair, ValueTrackerResult>;
 
@@ -1356,9 +1361,6 @@ bool PeepholeOptimizer::foldImmediate(
   for (unsigned i = 0, e = MI.getDesc().getNumOperands(); i != e; ++i) {
     MachineOperand &MO = MI.getOperand(i);
     if (!MO.isReg() || MO.isDef())
-      continue;
-    // Ignore dead implicit defs.
-    if (MO.isImplicit() && MO.isDead())
       continue;
     Register Reg = MO.getReg();
     if (!Reg.isVirtual())

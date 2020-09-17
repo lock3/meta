@@ -355,7 +355,7 @@ void OmpStructureChecker::Enter(const parser::OmpClause::Copyprivate &) {
 void OmpStructureChecker::Enter(const parser::OmpClause::Device &) {
   CheckAllowed(llvm::omp::Clause::OMPC_device);
 }
-void OmpStructureChecker::Enter(const parser::OmpClause::DistSchedule &) {
+void OmpStructureChecker::Enter(const parser::OmpDistScheduleClause &) {
   CheckAllowed(llvm::omp::Clause::OMPC_dist_schedule);
 }
 void OmpStructureChecker::Enter(const parser::OmpClause::Final &) {
@@ -455,6 +455,9 @@ void OmpStructureChecker::Enter(const parser::OmpAlignedClause &x) {
     }
   }
   // 2.8.1 TODO: list-item attribute check
+}
+void OmpStructureChecker::Enter(const parser::OmpAllocateClause &) {
+  CheckAllowed(llvm::omp::Clause::OMPC_allocate);
 }
 void OmpStructureChecker::Enter(const parser::OmpDefaultClause &) {
   CheckAllowed(llvm::omp::Clause::OMPC_default);

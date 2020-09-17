@@ -389,6 +389,10 @@ getNameForFeatureBitset(const std::vector<Record *> &FeatureBitset) {
   return Name;
 }
 
+static std::string getScopedName(unsigned Scope, const std::string &Name) {
+  return ("pred:" + Twine(Scope) + ":" + Name).str();
+}
+
 //===- MatchTable Helpers -------------------------------------------------===//
 
 class MatchTable;
@@ -852,6 +856,11 @@ protected:
       DefinedComplexPatternSubOperandMap;
   /// A map of Symbolic Names to ComplexPattern sub-operands.
   DefinedComplexPatternSubOperandMap ComplexSubOperands;
+  /// A map used to for multiple referenced error check of ComplexSubOperand.
+  /// ComplexSubOperand can't be referenced multiple from different operands,
+  /// however multiple references from same operand are allowed since that is
+  /// how 'same operand checks' are generated.
+  StringMap<std::string> ComplexSubOperandsParentName;
 
   uint64_t RuleID;
   static uint64_t NextRuleID;
@@ -917,14 +926,24 @@ public:
   void definePhysRegOperand(Record *Reg, OperandMatcher &OM);
 
   Error defineComplexSubOperand(StringRef SymbolicName, Record *ComplexPattern,
-                                unsigned RendererID, unsigned SubOperandID) {
-    if (ComplexSubOperands.count(SymbolicName))
-      return failedImport(
-          "Complex suboperand referenced more than once (Operand: " +
-          SymbolicName + ")");
+                                unsigned RendererID, unsigned SubOperandID,
+                                StringRef ParentSymbolicName) {
+    std::string ParentName(ParentSymbolicName);
+    if (ComplexSubOperands.count(SymbolicName)) {
+      auto RecordedParentName = ComplexSubOperandsParentName[SymbolicName];
+      if (RecordedParentName.compare(ParentName) != 0)
+        return failedImport("Error: Complex suboperand " + SymbolicName +
+                            " referenced by different operands: " +
+                            RecordedParentName + " and " + ParentName + ".");
+      // Complex suboperand referenced more than once from same the operand is
+      // used to generate 'same operand check'. Emitting of
+      // GIR_ComplexSubOperandRenderer for them is already handled.
+      return Error::success();
+    }
 
     ComplexSubOperands[SymbolicName] =
         std::make_tuple(ComplexPattern, RendererID, SubOperandID);
+    ComplexSubOperandsParentName[SymbolicName] = ParentName;
 
     return Error::success();
   }
@@ -1089,6 +1108,7 @@ public:
     IPM_MemoryVsLLTSize,
     IPM_MemoryAddressSpace,
     IPM_MemoryAlignment,
+    IPM_VectorSplatImm,
     IPM_GenericPredicate,
     OPM_SameOperand,
     OPM_ComplexPattern,
@@ -1101,6 +1121,7 @@ public:
     OPM_PointerToAny,
     OPM_RegBank,
     OPM_MBB,
+    OPM_RecordNamedOperand,
   };
 
 protected:
@@ -1270,8 +1291,13 @@ public:
       : OperandPredicateMatcher(OPM_PointerToAny, InsnVarID, OpIdx),
         SizeInBits(SizeInBits) {}
 
-  static bool classof(const OperandPredicateMatcher *P) {
+  static bool classof(const PredicateMatcher *P) {
     return P->getKind() == OPM_PointerToAny;
+  }
+
+  bool isIdentical(const PredicateMatcher &B) const override {
+    return OperandPredicateMatcher::isIdentical(B) &&
+           SizeInBits == cast<PointerToAnyOperandMatcher>(&B)->SizeInBits;
   }
 
   void emitPredicateOpcodes(MatchTable &Table,
@@ -1281,6 +1307,40 @@ public:
           << MatchTable::Comment("Op") << MatchTable::IntValue(OpIdx)
           << MatchTable::Comment("SizeInBits")
           << MatchTable::IntValue(SizeInBits) << MatchTable::LineBreak;
+  }
+};
+
+/// Generates code to record named operand in RecordedOperands list at StoreIdx.
+/// Predicates with 'let PredicateCodeUsesOperands = 1' get RecordedOperands as
+/// an argument to predicate's c++ code once all operands have been matched.
+class RecordNamedOperandMatcher : public OperandPredicateMatcher {
+protected:
+  unsigned StoreIdx;
+  std::string Name;
+
+public:
+  RecordNamedOperandMatcher(unsigned InsnVarID, unsigned OpIdx,
+                            unsigned StoreIdx, StringRef Name)
+      : OperandPredicateMatcher(OPM_RecordNamedOperand, InsnVarID, OpIdx),
+        StoreIdx(StoreIdx), Name(Name) {}
+
+  static bool classof(const PredicateMatcher *P) {
+    return P->getKind() == OPM_RecordNamedOperand;
+  }
+
+  bool isIdentical(const PredicateMatcher &B) const override {
+    return OperandPredicateMatcher::isIdentical(B) &&
+           StoreIdx == cast<RecordNamedOperandMatcher>(&B)->StoreIdx &&
+           Name.compare(cast<RecordNamedOperandMatcher>(&B)->Name) == 0;
+  }
+
+  void emitPredicateOpcodes(MatchTable &Table,
+                            RuleMatcher &Rule) const override {
+    Table << MatchTable::Opcode("GIM_RecordNamedOperand")
+          << MatchTable::Comment("MI") << MatchTable::IntValue(InsnVarID)
+          << MatchTable::Comment("Op") << MatchTable::IntValue(OpIdx)
+          << MatchTable::Comment("StoreIdx") << MatchTable::IntValue(StoreIdx)
+          << MatchTable::Comment("Name : " + Name) << MatchTable::LineBreak;
   }
 };
 
@@ -1670,9 +1730,22 @@ PredicateListMatcher<PredicateMatcher>::getNoPredicateComment() const {
 /// Generates code to check the opcode of an instruction.
 class InstructionOpcodeMatcher : public InstructionPredicateMatcher {
 protected:
-  const CodeGenInstruction *I;
+  // Allow matching one to several, similar opcodes that share properties. This
+  // is to handle patterns where one SelectionDAG operation maps to multiple
+  // GlobalISel ones (e.g. G_BUILD_VECTOR and G_BUILD_VECTOR_TRUNC). The first
+  // is treated as the canonical opcode.
+  SmallVector<const CodeGenInstruction *, 2> Insts;
 
   static DenseMap<const CodeGenInstruction *, unsigned> OpcodeValues;
+
+
+  MatchTableRecord getInstValue(const CodeGenInstruction *I) const {
+    const auto VI = OpcodeValues.find(I);
+    if (VI != OpcodeValues.end())
+      return MatchTable::NamedValue(I->Namespace, I->TheDef->getName(),
+                                    VI->second);
+    return MatchTable::NamedValue(I->Namespace, I->TheDef->getName());
+  }
 
 public:
   static void initOpcodeValuesMap(const CodeGenTarget &Target) {
@@ -1683,8 +1756,13 @@ public:
       OpcodeValues[I] = OpcodeValue++;
   }
 
-  InstructionOpcodeMatcher(unsigned InsnVarID, const CodeGenInstruction *I)
-      : InstructionPredicateMatcher(IPM_Opcode, InsnVarID), I(I) {}
+  InstructionOpcodeMatcher(unsigned InsnVarID,
+                           ArrayRef<const CodeGenInstruction *> I)
+      : InstructionPredicateMatcher(IPM_Opcode, InsnVarID),
+        Insts(I.begin(), I.end()) {
+    assert((Insts.size() == 1 || Insts.size() == 2) &&
+           "unexpected number of opcode alternatives");
+  }
 
   static bool classof(const PredicateMatcher *P) {
     return P->getKind() == IPM_Opcode;
@@ -1692,22 +1770,36 @@ public:
 
   bool isIdentical(const PredicateMatcher &B) const override {
     return InstructionPredicateMatcher::isIdentical(B) &&
-           I == cast<InstructionOpcodeMatcher>(&B)->I;
+           Insts == cast<InstructionOpcodeMatcher>(&B)->Insts;
   }
+
+  bool hasValue() const override {
+    return Insts.size() == 1 && OpcodeValues.count(Insts[0]);
+  }
+
+  // TODO: This is used for the SwitchMatcher optimization. We should be able to
+  // return a list of the opcodes to match.
   MatchTableRecord getValue() const override {
+    assert(Insts.size() == 1);
+
+    const CodeGenInstruction *I = Insts[0];
     const auto VI = OpcodeValues.find(I);
     if (VI != OpcodeValues.end())
       return MatchTable::NamedValue(I->Namespace, I->TheDef->getName(),
                                     VI->second);
     return MatchTable::NamedValue(I->Namespace, I->TheDef->getName());
   }
-  bool hasValue() const override { return OpcodeValues.count(I); }
 
   void emitPredicateOpcodes(MatchTable &Table,
                             RuleMatcher &Rule) const override {
-    Table << MatchTable::Opcode("GIM_CheckOpcode") << MatchTable::Comment("MI")
-          << MatchTable::IntValue(InsnVarID) << getValue()
-          << MatchTable::LineBreak;
+    StringRef CheckType = Insts.size() == 1 ?
+                          "GIM_CheckOpcode" : "GIM_CheckOpcodeIsEither";
+    Table << MatchTable::Opcode(CheckType) << MatchTable::Comment("MI")
+          << MatchTable::IntValue(InsnVarID);
+
+    for (const CodeGenInstruction *I : Insts)
+      Table << getInstValue(I);
+    Table << MatchTable::LineBreak;
   }
 
   /// Compare the priority of this object and B.
@@ -1725,20 +1817,32 @@ public:
     // using instruction frequency information to improve compile time.
     if (const InstructionOpcodeMatcher *BO =
             dyn_cast<InstructionOpcodeMatcher>(&B))
-      return I->TheDef->getName() < BO->I->TheDef->getName();
+      return Insts[0]->TheDef->getName() < BO->Insts[0]->TheDef->getName();
 
     return false;
   };
 
   bool isConstantInstruction() const {
-    return I->TheDef->getName() == "G_CONSTANT";
+    return Insts.size() == 1 && Insts[0]->TheDef->getName() == "G_CONSTANT";
   }
 
-  StringRef getOpcode() const { return I->TheDef->getName(); }
-  bool isVariadicNumOperands() const { return I->Operands.isVariadic; }
+  // The first opcode is the canonical opcode, and later are alternatives.
+  StringRef getOpcode() const {
+    return Insts[0]->TheDef->getName();
+  }
+
+  ArrayRef<const CodeGenInstruction *> getAlternativeOpcodes() {
+    return Insts;
+  }
+
+  bool isVariadicNumOperands() const {
+    // If one is variadic, they all should be.
+    return Insts[0]->Operands.isVariadic;
+  }
 
   StringRef getOperandType(unsigned OpIdx) const {
-    return I->Operands[OpIdx].OperandType;
+    // Types expected to be uniform for all alternatives.
+    return Insts[0]->Operands[OpIdx].OperandType;
   }
 };
 
@@ -2021,6 +2125,42 @@ public:
   }
 };
 
+// Matcher for immAllOnesV/immAllZerosV
+class VectorSplatImmPredicateMatcher : public InstructionPredicateMatcher {
+public:
+  enum SplatKind {
+    AllZeros,
+    AllOnes
+  };
+
+private:
+  SplatKind Kind;
+
+public:
+  VectorSplatImmPredicateMatcher(unsigned InsnVarID, SplatKind K)
+      : InstructionPredicateMatcher(IPM_VectorSplatImm, InsnVarID), Kind(K) {}
+
+  static bool classof(const PredicateMatcher *P) {
+    return P->getKind() == IPM_VectorSplatImm;
+  }
+
+  bool isIdentical(const PredicateMatcher &B) const override {
+    return InstructionPredicateMatcher::isIdentical(B) &&
+           Kind == static_cast<const VectorSplatImmPredicateMatcher &>(B).Kind;
+  }
+
+  void emitPredicateOpcodes(MatchTable &Table,
+                            RuleMatcher &Rule) const override {
+    if (Kind == AllOnes)
+      Table << MatchTable::Opcode("GIM_CheckIsBuildVectorAllOnes");
+    else
+      Table << MatchTable::Opcode("GIM_CheckIsBuildVectorAllZeros");
+
+    Table << MatchTable::Comment("MI") << MatchTable::IntValue(InsnVarID);
+    Table << MatchTable::LineBreak;
+  }
+};
+
 /// Generates code to check an arbitrary C++ instruction predicate.
 class GenericInstructionPredicateMatcher : public InstructionPredicateMatcher {
 protected:
@@ -2077,8 +2217,9 @@ protected:
   SmallVector<std::pair<Record *, unsigned>, 2> PhysRegInputs;
 
 public:
-  InstructionMatcher(RuleMatcher &Rule, StringRef SymbolicName)
-      : Rule(Rule), SymbolicName(SymbolicName) {
+  InstructionMatcher(RuleMatcher &Rule, StringRef SymbolicName,
+                     bool NumOpsCheck = true)
+      : Rule(Rule), NumOperandsCheck(NumOpsCheck), SymbolicName(SymbolicName) {
     // We create a new instruction matcher.
     // Get a new ID for that instruction.
     InsnVarID = Rule.implicitlyDefineInsnVar(*this);
@@ -2267,9 +2408,10 @@ protected:
 
 public:
   InstructionOperandMatcher(unsigned InsnVarID, unsigned OpIdx,
-                            RuleMatcher &Rule, StringRef SymbolicName)
+                            RuleMatcher &Rule, StringRef SymbolicName,
+                            bool NumOpsCheck = true)
       : OperandPredicateMatcher(OPM_Instruction, InsnVarID, OpIdx),
-        InsnMatcher(new InstructionMatcher(Rule, SymbolicName)) {}
+        InsnMatcher(new InstructionMatcher(Rule, SymbolicName, NumOpsCheck)) {}
 
   static bool classof(const PredicateMatcher *P) {
     return P->getKind() == OPM_Instruction;
@@ -3371,6 +3513,16 @@ private:
   // Rule coverage information.
   Optional<CodeGenCoverage> RuleCoverage;
 
+  /// Variables used to help with collecting of named operands for predicates
+  /// with 'let PredicateCodeUsesOperands = 1'. WaitingForNamedOperands is set
+  /// to the number of named operands that predicate expects. Store locations in
+  /// StoreIdxForName correspond to the order in which operand names appear in
+  /// predicate's argument list.
+  /// When we visit named leaf operand and WaitingForNamedOperands is not zero,
+  /// add matcher that will record operand and decrease counter.
+  unsigned WaitingForNamedOperands = 0;
+  StringMap<unsigned> StoreIdxForName;
+
   void gatherOpcodeValues();
   void gatherTypeIDValues();
   void gatherNodeEquivs();
@@ -3423,7 +3575,8 @@ private:
 
   void emitCxxPredicateFns(raw_ostream &OS, StringRef CodeFieldName,
                            StringRef TypeIdentifier, StringRef ArgType,
-                           StringRef ArgName, StringRef AdditionalDeclarations,
+                           StringRef ArgName, StringRef AdditionalArgs,
+                           StringRef AdditionalDeclarations,
                            std::function<bool(const Record *R)> Filter);
   void emitImmPredicateFns(raw_ostream &OS, StringRef TypeIdentifier,
                            StringRef ArgType,
@@ -3464,6 +3617,12 @@ private:
   /// otherwise.
   Optional<const CodeGenRegisterClass *>
   inferRegClassFromPattern(TreePatternNode *N);
+
+  // Add builtin predicates.
+  Expected<InstructionMatcher &>
+  addBuiltinPredicates(const Record *SrcGIEquivOrNull,
+                       const TreePredicateFn &Predicate,
+                       InstructionMatcher &InsnMatcher, bool &HasAddedMatcher);
 
 public:
   /// Takes a sequence of \p Rules and group them based on the predicates
@@ -3572,6 +3731,147 @@ GlobalISelEmitter::importRulePredicates(RuleMatcher &M,
   return Error::success();
 }
 
+Expected<InstructionMatcher &> GlobalISelEmitter::addBuiltinPredicates(
+    const Record *SrcGIEquivOrNull, const TreePredicateFn &Predicate,
+    InstructionMatcher &InsnMatcher, bool &HasAddedMatcher) {
+  if (Predicate.isLoad() || Predicate.isStore() || Predicate.isAtomic()) {
+    if (const ListInit *AddrSpaces = Predicate.getAddressSpaces()) {
+      SmallVector<unsigned, 4> ParsedAddrSpaces;
+
+      for (Init *Val : AddrSpaces->getValues()) {
+        IntInit *IntVal = dyn_cast<IntInit>(Val);
+        if (!IntVal)
+          return failedImport("Address space is not an integer");
+        ParsedAddrSpaces.push_back(IntVal->getValue());
+      }
+
+      if (!ParsedAddrSpaces.empty()) {
+        InsnMatcher.addPredicate<MemoryAddressSpacePredicateMatcher>(
+            0, ParsedAddrSpaces);
+      }
+    }
+
+    int64_t MinAlign = Predicate.getMinAlignment();
+    if (MinAlign > 0)
+      InsnMatcher.addPredicate<MemoryAlignmentPredicateMatcher>(0, MinAlign);
+  }
+
+  // G_LOAD is used for both non-extending and any-extending loads.
+  if (Predicate.isLoad() && Predicate.isNonExtLoad()) {
+    InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
+        0, MemoryVsLLTSizePredicateMatcher::EqualTo, 0);
+    return InsnMatcher;
+  }
+  if (Predicate.isLoad() && Predicate.isAnyExtLoad()) {
+    InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
+        0, MemoryVsLLTSizePredicateMatcher::LessThan, 0);
+    return InsnMatcher;
+  }
+
+  if (Predicate.isStore()) {
+    if (Predicate.isTruncStore()) {
+      // FIXME: If MemoryVT is set, we end up with 2 checks for the MMO size.
+      InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
+          0, MemoryVsLLTSizePredicateMatcher::LessThan, 0);
+      return InsnMatcher;
+    }
+    if (Predicate.isNonTruncStore()) {
+      // We need to check the sizes match here otherwise we could incorrectly
+      // match truncating stores with non-truncating ones.
+      InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
+          0, MemoryVsLLTSizePredicateMatcher::EqualTo, 0);
+    }
+  }
+
+  // No check required. We already did it by swapping the opcode.
+  if (!SrcGIEquivOrNull->isValueUnset("IfSignExtend") &&
+      Predicate.isSignExtLoad())
+    return InsnMatcher;
+
+  // No check required. We already did it by swapping the opcode.
+  if (!SrcGIEquivOrNull->isValueUnset("IfZeroExtend") &&
+      Predicate.isZeroExtLoad())
+    return InsnMatcher;
+
+  // No check required. G_STORE by itself is a non-extending store.
+  if (Predicate.isNonTruncStore())
+    return InsnMatcher;
+
+  if (Predicate.isLoad() || Predicate.isStore() || Predicate.isAtomic()) {
+    if (Predicate.getMemoryVT() != nullptr) {
+      Optional<LLTCodeGen> MemTyOrNone =
+          MVTToLLT(getValueType(Predicate.getMemoryVT()));
+
+      if (!MemTyOrNone)
+        return failedImport("MemVT could not be converted to LLT");
+
+      // MMO's work in bytes so we must take care of unusual types like i1
+      // don't round down.
+      unsigned MemSizeInBits =
+          llvm::alignTo(MemTyOrNone->get().getSizeInBits(), 8);
+
+      InsnMatcher.addPredicate<MemorySizePredicateMatcher>(0,
+                                                           MemSizeInBits / 8);
+      return InsnMatcher;
+    }
+  }
+
+  if (Predicate.isLoad() || Predicate.isStore()) {
+    // No check required. A G_LOAD/G_STORE is an unindexed load.
+    if (Predicate.isUnindexed())
+      return InsnMatcher;
+  }
+
+  if (Predicate.isAtomic()) {
+    if (Predicate.isAtomicOrderingMonotonic()) {
+      InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("Monotonic");
+      return InsnMatcher;
+    }
+    if (Predicate.isAtomicOrderingAcquire()) {
+      InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("Acquire");
+      return InsnMatcher;
+    }
+    if (Predicate.isAtomicOrderingRelease()) {
+      InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("Release");
+      return InsnMatcher;
+    }
+    if (Predicate.isAtomicOrderingAcquireRelease()) {
+      InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+          "AcquireRelease");
+      return InsnMatcher;
+    }
+    if (Predicate.isAtomicOrderingSequentiallyConsistent()) {
+      InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+          "SequentiallyConsistent");
+      return InsnMatcher;
+    }
+  }
+
+  if (Predicate.isAtomicOrderingAcquireOrStronger()) {
+    InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+        "Acquire", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
+    return InsnMatcher;
+  }
+  if (Predicate.isAtomicOrderingWeakerThanAcquire()) {
+    InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+        "Acquire", AtomicOrderingMMOPredicateMatcher::AO_WeakerThan);
+    return InsnMatcher;
+  }
+
+  if (Predicate.isAtomicOrderingReleaseOrStronger()) {
+    InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+        "Release", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
+    return InsnMatcher;
+  }
+  if (Predicate.isAtomicOrderingWeakerThanRelease()) {
+    InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
+        "Release", AtomicOrderingMMOPredicateMatcher::AO_WeakerThan);
+    return InsnMatcher;
+  }
+  HasAddedMatcher = false;
+  return InsnMatcher;
+}
+
 Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
     RuleMatcher &Rule, InstructionMatcher &InsnMatcher,
     const TreePatternNode *Src, unsigned &TempOpIdx) {
@@ -3613,6 +3913,7 @@ Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
 
   for (const TreePredicateCall &Call : Src->getPredicateCalls()) {
     const TreePredicateFn &Predicate = Call.Fn;
+    bool HasAddedBuiltinMatcher = true;
     if (Predicate.isAlwaysTrue())
       continue;
 
@@ -3621,154 +3922,35 @@ Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
       continue;
     }
 
-    // An address space check is needed in all contexts if there is one.
-    if (Predicate.isLoad() || Predicate.isStore() || Predicate.isAtomic()) {
-      if (const ListInit *AddrSpaces = Predicate.getAddressSpaces()) {
-        SmallVector<unsigned, 4> ParsedAddrSpaces;
-
-        for (Init *Val : AddrSpaces->getValues()) {
-          IntInit *IntVal = dyn_cast<IntInit>(Val);
-          if (!IntVal)
-            return failedImport("Address space is not an integer");
-          ParsedAddrSpaces.push_back(IntVal->getValue());
-        }
-
-        if (!ParsedAddrSpaces.empty()) {
-          InsnMatcher.addPredicate<MemoryAddressSpacePredicateMatcher>(
-            0, ParsedAddrSpaces);
-        }
-      }
-
-      int64_t MinAlign = Predicate.getMinAlignment();
-      if (MinAlign > 0)
-        InsnMatcher.addPredicate<MemoryAlignmentPredicateMatcher>(0, MinAlign);
-    }
-
-    // G_LOAD is used for both non-extending and any-extending loads.
-    if (Predicate.isLoad() && Predicate.isNonExtLoad()) {
-      InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
-          0, MemoryVsLLTSizePredicateMatcher::EqualTo, 0);
-      continue;
-    }
-    if (Predicate.isLoad() && Predicate.isAnyExtLoad()) {
-      InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
-          0, MemoryVsLLTSizePredicateMatcher::LessThan, 0);
-      continue;
-    }
-
-    if (Predicate.isStore()) {
-      if (Predicate.isTruncStore()) {
-        // FIXME: If MemoryVT is set, we end up with 2 checks for the MMO size.
-        InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
-            0, MemoryVsLLTSizePredicateMatcher::LessThan, 0);
-        continue;
-      }
-      if (Predicate.isNonTruncStore()) {
-        // We need to check the sizes match here otherwise we could incorrectly
-        // match truncating stores with non-truncating ones.
-        InsnMatcher.addPredicate<MemoryVsLLTSizePredicateMatcher>(
-            0, MemoryVsLLTSizePredicateMatcher::EqualTo, 0);
-      }
-    }
-
-    // No check required. We already did it by swapping the opcode.
-    if (!SrcGIEquivOrNull->isValueUnset("IfSignExtend") &&
-        Predicate.isSignExtLoad())
-      continue;
-
-    // No check required. We already did it by swapping the opcode.
-    if (!SrcGIEquivOrNull->isValueUnset("IfZeroExtend") &&
-        Predicate.isZeroExtLoad())
-      continue;
-
-    // No check required. G_STORE by itself is a non-extending store.
-    if (Predicate.isNonTruncStore())
-      continue;
-
-    if (Predicate.isLoad() || Predicate.isStore() || Predicate.isAtomic()) {
-      if (Predicate.getMemoryVT() != nullptr) {
-        Optional<LLTCodeGen> MemTyOrNone =
-            MVTToLLT(getValueType(Predicate.getMemoryVT()));
-
-        if (!MemTyOrNone)
-          return failedImport("MemVT could not be converted to LLT");
-
-        // MMO's work in bytes so we must take care of unusual types like i1
-        // don't round down.
-        unsigned MemSizeInBits =
-            llvm::alignTo(MemTyOrNone->get().getSizeInBits(), 8);
-
-        InsnMatcher.addPredicate<MemorySizePredicateMatcher>(
-            0, MemSizeInBits / 8);
-        continue;
-      }
-    }
-
-    if (Predicate.isLoad() || Predicate.isStore()) {
-      // No check required. A G_LOAD/G_STORE is an unindexed load.
-      if (Predicate.isUnindexed())
-        continue;
-    }
-
-    if (Predicate.isAtomic()) {
-      if (Predicate.isAtomicOrderingMonotonic()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "Monotonic");
-        continue;
-      }
-      if (Predicate.isAtomicOrderingAcquire()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("Acquire");
-        continue;
-      }
-      if (Predicate.isAtomicOrderingRelease()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("Release");
-        continue;
-      }
-      if (Predicate.isAtomicOrderingAcquireRelease()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "AcquireRelease");
-        continue;
-      }
-      if (Predicate.isAtomicOrderingSequentiallyConsistent()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "SequentiallyConsistent");
-        continue;
-      }
-
-      if (Predicate.isAtomicOrderingAcquireOrStronger()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "Acquire", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
-        continue;
-      }
-      if (Predicate.isAtomicOrderingWeakerThanAcquire()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "Acquire", AtomicOrderingMMOPredicateMatcher::AO_WeakerThan);
-        continue;
-      }
-
-      if (Predicate.isAtomicOrderingReleaseOrStronger()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "Release", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
-        continue;
-      }
-      if (Predicate.isAtomicOrderingWeakerThanRelease()) {
-        InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
-            "Release", AtomicOrderingMMOPredicateMatcher::AO_WeakerThan);
-        continue;
-      }
-    }
+    auto InsnMatcherOrError = addBuiltinPredicates(
+        SrcGIEquivOrNull, Predicate, InsnMatcher, HasAddedBuiltinMatcher);
+    if (auto Error = InsnMatcherOrError.takeError())
+      return std::move(Error);
 
     if (Predicate.hasGISelPredicateCode()) {
+      if (Predicate.usesOperands()) {
+        assert(WaitingForNamedOperands == 0 &&
+               "previous predicate didn't find all operands or "
+               "nested predicate that uses operands");
+        TreePattern *TP = Predicate.getOrigPatFragRecord();
+        WaitingForNamedOperands = TP->getNumArgs();
+        for (unsigned i = 0; i < WaitingForNamedOperands; ++i)
+          StoreIdxForName[getScopedName(Call.Scope, TP->getArgName(i))] = i;
+      }
       InsnMatcher.addPredicate<GenericInstructionPredicateMatcher>(Predicate);
       continue;
     }
-
-    return failedImport("Src pattern child has predicate (" +
-                        explainPredicates(Src) + ")");
+    if (!HasAddedBuiltinMatcher) {
+      return failedImport("Src pattern child has predicate (" +
+                          explainPredicates(Src) + ")");
+    }
   }
+
+  bool IsAtomic = false;
   if (SrcGIEquivOrNull && SrcGIEquivOrNull->getValueAsBit("CheckMMOIsNonAtomic"))
     InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>("NotAtomic");
   else if (SrcGIEquivOrNull && SrcGIEquivOrNull->getValueAsBit("CheckMMOIsAtomic")) {
+    IsAtomic = true;
     InsnMatcher.addPredicate<AtomicOrderingMMOPredicateMatcher>(
       "Unordered", AtomicOrderingMMOPredicateMatcher::AO_OrStronger);
   }
@@ -3820,6 +4002,27 @@ Expected<InstructionMatcher &> GlobalISelEmitter::createAndImportSelDAGMatcher(
           --NumChildren;
         }
       }
+    }
+
+    // Hack around an unfortunate mistake in how atomic store (and really
+    // atomicrmw in general) operands were ordered. A ISD::STORE used the order
+    // <stored value>, <pointer> order. ISD::ATOMIC_STORE used the opposite,
+    // <pointer>, <stored value>. In GlobalISel there's just the one store
+    // opcode, so we need to swap the operands here to get the right type check.
+    if (IsAtomic && SrcGIOrNull->TheDef->getName() == "G_STORE") {
+      assert(NumChildren == 2 && "wrong operands for atomic store");
+
+      TreePatternNode *PtrChild = Src->getChild(0);
+      TreePatternNode *ValueChild = Src->getChild(1);
+
+      if (auto Error = importChildMatcher(Rule, InsnMatcher, PtrChild, true,
+                                          false, 1, TempOpIdx))
+        return std::move(Error);
+
+      if (auto Error = importChildMatcher(Rule, InsnMatcher, ValueChild, false,
+                                          false, 0, TempOpIdx))
+        return std::move(Error);
+      return InsnMatcher;
     }
 
     // Match the used operands (i.e. the children of the operator).
@@ -3912,12 +4115,22 @@ Error GlobalISelEmitter::importChildMatcher(
     bool OperandIsImmArg, unsigned OpIdx, unsigned &TempOpIdx) {
 
   Record *PhysReg = nullptr;
-  StringRef SrcChildName = getSrcChildName(SrcChild, PhysReg);
+  std::string SrcChildName = std::string(getSrcChildName(SrcChild, PhysReg));
+  if (!SrcChild->isLeaf() &&
+      SrcChild->getOperator()->isSubClassOf("ComplexPattern")) {
+    // The "name" of a non-leaf complex pattern (MY_PAT $op1, $op2) is
+    // "MY_PAT:op1:op2" and the ones with same "name" represent same operand.
+    std::string PatternName = std::string(SrcChild->getOperator()->getName());
+    for (unsigned i = 0; i < SrcChild->getNumChildren(); ++i) {
+      PatternName += ":";
+      PatternName += SrcChild->getChild(i)->getName();
+    }
+    SrcChildName = PatternName;
+  }
 
   OperandMatcher &OM =
-      PhysReg
-          ? InsnMatcher.addPhysRegInput(PhysReg, OpIdx, TempOpIdx)
-          : InsnMatcher.addOperand(OpIdx, std::string(SrcChildName), TempOpIdx);
+      PhysReg ? InsnMatcher.addPhysRegInput(PhysReg, OpIdx, TempOpIdx)
+              : InsnMatcher.addOperand(OpIdx, SrcChildName, TempOpIdx);
   if (OM.isSameAsAnotherOperand())
     return Error::success();
 
@@ -3964,9 +4177,9 @@ Error GlobalISelEmitter::importChildMatcher(
       for (unsigned i = 0, e = SrcChild->getNumChildren(); i != e; ++i) {
         auto *SubOperand = SrcChild->getChild(i);
         if (!SubOperand->getName().empty()) {
-          if (auto Error = Rule.defineComplexSubOperand(SubOperand->getName(),
-                                                        SrcChild->getOperator(),
-                                                        RendererID, i))
+          if (auto Error = Rule.defineComplexSubOperand(
+                  SubOperand->getName(), SrcChild->getOperator(), RendererID, i,
+                  SrcChildName))
             return Error;
         }
       }
@@ -4012,6 +4225,13 @@ Error GlobalISelEmitter::importChildMatcher(
   if (auto *ChildDefInit = dyn_cast<DefInit>(SrcChild->getLeafValue())) {
     auto *ChildRec = ChildDefInit->getDef();
 
+    if (WaitingForNamedOperands) {
+      auto PA = SrcChild->getNamesAsPredicateArg().begin();
+      std::string Name = getScopedName(PA->getScope(), PA->getIdentifier());
+      OM.addPredicate<RecordNamedOperandMatcher>(StoreIdxForName[Name], Name);
+      --WaitingForNamedOperands;
+    }
+
     // Check for register classes.
     if (ChildRec->isSubClassOf("RegisterClass") ||
         ChildRec->isSubClassOf("RegisterOperand")) {
@@ -4053,6 +4273,40 @@ Error GlobalISelEmitter::importChildMatcher(
     // Place holder for SRCVALUE nodes. Nothing to do here.
     if (ChildRec->getName() == "srcvalue")
       return Error::success();
+
+    const bool ImmAllOnesV = ChildRec->getName() == "immAllOnesV";
+    if (ImmAllOnesV || ChildRec->getName() == "immAllZerosV") {
+      auto MaybeInsnOperand = OM.addPredicate<InstructionOperandMatcher>(
+          InsnMatcher.getRuleMatcher(), SrcChild->getName(), false);
+      InstructionOperandMatcher &InsnOperand = **MaybeInsnOperand;
+
+      ValueTypeByHwMode VTy = ChildTypes.front().getValueTypeByHwMode();
+
+      const CodeGenInstruction &BuildVector
+        = Target.getInstruction(RK.getDef("G_BUILD_VECTOR"));
+      const CodeGenInstruction &BuildVectorTrunc
+        = Target.getInstruction(RK.getDef("G_BUILD_VECTOR_TRUNC"));
+
+      // Treat G_BUILD_VECTOR as the canonical opcode, and G_BUILD_VECTOR_TRUNC
+      // as an alternative.
+      InsnOperand.getInsnMatcher().addPredicate<InstructionOpcodeMatcher>(
+      makeArrayRef({&BuildVector, &BuildVectorTrunc}));
+
+      // TODO: Handle both G_BUILD_VECTOR and G_BUILD_VECTOR_TRUNC We could
+      // theoretically not emit any opcode check, but getOpcodeMatcher currently
+      // has to succeed.
+      OperandMatcher &OM =
+          InsnOperand.getInsnMatcher().addOperand(0, "", TempOpIdx);
+      if (auto Error =
+              OM.addTypeCheckPredicate(VTy, false /* OperandIsAPointer */))
+        return failedImport(toString(std::move(Error)) +
+                            " for result of Src pattern operator");
+
+      InsnOperand.getInsnMatcher().addPredicate<VectorSplatImmPredicateMatcher>(
+          ImmAllOnesV ? VectorSplatImmPredicateMatcher::AllOnes
+                      : VectorSplatImmPredicateMatcher::AllZeros);
+      return Error::success();
+    }
 
     return failedImport(
         "Src pattern child def is an unsupported tablegen class");
@@ -5073,7 +5327,8 @@ Expected<RuleMatcher> GlobalISelEmitter::runOnPattern(const PatternToMatch &P) {
 // trouble than it's worth.
 void GlobalISelEmitter::emitCxxPredicateFns(
     raw_ostream &OS, StringRef CodeFieldName, StringRef TypeIdentifier,
-    StringRef ArgType, StringRef ArgName, StringRef AdditionalDeclarations,
+    StringRef ArgType, StringRef ArgName, StringRef AdditionalArgs,
+    StringRef AdditionalDeclarations,
     std::function<bool(const Record *R)> Filter) {
   std::vector<const Record *> MatchedRecords;
   const auto &Defs = RK.getAllDerivedDefinitions("PatFrag");
@@ -5098,7 +5353,7 @@ void GlobalISelEmitter::emitCxxPredicateFns(
 
   OS << "bool " << Target.getName() << "InstructionSelector::test" << ArgName
      << "Predicate_" << TypeIdentifier << "(unsigned PredicateID, " << ArgType << " "
-     << ArgName << ") const {\n"
+     << ArgName << AdditionalArgs <<") const {\n"
      << AdditionalDeclarations;
   if (!AdditionalDeclarations.empty())
     OS << "\n";
@@ -5124,12 +5379,13 @@ void GlobalISelEmitter::emitImmPredicateFns(
     raw_ostream &OS, StringRef TypeIdentifier, StringRef ArgType,
     std::function<bool(const Record *R)> Filter) {
   return emitCxxPredicateFns(OS, "ImmediateCode", TypeIdentifier, ArgType,
-                             "Imm", "", Filter);
+                             "Imm", "", "", Filter);
 }
 
 void GlobalISelEmitter::emitMIPredicateFns(raw_ostream &OS) {
   return emitCxxPredicateFns(
       OS, "GISelPredicateCode", "MI", "const MachineInstr &", "MI",
+      ", const std::array<const MachineOperand *, 3> &Operands",
       "  const MachineFunction &MF = *MI.getParent()->getParent();\n"
       "  const MachineRegisterInfo &MRI = MF.getRegInfo();\n"
       "  (void)MRI;",
@@ -5362,7 +5618,8 @@ void GlobalISelEmitter::run(raw_ostream &OS) {
      << "  bool testImmPredicate_APFloat(unsigned PredicateID, const APFloat "
         "&Imm) const override;\n"
      << "  const int64_t *getMatchTable() const override;\n"
-     << "  bool testMIPredicate_MI(unsigned PredicateID, const MachineInstr &MI) "
+     << "  bool testMIPredicate_MI(unsigned PredicateID, const MachineInstr &MI"
+        ", const std::array<const MachineOperand *, 3> &Operands) "
         "const override;\n"
      << "#endif // ifdef GET_GLOBALISEL_TEMPORARIES_DECL\n\n";
 

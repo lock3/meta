@@ -1918,6 +1918,7 @@ class MVE_VQxDMULH_Base<string iname, string suffix, bits<2> size, bit rounding,
   let Inst{12-8} = 0b01011;
   let Inst{4} = 0b0;
   let Inst{0} = 0b0;
+  let validForTailPredication = 1;
 }
 
 multiclass MVE_VQxDMULH_m<string iname, MVEVectorVTInfo VTI,
@@ -3652,6 +3653,14 @@ multiclass MVE_VFMA_fp_multi<string iname, bit fms, MVEVectorVTInfo VTI> {
                 (Inst $add, $m1, $m2)>;
       def : Pat<(VTI.Vec (fma m1, (fneg m2), add)),
                 (Inst $add, $m1, $m2)>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma (fneg m1), m2, add)),
+                                  add)),
+                (Inst $add, $m1, $m2, ARMVCCThen, $pred)>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma m1, (fneg m2), add)),
+                                  add)),
+                (Inst $add, $m1, $m2, ARMVCCThen, $pred)>;
       def : Pat<(VTI.Vec (pred_int (fneg m1), m2, add, pred)),
                 (Inst $add, $m1, $m2, ARMVCCThen, $pred)>;
       def : Pat<(VTI.Vec (pred_int m1, (fneg m2), add, pred)),
@@ -3659,6 +3668,10 @@ multiclass MVE_VFMA_fp_multi<string iname, bit fms, MVEVectorVTInfo VTI> {
     } else {
       def : Pat<(VTI.Vec (fma m1, m2, add)),
                 (Inst $add, $m1, $m2)>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma m1, m2, add)),
+                                  add)),
+                (Inst $add, $m1, $m2, ARMVCCThen, $pred)>;
       def : Pat<(VTI.Vec (pred_int m1, m2, add, pred)),
                 (Inst $add, $m1, $m2, ARMVCCThen, $pred)>;
     }
@@ -4043,6 +4056,8 @@ class MVE_VMAXMINNMA<string iname, string suffix, bit size, bit bit_12,
   let Inst{4} = 0b0;
   let Inst{3-1} = Qm{2-0};
   let Inst{0} = 0b1;
+
+  let isCommutable = 1;
 }
 
 multiclass MVE_VMAXMINNMA_m<string iname, MVEVectorVTInfo VTI,
@@ -4368,6 +4383,10 @@ let Predicates = [HasMVEInt] in {
 // vector types (v4i1<>v8i1, etc.) also as part of lowering vector shuffles.
 def predicate_cast : SDNode<"ARMISD::PREDICATE_CAST", SDTUnaryOp>;
 
+def load_align4 : PatFrag<(ops node:$ptr), (load node:$ptr), [{
+  return cast<LoadSDNode>(N)->getAlignment() >= 4;
+}]>;
+
 let Predicates = [HasMVEInt] in {
   foreach VT = [ v4i1, v8i1, v16i1 ] in {
     def : Pat<(i32 (predicate_cast (VT VCCR:$src))),
@@ -4378,6 +4397,13 @@ let Predicates = [HasMVEInt] in {
     foreach VT2 = [ v4i1, v8i1, v16i1 ] in
       def : Pat<(VT  (predicate_cast (VT2 VCCR:$src))),
                 (VT  (COPY_TO_REGCLASS (VT2 VCCR:$src), VCCR))>;
+  }
+
+  // If we happen to be casting from a load we can convert that straight
+  // into a predicate load, so long as the load is of the correct type.
+  foreach VT = [ v4i1, v8i1, v16i1 ] in {
+    def : Pat<(VT (predicate_cast (i32 (load_align4 taddrmode_imm7<2>:$addr)))),
+              (VT (VLDR_P0_off taddrmode_imm7<2>:$addr))>;
   }
 
   // Here we match the specific SDNode type 'ARMVectorRegCastImpl'
@@ -5428,6 +5454,7 @@ class MVE_VxxMUL_qr<string iname, string suffix,
   let Inst{12} = 0b0;
   let Inst{8} = 0b0;
   let Inst{5} = 0b1;
+  let validForTailPredication = 1;
 }
 
 multiclass MVE_VxxMUL_qr_m<string iname, MVEVectorVTInfo VTI, bit bit_28,
@@ -5538,6 +5565,10 @@ multiclass MVE_VFMA_qr_multi<string iname, MVEVectorVTInfo VTI,
     if scalar_addend then {
       def : Pat<(VTI.Vec (fma v1, v2, vs)),
                 (VTI.Vec (Inst v1, v2, is))>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma v1, v2, vs)),
+                                  v1)),
+                (VTI.Vec (Inst v1, v2, is, ARMVCCThen, $pred))>;
       def : Pat<(VTI.Vec (pred_int v1, v2, vs, pred)),
                 (VTI.Vec (Inst v1, v2, is, ARMVCCThen, pred))>;
     } else {
@@ -5545,6 +5576,14 @@ multiclass MVE_VFMA_qr_multi<string iname, MVEVectorVTInfo VTI,
                 (VTI.Vec (Inst v2, v1, is))>;
       def : Pat<(VTI.Vec (fma vs, v1, v2)),
                 (VTI.Vec (Inst v2, v1, is))>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma vs, v2, v1)),
+                                  v1)),
+                (VTI.Vec (Inst v1, v2, is, ARMVCCThen, $pred))>;
+      def : Pat<(VTI.Vec (vselect (VTI.Pred VCCR:$pred),
+                                  (VTI.Vec (fma v2, vs, v1)),
+                                  v1)),
+                (VTI.Vec (Inst v1, v2, is, ARMVCCThen, $pred))>;
       def : Pat<(VTI.Vec (pred_int v1, vs, v2, pred)),
                 (VTI.Vec (Inst v2, v1, is, ARMVCCThen, pred))>;
       def : Pat<(VTI.Vec (pred_int vs, v1, v2, pred)),
@@ -5673,6 +5712,7 @@ def MVE_VDWDUPu8  : MVE_VxWDUP<"vdwdup", "u8",  0b00, 0b1>;
 def MVE_VDWDUPu16 : MVE_VxWDUP<"vdwdup", "u16", 0b01, 0b1>;
 def MVE_VDWDUPu32 : MVE_VxWDUP<"vdwdup", "u32", 0b10, 0b1>;
 
+let isReMaterializable = 1 in
 class MVE_VCTPInst<string suffix, bits<2> size, list<dag> pattern=[]>
   : MVE_p<(outs VCCR:$P0), (ins rGPR:$Rn), NoItinerary, "vctp", suffix,
           "$Rn", vpred_n, "", pattern> {
@@ -5803,6 +5843,7 @@ class MVE_vldst24_base<bit writeback, bit fourregs, bits<2> stage, bits<2> size,
   let mayLoad = load;
   let mayStore = !eq(load,0);
   let hasSideEffects = 0;
+  let validForTailPredication = load;
 }
 
 // A parameter class used to encapsulate all the ways the writeback

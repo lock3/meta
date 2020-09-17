@@ -26,14 +26,16 @@ using common::LanguageFeature;
 static constexpr int maxPrescannerNesting{100};
 
 Prescanner::Prescanner(Messages &messages, CookedSource &cooked,
-    Preprocessor &preprocessor, common::LanguageFeatureControl lfc)
-    : messages_{messages}, cooked_{cooked}, preprocessor_{preprocessor},
-      features_{lfc}, encoding_{cooked.allSources().encoding()} {}
+    AllSources &allSources, Preprocessor &preprocessor,
+    common::LanguageFeatureControl lfc)
+    : messages_{messages}, cooked_{cooked}, allSources_{allSources},
+      preprocessor_{preprocessor}, features_{lfc},
+      encoding_{allSources_.encoding()} {}
 
 Prescanner::Prescanner(const Prescanner &that)
     : messages_{that.messages_}, cooked_{that.cooked_},
-      preprocessor_{that.preprocessor_}, features_{that.features_},
-      inFixedForm_{that.inFixedForm_},
+      allSources_{that.allSources_}, preprocessor_{that.preprocessor_},
+      features_{that.features_}, inFixedForm_{that.inFixedForm_},
       fixedFormColumnLimit_{that.fixedFormColumnLimit_},
       encoding_{that.encoding_}, prescannerNesting_{that.prescannerNesting_ +
                                      1},
@@ -59,12 +61,9 @@ static void NormalizeCompilerDirectiveCommentMarker(TokenSequence &dir) {
 }
 
 void Prescanner::Prescan(ProvenanceRange range) {
-  AllSources &allSources{cooked_.allSources()};
   startProvenance_ = range.start();
-  std::size_t offset{0};
-  const SourceFile *source{allSources.GetSourceFile(startProvenance_, &offset)};
-  CHECK(source);
-  start_ = source->content().data() + offset;
+  start_ = allSources_.GetSource(range);
+  CHECK(start_);
   limit_ = start_ + range.size();
   nextLine_ = start_;
   const bool beganInFixedForm{inFixedForm_};
@@ -73,7 +72,7 @@ void Prescanner::Prescan(ProvenanceRange range) {
         "too many nested INCLUDE/#include files, possibly circular"_err_en_US);
     return;
   }
-  while (nextLine_ < limit_) {
+  while (!IsAtEnd()) {
     Statement();
   }
   if (inFixedForm_ != beganInFixedForm) {
@@ -84,7 +83,7 @@ void Prescanner::Prescan(ProvenanceRange range) {
       dir += "free";
     }
     dir += '\n';
-    TokenSequence tokens{dir, allSources.AddCompilerInsertion(dir).start()};
+    TokenSequence tokens{dir, allSources_.AddCompilerInsertion(dir).start()};
     tokens.Emit(cooked_);
   }
 }
@@ -110,7 +109,7 @@ void Prescanner::Statement() {
   case LineClassification::Kind::CompilerDirective:
     directiveSentinel_ = line.sentinel;
     CHECK(InCompilerDirective());
-    BeginSourceLineAndAdvance();
+    BeginStatementAndAdvance();
     if (inFixedForm_) {
       CHECK(IsFixedFormCommentChar(*at_));
     } else {
@@ -144,7 +143,7 @@ void Prescanner::Statement() {
     }
     break;
   case LineClassification::Kind::Source:
-    BeginSourceLineAndAdvance();
+    BeginStatementAndAdvance();
     if (inFixedForm_) {
       LabelField(tokens);
     } else if (skipLeadingAmpersand_) {
@@ -184,7 +183,8 @@ void Prescanner::Statement() {
     case LineClassification::Kind::PreprocessorDirective:
       Say(preprocessed->GetProvenanceRange(),
           "Preprocessed line resembles a preprocessor directive"_en_US);
-      preprocessed->ToLowerCase().Emit(cooked_);
+      preprocessed->ToLowerCase().CheckBadFortranCharacters(messages_).Emit(
+          cooked_);
       break;
     case LineClassification::Kind::CompilerDirective:
       if (preprocessed->HasRedundantBlanks()) {
@@ -193,7 +193,9 @@ void Prescanner::Statement() {
       NormalizeCompilerDirectiveCommentMarker(*preprocessed);
       preprocessed->ToLowerCase();
       SourceFormChange(preprocessed->ToString());
-      preprocessed->ClipComment(true /* skip first ! */).Emit(cooked_);
+      preprocessed->ClipComment(true /* skip first ! */)
+          .CheckBadFortranCharacters(messages_)
+          .Emit(cooked_);
       break;
     case LineClassification::Kind::Source:
       if (inFixedForm_) {
@@ -205,7 +207,10 @@ void Prescanner::Statement() {
           preprocessed->RemoveRedundantBlanks();
         }
       }
-      preprocessed->ToLowerCase().ClipComment().Emit(cooked_);
+      preprocessed->ToLowerCase()
+          .ClipComment()
+          .CheckBadFortranCharacters(messages_)
+          .Emit(cooked_);
       break;
     }
   } else {
@@ -213,7 +218,7 @@ void Prescanner::Statement() {
     if (line.kind == LineClassification::Kind::CompilerDirective) {
       SourceFormChange(tokens.ToString());
     }
-    tokens.Emit(cooked_);
+    tokens.CheckBadFortranCharacters(messages_).Emit(cooked_);
   }
   if (omitNewline_) {
     omitNewline_ = false;
@@ -224,9 +229,9 @@ void Prescanner::Statement() {
 }
 
 TokenSequence Prescanner::TokenizePreprocessorDirective() {
-  CHECK(nextLine_ < limit_ && !inPreprocessorDirective_);
+  CHECK(!IsAtEnd() && !inPreprocessorDirective_);
   inPreprocessorDirective_ = true;
-  BeginSourceLineAndAdvance();
+  BeginStatementAndAdvance();
   TokenSequence tokens;
   while (NextToken(tokens)) {
   }
@@ -245,8 +250,9 @@ void Prescanner::NextLine() {
   }
 }
 
-void Prescanner::LabelField(TokenSequence &token, int outCol) {
+void Prescanner::LabelField(TokenSequence &token) {
   const char *bad{nullptr};
+  int outCol{1};
   for (; *at_ != '\n' && column_ <= 6; ++at_) {
     if (*at_ == '\t') {
       ++at_;
@@ -256,20 +262,26 @@ void Prescanner::LabelField(TokenSequence &token, int outCol) {
     if (*at_ != ' ' &&
         !(*at_ == '0' && column_ == 6)) { // '0' in column 6 becomes space
       EmitChar(token, *at_);
+      ++outCol;
       if (!bad && !IsDecimalDigit(*at_)) {
         bad = at_;
       }
-      ++outCol;
     }
     ++column_;
   }
-  if (outCol > 1) {
+  if (outCol == 1) { // empty label field
+    // Emit a space so that, if the line is rescanned after preprocessing,
+    // a leading 'C' or 'D' won't be left-justified and then accidentally
+    // misinterpreted as a comment card.
+    EmitChar(token, ' ');
+    ++outCol;
+  } else {
     if (bad && !preprocessor_.IsNameDefined(token.CurrentOpenToken())) {
       Say(GetProvenance(bad),
           "Character in fixed-form label field must be a digit"_en_US);
     }
-    token.CloseToken();
   }
+  token.CloseToken();
   SkipToNextSignificantCharacter();
   if (IsDecimalDigit(*at_)) {
     Say(GetProvenance(at_),
@@ -345,7 +357,7 @@ void Prescanner::SkipCComments() {
         break;
       }
     } else if (inPreprocessorDirective_ && at_[0] == '\\' && at_ + 2 < limit_ &&
-        at_[1] == '\n' && nextLine_ < limit_) {
+        at_[1] == '\n' && !IsAtEnd()) {
       BeginSourceLineAndAdvance();
     } else {
       break;
@@ -497,12 +509,8 @@ bool Prescanner::NextToken(TokenSequence &tokens) {
     } while (IsLegalInIdentifier(EmitCharAndAdvance(tokens, *at_)));
     if (*at_ == '\'' || *at_ == '"') {
       QuotedCharacterLiteral(tokens, start);
-      preventHollerith_ = false;
-    } else {
-      // Subtle: Don't misrecognize labeled DO statement label as Hollerith
-      // when the loop control variable starts with 'H'.
-      preventHollerith_ = true;
     }
+    preventHollerith_ = false;
   } else if (*at_ == '*') {
     if (EmitCharAndAdvance(tokens, '*') == '*') {
       EmitCharAndAdvance(tokens, '*');
@@ -510,7 +518,7 @@ bool Prescanner::NextToken(TokenSequence &tokens) {
       // Subtle ambiguity:
       //  CHARACTER*2H     declares H because *2 is a kind specifier
       //  DATAC/N*2H  /    is repeated Hollerith
-      preventHollerith_ = !slashInCurrentLine_;
+      preventHollerith_ = !slashInCurrentStatement_;
     }
   } else {
     char ch{*at_};
@@ -530,7 +538,7 @@ bool Prescanner::NextToken(TokenSequence &tokens) {
       // token comprises two characters
       EmitCharAndAdvance(tokens, nch);
     } else if (ch == '/') {
-      slashInCurrentLine_ = true;
+      slashInCurrentStatement_ = true;
     }
   }
   tokens.CloseToken();
@@ -752,14 +760,13 @@ void Prescanner::FortranInclude(const char *firstQuote) {
   std::string buf;
   llvm::raw_string_ostream error{buf};
   Provenance provenance{GetProvenance(nextLine_)};
-  AllSources &allSources{cooked_.allSources()};
-  const SourceFile *currentFile{allSources.GetSourceFile(provenance)};
+  const SourceFile *currentFile{allSources_.GetSourceFile(provenance)};
   if (currentFile) {
-    allSources.PushSearchPathDirectory(DirectoryName(currentFile->path()));
+    allSources_.PushSearchPathDirectory(DirectoryName(currentFile->path()));
   }
-  const SourceFile *included{allSources.Open(path, error)};
+  const SourceFile *included{allSources_.Open(path, error)};
   if (currentFile) {
-    allSources.PopSearchPathDirectory();
+    allSources_.PopSearchPathDirectory();
   }
   if (!included) {
     Say(provenance, "INCLUDE: %s"_err_en_US, error.str());
@@ -767,7 +774,7 @@ void Prescanner::FortranInclude(const char *firstQuote) {
     ProvenanceRange includeLineRange{
         provenance, static_cast<std::size_t>(p - nextLine_)};
     ProvenanceRange fileRange{
-        allSources.AddIncludedFile(*included, includeLineRange)};
+        allSources_.AddIncludedFile(*included, includeLineRange)};
     Prescanner{*this}.set_encoding(included->encoding()).Prescan(fileRange);
   }
 }
@@ -794,7 +801,7 @@ bool Prescanner::IsNextLinePreprocessorDirective() const {
 }
 
 bool Prescanner::SkipCommentLine(bool afterAmpersand) {
-  if (nextLine_ >= limit_) {
+  if (IsAtEnd()) {
     if (afterAmpersand && prescannerNesting_ > 0) {
       // A continuation marker at the end of the last line in an
       // include file inhibits the newline for that line.
@@ -833,7 +840,7 @@ bool Prescanner::SkipCommentLine(bool afterAmpersand) {
 }
 
 const char *Prescanner::FixedFormContinuationLine(bool mightNeedSpace) {
-  if (nextLine_ >= limit_) {
+  if (IsAtEnd()) {
     return nullptr;
   }
   tabInCurrentLine_ = false;
@@ -985,7 +992,7 @@ bool Prescanner::FreeFormContinuation() {
 // arguments to span multiple lines.
 bool Prescanner::IsImplicitContinuation() const {
   return !inPreprocessorDirective_ && !inCharLiteral_ &&
-      delimiterNesting_ > 0 && nextLine_ < limit_ &&
+      delimiterNesting_ > 0 && !IsAtEnd() &&
       ClassifyLine(nextLine_).kind == LineClassification::Kind::Source;
 }
 

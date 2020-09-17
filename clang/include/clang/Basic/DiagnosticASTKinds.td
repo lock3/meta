@@ -54,6 +54,9 @@ def note_constexpr_nonliteral : Note<
 def note_constexpr_non_global : Note<
   "%select{pointer|reference}0 to %select{|subobject of }1"
   "%select{temporary|%3}2 is not a constant expression">;
+def note_constexpr_not_static : Note<
+  "address of non-static constexpr variable %0 may differ on each invocation "
+  "of the enclosing function; add 'static' to give it a constant address">;
 def note_constexpr_dynamic_alloc : Note<
   "%select{pointer|reference}0 to %select{|subobject of }1"
   "heap-allocated object is not a constant expression">;
@@ -295,6 +298,8 @@ def note_constexpr_bit_cast_invalid_subtype : Note<
 def note_constexpr_bit_cast_indet_dest : Note<
   "indeterminate value can only initialize an object of type 'unsigned char'"
   "%select{, 'char',|}1 or 'std::byte'; %0 is invalid">;
+def note_constexpr_bit_cast_unrepresentable_value : Note<
+  "value %1 cannot be represented in type %0">;
 def note_constexpr_pseudo_destructor : Note<
   "pseudo-destructor call is not permitted in constant expressions "
   "until C++20">;

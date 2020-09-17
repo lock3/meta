@@ -372,6 +372,9 @@ class DwarfDebug : public DebugHandlerBase {
   /// Generate DWARF v4 type units.
   bool GenerateTypeUnits;
 
+  /// Emit a .debug_macro section instead of .debug_macinfo.
+  bool UseDebugMacroSection;
+
   /// DWARF5 Experimental Options
   /// @{
   AccelTableKind TheAccelTableKind;
@@ -408,6 +411,9 @@ class DwarfDebug : public DebugHandlerBase {
   /// True iff there are multiple CUs in this module.
   bool SingleCU;
   bool IsDarwin;
+
+  /// Map for tracking Fortran deferred CHARACTER lengths.
+  DenseMap<const DIStringType *, unsigned> StringTypeLocMap;
 
   AddressPool AddrPool;
 
@@ -592,10 +598,8 @@ class DwarfDebug : public DebugHandlerBase {
   /// function that describe the same variable. If the resulting 
   /// list has only one entry that is valid for entire variable's
   /// scope return true.
-  bool buildLocationList(
-      SmallVectorImpl<DebugLocEntry> &DebugLoc,
-      const DbgValueHistoryMap::Entries &Entries,
-      DenseSet<const MachineBasicBlock *> &VeryLargeBlocks);
+  bool buildLocationList(SmallVectorImpl<DebugLocEntry> &DebugLoc,
+                         const DbgValueHistoryMap::Entries &Entries);
 
   /// Collect variable information from the side table maintained by MF.
   void collectVariableInfoFromMFTable(DwarfCompileUnit &TheCU,
@@ -645,6 +649,7 @@ public:
   class NonTypeUnitContext {
     DwarfDebug *DD;
     decltype(DwarfDebug::TypeUnitsUnderConstruction) TypeUnitsUnderConstruction;
+    bool AddrPoolUsed;
     friend class DwarfDebug;
     NonTypeUnitContext(DwarfDebug *DD);
   public:
@@ -724,6 +729,12 @@ public:
   /// Returns the Dwarf Version.
   uint16_t getDwarfVersion() const;
 
+  /// Returns a suitable DWARF form to represent a section offset, i.e.
+  /// * DW_FORM_sec_offset for DWARF version >= 4;
+  /// * DW_FORM_data8 for 64-bit DWARFv3;
+  /// * DW_FORM_data4 for 32-bit DWARFv3 and DWARFv2.
+  dwarf::Form getDwarfSectionOffsetForm() const;
+
   /// Returns the previous CU that was being updated
   const DwarfCompileUnit *getPrevCU() const { return PrevCU; }
   void setPrevCU(const DwarfCompileUnit *PrevCU) { this->PrevCU = PrevCU; }
@@ -766,6 +777,17 @@ public:
   DwarfCompileUnit *lookupCU(const DIE *Die) { return CUDieMap.lookup(Die); }
   const DwarfCompileUnit *lookupCU(const DIE *Die) const {
     return CUDieMap.lookup(Die);
+  }
+
+  unsigned getStringTypeLoc(const DIStringType *ST) const {
+    auto I = StringTypeLocMap.find(ST);
+    return I != StringTypeLocMap.end() ? I->second : 0;
+  }
+
+  void addStringTypeLoc(const DIStringType *ST, unsigned Loc) {
+    assert(ST);
+    if (Loc)
+      StringTypeLocMap[ST] = Loc;
   }
 
   /// \defgroup DebuggerTuning Predicates to tune DWARF for a given debugger.

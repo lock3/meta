@@ -34,6 +34,7 @@ class UnrankedMemRefType;
 namespace LLVM {
 class LLVMDialect;
 class LLVMType;
+class LLVMPointerType;
 } // namespace LLVM
 
 /// Callback to convert function argument types. It converts a MemRef function
@@ -104,6 +105,9 @@ public:
   /// Converts the function type to a C-compatible format, in particular using
   /// pointers to memref descriptors for arguments.
   LLVM::LLVMType convertFunctionTypeCWrapper(FunctionType type);
+
+  /// Returns the data layout to use during and after conversion.
+  const llvm::DataLayout &getDataLayout() { return options.dataLayout; }
 
   /// Gets the LLVM representation of the index type. The returned type is an
   /// integer type with the size configured for this type converter.
@@ -278,8 +282,8 @@ public:
   void setConstantStride(OpBuilder &builder, Location loc, unsigned pos,
                          uint64_t stride);
 
-  /// Returns the (LLVM) type this descriptor points to.
-  LLVM::LLVMType getElementType();
+  /// Returns the (LLVM) pointer type this descriptor contains.
+  LLVM::LLVMPointerType getElementPtrType();
 
   /// Builds IR populating a MemRef descriptor structure from a list of
   /// individual values composing that descriptor, in the following order:
@@ -439,6 +443,10 @@ public:
                                 ArrayRef<Value> dynSizes,
                                 ConversionPatternRewriter &rewriter,
                                 SmallVectorImpl<Value> &sizes) const;
+
+  /// Computes the size of type in bytes.
+  Value getSizeInBytes(Location loc, Type type,
+                       ConversionPatternRewriter &rewriter) const;
 
   /// Computes total size in bytes of to store the given shape.
   Value getCumulativeSizeInBytes(Location loc, Type elementType,

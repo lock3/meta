@@ -339,7 +339,8 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
         Reflection Refl(Ctx, Result.Val);
         switch (Refl.getKind()) {
         case RK_type: {
-          LV.merge(getLVForType(*Refl.getAsType(), computation));
+          QualType ReflTy = Refl.getAsType().getCanonicalType();
+          LV.merge(getLVForType(*ReflTy, computation));
           continue;
         }
         case RK_declaration: {
@@ -1338,7 +1339,8 @@ LinkageInfo LinkageComputer::getLVForLocalDecl(const NamedDecl *D,
     // we should not make static local variables in the function hidden.
     LV = getLVForDecl(FD, computation);
     if (isa<VarDecl>(D) && useInlineVisibilityHidden(FD) &&
-        !LV.isVisibilityExplicit()) {
+        !LV.isVisibilityExplicit() &&
+        !Context.getLangOpts().VisibilityInlinesHiddenStaticLocalVar) {
       assert(cast<VarDecl>(D)->isStaticLocal());
       // If this was an implicitly hidden inline method, check again for
       // explicit visibility on the parent class, and use that for static locals

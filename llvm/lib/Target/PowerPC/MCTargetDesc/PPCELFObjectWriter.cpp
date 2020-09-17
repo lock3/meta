@@ -138,6 +138,12 @@ unsigned PPCELFObjectWriter::getRelocType(MCContext &Ctx, const MCValue &Target,
       case MCSymbolRefExpr::VK_PPC_GOT_PCREL:
         Type = ELF::R_PPC64_GOT_PCREL34;
         break;
+      case MCSymbolRefExpr::VK_PPC_GOT_TLSGD_PCREL:
+        Type = ELF::R_PPC64_GOT_TLSGD_PCREL34;
+        break;
+      case MCSymbolRefExpr::VK_PPC_GOT_TPREL_PCREL:
+        Type = ELF::R_PPC64_GOT_TPREL_PCREL34;
+        break;
       }
       break;
     case FK_Data_4:
@@ -407,10 +413,19 @@ unsigned PPCELFObjectWriter::getRelocType(MCContext &Ctx, const MCValue &Target,
         else
           Type = ELF::R_PPC_TLS;
         break;
+      case MCSymbolRefExpr::VK_PPC_TLS_PCREL:
+        Type = ELF::R_PPC64_TLS;
+        break;
       }
       break;
     case PPC::fixup_ppc_imm34:
-      report_fatal_error("Unsupported Modifier for fixup_ppc_imm34.");
+      switch (Modifier) {
+      default:
+        report_fatal_error("Unsupported Modifier for fixup_ppc_imm34.");
+      case MCSymbolRefExpr::VK_TPREL:
+        Type = ELF::R_PPC64_TPREL34;
+        break;
+      }
       break;
     case FK_Data_8:
       switch (Modifier) {

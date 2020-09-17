@@ -30,6 +30,8 @@ using ast_matchers::internal::DynTypedMatcher;
 
 using MatchResult = MatchFinder::MatchResult;
 
+const char transformer::RootID[] = "___root___";
+
 static Expected<SmallVector<transformer::Edit, 1>>
 translateEdits(const MatchResult &Result, ArrayRef<ASTEdit> ASTEdits) {
   SmallVector<transformer::Edit, 1> Edits;
@@ -50,6 +52,7 @@ translateEdits(const MatchResult &Result, ArrayRef<ASTEdit> ASTEdits) {
     if (!Metadata)
       return Metadata.takeError();
     transformer::Edit T;
+    T.Kind = E.Kind;
     T.Range = *EditRange;
     T.Replacement = std::move(*Replacement);
     T.Metadata = std::move(*Metadata);
@@ -113,14 +116,37 @@ public:
 };
 } // namespace
 
+static TextGenerator makeText(std::string S) {
+  return std::make_shared<SimpleTextGenerator>(std::move(S));
+}
+
 ASTEdit transformer::remove(RangeSelector S) {
-  return change(std::move(S), std::make_shared<SimpleTextGenerator>(""));
+  return change(std::move(S), makeText(""));
+}
+
+static std::string formatHeaderPath(StringRef Header, IncludeFormat Format) {
+  switch (Format) {
+  case transformer::IncludeFormat::Quoted:
+    return Header.str();
+  case transformer::IncludeFormat::Angled:
+    return ("<" + Header + ">").str();
+  }
+  llvm_unreachable("Unknown transformer::IncludeFormat enum");
+}
+
+ASTEdit transformer::addInclude(RangeSelector Target, StringRef Header,
+                                IncludeFormat Format) {
+  ASTEdit E;
+  E.Kind = EditKind::AddInclude;
+  E.TargetRange = Target;
+  E.Replacement = makeText(formatHeaderPath(Header, Format));
+  return E;
 }
 
 RewriteRule transformer::makeRule(DynTypedMatcher M, EditGenerator Edits,
                                   TextGenerator Explanation) {
-  return RewriteRule{{RewriteRule::Case{
-      std::move(M), std::move(Edits), std::move(Explanation), {}}}};
+  return RewriteRule{{RewriteRule::Case{std::move(M), std::move(Edits),
+                                        std::move(Explanation)}}};
 }
 
 namespace {
@@ -226,10 +252,43 @@ rewriteDescendantsImpl(const T &Node, RewriteRule Rule,
   return std::move(Callback.Edits);
 }
 
+llvm::Expected<SmallVector<clang::transformer::Edit, 1>>
+transformer::detail::rewriteDescendants(const Decl &Node, RewriteRule Rule,
+                                        const MatchResult &Result) {
+  return rewriteDescendantsImpl(Node, std::move(Rule), Result);
+}
+
+llvm::Expected<SmallVector<clang::transformer::Edit, 1>>
+transformer::detail::rewriteDescendants(const Stmt &Node, RewriteRule Rule,
+                                        const MatchResult &Result) {
+  return rewriteDescendantsImpl(Node, std::move(Rule), Result);
+}
+
+llvm::Expected<SmallVector<clang::transformer::Edit, 1>>
+transformer::detail::rewriteDescendants(const TypeLoc &Node, RewriteRule Rule,
+                                        const MatchResult &Result) {
+  return rewriteDescendantsImpl(Node, std::move(Rule), Result);
+}
+
+llvm::Expected<SmallVector<clang::transformer::Edit, 1>>
+transformer::detail::rewriteDescendants(const DynTypedNode &DNode,
+                                        RewriteRule Rule,
+                                        const MatchResult &Result) {
+  if (const auto *Node = DNode.get<Decl>())
+    return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
+  if (const auto *Node = DNode.get<Stmt>())
+    return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
+  if (const auto *Node = DNode.get<TypeLoc>())
+    return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
+
+  return llvm::make_error<llvm::StringError>(
+      llvm::errc::invalid_argument,
+      "type unsupported for recursive rewriting, Kind=" +
+          DNode.getNodeKind().asStringRef());
+}
+
 EditGenerator transformer::rewriteDescendants(std::string NodeId,
                                               RewriteRule Rule) {
-  // FIXME: warn or return error if `Rule` contains any `AddedIncludes`, since
-  // these will be dropped.
   return [NodeId = std::move(NodeId),
           Rule = std::move(Rule)](const MatchResult &Result)
              -> llvm::Expected<SmallVector<clang::transformer::Edit, 1>> {
@@ -239,24 +298,14 @@ EditGenerator transformer::rewriteDescendants(std::string NodeId,
     if (It == NodesMap.end())
       return llvm::make_error<llvm::StringError>(llvm::errc::invalid_argument,
                                                  "ID not bound: " + NodeId);
-    if (auto *Node = It->second.get<Decl>())
-      return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
-    if (auto *Node = It->second.get<Stmt>())
-      return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
-    if (auto *Node = It->second.get<TypeLoc>())
-      return rewriteDescendantsImpl(*Node, std::move(Rule), Result);
-
-    return llvm::make_error<llvm::StringError>(
-        llvm::errc::invalid_argument,
-        "type unsupported for recursive rewriting, ID=\"" + NodeId +
-            "\", Kind=" + It->second.getNodeKind().asStringRef());
+    return detail::rewriteDescendants(It->second, std::move(Rule), Result);
   };
 }
 
 void transformer::addInclude(RewriteRule &Rule, StringRef Header,
                              IncludeFormat Format) {
   for (auto &Case : Rule.Cases)
-    Case.AddedIncludes.emplace_back(Header.str(), Format);
+    Case.Edits = flatten(std::move(Case.Edits), addInclude(Header, Format));
 }
 
 #ifndef NDEBUG
@@ -319,18 +368,16 @@ transformer::detail::buildMatchers(const RewriteRule &Rule) {
   // Each anyOf explicitly controls the traversal kind. The anyOf itself is set
   // to `TK_AsIs` to ensure no nodes are skipped, thereby deferring to the kind
   // of the branches. Then, each branch is either left as is, if the kind is
-  // already set, or explicitly set to `TK_IgnoreUnlessSpelledInSource`. We
-  // choose this setting, because we think it is the one most friendly to
-  // beginners, who are (largely) the target audience of Transformer.
+  // already set, or explicitly set to `TK_AsIs`. We choose this setting because
+  // it is the default interpretation of matchers.
   std::vector<DynTypedMatcher> Matchers;
   for (const auto &Bucket : Buckets) {
     DynTypedMatcher M = DynTypedMatcher::constructVariadic(
         DynTypedMatcher::VO_AnyOf, Bucket.first,
-        taggedMatchers("Tag", Bucket.second, TK_IgnoreUnlessSpelledInSource));
+        taggedMatchers("Tag", Bucket.second, TK_AsIs));
     M.setAllowBind(true);
     // `tryBind` is guaranteed to succeed, because `AllowBind` was set to true.
-    Matchers.push_back(
-        M.tryBind(RewriteRule::RootID)->withTraversalKind(TK_AsIs));
+    Matchers.push_back(M.tryBind(RootID)->withTraversalKind(TK_AsIs));
   }
   return Matchers;
 }
@@ -343,7 +390,7 @@ DynTypedMatcher transformer::detail::buildMatcher(const RewriteRule &Rule) {
 
 SourceLocation transformer::detail::getRuleMatchLoc(const MatchResult &Result) {
   auto &NodesMap = Result.Nodes.getMap();
-  auto Root = NodesMap.find(RewriteRule::RootID);
+  auto Root = NodesMap.find(RootID);
   assert(Root != NodesMap.end() && "Transformation failed: missing root node.");
   llvm::Optional<CharSourceRange> RootRange = tooling::getRangeForEdit(
       CharSourceRange::getTokenRange(Root->second.getSourceRange()),
@@ -373,7 +420,7 @@ transformer::detail::findSelectedCase(const MatchResult &Result,
   llvm_unreachable("No tag found for this rule.");
 }
 
-constexpr llvm::StringLiteral RewriteRule::RootID;
+const llvm::StringRef RewriteRule::RootID = ::clang::transformer::RootID;
 
 TextGenerator tooling::text(std::string M) {
   return std::make_shared<SimpleTextGenerator>(std::move(M));

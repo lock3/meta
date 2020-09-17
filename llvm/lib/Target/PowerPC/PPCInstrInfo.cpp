@@ -2222,6 +2222,112 @@ bool PPCInstrInfo::optimizeCompareInstr(MachineInstr &CmpInstr, Register SrcReg,
   return true;
 }
 
+bool PPCInstrInfo::getMemOperandsWithOffsetWidth(
+    const MachineInstr &LdSt, SmallVectorImpl<const MachineOperand *> &BaseOps,
+    int64_t &Offset, bool &OffsetIsScalable, unsigned &Width,
+    const TargetRegisterInfo *TRI) const {
+  const MachineOperand *BaseOp;
+  OffsetIsScalable = false;
+  if (!getMemOperandWithOffsetWidth(LdSt, BaseOp, Offset, Width, TRI))
+    return false;
+  BaseOps.push_back(BaseOp);
+  return true;
+}
+
+static bool isLdStSafeToCluster(const MachineInstr &LdSt,
+                                const TargetRegisterInfo *TRI) {
+  // If this is a volatile load/store, don't mess with it.
+  if (LdSt.hasOrderedMemoryRef() || LdSt.getNumExplicitOperands() != 3)
+    return false;
+
+  if (LdSt.getOperand(2).isFI())
+    return true;
+
+  assert(LdSt.getOperand(2).isReg() && "Expected a reg operand.");
+  // Can't cluster if the instruction modifies the base register
+  // or it is update form. e.g. ld r2,3(r2)
+  if (LdSt.modifiesRegister(LdSt.getOperand(2).getReg(), TRI))
+    return false;
+
+  return true;
+}
+
+// Only cluster instruction pair that have the same opcode, and they are
+// clusterable according to PowerPC specification.
+static bool isClusterableLdStOpcPair(unsigned FirstOpc, unsigned SecondOpc,
+                                     const PPCSubtarget &Subtarget) {
+  switch (FirstOpc) {
+  default:
+    return false;
+  case PPC::STD:
+  case PPC::STFD:
+  case PPC::STXSD:
+  case PPC::DFSTOREf64:
+    return FirstOpc == SecondOpc;
+  // PowerPC backend has opcode STW/STW8 for instruction "stw" to deal with
+  // 32bit and 64bit instruction selection. They are clusterable pair though
+  // they are different opcode.
+  case PPC::STW:
+  case PPC::STW8:
+    return SecondOpc == PPC::STW || SecondOpc == PPC::STW8;
+  }
+}
+
+bool PPCInstrInfo::shouldClusterMemOps(
+    ArrayRef<const MachineOperand *> BaseOps1,
+    ArrayRef<const MachineOperand *> BaseOps2, unsigned NumLoads,
+    unsigned NumBytes) const {
+
+  assert(BaseOps1.size() == 1 && BaseOps2.size() == 1);
+  const MachineOperand &BaseOp1 = *BaseOps1.front();
+  const MachineOperand &BaseOp2 = *BaseOps2.front();
+  assert((BaseOp1.isReg() || BaseOp1.isFI()) &&
+         "Only base registers and frame indices are supported.");
+
+  // The NumLoads means the number of loads that has been clustered.
+  // Don't cluster memory op if there are already two ops clustered at least.
+  if (NumLoads > 2)
+    return false;
+
+  // Cluster the load/store only when they have the same base
+  // register or FI.
+  if ((BaseOp1.isReg() != BaseOp2.isReg()) ||
+      (BaseOp1.isReg() && BaseOp1.getReg() != BaseOp2.getReg()) ||
+      (BaseOp1.isFI() && BaseOp1.getIndex() != BaseOp2.getIndex()))
+    return false;
+
+  // Check if the load/store are clusterable according to the PowerPC
+  // specification.
+  const MachineInstr &FirstLdSt = *BaseOp1.getParent();
+  const MachineInstr &SecondLdSt = *BaseOp2.getParent();
+  unsigned FirstOpc = FirstLdSt.getOpcode();
+  unsigned SecondOpc = SecondLdSt.getOpcode();
+  const TargetRegisterInfo *TRI = &getRegisterInfo();
+  // Cluster the load/store only when they have the same opcode, and they are
+  // clusterable opcode according to PowerPC specification.
+  if (!isClusterableLdStOpcPair(FirstOpc, SecondOpc, Subtarget))
+    return false;
+
+  // Can't cluster load/store that have ordered or volatile memory reference.
+  if (!isLdStSafeToCluster(FirstLdSt, TRI) ||
+      !isLdStSafeToCluster(SecondLdSt, TRI))
+    return false;
+
+  int64_t Offset1 = 0, Offset2 = 0;
+  unsigned Width1 = 0, Width2 = 0;
+  const MachineOperand *Base1 = nullptr, *Base2 = nullptr;
+  if (!getMemOperandWithOffsetWidth(FirstLdSt, Base1, Offset1, Width1, TRI) ||
+      !getMemOperandWithOffsetWidth(SecondLdSt, Base2, Offset2, Width2, TRI) ||
+      Width1 != Width2)
+    return false;
+
+  assert(Base1 == &BaseOp1 && Base2 == &BaseOp2 &&
+         "getMemOperandWithOffsetWidth return incorrect base op");
+  // The caller should already have ordered FirstMemOp/SecondMemOp by offset.
+  assert(Offset1 <= Offset2 && "Caller should have ordered offsets.");
+  return Offset1 + Width1 == Offset2;
+}
+
 /// GetInstSize - Return the number of bytes of code the specified
 /// instruction may be.  This returns the maximum number of bytes.
 ///
@@ -2272,7 +2378,11 @@ PPCInstrInfo::getSerializableBitmaskMachineOperandTargetFlags() const {
       {MO_PIC_FLAG, "ppc-pic"},
       {MO_PCREL_FLAG, "ppc-pcrel"},
       {MO_GOT_FLAG, "ppc-got"},
-      {MO_PCREL_OPT_FLAG, "ppc-opt-pcrel"}};
+      {MO_PCREL_OPT_FLAG, "ppc-opt-pcrel"},
+      {MO_TLSGD_FLAG, "ppc-tlsgd"},
+      {MO_TPREL_FLAG, "ppc-tprel"},
+      {MO_GOT_TLSGD_PCREL_FLAG, "ppc-got-tlsgd-pcrel"},
+      {MO_GOT_TPREL_PCREL_FLAG, "ppc-got-tprel-pcrel"}};
   return makeArrayRef(TargetFlags);
 }
 
@@ -2655,21 +2765,34 @@ const unsigned *PPCInstrInfo::getLoadOpcodesForSpillArray() const {
   return LoadSpillOpcodesArray[getSpillTarget()];
 }
 
-void PPCInstrInfo::fixupIsDeadOrKill(MachineInstr &StartMI, MachineInstr &EndMI,
+void PPCInstrInfo::fixupIsDeadOrKill(MachineInstr *StartMI, MachineInstr *EndMI,
                                      unsigned RegNo) const {
   // Conservatively clear kill flag for the register if the instructions are in
   // different basic blocks and in SSA form, because the kill flag may no longer
   // be right. There is no need to bother with dead flags since defs with no
   // uses will be handled by DCE.
-  MachineRegisterInfo &MRI = StartMI.getParent()->getParent()->getRegInfo();
-  if (MRI.isSSA() && (StartMI.getParent() != EndMI.getParent())) {
+  MachineRegisterInfo &MRI = StartMI->getParent()->getParent()->getRegInfo();
+  if (MRI.isSSA() && (StartMI->getParent() != EndMI->getParent())) {
     MRI.clearKillFlags(RegNo);
     return;
   }
 
   // Instructions between [StartMI, EndMI] should be in same basic block.
-  assert((StartMI.getParent() == EndMI.getParent()) &&
+  assert((StartMI->getParent() == EndMI->getParent()) &&
          "Instructions are not in same basic block");
+
+  // If before RA, StartMI may be def through COPY, we need to adjust it to the
+  // real def. See function getForwardingDefMI.
+  if (MRI.isSSA()) {
+    bool Reads, Writes;
+    std::tie(Reads, Writes) = StartMI->readsWritesVirtualRegister(RegNo);
+    if (!Reads && !Writes) {
+      assert(Register::isVirtualRegister(RegNo) &&
+             "Must be a virtual register");
+      // Get real def and ignore copies.
+      StartMI = MRI.getVRegDef(RegNo);
+    }
+  }
 
   bool IsKillSet = false;
 
@@ -2683,21 +2806,21 @@ void PPCInstrInfo::fixupIsDeadOrKill(MachineInstr &StartMI, MachineInstr &EndMI,
   // Set killed flag for EndMI.
   // No need to do anything if EndMI defines RegNo.
   int UseIndex =
-      EndMI.findRegisterUseOperandIdx(RegNo, false, &getRegisterInfo());
+      EndMI->findRegisterUseOperandIdx(RegNo, false, &getRegisterInfo());
   if (UseIndex != -1) {
-    EndMI.getOperand(UseIndex).setIsKill(true);
+    EndMI->getOperand(UseIndex).setIsKill(true);
     IsKillSet = true;
     // Clear killed flag for other EndMI operands related to RegNo. In some
     // upexpected cases, killed may be set multiple times for same register
     // operand in same MI.
-    for (int i = 0, e = EndMI.getNumOperands(); i != e; ++i)
+    for (int i = 0, e = EndMI->getNumOperands(); i != e; ++i)
       if (i != UseIndex)
-        clearOperandKillInfo(EndMI, i);
+        clearOperandKillInfo(*EndMI, i);
   }
 
   // Walking the inst in reverse order (EndMI -> StartMI].
-  MachineBasicBlock::reverse_iterator It = EndMI;
-  MachineBasicBlock::reverse_iterator E = EndMI.getParent()->rend();
+  MachineBasicBlock::reverse_iterator It = *EndMI;
+  MachineBasicBlock::reverse_iterator E = EndMI->getParent()->rend();
   // EndMI has been handled above, skip it here.
   It++;
   MachineOperand *MO = nullptr;
@@ -2723,13 +2846,13 @@ void PPCInstrInfo::fixupIsDeadOrKill(MachineInstr &StartMI, MachineInstr &EndMI,
       } else if ((MO = It->findRegisterDefOperand(RegNo, false, true,
                                                   &getRegisterInfo()))) {
         // No use found, set dead for its def.
-        assert(&*It == &StartMI && "No new def between StartMI and EndMI.");
+        assert(&*It == StartMI && "No new def between StartMI and EndMI.");
         MO->setIsDead(true);
         break;
       }
     }
 
-    if ((&*It) == &StartMI)
+    if ((&*It) == StartMI)
       break;
   }
   // Ensure RegMo liveness is killed after EndMI.
@@ -3743,6 +3866,20 @@ bool PPCInstrInfo::simplifyToLI(MachineInstr &MI, MachineInstr &DefMI,
     }
     return false;
   }
+  case PPC::SUBFIC:
+  case PPC::SUBFIC8: {
+    // Only transform this if the CARRY implicit operand is dead.
+    if (MI.getNumOperands() > 3 && !MI.getOperand(3).isDead())
+      return false;
+    int64_t Minuend = MI.getOperand(2).getImm();
+    if (isInt<16>(Minuend - SExtImm)) {
+      ReplaceWithLI = true;
+      Is64BitLI = Opc == PPC::SUBFIC8;
+      NewImm = Minuend - SExtImm;
+      break;
+    }
+    return false;
+  }
   case PPC::RLDICL:
   case PPC::RLDICL_rec:
   case PPC::RLDICL_32:
@@ -3860,7 +3997,7 @@ bool PPCInstrInfo::simplifyToLI(MachineInstr &MI, MachineInstr &DefMI,
     // ForwardingOperandReg = LI imm1
     // y = op2 imm2, ForwardingOperandReg(killed)
     if (IsForwardingOperandKilled)
-      fixupIsDeadOrKill(DefMI, MI, ForwardingOperandReg);
+      fixupIsDeadOrKill(&DefMI, &MI, ForwardingOperandReg);
 
     LLVM_DEBUG(dbgs() << "With:\n");
     LLVM_DEBUG(MI.dump());
@@ -3952,9 +4089,9 @@ bool PPCInstrInfo::transformToNewImmFormFedByAdd(
 
     // Update kill flag
     if (RegMO->isKill() || IsKilledFor(RegMO->getReg()))
-      fixupIsDeadOrKill(DefMI, MI, RegMO->getReg());
+      fixupIsDeadOrKill(&DefMI, &MI, RegMO->getReg());
     if (ForwardKilledOperandReg != ~0U)
-      fixupIsDeadOrKill(DefMI, MI, ForwardKilledOperandReg);
+      fixupIsDeadOrKill(&DefMI, &MI, ForwardKilledOperandReg);
   }
 
   LLVM_DEBUG(dbgs() << "With:\n");
@@ -4065,12 +4202,12 @@ bool PPCInstrInfo::transformToImmFormFedByAdd(
   // x = ADD reg(killed), imm
   // y = XOP 0, x
   if (IsFwdFeederRegKilled || RegMO->isKill())
-    fixupIsDeadOrKill(DefMI, MI, RegMO->getReg());
+    fixupIsDeadOrKill(&DefMI, &MI, RegMO->getReg());
   // Pattern 3:
   // ForwardKilledOperandReg = ADD reg, imm
   // y = XOP 0, ForwardKilledOperandReg(killed)
   if (ForwardKilledOperandReg != ~0U)
-    fixupIsDeadOrKill(DefMI, MI, ForwardKilledOperandReg);
+    fixupIsDeadOrKill(&DefMI, &MI, ForwardKilledOperandReg);
 
   LLVM_DEBUG(dbgs() << "With:\n");
   LLVM_DEBUG(MI.dump());
@@ -4226,7 +4363,7 @@ bool PPCInstrInfo::transformToImmFormFedByLI(MachineInstr &MI,
   // ForwardKilledOperandReg = LI imm
   // y = XOP reg, ForwardKilledOperandReg(killed)
   if (ForwardKilledOperandReg != ~0U)
-    fixupIsDeadOrKill(DefMI, MI, ForwardKilledOperandReg);
+    fixupIsDeadOrKill(&DefMI, &MI, ForwardKilledOperandReg);
   return true;
 }
 
@@ -4629,11 +4766,12 @@ MachineInstr *PPCInstrInfo::findLoopInstr(
 bool PPCInstrInfo::getMemOperandWithOffsetWidth(
     const MachineInstr &LdSt, const MachineOperand *&BaseReg, int64_t &Offset,
     unsigned &Width, const TargetRegisterInfo *TRI) const {
-  if (!LdSt.mayLoadOrStore())
+  if (!LdSt.mayLoadOrStore() || LdSt.getNumExplicitOperands() != 3)
     return false;
 
   // Handle only loads/stores with base register followed by immediate offset.
-  if (LdSt.getNumExplicitOperands() != 3)
+  if (!LdSt.getOperand(1).isImm() ||
+      (!LdSt.getOperand(2).isReg() && !LdSt.getOperand(2).isFI()))
     return false;
   if (!LdSt.getOperand(1).isImm() ||
       (!LdSt.getOperand(2).isReg() && !LdSt.getOperand(2).isFI()))

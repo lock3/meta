@@ -258,6 +258,7 @@ struct AssignStmt;
 struct AssignedGotoStmt;
 struct PauseStmt;
 struct OpenACCConstruct;
+struct AccEndCombinedDirective;
 struct OpenACCDeclarativeConstruct;
 struct OpenMPConstruct;
 struct OpenMPDeclarativeConstruct;
@@ -403,7 +404,8 @@ struct ImplicitPartStmt {
       Statement<common::Indirection<ParameterStmt>>,
       Statement<common::Indirection<OldParameterStmt>>,
       Statement<common::Indirection<FormatStmt>>,
-      Statement<common::Indirection<EntryStmt>>>
+      Statement<common::Indirection<EntryStmt>>,
+      common::Indirection<CompilerDirective>>
       u;
 };
 
@@ -430,6 +432,7 @@ struct SpecificationPart {
   TUPLE_CLASS_BOILERPLATE(SpecificationPart);
   std::tuple<std::list<OpenACCDeclarativeConstruct>,
       std::list<OpenMPDeclarativeConstruct>,
+      std::list<common::Indirection<CompilerDirective>>,
       std::list<Statement<common::Indirection<UseStmt>>>,
       std::list<Statement<common::Indirection<ImportStmt>>>, ImplicitPart,
       std::list<DeclarationConstruct>>
@@ -515,6 +518,7 @@ struct ExecutableConstruct {
       common::Indirection<WhereConstruct>, common::Indirection<ForallConstruct>,
       common::Indirection<CompilerDirective>,
       common::Indirection<OpenACCConstruct>,
+      common::Indirection<AccEndCombinedDirective>,
       common::Indirection<OpenMPConstruct>,
       common::Indirection<OmpEndLoopDirective>>
       u;
@@ -543,7 +547,8 @@ struct ProgramUnit {
   std::variant<common::Indirection<MainProgram>,
       common::Indirection<FunctionSubprogram>,
       common::Indirection<SubroutineSubprogram>, common::Indirection<Module>,
-      common::Indirection<Submodule>, common::Indirection<BlockData>>
+      common::Indirection<Submodule>, common::Indirection<BlockData>,
+      common::Indirection<CompilerDirective>>
       u;
 };
 
@@ -2544,7 +2549,8 @@ using FileNameExpr = ScalarDefaultCharExpr;
 //         POSITION = scalar-default-char-expr | RECL = scalar-int-expr |
 //         ROUND = scalar-default-char-expr | SIGN = scalar-default-char-expr |
 //         STATUS = scalar-default-char-expr
-//         @ | CONVERT = scalar-default-char-variable
+//         @ | CARRIAGECONTROL = scalar-default-char-variable
+//           | CONVERT = scalar-default-char-variable
 //           | DISPOSE = scalar-default-char-variable
 WRAPPER_CLASS(StatusExpr, ScalarDefaultCharExpr);
 WRAPPER_CLASS(ErrLabel, Label);
@@ -2554,7 +2560,7 @@ struct ConnectSpec {
   struct CharExpr {
     ENUM_CLASS(Kind, Access, Action, Asynchronous, Blank, Decimal, Delim,
         Encoding, Form, Pad, Position, Round, Sign,
-        /* extensions: */ Convert, Dispose)
+        /* extensions: */ Carriagecontrol, Convert, Dispose)
     TUPLE_CLASS_BOILERPLATE(CharExpr);
     std::tuple<Kind, ScalarDefaultCharExpr> t;
   };
@@ -2762,7 +2768,8 @@ WRAPPER_CLASS(FlushStmt, std::list<PositionOrFlushSpec>);
 //         STATUS = scalar-default-char-variable |
 //         UNFORMATTED = scalar-default-char-variable |
 //         WRITE = scalar-default-char-variable
-//         @ | CONVERT = scalar-default-char-variable
+//         @ | CARRIAGECONTROL = scalar-default-char-variable
+//           | CONVERT = scalar-default-char-variable
 //           | DISPOSE = scalar-default-char-variable
 struct InquireSpec {
   UNION_CLASS_BOILERPLATE(InquireSpec);
@@ -2770,7 +2777,7 @@ struct InquireSpec {
     ENUM_CLASS(Kind, Access, Action, Asynchronous, Blank, Decimal, Delim,
         Direct, Encoding, Form, Formatted, Iomsg, Name, Pad, Position, Read,
         Readwrite, Round, Sequential, Sign, Stream, Status, Unformatted, Write,
-        /* extensions: */ Convert, Dispose)
+        /* extensions: */ Carriagecontrol, Convert, Dispose)
     TUPLE_CLASS_BOILERPLATE(CharVar);
     std::tuple<Kind, ScalarDefaultCharVariable> t;
   };
@@ -3456,50 +3463,23 @@ struct OmpDependClause {
 // 2.7.1 nowait-clause -> NOWAIT
 EMPTY_CLASS(OmpNowait);
 
+// dist_schedule clause does not fit in generic clause class for tablegen.
+// Therefore it is declared separatly here.
+WRAPPER_CLASS(OmpDistScheduleClause, std::optional<ScalarIntExpr>);
+
 // OpenMP Clauses
 struct OmpClause {
   UNION_CLASS_BOILERPLATE(OmpClause);
-  EMPTY_CLASS(Inbranch);
-  EMPTY_CLASS(Mergeable);
-  EMPTY_CLASS(Nogroup);
-  EMPTY_CLASS(Notinbranch);
-  EMPTY_CLASS(Simd);
-  EMPTY_CLASS(Threads);
-  EMPTY_CLASS(Untied);
-  WRAPPER_CLASS(Collapse, ScalarIntConstantExpr);
-  WRAPPER_CLASS(Copyin, OmpObjectList);
-  WRAPPER_CLASS(Copyprivate, OmpObjectList);
-  WRAPPER_CLASS(Device, ScalarIntExpr);
-  WRAPPER_CLASS(DistSchedule, std::optional<ScalarIntExpr>);
-  WRAPPER_CLASS(Final, ScalarLogicalExpr);
-  WRAPPER_CLASS(Firstprivate, OmpObjectList);
-  WRAPPER_CLASS(From, OmpObjectList);
-  WRAPPER_CLASS(Grainsize, ScalarIntExpr);
-  WRAPPER_CLASS(IsDevicePtr, std::list<Name>);
-  WRAPPER_CLASS(Lastprivate, OmpObjectList);
-  WRAPPER_CLASS(Link, OmpObjectList);
-  WRAPPER_CLASS(NumTasks, ScalarIntExpr);
-  WRAPPER_CLASS(NumTeams, ScalarIntExpr);
-  WRAPPER_CLASS(NumThreads, ScalarIntExpr);
-  WRAPPER_CLASS(Ordered, std::optional<ScalarIntConstantExpr>);
-  WRAPPER_CLASS(Priority, ScalarIntExpr);
-  WRAPPER_CLASS(Private, OmpObjectList);
-  WRAPPER_CLASS(Safelen, ScalarIntConstantExpr);
-  WRAPPER_CLASS(Shared, OmpObjectList);
-  WRAPPER_CLASS(Simdlen, ScalarIntConstantExpr);
-  WRAPPER_CLASS(ThreadLimit, ScalarIntExpr);
-  WRAPPER_CLASS(To, OmpObjectList);
-  WRAPPER_CLASS(Uniform, std::list<Name>);
-  WRAPPER_CLASS(UseDevicePtr, std::list<Name>);
+
+#define GEN_FLANG_CLAUSE_PARSER_CLASSES
+#include "llvm/Frontend/OpenMP/OMP.cpp.inc"
+
   CharBlock source;
-  std::variant<Inbranch, Mergeable, Nogroup, Notinbranch, OmpNowait, Untied,
-      Threads, Simd, Collapse, Copyin, Copyprivate, Device, DistSchedule, Final,
-      Firstprivate, From, Grainsize, Lastprivate, NumTasks, NumTeams,
-      NumThreads, Ordered, Priority, Private, Safelen, Shared, Simdlen,
-      ThreadLimit, To, Link, Uniform, UseDevicePtr, IsDevicePtr,
-      OmpAlignedClause, OmpAllocateClause, OmpDefaultClause,
-      OmpDefaultmapClause, OmpDependClause, OmpIfClause, OmpLinearClause,
-      OmpMapClause, OmpProcBindClause, OmpReductionClause, OmpScheduleClause>
+
+  std::variant<
+#define GEN_FLANG_CLAUSE_PARSER_CLASSES_LIST
+#include "llvm/Frontend/OpenMP/OMP.cpp.inc"
+      >
       u;
 };
 
@@ -3611,12 +3591,14 @@ struct OpenMPDeclarativeConstruct {
       u;
 };
 
+// HINT(hint-expression)
+WRAPPER_CLASS(OmpHintExpr, ConstantExpr);
+
 // 2.13.2 CRITICAL [Name] <block> END CRITICAL [Name]
 struct OmpCriticalDirective {
   TUPLE_CLASS_BOILERPLATE(OmpCriticalDirective);
-  WRAPPER_CLASS(Hint, ConstantExpr);
   CharBlock source;
-  std::tuple<Verbatim, std::optional<Name>, std::optional<Hint>> t;
+  std::tuple<Verbatim, std::optional<Name>, std::optional<OmpHintExpr>> t;
 };
 struct OmpEndCriticalDirective {
   TUPLE_CLASS_BOILERPLATE(OmpEndCriticalDirective);
@@ -3628,44 +3610,56 @@ struct OpenMPCriticalConstruct {
   std::tuple<OmpCriticalDirective, Block, OmpEndCriticalDirective> t;
 };
 
-// 2.13.6 atomic -> ATOMIC [seq_cst[,]] atomic-clause [[,]seq_cst] |
-//                  ATOMIC [seq_cst]
+// 2.17.7 atomic -> ATOMIC [clause[,]] atomic-clause [[,]clause] |
+//                  ATOMIC [clause]
+//        clause -> memory-order-clause | HINT(hint-expression)
+//        memory-order-clause -> SEQ_CST | ACQ_REL | RELEASE | ACQUIRE | RELAXED
 //        atomic-clause -> READ | WRITE | UPDATE | CAPTURE
 
 // END ATOMIC
 EMPTY_CLASS(OmpEndAtomic);
 
-// ATOMIC Memory related clause
-struct OmpMemoryClause {
-  ENUM_CLASS(MemoryOrder, SeqCst)
-  WRAPPER_CLASS_BOILERPLATE(OmpMemoryClause, MemoryOrder);
+// Memory order clause
+struct OmpMemoryOrderClause {
+  WRAPPER_CLASS_BOILERPLATE(OmpMemoryOrderClause, llvm::omp::Clause);
   CharBlock source;
 };
 
-WRAPPER_CLASS(OmpMemoryClauseList, std::list<OmpMemoryClause>);
-WRAPPER_CLASS(OmpMemoryClausePostList, std::list<OmpMemoryClause>);
+// ATOMIC Memory order clause or hint expression
+struct OmpAtomicMemoryOrderClause {
+  UNION_CLASS_BOILERPLATE(OmpAtomicMemoryOrderClause);
+  std::variant<OmpMemoryOrderClause, OmpHintExpr> u;
+};
+
+WRAPPER_CLASS(
+    OmpAtomicMemoryOrderClauseList, std::list<OmpAtomicMemoryOrderClause>);
+WRAPPER_CLASS(
+    OmpAtomicMemoryOrderClausePostList, std::list<OmpAtomicMemoryOrderClause>);
 
 // ATOMIC READ
 struct OmpAtomicRead {
   TUPLE_CLASS_BOILERPLATE(OmpAtomicRead);
-  std::tuple<OmpMemoryClauseList, Verbatim, OmpMemoryClausePostList,
-      Statement<AssignmentStmt>, std::optional<OmpEndAtomic>>
+  std::tuple<OmpAtomicMemoryOrderClauseList, Verbatim,
+      OmpAtomicMemoryOrderClausePostList, Statement<AssignmentStmt>,
+      std::optional<OmpEndAtomic>>
       t;
 };
 
 // ATOMIC WRITE
 struct OmpAtomicWrite {
   TUPLE_CLASS_BOILERPLATE(OmpAtomicWrite);
-  std::tuple<OmpMemoryClauseList, Verbatim, OmpMemoryClausePostList,
-      Statement<AssignmentStmt>, std::optional<OmpEndAtomic>>
+  std::tuple<OmpAtomicMemoryOrderClauseList, Verbatim,
+      OmpAtomicMemoryOrderClausePostList, Statement<AssignmentStmt>,
+      std::optional<OmpEndAtomic>>
       t;
 };
 
 // ATOMIC UPDATE
 struct OmpAtomicUpdate {
   TUPLE_CLASS_BOILERPLATE(OmpAtomicUpdate);
-  std::tuple<OmpMemoryClauseList, Verbatim, OmpMemoryClausePostList,
-      Statement<AssignmentStmt>, std::optional<OmpEndAtomic>>
+  std::tuple<OmpAtomicMemoryOrderClauseList, Verbatim,
+      OmpAtomicMemoryOrderClausePostList, Statement<AssignmentStmt>,
+      std::optional<OmpEndAtomic>>
       t;
 };
 
@@ -3674,16 +3668,16 @@ struct OmpAtomicCapture {
   TUPLE_CLASS_BOILERPLATE(OmpAtomicCapture);
   WRAPPER_CLASS(Stmt1, Statement<AssignmentStmt>);
   WRAPPER_CLASS(Stmt2, Statement<AssignmentStmt>);
-  std::tuple<OmpMemoryClauseList, Verbatim, OmpMemoryClausePostList, Stmt1,
-      Stmt2, OmpEndAtomic>
+  std::tuple<OmpAtomicMemoryOrderClauseList, Verbatim,
+      OmpAtomicMemoryOrderClausePostList, Stmt1, Stmt2, OmpEndAtomic>
       t;
 };
 
 // ATOMIC
 struct OmpAtomic {
   TUPLE_CLASS_BOILERPLATE(OmpAtomic);
-  std::tuple<Verbatim, OmpMemoryClauseList, Statement<AssignmentStmt>,
-      std::optional<OmpEndAtomic>>
+  std::tuple<Verbatim, OmpAtomicMemoryOrderClauseList,
+      Statement<AssignmentStmt>, std::optional<OmpEndAtomic>>
       t;
 };
 
@@ -3727,8 +3721,7 @@ struct OpenMPCancelConstruct {
 //                        release
 //                        acquire
 struct OmpFlushMemoryClause {
-  ENUM_CLASS(FlushMemoryOrder, AcqRel, Release, Acquire)
-  WRAPPER_CLASS_BOILERPLATE(OmpFlushMemoryClause, FlushMemoryOrder);
+  WRAPPER_CLASS_BOILERPLATE(OmpFlushMemoryClause, llvm::omp::Clause);
   CharBlock source;
 };
 
@@ -3863,8 +3856,10 @@ struct AccObjectListWithModifier {
 
 // 2.5.13: + | * | max | min | iand | ior | ieor | .and. | .or. | .eqv. | .neqv.
 struct AccReductionOperator {
-  UNION_CLASS_BOILERPLATE(AccReductionOperator);
-  std::variant<DefinedOperator, ProcedureDesignator> u;
+  ENUM_CLASS(
+      Operator, Plus, Multiply, Max, Min, Iand, Ior, Ieor, And, Or, Eqv, Neqv)
+  WRAPPER_CLASS_BOILERPLATE(AccReductionOperator, Operator);
+  CharBlock source;
 };
 
 struct AccObjectListWithReduction {
@@ -3875,6 +3870,16 @@ struct AccObjectListWithReduction {
 struct AccWaitArgument {
   TUPLE_CLASS_BOILERPLATE(AccWaitArgument);
   std::tuple<std::optional<ScalarIntExpr>, std::list<ScalarIntExpr>> t;
+};
+
+struct AccTileExpr {
+  TUPLE_CLASS_BOILERPLATE(AccTileExpr);
+  CharBlock source;
+  std::tuple<std::optional<ScalarIntConstantExpr>> t; // if null then *
+};
+
+struct AccTileExprList {
+  WRAPPER_CLASS_BOILERPLATE(AccTileExprList, std::list<AccTileExpr>);
 };
 
 struct AccSizeExpr {
@@ -3895,60 +3900,15 @@ struct AccGangArgument {
 struct AccClause {
   UNION_CLASS_BOILERPLATE(AccClause);
 
-  EMPTY_CLASS(Auto);
-  WRAPPER_CLASS(Async, std::optional<ScalarIntExpr>);
-  WRAPPER_CLASS(Attach, AccObjectList);
-  WRAPPER_CLASS(Bind, Name);
-  EMPTY_CLASS(Capture);
-  WRAPPER_CLASS(Collapse, ScalarIntConstantExpr);
-  WRAPPER_CLASS(Copy, AccObjectList);
-  WRAPPER_CLASS(Copyin, AccObjectListWithModifier);
-  WRAPPER_CLASS(Copyout, AccObjectListWithModifier);
-  WRAPPER_CLASS(Create, AccObjectListWithModifier);
-  WRAPPER_CLASS(Default, AccDefaultClause);
-  WRAPPER_CLASS(DefaultAsync, ScalarIntExpr);
-  WRAPPER_CLASS(Delete, AccObjectList);
-  WRAPPER_CLASS(Detach, AccObjectList);
-  WRAPPER_CLASS(Device, AccObjectList);
-  WRAPPER_CLASS(DeviceNum, ScalarIntConstantExpr);
-  WRAPPER_CLASS(DevicePtr, AccObjectList);
-  WRAPPER_CLASS(DeviceResident, AccObjectList);
-  WRAPPER_CLASS(DeviceType, std::optional<std::list<Name>>);
-  EMPTY_CLASS(Finalize);
-  WRAPPER_CLASS(FirstPrivate, AccObjectList);
-  WRAPPER_CLASS(Gang, std::optional<AccGangArgument>);
-  WRAPPER_CLASS(Host, AccObjectList);
-  WRAPPER_CLASS(If, ScalarLogicalExpr);
-  EMPTY_CLASS(IfPresent);
-  EMPTY_CLASS(Independent);
-  WRAPPER_CLASS(Link, AccObjectList);
-  WRAPPER_CLASS(NoCreate, AccObjectList);
-  EMPTY_CLASS(NoHost);
-  WRAPPER_CLASS(NumGangs, ScalarIntExpr);
-  WRAPPER_CLASS(NumWorkers, ScalarIntExpr);
-  WRAPPER_CLASS(Present, AccObjectList);
-  WRAPPER_CLASS(Private, AccObjectList);
-  WRAPPER_CLASS(Tile, AccSizeExprList);
-  WRAPPER_CLASS(UseDevice, AccObjectList);
-  EMPTY_CLASS(Read);
-  WRAPPER_CLASS(Reduction, AccObjectListWithReduction);
-  WRAPPER_CLASS(Self, std::optional<ScalarLogicalExpr>);
-  EMPTY_CLASS(Seq);
-  WRAPPER_CLASS(Vector, std::optional<ScalarIntExpr>);
-  WRAPPER_CLASS(VectorLength, ScalarIntExpr);
-  WRAPPER_CLASS(Wait, std::optional<AccWaitArgument>);
-  WRAPPER_CLASS(Worker, std::optional<ScalarIntExpr>);
-  EMPTY_CLASS(Write);
-  EMPTY_CLASS(Unknown);
+#define GEN_FLANG_CLAUSE_PARSER_CLASSES
+#include "llvm/Frontend/OpenACC/ACC.cpp.inc"
 
   CharBlock source;
 
-  std::variant<Auto, Async, Attach, Bind, Capture, Collapse, Copy, Copyin,
-      Copyout, Create, Default, DefaultAsync, Delete, Detach, Device, DeviceNum,
-      DevicePtr, DeviceResident, DeviceType, Finalize, FirstPrivate, Gang, Host,
-      If, IfPresent, Independent, Link, NoCreate, NoHost, NumGangs, NumWorkers,
-      Present, Private, Tile, UseDevice, Read, Reduction, Self, Seq, Vector,
-      VectorLength, Wait, Worker, Write, Unknown>
+  std::variant<
+#define GEN_FLANG_CLAUSE_PARSER_CLASSES_LIST
+#include "llvm/Frontend/OpenACC/ACC.cpp.inc"
+      >
       u;
 };
 
@@ -4044,6 +4004,7 @@ struct OpenACCStandaloneDeclarativeConstruct {
 
 struct AccBeginCombinedDirective {
   TUPLE_CLASS_BOILERPLATE(AccBeginCombinedDirective);
+  CharBlock source;
   std::tuple<AccCombinedDirective, AccClauseList> t;
 };
 
@@ -4055,7 +4016,9 @@ struct AccEndCombinedDirective {
 struct OpenACCCombinedConstruct {
   TUPLE_CLASS_BOILERPLATE(OpenACCCombinedConstruct);
   CharBlock source;
-  std::tuple<AccBeginCombinedDirective, Block,
+  OpenACCCombinedConstruct(AccBeginCombinedDirective &&a)
+      : t({std::move(a), std::nullopt, std::nullopt}) {}
+  std::tuple<AccBeginCombinedDirective, std::optional<DoConstruct>,
       std::optional<AccEndCombinedDirective>>
       t;
 };

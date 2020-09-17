@@ -95,6 +95,7 @@ mkdir -p "${LLVM_BUILD_DIR}"
   xcrun cmake \
     -C "${MONOREPO_ROOT}/libcxx/cmake/caches/Apple.cmake" \
     -GNinja \
+    -DCMAKE_MAKE_PROGRAM="$(xcrun --find ninja)" \
     -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}" \
     -DLLVM_ENABLE_PROJECTS="libcxx;libcxxabi" \
     -DCMAKE_OSX_ARCHITECTURES="x86_64" \
@@ -104,7 +105,7 @@ echo "@@@@@@"
 
 
 echo "@@@ Building and installing libc++ and libc++abi @@@"
-ninja -C "${LLVM_BUILD_DIR}" install-cxx install-cxxabi
+xcrun ninja -C "${LLVM_BUILD_DIR}" install-cxx install-cxxabi
 echo "@@@@@@"
 
 
@@ -133,7 +134,7 @@ echo "@@@ Running tests for libc++ @@@"
                                  ${ENABLE_FILESYSTEM} \
                                  --param=cxx_headers="${LLVM_INSTALL_DIR}/include/c++/v1" \
                                  --param=std="${STD}" \
-                                 --param=platform="macosx${DEPLOYMENT_TARGET}" \
+                                 --param=target_triple="x86_64-apple-macosx${DEPLOYMENT_TARGET}" \
                                  --param=cxx_library_root="${LLVM_INSTALL_DIR}/lib" \
                                  --param=cxx_runtime_root="${LIBCXX_ROOT_ON_DEPLOYMENT_TARGET}" \
                                  --param=abi_library_path="${LIBCXXABI_ROOT_ON_DEPLOYMENT_TARGET}" \

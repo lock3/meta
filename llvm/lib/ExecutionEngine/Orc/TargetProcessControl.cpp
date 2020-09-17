@@ -21,25 +21,33 @@ TargetProcessControl::MemoryAccess::~MemoryAccess() {}
 
 TargetProcessControl::~TargetProcessControl() {}
 
-SelfTargetProcessControl::SelfTargetProcessControl(Triple TT,
-                                                   unsigned PageSize) {
+SelfTargetProcessControl::SelfTargetProcessControl(
+    Triple TT, unsigned PageSize,
+    std::unique_ptr<jitlink::JITLinkMemoryManager> MemMgr) {
+
+  OwnedMemMgr = std::move(MemMgr);
+  if (!OwnedMemMgr)
+    OwnedMemMgr = std::make_unique<jitlink::InProcessMemoryManager>();
+
   this->TT = std::move(TT);
   this->PageSize = PageSize;
-  this->MemMgr = IPMM.get();
+  this->MemMgr = OwnedMemMgr.get();
   this->MemAccess = this;
   if (this->TT.isOSBinFormatMachO())
     GlobalManglingPrefix = '_';
 }
 
 Expected<std::unique_ptr<SelfTargetProcessControl>>
-SelfTargetProcessControl::Create() {
+SelfTargetProcessControl::Create(
+    std::unique_ptr<jitlink::JITLinkMemoryManager> MemMgr) {
   auto PageSize = sys::Process::getPageSize();
   if (!PageSize)
     return PageSize.takeError();
 
   Triple TT(sys::getProcessTriple());
 
-  return std::make_unique<SelfTargetProcessControl>(std::move(TT), *PageSize);
+  return std::make_unique<SelfTargetProcessControl>(std::move(TT), *PageSize,
+                                                    std::move(MemMgr));
 }
 
 Expected<TargetProcessControl::DylibHandle>
@@ -70,14 +78,14 @@ SelfTargetProcessControl::lookupSymbols(LookupRequest Request) {
       auto &Sym = KV.first;
       std::string Tmp((*Sym).data() + !!GlobalManglingPrefix,
                       (*Sym).size() - !!GlobalManglingPrefix);
-      if (void *Addr = Dylib->getAddressOfSymbol(Tmp.c_str()))
-        R.back().push_back(pointerToJITTargetAddress(Addr));
-      else if (KV.second == SymbolLookupFlags::RequiredSymbol) {
+      void *Addr = Dylib->getAddressOfSymbol(Tmp.c_str());
+      if (!Addr && KV.second == SymbolLookupFlags::RequiredSymbol) {
         // FIXME: Collect all failing symbols before erroring out.
         SymbolNameVector MissingSymbols;
         MissingSymbols.push_back(Sym);
         return make_error<SymbolsNotFound>(std::move(MissingSymbols));
       }
+      R.back().push_back(pointerToJITTargetAddress(Addr));
     }
   }
 

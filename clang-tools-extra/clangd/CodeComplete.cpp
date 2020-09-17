@@ -333,8 +333,7 @@ struct CodeCompletionBuilder {
         return ResolvedInserted.takeError();
       auto Spelled = Includes.calculateIncludePath(*ResolvedInserted, FileName);
       if (!Spelled)
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "Header not on include path");
+        return error("Header not on include path");
       return std::make_pair(
           std::move(*Spelled),
           Includes.shouldInsertInclude(*ResolvedDeclaring, *ResolvedInserted));
@@ -1617,8 +1616,10 @@ private:
 
   llvm::Optional<float> fuzzyScore(const CompletionCandidate &C) {
     // Macros can be very spammy, so we only support prefix completion.
-    // We won't end up with underfull index results, as macros are sema-only.
-    if (C.SemaResult && C.SemaResult->Kind == CodeCompletionResult::RK_Macro &&
+    if (((C.SemaResult &&
+          C.SemaResult->Kind == CodeCompletionResult::RK_Macro) ||
+         (C.IndexResult &&
+          C.IndexResult->SymInfo.Kind == index::SymbolKind::Macro)) &&
         !C.Name.startswith_lower(Filter->pattern()))
       return None;
     return Filter->match(C.Name);

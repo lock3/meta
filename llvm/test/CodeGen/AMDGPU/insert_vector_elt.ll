@@ -773,12 +773,13 @@ define amdgpu_kernel void @dynamic_insertelement_v8i32(<8 x i32> addrspace(1)* %
 ; VI-NEXT:    v_mov_b32_e32 v1, s11
 ; VI-NEXT:    v_mov_b32_e32 v2, s10
 ; VI-NEXT:    v_mov_b32_e32 v3, s9
-; VI-NEXT:    v_mov_b32_e32 v4, s8
-; VI-NEXT:    v_mov_b32_e32 v5, s7
-; VI-NEXT:    v_mov_b32_e32 v6, s6
-; VI-NEXT:    v_mov_b32_e32 v7, s5
 ; VI-NEXT:    buffer_store_dwordx4 v[0:3], off, s[0:3], 0 offset:16
-; VI-NEXT:    buffer_store_dwordx4 v[4:7], off, s[0:3], 0
+; VI-NEXT:    s_nop 0
+; VI-NEXT:    v_mov_b32_e32 v0, s8
+; VI-NEXT:    v_mov_b32_e32 v1, s7
+; VI-NEXT:    v_mov_b32_e32 v2, s6
+; VI-NEXT:    v_mov_b32_e32 v3, s5
+; VI-NEXT:    buffer_store_dwordx4 v[0:3], off, s[0:3], 0
 ; VI-NEXT:    s_endpgm
   %vecins = insertelement <8 x i32> %a, i32 5, i32 %b
   store <8 x i32> %vecins, <8 x i32> addrspace(1)* %out, align 32
@@ -910,9 +911,9 @@ define amdgpu_kernel void @dynamic_insertelement_v3i16(<3 x i16> addrspace(1)* %
 ; SI-NEXT:    s_andn2_b64 s[4:5], s[6:7], s[4:5]
 ; SI-NEXT:    s_or_b64 s[4:5], s[8:9], s[4:5]
 ; SI-NEXT:    v_mov_b32_e32 v0, s5
-; SI-NEXT:    v_mov_b32_e32 v1, s4
 ; SI-NEXT:    buffer_store_short v0, off, s[0:3], 0 offset:4
-; SI-NEXT:    buffer_store_dword v1, off, s[0:3], 0
+; SI-NEXT:    v_mov_b32_e32 v0, s4
+; SI-NEXT:    buffer_store_dword v0, off, s[0:3], 0
 ; SI-NEXT:    s_endpgm
 ;
 ; VI-LABEL: dynamic_insertelement_v3i16:
@@ -969,10 +970,10 @@ define amdgpu_kernel void @dynamic_insertelement_v2i8(<2 x i8> addrspace(1)* %ou
 ; VI-NEXT:    s_waitcnt lgkmcnt(0)
 ; VI-NEXT:    s_lshl_b32 s4, s4, 3
 ; VI-NEXT:    v_lshlrev_b16_e64 v0, s4, -1
-; VI-NEXT:    v_and_b32_e32 v1, 0x505, v0
-; VI-NEXT:    v_xor_b32_e32 v0, -1, v0
-; VI-NEXT:    v_and_b32_e32 v0, s6, v0
-; VI-NEXT:    v_or_b32_e32 v0, v1, v0
+; VI-NEXT:    v_not_b32_e32 v1, v0
+; VI-NEXT:    v_and_b32_e32 v1, s6, v1
+; VI-NEXT:    v_and_b32_e32 v0, 0x505, v0
+; VI-NEXT:    v_or_b32_e32 v0, v0, v1
 ; VI-NEXT:    buffer_store_short v0, off, s[0:3], 0
 ; VI-NEXT:    s_endpgm
   %vecins = insertelement <2 x i8> %a, i8 5, i32 %b

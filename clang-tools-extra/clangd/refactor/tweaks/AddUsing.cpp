@@ -86,6 +86,13 @@ private:
   const SourceManager &SM;
 };
 
+bool isFullyQualified(const NestedNameSpecifier *NNS) {
+  if (!NNS)
+    return false;
+  return NNS->getKind() == NestedNameSpecifier::Global ||
+         isFullyQualified(NNS->getPrefix());
+}
+
 struct InsertionPointData {
   // Location to insert the "using" statement. If invalid then the statement
   // should not be inserted at all (it already exists).
@@ -94,6 +101,9 @@ struct InsertionPointData {
   // insertion point is anchored to, we may need one or more \n to ensure
   // proper formatting.
   std::string Suffix;
+  // Whether using should be fully qualified, even if what the user typed was
+  // not. This is based on our detection of the local style.
+  bool AlwaysFullyQualify = false;
 };
 
 // Finds the best place to insert the "using" statement. Returns invalid
@@ -118,7 +128,13 @@ findInsertionPoint(const Tweak::Selection &Inputs,
               SM)
       .TraverseAST(Inputs.AST->getASTContext());
 
+  bool AlwaysFullyQualify = true;
   for (auto &U : Usings) {
+    // Only "upgrade" to fully qualified is all relevant using decls are fully
+    // qualified. Otherwise trust what the user typed.
+    if (!isFullyQualified(U->getQualifier()))
+      AlwaysFullyQualify = false;
+
     if (SM.isBeforeInTranslationUnit(Inputs.Cursor, U->getUsingLoc()))
       // "Usings" is sorted, so we're done.
       break;
@@ -137,6 +153,7 @@ findInsertionPoint(const Tweak::Selection &Inputs,
   if (LastUsingLoc.isValid()) {
     InsertionPointData Out;
     Out.Loc = LastUsingLoc;
+    Out.AlwaysFullyQualify = AlwaysFullyQualify;
     return Out;
   }
 
@@ -152,8 +169,7 @@ findInsertionPoint(const Tweak::Selection &Inputs,
       return Tok.kind() == tok::l_brace;
     });
     if (Tok == Toks.end() || Tok->endLocation().isInvalid()) {
-      return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                     "Namespace with no {");
+      return error("Namespace with no {");
     }
     if (!Tok->endLocation().isMacroID()) {
       InsertionPointData Out;
@@ -166,8 +182,7 @@ findInsertionPoint(const Tweak::Selection &Inputs,
   // top level decl.
   auto TLDs = Inputs.AST->getLocalTopLevelDecls();
   if (TLDs.empty()) {
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "Cannot find place to insert \"using\"");
+    return error("Cannot find place to insert \"using\"");
   }
   InsertionPointData Out;
   Out.Loc = SM.getExpansionLoc(TLDs[0]->getBeginLoc());
@@ -255,9 +270,7 @@ Expected<Tweak::Effect> AddUsing::apply(const Selection &Inputs) {
   auto SpelledTokens = TB.spelledForExpanded(
       TB.expandedTokens(QualifierToRemove.getSourceRange()));
   if (!SpelledTokens) {
-    return llvm::createStringError(
-        llvm::inconvertibleErrorCode(),
-        "Could not determine length of the qualifier");
+    return error("Could not determine length of the qualifier");
   }
   unsigned Length =
       syntax::Token::range(SM, SpelledTokens->front(), SpelledTokens->back())
@@ -278,6 +291,9 @@ Expected<Tweak::Effect> AddUsing::apply(const Selection &Inputs) {
     std::string UsingText;
     llvm::raw_string_ostream UsingTextStream(UsingText);
     UsingTextStream << "using ";
+    if (InsertionPoint->AlwaysFullyQualify &&
+        !isFullyQualified(QualifierToRemove.getNestedNameSpecifier()))
+      UsingTextStream << "::";
     QualifierToRemove.getNestedNameSpecifier()->print(
         UsingTextStream, Inputs.AST->getASTContext().getPrintingPolicy());
     UsingTextStream << Name << ";" << InsertionPoint->Suffix;

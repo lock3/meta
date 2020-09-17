@@ -343,7 +343,7 @@ private:
 // - attrGet corresponds to the name of the function to call to get value of
 //   attribute (the generated function call returns an Attribute);
 // - operandGet corresponds to the name of the function with which to retrieve
-//   an operand (the generaed function call returns an OperandRange);
+//   an operand (the generated function call returns an OperandRange);
 // - reultGet corresponds to the name of the function to get an result (the
 //   generated function call returns a ValueRange);
 static void populateSubstitutions(const Operator &op, const char *attrGet,
@@ -494,6 +494,7 @@ void OpEmitter::genAttrGetters() {
   FmtContext fctx;
   fctx.withBuilder("::mlir::Builder(this->getContext())");
 
+  Dialect opDialect = op.getDialect();
   // Emit the derived attribute body.
   auto emitDerivedAttr = [&](StringRef name, Attribute attr) {
     auto &method = opClass.newMethod(attr.getReturnType(), name);
@@ -503,7 +504,16 @@ void OpEmitter::genAttrGetters() {
 
   // Emit with return type specified.
   auto emitAttrWithReturnType = [&](StringRef name, Attribute attr) {
-    auto &method = opClass.newMethod(attr.getReturnType(), name);
+    Dialect attrDialect = attr.getDialect();
+    // Does the current operation have a different namespace than the attribute?
+    bool differentNamespace =
+        attrDialect && opDialect && attrDialect != opDialect;
+    std::string returnType = differentNamespace
+                                 ? (llvm::Twine(attrDialect.getCppNamespace()) +
+                                    "::" + attr.getReturnType())
+                                       .str()
+                                 : attr.getReturnType().str();
+    auto &method = opClass.newMethod(returnType, name);
     auto &body = method.body();
     body << "  auto attr = " << name << "Attr();\n";
     if (attr.hasDefaultValue()) {
@@ -684,9 +694,9 @@ static void generateNamedOperandGetters(const Operator &op, Class &opClass,
   const int numNormalOperands = numOperands - numVariadicOperands;
 
   const auto *sameVariadicSize =
-      op.getTrait("OpTrait::SameVariadicOperandSize");
+      op.getTrait("::mlir::OpTrait::SameVariadicOperandSize");
   const auto *attrSizedOperands =
-      op.getTrait("OpTrait::AttrSizedOperandSegments");
+      op.getTrait("::mlir::OpTrait::AttrSizedOperandSegments");
 
   if (numVariadicOperands > 1 && !sameVariadicSize && !attrSizedOperands) {
     PrintFatalError(op.getLoc(), "op has multiple variadic operands but no "
@@ -748,7 +758,8 @@ void OpEmitter::genNamedOperandGetters() {
 }
 
 void OpEmitter::genNamedOperandSetters() {
-  auto *attrSizedOperands = op.getTrait("OpTrait::AttrSizedOperandSegments");
+  auto *attrSizedOperands =
+      op.getTrait("::mlir::OpTrait::AttrSizedOperandSegments");
   for (int i = 0, e = op.getNumOperands(); i != e; ++i) {
     const auto &operand = op.getOperand(i);
     if (operand.name.empty())
@@ -775,9 +786,10 @@ void OpEmitter::genNamedResultGetters() {
   // If we have more than one variadic results, we need more complicated logic
   // to calculate the value range for each result.
 
-  const auto *sameVariadicSize = op.getTrait("OpTrait::SameVariadicResultSize");
+  const auto *sameVariadicSize =
+      op.getTrait("::mlir::OpTrait::SameVariadicResultSize");
   const auto *attrSizedResults =
-      op.getTrait("OpTrait::AttrSizedResultSegments");
+      op.getTrait("::mlir::OpTrait::AttrSizedResultSegments");
 
   if (numVariadicResults > 1 && !sameVariadicSize && !attrSizedResults) {
     PrintFatalError(op.getLoc(), "op has multiple variadic results but no "
@@ -996,14 +1008,14 @@ void OpEmitter::genSeparateArgParamBuilder() {
     if (canInferType(op)) {
       // When inferType = true, the generated build method does not have
       // result types. If the op has a single variadic arg, then this build
-      // method will be ambiguious with the collective inferred build method
+      // method will be ambiguous with the collective inferred build method
       // generated in `genInferredTypeCollectiveParamBuilder`. If we are going
       // to generate that collective inferred method, suppress generating the
-      // ambiguious build method here.
-      bool buildMethodAmbiguious =
+      // ambiguous build method here.
+      bool buildMethodAmbiguous =
           op.hasSingleVariadicArg() &&
           shouldGenerateInferredTypeCollectiveParamBuilder();
-      if (!buildMethodAmbiguious)
+      if (!buildMethodAmbiguous)
         emit(attrType, TypeParamKind::None, /*inferType=*/true);
     }
     // The separate arg + collective param kind method will be:
@@ -1213,24 +1225,24 @@ void OpEmitter::genBuilder() {
   //    use the first operand or attribute's type as all result types
   //    to facilitate different call patterns.
   if (op.getNumVariableLengthResults() == 0) {
-    if (op.getTrait("OpTrait::SameOperandsAndResultType")) {
+    if (op.getTrait("::mlir::OpTrait::SameOperandsAndResultType")) {
       // If the operation has a single variadic input, then the build method
       // generated by `genUseOperandAsResultTypeSeparateParamBuilder` will be
-      // ambiguious with the one generated by
+      // ambiguous with the one generated by
       // `genUseOperandAsResultTypeCollectiveParamBuilder` (they both will have
       // a single `ValueRange` argument for operands, and the collective one
-      // will have a `ArrayRef<NamedAttribute>` argument initalized to empty).
-      // Suppress such ambiguious build method.
+      // will have a `ArrayRef<NamedAttribute>` argument initialized to empty).
+      // Suppress such ambiguous build method.
       if (!op.hasSingleVariadicArg())
         genUseOperandAsResultTypeSeparateParamBuilder();
 
       // The build method generated by the inferred type collective param
       // builder and one generated here have the same arguments and hence
-      // generating both will be ambiguious. Enable just one of them.
+      // generating both will be ambiguous. Enable just one of them.
       if (!shouldGenerateInferredTypeCollectiveParamBuilder())
         genUseOperandAsResultTypeCollectiveParamBuilder();
     }
-    if (op.getTrait("OpTrait::FirstAttrDerivedResultType"))
+    if (op.getTrait("::mlir::OpTrait::FirstAttrDerivedResultType"))
       genUseAttrAsResultTypeBuilder();
   }
 }
@@ -1435,7 +1447,7 @@ void OpEmitter::genCodeForAddingArgAndRegionForBuilder(OpMethodBody &body,
   }
 
   // If the operation has the operand segment size attribute, add it here.
-  if (op.getTrait("OpTrait::AttrSizedOperandSegments")) {
+  if (op.getTrait("::mlir::OpTrait::AttrSizedOperandSegments")) {
     body << "  " << builderOpState
          << ".addAttribute(\"operand_segment_sizes\", "
             "odsBuilder.getI32VectorAttr({";
@@ -1695,7 +1707,7 @@ void OpEmitter::genTypeInterfaceMethods() {
       continue;
     // TODO: We could verify equality here, but skipping that for verification.
   }
-  os << "  return success();";
+  os << "  return ::mlir::success();";
 }
 
 void OpEmitter::genParser() {
@@ -1735,7 +1747,7 @@ void OpEmitter::genVerifier() {
   auto &body = method.body();
   body << "  if (failed(" << op.getAdaptorName()
        << "(*this).verify(this->getLoc()))) "
-       << "return failure();\n";
+       << "return ::mlir::failure();\n";
 
   auto *valueInit = def.getValueInit("verifier");
   CodeInit *codeInit = dyn_cast<CodeInit>(valueInit);
@@ -1904,21 +1916,21 @@ static void addSizeCountTrait(OpClass &opClass, StringRef traitKind,
                               int numTotal, int numVariadic) {
   if (numVariadic != 0) {
     if (numTotal == numVariadic)
-      opClass.addTrait("OpTrait::Variadic" + traitKind + "s");
+      opClass.addTrait("::mlir::OpTrait::Variadic" + traitKind + "s");
     else
-      opClass.addTrait("OpTrait::AtLeastN" + traitKind + "s<" +
+      opClass.addTrait("::mlir::OpTrait::AtLeastN" + traitKind + "s<" +
                        Twine(numTotal - numVariadic) + ">::Impl");
     return;
   }
   switch (numTotal) {
   case 0:
-    opClass.addTrait("OpTrait::Zero" + traitKind);
+    opClass.addTrait("::mlir::OpTrait::Zero" + traitKind);
     break;
   case 1:
-    opClass.addTrait("OpTrait::One" + traitKind);
+    opClass.addTrait("::mlir::OpTrait::One" + traitKind);
     break;
   default:
-    opClass.addTrait("OpTrait::N" + traitKind + "s<" + Twine(numTotal) +
+    opClass.addTrait("::mlir::OpTrait::N" + traitKind + "s<" + Twine(numTotal) +
                      ">::Impl");
     break;
   }
@@ -1947,20 +1959,21 @@ void OpEmitter::genTraits() {
   // Add operand size trait.
   if (numVariadicOperands != 0) {
     if (numOperands == numVariadicOperands)
-      opClass.addTrait("OpTrait::VariadicOperands");
+      opClass.addTrait("::mlir::OpTrait::VariadicOperands");
     else
-      opClass.addTrait("OpTrait::AtLeastNOperands<" +
+      opClass.addTrait("::mlir::OpTrait::AtLeastNOperands<" +
                        Twine(numOperands - numVariadicOperands) + ">::Impl");
   } else {
     switch (numOperands) {
     case 0:
-      opClass.addTrait("OpTrait::ZeroOperands");
+      opClass.addTrait("::mlir::OpTrait::ZeroOperands");
       break;
     case 1:
-      opClass.addTrait("OpTrait::OneOperand");
+      opClass.addTrait("::mlir::OpTrait::OneOperand");
       break;
     default:
-      opClass.addTrait("OpTrait::NOperands<" + Twine(numOperands) + ">::Impl");
+      opClass.addTrait("::mlir::OpTrait::NOperands<" + Twine(numOperands) +
+                       ">::Impl");
       break;
     }
   }
@@ -2042,7 +2055,7 @@ OpOperandAdaptorEmitter::OpOperandAdaptorEmitter(const Operator &op)
   adaptor.newField("::mlir::ValueRange", "odsOperands");
   adaptor.newField("::mlir::DictionaryAttr", "odsAttrs");
   const auto *attrSizedOperands =
-      op.getTrait("OpTrait::AttrSizedOperandSegments");
+      op.getTrait("::mlir::OpTrait::AttrSizedOperandSegments");
   {
     auto &constructor = adaptor.newConstructor(
         attrSizedOperands
@@ -2125,11 +2138,11 @@ void OpOperandAdaptorEmitter::addVerification() {
   // getODSOperands()/getODSResults() in the rest of the verifier.
   for (auto &trait : op.getTraits()) {
     if (auto *t = dyn_cast<tblgen::NativeOpTrait>(&trait)) {
-      if (t->getTrait() == "OpTrait::AttrSizedOperandSegments") {
+      if (t->getTrait() == "::mlir::OpTrait::AttrSizedOperandSegments") {
         body << formatv(checkAttrSizedValueSegmentsCode,
                         "operand_segment_sizes", op.getNumOperands(),
                         "operand");
-      } else if (t->getTrait() == "OpTrait::AttrSizedResultSegments") {
+      } else if (t->getTrait() == "::mlir::OpTrait::AttrSizedResultSegments") {
         body << formatv(checkAttrSizedValueSegmentsCode, "result_segment_sizes",
                         op.getNumResults(), "result");
       }
@@ -2144,7 +2157,7 @@ void OpOperandAdaptorEmitter::addVerification() {
                            "' op \"",
                        /*emitVerificationRequiringOp*/ false, verifyCtx, body);
 
-  body << "  return success();";
+  body << "  return ::mlir::success();";
 }
 
 void OpOperandAdaptorEmitter::emitDecl(const Operator &op, raw_ostream &os) {
@@ -2165,6 +2178,7 @@ static void emitOpClasses(const std::vector<Record *> &defs, raw_ostream &os,
     os << "#undef GET_OP_FWD_DEFINES\n";
     for (auto *def : defs) {
       Operator op(*def);
+      Operator::NamespaceEmitter emitter(os, op);
       os << "class " << op.getCppClassName() << ";\n";
     }
     os << "#endif\n\n";
@@ -2173,6 +2187,7 @@ static void emitOpClasses(const std::vector<Record *> &defs, raw_ostream &os,
   IfDefScope scope("GET_OP_CLASSES", os);
   for (auto *def : defs) {
     Operator op(*def);
+    Operator::NamespaceEmitter emitter(os, op);
     if (emitDecl) {
       os << formatv(opCommentHeader, op.getQualCppClassName(), "declarations");
       OpOperandAdaptorEmitter::emitDecl(op, os);

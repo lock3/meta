@@ -166,23 +166,21 @@ ASTMaker::makeLvalueToRvalue(const VarDecl *Arg,
 ImplicitCastExpr *ASTMaker::makeImplicitCast(const Expr *Arg, QualType Ty,
                                              CastKind CK) {
   return ImplicitCastExpr::Create(C, Ty,
-                                  /* CastKind=*/ CK,
-                                  /* Expr=*/ const_cast<Expr *>(Arg),
-                                  /* CXXCastPath=*/ nullptr,
-                                  /* ExprValueKind=*/ VK_RValue);
+                                  /* CastKind=*/CK,
+                                  /* Expr=*/const_cast<Expr *>(Arg),
+                                  /* CXXCastPath=*/nullptr,
+                                  /* ExprValueKind=*/VK_RValue,
+                                  /* FPFeatures */ FPOptionsOverride());
 }
 
 Expr *ASTMaker::makeIntegralCast(const Expr *Arg, QualType Ty) {
   if (Arg->getType() == Ty)
     return const_cast<Expr*>(Arg);
-
-  return ImplicitCastExpr::Create(C, Ty, CK_IntegralCast,
-                                  const_cast<Expr*>(Arg), nullptr, VK_RValue);
+  return makeImplicitCast(Arg, Ty, CK_IntegralCast);
 }
 
 ImplicitCastExpr *ASTMaker::makeIntegralCastToBoolean(const Expr *Arg) {
-  return ImplicitCastExpr::Create(C, C.BoolTy, CK_IntegralToBoolean,
-                                  const_cast<Expr*>(Arg), nullptr, VK_RValue);
+  return makeImplicitCast(Arg, C.BoolTy, CK_IntegralToBoolean);
 }
 
 ObjCBoolLiteralExpr *ASTMaker::makeObjCBool(bool Val) {
@@ -468,6 +466,8 @@ static Stmt *create_call_once(ASTContext &C, const FunctionDecl *D) {
                      /* Init=*/nullptr,
                      /* Var=*/nullptr,
                      /* Cond=*/FlagCheck,
+                     /* LPL=*/SourceLocation(),
+                     /* RPL=*/SourceLocation(),
                      /* Then=*/M.makeCompound({CallbackCall, FlagAssignment}));
 
   return Out;
@@ -552,6 +552,8 @@ static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
                             /* Init=*/nullptr,
                             /* Var=*/nullptr,
                             /* Cond=*/GuardCondition,
+                            /* LPL=*/SourceLocation(),
+                            /* RPL=*/SourceLocation(),
                             /* Then=*/CS);
   return If;
 }
@@ -655,11 +657,13 @@ static Stmt *create_OSAtomicCompareAndSwap(ASTContext &C, const FunctionDecl *D)
   Stmt *Else = M.makeReturn(RetVal);
 
   /// Construct the If.
-  auto *If = IfStmt::Create(C, SourceLocation(),
-                            /* IsConstexpr=*/false,
-                            /* Init=*/nullptr,
-                            /* Var=*/nullptr, Comparison, Body,
-                            SourceLocation(), Else);
+  auto *If =
+      IfStmt::Create(C, SourceLocation(),
+                     /* IsConstexpr=*/false,
+                     /* Init=*/nullptr,
+                     /* Var=*/nullptr, Comparison,
+                     /* LPL=*/SourceLocation(),
+                     /* RPL=*/SourceLocation(), Body, SourceLocation(), Else);
 
   return If;
 }

@@ -128,7 +128,6 @@ public:
   void Enter(const parser::OmpClause::Copyin &);
   void Enter(const parser::OmpClause::Copyprivate &);
   void Enter(const parser::OmpClause::Device &);
-  void Enter(const parser::OmpClause::DistSchedule &);
   void Enter(const parser::OmpClause::Final &);
   void Enter(const parser::OmpClause::Firstprivate &);
   void Enter(const parser::OmpClause::From &);
@@ -151,9 +150,11 @@ public:
   void Enter(const parser::OmpClause::IsDevicePtr &);
 
   void Enter(const parser::OmpAlignedClause &);
+  void Enter(const parser::OmpAllocateClause &);
   void Enter(const parser::OmpDefaultClause &);
   void Enter(const parser::OmpDefaultmapClause &);
   void Enter(const parser::OmpDependClause &);
+  void Enter(const parser::OmpDistScheduleClause &);
   void Enter(const parser::OmpIfClause &);
   void Enter(const parser::OmpLinearClause &);
   void Enter(const parser::OmpMapClause &);

@@ -14,12 +14,10 @@
 #include "StatepointLowering.h"
 #include "SelectionDAGBuilder.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GCMetadata.h"
@@ -30,7 +28,6 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
@@ -70,6 +67,10 @@ cl::opt<bool> UseRegistersForDeoptValues(
 cl::opt<unsigned> MaxRegistersForGCPointers(
     "max-registers-for-gc-values", cl::Hidden, cl::init(0),
     cl::desc("Max number of VRegs allowed to pass GC pointer meta args in"));
+
+cl::opt<bool> AlwaysSpillBase("statepoint-always-spill-base", cl::Hidden,
+                              cl::init(true),
+                              cl::desc("Force spilling of base GC pointers"));
 
 typedef FunctionLoweringInfo::StatepointRelocationRecord RecordType;
 
@@ -590,7 +591,7 @@ lowerStatepointMetaArgs(SmallVectorImpl<SDValue> &Ops,
 
   for (unsigned i = 0; i < SI.Bases.size(); ++i) {
     SDValue SDV = Builder.getValue(SI.Bases[i]);
-    if (!LowerAsVReg.count(SDV))
+    if (AlwaysSpillBase || !LowerAsVReg.count(SDV))
       reservePreviousStackSlotForValue(SI.Bases[i], Builder);
     SDV = Builder.getValue(SI.Ptrs[i]);
     if (!LowerAsVReg.count(SDV))
@@ -631,7 +632,7 @@ lowerStatepointMetaArgs(SmallVectorImpl<SDValue> &Ops,
   for (unsigned i = 0; i < SI.Bases.size(); ++i) {
     bool RequireSpillSlot;
     SDValue Base = Builder.getValue(SI.Bases[i]);
-    RequireSpillSlot = !LowerAsVReg.count(Base);
+    RequireSpillSlot = AlwaysSpillBase || !LowerAsVReg.count(Base);
     lowerIncomingStatepointValue(Base, RequireSpillSlot, Ops, MemRefs,
                                  Builder);
 
@@ -837,7 +838,7 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
     Register Reg = FuncInfo.CreateRegs(RetTy);
     RegsForValue RFV(*DAG.getContext(), DAG.getTargetLoweringInfo(),
                      DAG.getDataLayout(), Reg, RetTy, None);
-    SDValue Chain = DAG.getEntryNode();
+    SDValue Chain = DAG.getRoot();
     RFV.getCopyToRegs(Relocated, DAG, getCurSDLoc(), Chain, nullptr);
     PendingExports.push_back(Chain);
     
@@ -854,13 +855,13 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
     SDValue Loc = StatepointLowering.getLocation(SDV);
 
     RecordType Record;
-    if (Loc.getNode()) {
-      Record.type = RecordType::Spill;
-      Record.payload.FI = cast<FrameIndexSDNode>(Loc)->getIndex();
-    } else if (LowerAsVReg.count(SDV)) {
+    if (LowerAsVReg.count(SDV)) {
       Record.type = RecordType::VReg;
       assert(VirtRegs.count(V));
       Record.payload.Reg = VirtRegs[V];
+    } else if (Loc.getNode()) {
+      Record.type = RecordType::Spill;
+      Record.payload.FI = cast<FrameIndexSDNode>(Loc)->getIndex();
     } else {
       Record.type = RecordType::NoRelocate;
       // If we didn't relocate a value, we'll essentialy end up inserting an
@@ -915,8 +916,9 @@ SDValue SelectionDAGBuilder::LowerAsSTATEPOINT(
   // Remove original call node
   DAG.DeleteNode(CallNode);
 
-  // DON'T set the root - under the assumption that it's already set past the
-  // inserted node we created.
+  // Since we always emit CopyToRegs (even for local relocates), we must
+  // update root, so that they are emitted before any local uses.
+  (void)getControlRoot();
 
   // TODO: A better future implementation would be to emit a single variable
   // argument, variable return value STATEPOINT node here and then hookup the

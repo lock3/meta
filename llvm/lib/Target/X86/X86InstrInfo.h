@@ -317,6 +317,10 @@ public:
                      SmallVectorImpl<MachineOperand> &Cond,
                      bool AllowModify) const override;
 
+  bool preservesZeroValueInReg(const MachineInstr *MI,
+                               const Register NullValueReg,
+                               const TargetRegisterInfo *TRI) const override;
+
   bool getMemOperandsWithOffsetWidth(
       const MachineInstr &LdSt,
       SmallVectorImpl<const MachineOperand *> &BaseOps, int64_t &Offset,
@@ -459,7 +463,7 @@ public:
   unsigned
   getPartialRegUpdateClearance(const MachineInstr &MI, unsigned OpNum,
                                const TargetRegisterInfo *TRI) const override;
-  unsigned getUndefRegClearance(const MachineInstr &MI, unsigned &OpNum,
+  unsigned getUndefRegClearance(const MachineInstr &MI, unsigned OpNum,
                                 const TargetRegisterInfo *TRI) const override;
   void breakPartialRegDependency(MachineInstr &MI, unsigned OpNum,
                                  const TargetRegisterInfo *TRI) const override;

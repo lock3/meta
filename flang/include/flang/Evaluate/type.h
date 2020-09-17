@@ -138,8 +138,9 @@ public:
   constexpr const semantics::ParamValue *charLength() const {
     return charLength_;
   }
-  std::optional<common::ConstantSubscript> GetCharLength() const;
-  std::optional<std::size_t> MeasureSizeInBytes() const;
+  std::optional<Expr<SubscriptInteger>> GetCharLength() const;
+  std::optional<Expr<SubscriptInteger>> MeasureSizeInBytes(
+      FoldingContext * = nullptr) const;
 
   std::string AsFortran() const;
   std::string AsFortran(std::string &&charLenExpr) const;
@@ -216,6 +217,8 @@ private:
 const semantics::DerivedTypeSpec *GetDerivedTypeSpec(const DynamicType &);
 const semantics::DerivedTypeSpec *GetDerivedTypeSpec(
     const std::optional<DynamicType> &);
+const semantics::DerivedTypeSpec *GetParentTypeSpec(
+    const semantics::DerivedTypeSpec &);
 
 std::string DerivedTypeSpecAsFortran(const semantics::DerivedTypeSpec &);
 

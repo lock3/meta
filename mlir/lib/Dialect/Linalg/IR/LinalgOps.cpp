@@ -18,6 +18,7 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Module.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -259,13 +260,14 @@ static LogicalResult verifyGenericOp(GenericOpType op) {
   if (failed(BlockArgsVerifier<GenericOpType>::verify(op, region.front())))
     return failure();
 
-  auto attr = op.template getAttrOfType<IntegerAttr>("symbol_source");
-  int64_t targetRank = 0;
-  if (attr) {
-    unsigned index = attr.getInt();
+  auto symbolSourceAttr =
+      op.template getAttrOfType<IntegerAttr>("symbol_source");
+  int64_t expectedNumSymbols = 0;
+  if (symbolSourceAttr) {
+    unsigned index = symbolSourceAttr.getInt();
     if (index >= op.getNumOperands())
       return op.emitOpError("symbol_source index out of range");
-    targetRank = op.getShapedType(index).getRank();
+    expectedNumSymbols = op.getShapedType(index).getRank();
   }
 
   SmallVector<AffineMap, 4> indexingMaps;
@@ -277,9 +279,9 @@ static LogicalResult verifyGenericOp(GenericOpType op) {
     auto view = (idx < nInputViews) ? op.getInputShapedType(idx)
                                     : op.getOutputShapedType(idx - nInputViews);
 
-    if (m.getNumSymbols() != targetRank)
+    if (m.getNumSymbols() != expectedNumSymbols)
       return op.emitOpError("expected the number of symbols in indexing_map #")
-             << idx << " to match target rank";
+             << idx << " to match rank of operand `symbol_source`";
 
     if (m.getNumDims() != nLoops)
       return op.emitOpError("expected indexing_map #")
@@ -395,7 +397,8 @@ struct CollapseReshapeOps : public OpRewritePattern<ReshapeOpTy> {
 } // namespace
 
 template <typename ReshapeOpTy>
-static OpFoldResult foldReshapeOp(ReshapeOpTy reshapeOp) {
+static OpFoldResult foldReshapeOp(ReshapeOpTy reshapeOp,
+                                  ArrayRef<Attribute> operands) {
   // Fold producer-consumer reshape ops that where the operand type of the
   // producer is same as the return type of the consumer. This can only be
   // verified if the shapes in question are static.
@@ -405,6 +408,10 @@ static OpFoldResult foldReshapeOp(ReshapeOpTy reshapeOp) {
       reshapeOp.getResultType().hasStaticShape() &&
       reshapeSrcOp.getSrcType() == reshapeOp.getResultType())
     return reshapeSrcOp.src();
+  if (auto elements = operands.front().dyn_cast_or_null<DenseElementsAttr>()) {
+    return elements.reshape(
+        reshapeOp.getResult().getType().template cast<ShapedType>());
+  }
   return nullptr;
 }
 
@@ -734,9 +741,30 @@ static LogicalResult verify(TensorReshapeOp op) {
   return success();
 }
 
+namespace {
+/// Reshape of a splat constant can be replaced with a constant of the result
+/// type.
+struct FoldReshapeWithConstant : OpRewritePattern<TensorReshapeOp> {
+  using OpRewritePattern<TensorReshapeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(TensorReshapeOp reshapeOp,
+                                PatternRewriter &rewriter) const override {
+    DenseElementsAttr attr;
+    if (!matchPattern(reshapeOp.src(), m_Constant(&attr)))
+      return failure();
+    if (!attr || !attr.isSplat())
+      return failure();
+    DenseElementsAttr newAttr = DenseElementsAttr::getFromRawBuffer(
+        reshapeOp.getResultType(), attr.getRawData(), true);
+    rewriter.replaceOpWithNewOp<ConstantOp>(reshapeOp, newAttr);
+    return success();
+  }
+};
+} // namespace
+
 void TensorReshapeOp::getCanonicalizationPatterns(
     OwningRewritePatternList &results, MLIRContext *context) {
-  results.insert<CollapseReshapeOps<TensorReshapeOp>>(context);
+  results.insert<CollapseReshapeOps<TensorReshapeOp>, FoldReshapeWithConstant>(
+      context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -819,13 +847,9 @@ Value SliceOp::getViewSource() { return view(); }
 //===----------------------------------------------------------------------===//
 // TransposeOp
 //===----------------------------------------------------------------------===//
-void mlir::linalg::TransposeOp::build(OpBuilder &b, OperationState &result,
-                                      Value view, AffineMapAttr permutation,
-                                      ArrayRef<NamedAttribute> attrs) {
-  auto permutationMap = permutation.getValue();
-  assert(permutationMap);
 
-  auto memRefType = view.getType().cast<MemRefType>();
+static MemRefType inferTransposeResultType(MemRefType memRefType,
+                                           AffineMap permutationMap) {
   auto rank = memRefType.getRank();
   auto originalSizes = memRefType.getShape();
   // Compute permuted sizes.
@@ -840,11 +864,21 @@ void mlir::linalg::TransposeOp::build(OpBuilder &b, OperationState &result,
   auto res = getStridesAndOffset(memRefType, strides, offset);
   assert(succeeded(res) && strides.size() == static_cast<unsigned>(rank));
   (void)res;
-  auto map = makeStridedLinearLayoutMap(strides, offset, b.getContext());
+  auto map =
+      makeStridedLinearLayoutMap(strides, offset, memRefType.getContext());
   map = permutationMap ? map.compose(permutationMap) : map;
+  return MemRefType::Builder(memRefType).setShape(sizes).setAffineMaps(map);
+}
+
+void mlir::linalg::TransposeOp::build(OpBuilder &b, OperationState &result,
+                                      Value view, AffineMapAttr permutation,
+                                      ArrayRef<NamedAttribute> attrs) {
+  auto permutationMap = permutation.getValue();
+  assert(permutationMap);
+
+  auto memRefType = view.getType().cast<MemRefType>();
   // Compute result type.
-  MemRefType resultType =
-      MemRefType::Builder(memRefType).setShape(sizes).setAffineMaps(map);
+  MemRefType resultType = inferTransposeResultType(memRefType, permutationMap);
 
   build(b, result, resultType, view, attrs);
   result.addAttribute(TransposeOp::getPermutationAttrName(), permutation);
@@ -854,19 +888,20 @@ static void print(OpAsmPrinter &p, TransposeOp op) {
   p << op.getOperationName() << " " << op.view() << " " << op.permutation();
   p.printOptionalAttrDict(op.getAttrs(),
                           {TransposeOp::getPermutationAttrName()});
-  p << " : " << op.view().getType();
+  p << " : " << op.view().getType() << " to " << op.getType();
 }
 
 static ParseResult parseTransposeOp(OpAsmParser &parser,
                                     OperationState &result) {
   OpAsmParser::OperandType view;
   AffineMap permutation;
-  MemRefType type;
+  MemRefType srcType, dstType;
   if (parser.parseOperand(view) || parser.parseAffineMap(permutation) ||
       parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseColonType(type) ||
-      parser.resolveOperand(view, type, result.operands) ||
-      parser.addTypeToList(type, result.types))
+      parser.parseColonType(srcType) ||
+      parser.resolveOperand(view, srcType, result.operands) ||
+      parser.parseKeywordType("to", dstType) ||
+      parser.addTypeToList(dstType, result.types))
     return failure();
 
   result.addAttribute(TransposeOp::getPermutationAttrName(),
@@ -874,11 +909,26 @@ static ParseResult parseTransposeOp(OpAsmParser &parser,
   return success();
 }
 
+static LogicalResult verify(TransposeOp op) {
+  if (!op.permutation().isPermutation())
+    return op.emitOpError("expected a permutation map");
+  if (op.permutation().getNumDims() != op.getShapedType().getRank())
+    return op.emitOpError(
+        "expected a permutation map of same rank as the view");
+
+  auto srcType = op.view().getType().cast<MemRefType>();
+  auto dstType = op.getType().cast<MemRefType>();
+  if (dstType != inferTransposeResultType(srcType, op.permutation()))
+    return op.emitOpError("output type ")
+           << dstType << " does not match transposed input type " << srcType;
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-static void print(OpAsmPrinter &p, YieldOp op) {
+static void print(OpAsmPrinter &p, linalg::YieldOp op) {
   p << op.getOperationName();
   if (op.getNumOperands() > 0)
     p << ' ' << op.getOperands();
@@ -899,7 +949,8 @@ static ParseResult parseYieldOp(OpAsmParser &parser, OperationState &result) {
 
 // Check the operand number and types must match the element types of the
 // LinalgOp interface's shaped operands.
-static LogicalResult verifyYield(YieldOp op, LinalgOp linalgOpInterface) {
+static LogicalResult verifyYield(linalg::YieldOp op,
+                                 LinalgOp linalgOpInterface) {
   auto nOutputs = linalgOpInterface.getNumOutputs();
   if (op.getNumOperands() != nOutputs)
     return op.emitOpError("expected number of yield values (")
@@ -919,7 +970,7 @@ static LogicalResult verifyYield(YieldOp op, LinalgOp linalgOpInterface) {
   return success();
 }
 
-static LogicalResult verify(YieldOp op) {
+static LogicalResult verify(linalg::YieldOp op) {
   auto *parentOp = op.getParentOp();
   if (parentOp->getNumRegions() != 1 || parentOp->getRegion(0).empty())
     return op.emitOpError("expected single non-empty parent region");
@@ -1045,9 +1096,6 @@ static LogicalResult verify(PoolingSumOp op) {
   return verifySingleInputPoolingOp(op);
 }
 
-namespace mlir {
-namespace linalg {
-
 #include "mlir/Dialect/Linalg/IR/LinalgStructuredOpsInterfaces.cpp.inc"
 
 #define GET_OP_CLASSES
@@ -1055,9 +1103,6 @@ namespace linalg {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Linalg/IR/LinalgStructuredOps.cpp.inc"
-
-} // namespace linalg
-} // namespace mlir
 
 AffineMap mlir::linalg::extractOrIdentityMap(Optional<AffineMap> maybeMap,
                                              unsigned rank,
@@ -1153,18 +1198,18 @@ std::string mlir::linalg::generateLibraryCallName(Operation *op) {
 // TODO: Consider making all this boilerplate easy to autogenerate
 // with Tablegen. This seems a desirable property in the context of OpInterfaces
 // where a Linalg "named" op **isa** LinalgOp.
-OpFoldResult ReshapeOp::fold(ArrayRef<Attribute>) {
+OpFoldResult ReshapeOp::fold(ArrayRef<Attribute> operands) {
   if (succeeded(foldMemRefCast(*this)))
     return getResult();
-  return foldReshapeOp(*this);
+  return foldReshapeOp(*this, operands);
 }
 OpFoldResult SliceOp::fold(ArrayRef<Attribute>) {
   if (succeeded(foldMemRefCast(*this)))
     return getResult();
   return {};
 }
-OpFoldResult TensorReshapeOp::fold(ArrayRef<Attribute>) {
-  return foldReshapeOp(*this);
+OpFoldResult TensorReshapeOp::fold(ArrayRef<Attribute> operands) {
+  return foldReshapeOp(*this, operands);
 }
 OpFoldResult TransposeOp::fold(ArrayRef<Attribute>) {
   if (succeeded(foldMemRefCast(*this)))
@@ -1196,15 +1241,9 @@ void buildNamedStructuredOpRegionAndAttributes(Builder &builder,
   mlir::edsc::ScopedContext scope(opBuilder, builder.getUnknownLoc());
   NamedStructuredOpType::regionBuilder(*body);
 
-  auto indexingMaps = builder.getAffineMapArrayAttr(
-      NamedStructuredOpType::referenceIndexingMaps(operandTypes,
-                                                   tensorResultTypes));
-  result.addAttribute(getIndexingMapsAttrName(), indexingMaps);
+  // indexing_maps is an auto-generated method.
 
-  auto iterators =
-      builder.getStrArrayAttr(NamedStructuredOpType::referenceIterators(
-          operandTypes, tensorResultTypes));
-  result.addAttribute(getIteratorTypesAttrName(), iterators);
+  // iterator_types is an auto-generated method.
 }
 
 template <typename NamedStructuredOpType>
@@ -1224,6 +1263,7 @@ template <typename NamedStructuredOpType>
 static ParseResult parseNamedStructuredOp(OpAsmParser &parser,
                                           OperationState &result) {
   SmallVector<OpAsmParser::OperandType, 8> operandsInfo;
+  result.getContext()->getOrLoadDialect<StandardOpsDialect>();
 
   // Optional attributes may be added.
   if (parser.parseOperandList(operandsInfo) ||
@@ -1267,6 +1307,7 @@ static LogicalResult verifyNamedStructuredOp(NamedStructuredOpType op) {
   return verifyGenericOp<NamedStructuredOpType>(op);
 }
 
+namespace {
 struct EraseDeadLinalgOp : public RewritePattern {
   EraseDeadLinalgOp(PatternBenefit benefit = 1)
       : RewritePattern(benefit, MatchAnyOpTypeTag()) {}
@@ -1291,6 +1332,7 @@ struct EraseDeadLinalgOp : public RewritePattern {
     return failure();
   }
 };
+} // namespace
 
 #define CANONICALIZERS_AND_FOLDERS(XXX)                                        \
   void XXX::getCanonicalizationPatterns(OwningRewritePatternList &results,     \
@@ -1303,28 +1345,29 @@ struct EraseDeadLinalgOp : public RewritePattern {
     return foldMemRefCast(*this);                                              \
   }
 
-CANONICALIZERS_AND_FOLDERS(ConvOp);
-CANONICALIZERS_AND_FOLDERS(PoolingMaxOp);
-CANONICALIZERS_AND_FOLDERS(PoolingMinOp);
-CANONICALIZERS_AND_FOLDERS(PoolingSumOp);
-CANONICALIZERS_AND_FOLDERS(CopyOp);
-CANONICALIZERS_AND_FOLDERS(FillOp);
-CANONICALIZERS_AND_FOLDERS(GenericOp);
-CANONICALIZERS_AND_FOLDERS(IndexedGenericOp);
+CANONICALIZERS_AND_FOLDERS(ConvOp)
+CANONICALIZERS_AND_FOLDERS(PoolingMaxOp)
+CANONICALIZERS_AND_FOLDERS(PoolingMinOp)
+CANONICALIZERS_AND_FOLDERS(PoolingSumOp)
+CANONICALIZERS_AND_FOLDERS(CopyOp)
+CANONICALIZERS_AND_FOLDERS(FillOp)
+CANONICALIZERS_AND_FOLDERS(GenericOp)
+CANONICALIZERS_AND_FOLDERS(IndexedGenericOp)
 
 #include "mlir/Dialect/Linalg/IR/LinalgNamedStructuredOps.cpp.inc"
 
 // TODO: Determine whether we can generate the folders and verifiers.
-CANONICALIZERS_AND_FOLDERS(BatchMatmulOp);
-CANONICALIZERS_AND_FOLDERS(DotOp);
-CANONICALIZERS_AND_FOLDERS(MatmulOp);
-CANONICALIZERS_AND_FOLDERS(MatvecOp);
-CANONICALIZERS_AND_FOLDERS(ConvWOp);
-CANONICALIZERS_AND_FOLDERS(ConvNWCOp);
-CANONICALIZERS_AND_FOLDERS(ConvNCWOp);
-CANONICALIZERS_AND_FOLDERS(ConvHWOp);
-CANONICALIZERS_AND_FOLDERS(ConvNHWCOp);
-CANONICALIZERS_AND_FOLDERS(ConvNCHWOp);
-CANONICALIZERS_AND_FOLDERS(ConvDHWOp);
-CANONICALIZERS_AND_FOLDERS(ConvNDHWCOp);
-CANONICALIZERS_AND_FOLDERS(ConvNCDHWOp);
+CANONICALIZERS_AND_FOLDERS(BatchMatmulOp)
+CANONICALIZERS_AND_FOLDERS(DotOp)
+CANONICALIZERS_AND_FOLDERS(MatmulOp)
+CANONICALIZERS_AND_FOLDERS(MatvecOp)
+CANONICALIZERS_AND_FOLDERS(VecmatOp)
+CANONICALIZERS_AND_FOLDERS(ConvWOp)
+CANONICALIZERS_AND_FOLDERS(ConvNWCOp)
+CANONICALIZERS_AND_FOLDERS(ConvNCWOp)
+CANONICALIZERS_AND_FOLDERS(ConvHWOp)
+CANONICALIZERS_AND_FOLDERS(ConvNHWCOp)
+CANONICALIZERS_AND_FOLDERS(ConvNCHWOp)
+CANONICALIZERS_AND_FOLDERS(ConvDHWOp)
+CANONICALIZERS_AND_FOLDERS(ConvNDHWCOp)
+CANONICALIZERS_AND_FOLDERS(ConvNCDHWOp)

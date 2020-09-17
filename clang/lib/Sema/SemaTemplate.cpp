@@ -6900,8 +6900,18 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       break;
     case APValue::Reflection: {
       assert(ParamType->isReflectionType());
-      ExprResult ReflExpr = BuildCXXReflectExpr(Value, StartLoc);
-      Converted = TemplateArgument(ReflExpr.get(), TemplateArgument::Expression);
+
+      // FIXME: This conversion seems wrong. However, without
+      // converting this expression, subsequent evaluations of the
+      // constant expression are lvalue evaluations -- incompatible
+      // with the value kind of the produced expression (rvalue), that
+      // we need for use of reflections as a template arguments.
+      ExprResult ConvertedArg = DefaultFunctionArrayLvalueConversion(Arg);
+      if (ConvertedArg.isInvalid())
+        return ExprError();
+
+      auto *CE = ConstantExpr::Create(Context, ConvertedArg.get(), Value);
+      Converted = TemplateArgument(CE, TemplateArgument::Expression);
       break;
     }
     case APValue::MemberPointer: {
@@ -7055,9 +7065,9 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       public:
         TmplArgICEDiagnoser(QualType T) : T(T) { }
 
-        void diagnoseNotICE(Sema &S, SourceLocation Loc,
-                            SourceRange SR) override {
-          S.Diag(Loc, diag::err_template_arg_not_ice) << T << SR;
+        SemaDiagnosticBuilder diagnoseNotICE(Sema &S,
+                                             SourceLocation Loc) override {
+          return S.Diag(Loc, diag::err_template_arg_not_ice) << T;
         }
       } Diagnoser(ArgType);
 
@@ -7550,7 +7560,7 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
     // FIXME: This is a hack. We need a better way to handle substituted
     // non-type template parameters.
     E = CStyleCastExpr::Create(Context, OrigT, VK_RValue, CK_IntegralCast, E,
-                               nullptr,
+                               nullptr, CurFPFeatureOverrides(),
                                Context.getTrivialTypeSourceInfo(OrigT, Loc),
                                Loc, Loc);
   }

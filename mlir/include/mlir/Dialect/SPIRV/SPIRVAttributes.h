@@ -17,10 +17,10 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/Support/LLVM.h"
 
-namespace mlir {
 // Pull in SPIR-V attribute definitions for target and ABI.
 #include "mlir/Dialect/SPIRV/TargetAndABI.h.inc"
 
+namespace mlir {
 namespace spirv {
 enum class Capability : uint32_t;
 enum class Extension;
@@ -31,15 +31,6 @@ struct InterfaceVarABIAttributeStorage;
 struct TargetEnvAttributeStorage;
 struct VerCapExtAttributeStorage;
 } // namespace detail
-
-/// SPIR-V dialect-specific attribute kinds.
-namespace AttrKind {
-enum Kind {
-  InterfaceVarABI = Attribute::FIRST_SPIRV_ATTR, /// Interface var ABI
-  TargetEnv,                                     /// Target environment
-  VerCapExt, /// (version, extension, capability) triple
-};
-} // namespace AttrKind
 
 /// An attribute that specifies the information regarding the interface
 /// variable: descriptor set, binding, storage class.

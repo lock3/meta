@@ -28,8 +28,10 @@ set(MODULES
 )
 
 set(include ${FLANG_BINARY_DIR}/include/flang)
-
-set(include ${FLANG_BINARY_DIR}/include/flang)
+target_include_directories(f18
+  PRIVATE
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 # Create module files directly from the top-level module source directory
 foreach(filename ${MODULES})

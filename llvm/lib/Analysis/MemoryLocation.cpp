@@ -176,6 +176,21 @@ MemoryLocation MemoryLocation::getForArgument(const CallBase *Call,
               cast<ConstantInt>(II->getArgOperand(0))->getZExtValue()),
           AATags);
 
+    case Intrinsic::masked_load:
+      assert(ArgIdx == 0 && "Invalid argument index");
+      return MemoryLocation(
+          Arg,
+          LocationSize::upperBound(DL.getTypeStoreSize(II->getType())),
+          AATags);
+
+    case Intrinsic::masked_store:
+      assert(ArgIdx == 1 && "Invalid argument index");
+      return MemoryLocation(
+          Arg,
+          LocationSize::upperBound(
+              DL.getTypeStoreSize(II->getArgOperand(0)->getType())),
+          AATags);
+
     case Intrinsic::invariant_end:
       // The first argument to an invariant.end is a "descriptor" type (e.g. a
       // pointer to a empty struct) which is never actually dereferenced.
@@ -210,17 +225,29 @@ MemoryLocation MemoryLocation::getForArgument(const CallBase *Call,
   // LoopIdiomRecognizer likes to turn loops into calls to memset_pattern16
   // whenever possible.
   LibFunc F;
-  if (TLI && Call->getCalledFunction() &&
-      TLI->getLibFunc(*Call->getCalledFunction(), F) &&
-      F == LibFunc_memset_pattern16 && TLI->has(F)) {
-    assert((ArgIdx == 0 || ArgIdx == 1) &&
-           "Invalid argument index for memset_pattern16");
-    if (ArgIdx == 1)
-      return MemoryLocation(Arg, LocationSize::precise(16), AATags);
-    if (const ConstantInt *LenCI =
-            dyn_cast<ConstantInt>(Call->getArgOperand(2)))
-      return MemoryLocation(Arg, LocationSize::precise(LenCI->getZExtValue()),
-                            AATags);
+  if (TLI && TLI->getLibFunc(*Call, F) && TLI->has(F)) {
+    switch (F) {
+    case LibFunc_memset_pattern16:
+      assert((ArgIdx == 0 || ArgIdx == 1) &&
+             "Invalid argument index for memset_pattern16");
+      if (ArgIdx == 1)
+        return MemoryLocation(Arg, LocationSize::precise(16), AATags);
+      if (const ConstantInt *LenCI =
+              dyn_cast<ConstantInt>(Call->getArgOperand(2)))
+        return MemoryLocation(Arg, LocationSize::precise(LenCI->getZExtValue()),
+                              AATags);
+      break;
+    case LibFunc_memcmp:
+      assert((ArgIdx == 0 || ArgIdx == 1) &&
+             "Invalid argument index for memcmp");
+      if (const ConstantInt *LenCI =
+              dyn_cast<ConstantInt>(Call->getArgOperand(2)))
+        return MemoryLocation(Arg, LocationSize::precise(LenCI->getZExtValue()),
+                              AATags);
+      break;
+    default:
+      break;
+    };
   }
   // FIXME: Handle memset_pattern4 and memset_pattern8 also.
 

@@ -91,28 +91,26 @@ bool shardIsStale(const LoadedShard &LS, llvm::vfs::FileSystem *FS) {
 } // namespace
 
 BackgroundIndex::BackgroundIndex(
-    Context BackgroundContext, const ThreadsafeFS &TFS,
-    const GlobalCompilationDatabase &CDB,
-    BackgroundIndexStorage::Factory IndexStorageFactory, size_t ThreadPoolSize,
-    std::function<void(BackgroundQueue::Stats)> OnProgress,
-    std::function<Context(PathRef)> ContextProvider)
+    const ThreadsafeFS &TFS, const GlobalCompilationDatabase &CDB,
+    BackgroundIndexStorage::Factory IndexStorageFactory, Options Opts)
     : SwapIndex(std::make_unique<MemIndex>()), TFS(TFS), CDB(CDB),
-      BackgroundContext(std::move(BackgroundContext)),
-      ContextProvider(std::move(ContextProvider)),
-      Rebuilder(this, &IndexedSymbols, ThreadPoolSize),
+      ContextProvider(std::move(Opts.ContextProvider)),
+      CollectMainFileRefs(Opts.CollectMainFileRefs),
+      Rebuilder(this, &IndexedSymbols, Opts.ThreadPoolSize),
       IndexStorageFactory(std::move(IndexStorageFactory)),
-      Queue(std::move(OnProgress)),
+      Queue(std::move(Opts.OnProgress)),
       CommandsChanged(
           CDB.watch([&](const std::vector<std::string> &ChangedFiles) {
             enqueue(ChangedFiles);
           })) {
-  assert(ThreadPoolSize > 0 && "Thread pool size can't be zero.");
+  assert(Opts.ThreadPoolSize > 0 && "Thread pool size can't be zero.");
   assert(this->IndexStorageFactory && "Storage factory can not be null!");
-  for (unsigned I = 0; I < ThreadPoolSize; ++I) {
-    ThreadPool.runAsync("background-worker-" + llvm::Twine(I + 1), [this] {
-      WithContext Ctx(this->BackgroundContext.clone());
-      Queue.work([&] { Rebuilder.idle(); });
-    });
+  for (unsigned I = 0; I < Opts.ThreadPoolSize; ++I) {
+    ThreadPool.runAsync("background-worker-" + llvm::Twine(I + 1),
+                        [this, Ctx(Context::current().clone())]() mutable {
+                          WithContext BGContext(std::move(Ctx));
+                          Queue.work([&] { Rebuilder.idle(); });
+                        });
   }
 }
 
@@ -274,15 +272,13 @@ llvm::Error BackgroundIndex::index(tooling::CompileCommand Cmd) {
   IgnoreDiagnostics IgnoreDiags;
   auto CI = buildCompilerInvocation(Inputs, IgnoreDiags);
   if (!CI)
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "Couldn't build compiler invocation");
+    return error("Couldn't build compiler invocation");
 
   auto Clang =
       prepareCompilerInstance(std::move(CI), /*Preamble=*/nullptr,
                               std::move(*Buf), std::move(FS), IgnoreDiags);
   if (!Clang)
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "Couldn't build compiler instance");
+    return error("Couldn't build compiler instance");
 
   SymbolCollector::Options IndexOpts;
   // Creates a filter to not collect index results from files with unchanged
@@ -304,6 +300,7 @@ llvm::Error BackgroundIndex::index(tooling::CompileCommand Cmd) {
       return false; // Skip files that haven't changed, without errors.
     return true;
   };
+  IndexOpts.CollectMainFileRefs = CollectMainFileRefs;
 
   IndexFileIn Index;
   auto Action = createStaticIndexingAction(
@@ -319,8 +316,7 @@ llvm::Error BackgroundIndex::index(tooling::CompileCommand Cmd) {
 
   const FrontendInputFile &Input = Clang->getFrontendOpts().Inputs.front();
   if (!Action->BeginSourceFile(*Clang, Input))
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "BeginSourceFile() failed");
+    return error("BeginSourceFile() failed");
   if (llvm::Error Err = Action->Execute())
     return Err;
 

@@ -20,7 +20,6 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MIRYamlMapping.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/TargetFrameLowering.h"
 #include "llvm/IR/Function.h"
 #include "llvm/MC/MCLinkerOptimizationHint.h"
 #include <cassert>
@@ -134,6 +133,10 @@ class AArch64FunctionInfo final : public MachineFunctionInfo {
   /// OutliningStyle denotes, if a function was outined, how it was outlined,
   /// e.g. Tail Call, Thunk, or Function if none apply.
   Optional<std::string> OutliningStyle;
+
+  // Offset from SP-after-callee-saved-spills (i.e. SP-at-entry minus
+  // CalleeSavedStackSize) to the address of the frame record.
+  int CalleeSaveBaseToFrameRecordOffset = 0;
 
 public:
   AArch64FunctionInfo() = default;
@@ -336,6 +339,13 @@ public:
   }
   void setTaggedBasePointerOffset(unsigned Offset) {
     TaggedBasePointerOffset = Offset;
+  }
+
+  int getCalleeSaveBaseToFrameRecordOffset() const {
+    return CalleeSaveBaseToFrameRecordOffset;
+  }
+  void setCalleeSaveBaseToFrameRecordOffset(int Offset) {
+    CalleeSaveBaseToFrameRecordOffset = Offset;
   }
 
 private:

@@ -266,9 +266,7 @@ names from both the *Processor* and *Alternative Processor* can be used.
                                                                               .. TODO
                                                                                  Add product
                                                                                  names.
-     ``gfx1031``                 ``amdgcn``   dGPU  - xnack                   *TBA*
-                                                      [off]
-                                                    - wavefrontsize64
+     ``gfx1031``                 ``amdgcn``   dGPU  - wavefrontsize64         *TBA*
                                                       [off]
                                                     - cumode
                                                       [off]
@@ -1237,7 +1235,7 @@ mapping.
                                              Registers.
    96-127         *Reserved*                 *Reserved for frequently accessed
                                              registers using DWARF 1-byte ULEB.*
-   128            SCC               32       Scalar Condition Code Register.
+   128            STATUS            32       Status Register.
    129-511        *Reserved*                 *Reserved for future Scalar
                                              Architectural Registers.*
    512            VCC_32            32       Vector Condition Code Register
@@ -1246,7 +1244,7 @@ mapping.
    513-1023       *Reserved*                 *Reserved for future Vector
                                              Architectural Registers when
                                              executing in wavefront 32 mode.*
-   768            VCC_64            32       Vector Condition Code Register
+   768            VCC_64            64       Vector Condition Code Register
                                              when executing in wavefront 64
                                              mode.
    769-1023       *Reserved*                 *Reserved for future Vector
@@ -6436,7 +6434,7 @@ Call Convention
 
 .. note::
 
-  This section is currently incomplete and has inakkuracies. It is WIP that will
+  This section is currently incomplete and has inaccuracies. It is WIP that will
   be updated as information is determined.
 
 See :ref:`amdgpu-dwarf-address-space-identifier` for information on swizzled
@@ -7317,7 +7315,7 @@ in :ref:`amdgpu-processors`.
 Set to zero each time a
 :ref:`amdgpu-amdhsa-assembler-directive-amdgpu_hsa_kernel` directive is
 encountered. At each instruction, if the current value of this symbol is less
-than or equal to the maximum VPGR number explicitly referenced within that
+than or equal to the maximum VGPR number explicitly referenced within that
 instruction then the symbol value is updated to equal that VGPR number plus
 one.
 
@@ -7327,7 +7325,7 @@ one.
 Set to zero each time a
 :ref:`amdgpu-amdhsa-assembler-directive-amdgpu_hsa_kernel` directive is
 encountered. At each instruction, if the current value of this symbol is less
-than or equal to the maximum VPGR number explicitly referenced within that
+than or equal to the maximum VGPR number explicitly referenced within that
 instruction then the symbol value is updated to equal that SGPR number plus
 one.
 
@@ -7494,7 +7492,7 @@ of this symbol is less than or equal to the maximum VGPR number explicitly
 referenced within that instruction then the symbol value is updated to equal
 that VGPR number plus one.
 
-May be used to set the `.amdhsa_next_free_vpgr` directive in
+May be used to set the `.amdhsa_next_free_vgpr` directive in
 :ref:`amdhsa-kernel-directives-table`.
 
 May be set at any time, e.g. manually set to zero at the start of each kernel.

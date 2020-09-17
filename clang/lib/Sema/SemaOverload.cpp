@@ -34,6 +34,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -137,6 +138,7 @@ ImplicitConversionRank clang::GetConversionRank(ImplicitConversionKind Kind) {
     ICR_Conversion,
     ICR_Conversion,
     ICR_Conversion,
+    ICR_Conversion,
     ICR_OCL_Scalar_Widening,
     ICR_Complex_Real_Conversion,
     ICR_Conversion,
@@ -174,6 +176,7 @@ static const char* GetImplicitConversionName(ImplicitConversionKind Kind) {
     "Compatible-types conversion",
     "Derived-to-base conversion",
     "Vector conversion",
+    "SVE Vector conversion",
     "Vector splat",
     "Complex-real conversion",
     "Block Pointer conversion",
@@ -1500,17 +1503,9 @@ Sema::TryImplicitConversion(Expr *From, QualType ToType,
 /// converted expression. Flavor is the kind of conversion we're
 /// performing, used in the error message. If @p AllowExplicit,
 /// explicit user-defined conversions are permitted.
-ExprResult
-Sema::PerformImplicitConversion(Expr *From, QualType ToType,
-                                AssignmentAction Action, bool AllowExplicit) {
-  ImplicitConversionSequence ICS;
-  return PerformImplicitConversion(From, ToType, Action, AllowExplicit, ICS);
-}
-
-ExprResult
-Sema::PerformImplicitConversion(Expr *From, QualType ToType,
-                                AssignmentAction Action, bool AllowExplicit,
-                                ImplicitConversionSequence& ICS) {
+ExprResult Sema::PerformImplicitConversion(Expr *From, QualType ToType,
+                                           AssignmentAction Action,
+                                           bool AllowExplicit) {
   if (checkPlaceholderForOverload(*this, From))
     return ExprError();
 
@@ -1521,13 +1516,13 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
   if (getLangOpts().ObjC)
     CheckObjCBridgeRelatedConversions(From->getBeginLoc(), ToType,
                                       From->getType(), From);
-  ICS = ::TryImplicitConversion(*this, From, ToType,
-                                /*SuppressUserConversions=*/false,
-                                AllowExplicit ? AllowedExplicit::All
-                                              : AllowedExplicit::None,
-                                /*InOverloadResolution=*/false,
-                                /*CStyle=*/false, AllowObjCWritebackConversion,
-                                /*AllowObjCConversionOnExplicit=*/false);
+  ImplicitConversionSequence ICS = ::TryImplicitConversion(
+      *this, From, ToType,
+      /*SuppressUserConversions=*/false,
+      AllowExplicit ? AllowedExplicit::All : AllowedExplicit::None,
+      /*InOverloadResolution=*/false,
+      /*CStyle=*/false, AllowObjCWritebackConversion,
+      /*AllowObjCConversionOnExplicit=*/false);
   return PerformImplicitConversion(From, ToType, ICS, Action);
 }
 
@@ -1658,6 +1653,12 @@ static bool IsVectorConversion(Sema &S, QualType FromType,
     }
   }
 
+  if ((ToType->isSizelessBuiltinType() || FromType->isSizelessBuiltinType()) &&
+      S.Context.areCompatibleSveTypes(FromType, ToType)) {
+    ICK = ICK_SVE_Vector_Conversion;
+    return true;
+  }
+
   // We can perform the conversion between vector types in the following cases:
   // 1)vector types are equivalent AltiVec and GCC vector types
   // 2)lax vector conversions are permitted and the vector types are of the
@@ -1758,11 +1759,19 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       }
 
       // Check that we've computed the proper type after overload resolution.
+#ifndef NDEBUG
       // FIXME: FixOverloadedFunctionReference has side-effects; we shouldn't
       // be calling it from within an NDEBUG block.
+
+      // This is a hack to prevent duplicated diagnostics triggered by
+      // the above side effects in some cases involving immediate invocations.
+      llvm::SaveAndRestore<bool> DisableIITracking(
+          S.RebuildingImmediateInvocation, true);
+
       assert(S.Context.hasSameType(
         FromType,
         S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
+#endif
     } else {
       return false;
     }
@@ -4115,6 +4124,20 @@ CompareStandardConversionSequences(Sema &S, SourceLocation Loc,
                  : ImplicitConversionSequence::Worse;
   }
 
+  if (SCS1.Second == ICK_SVE_Vector_Conversion &&
+      SCS2.Second == ICK_SVE_Vector_Conversion) {
+    bool SCS1IsCompatibleSVEVectorConversion =
+        S.Context.areCompatibleSveTypes(SCS1.getFromType(), SCS1.getToType(2));
+    bool SCS2IsCompatibleSVEVectorConversion =
+        S.Context.areCompatibleSveTypes(SCS2.getFromType(), SCS2.getToType(2));
+
+    if (SCS1IsCompatibleSVEVectorConversion !=
+        SCS2IsCompatibleSVEVectorConversion)
+      return SCS1IsCompatibleSVEVectorConversion
+                 ? ImplicitConversionSequence::Better
+                 : ImplicitConversionSequence::Worse;
+  }
+
   return ImplicitConversionSequence::Indistinguishable;
 }
 
@@ -5542,7 +5565,6 @@ static bool CheckConvertedConstantConversions(Sema &S,
   // conversions are fine.
   switch (SCS.Second) {
   case ICK_Identity:
-  case ICK_Function_Conversion:
   case ICK_Integral_Promotion:
   case ICK_Integral_Conversion: // Narrowing conversions are checked elsewhere.
   case ICK_Zero_Queue_Conversion:
@@ -5574,6 +5596,7 @@ static bool CheckConvertedConstantConversions(Sema &S,
   case ICK_Compatible_Conversion:
   case ICK_Derived_To_Base:
   case ICK_Vector_Conversion:
+  case ICK_SVE_Vector_Conversion:
   case ICK_Vector_Splat:
   case ICK_Complex_Real:
   case ICK_Block_Pointer_Conversion:
@@ -5589,6 +5612,7 @@ static bool CheckConvertedConstantConversions(Sema &S,
   case ICK_Function_To_Pointer:
     llvm_unreachable("found a first conversion kind in Second");
 
+  case ICK_Function_Conversion:
   case ICK_Qualification:
     llvm_unreachable("found a third conversion kind in Second");
 
@@ -5680,6 +5704,7 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
     return Result;
 
   // Check for a narrowing implicit conversion.
+  bool ReturnPreNarrowingValue = false;
   APValue PreNarrowingValue;
   QualType PreNarrowingType;
   switch (SCS->getNarrowingKind(EvalCtx, Result.get(), PreNarrowingValue,
@@ -5694,12 +5719,22 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
     break;
 
   case NK_Constant_Narrowing:
+    if (CCE == Sema::CCEK_ArrayBound &&
+        PreNarrowingType->isIntegralOrEnumerationType() &&
+        PreNarrowingValue.isInt()) {
+      // Don't diagnose array bound narrowing here; we produce more precise
+      // errors by allowing the un-narrowed value through.
+      ReturnPreNarrowingValue = true;
+      break;
+    }
     S.Diag(From->getBeginLoc(), diag::ext_cce_narrowing)
         << CCE << /*Constant*/ 1
         << PreNarrowingValue.getAsString(S.Context, PreNarrowingType) << T;
     break;
 
   case NK_Type_Narrowing:
+    // FIXME: It would be better to diagnose that the expression is not a
+    // constant expression.
     S.Diag(From->getBeginLoc(), diag::ext_cce_narrowing)
         << CCE << /*Constant*/ 0 << From->getType() << T;
     break;
@@ -5742,7 +5777,10 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
       }
 
       // It's a constant expression.
-      return ConstantExpr::Create(S.Context, InitExpr, Value);
+      Expr *E = ConstantExpr::Create(S.Context, InitExpr, Value);
+      if (ReturnPreNarrowingValue)
+        Value = std::move(PreNarrowingValue);
+      return E;
     }
   }
 
@@ -5899,7 +5937,8 @@ diagnoseNoViableConversion(Sema &SemaRef, SourceLocation Loc, Expr *&From,
     // Record usage of conversion in an implicit cast.
     From = ImplicitCastExpr::Create(SemaRef.Context, Result.get()->getType(),
                                     CK_UserDefinedConversion, Result.get(),
-                                    nullptr, Result.get()->getValueKind());
+                                    nullptr, Result.get()->getValueKind(),
+                                    SemaRef.CurFPFeatureOverrides());
   }
   return false;
 }
@@ -5928,7 +5967,8 @@ static bool recordConversion(Sema &SemaRef, SourceLocation Loc, Expr *&From,
   // Record usage of conversion in an implicit cast.
   From = ImplicitCastExpr::Create(SemaRef.Context, Result.get()->getType(),
                                   CK_UserDefinedConversion, Result.get(),
-                                  nullptr, Result.get()->getValueKind());
+                                  nullptr, Result.get()->getValueKind(),
+                                  SemaRef.CurFPFeatureOverrides());
   return false;
 }
 
@@ -7336,8 +7376,8 @@ void Sema::AddConversionCandidate(
                             VK_LValue, From->getBeginLoc());
   ImplicitCastExpr ConversionFn(ImplicitCastExpr::OnStack,
                                 Context.getPointerType(Conversion->getType()),
-                                CK_FunctionToPointerDecay,
-                                &ConversionRef, VK_RValue);
+                                CK_FunctionToPointerDecay, &ConversionRef,
+                                VK_RValue, FPOptionsOverride());
 
   QualType ConversionType = Conversion->getConversionType();
   if (!isCompleteType(From->getBeginLoc(), ConversionType)) {
@@ -12902,6 +12942,8 @@ static QualType chooseRecoveryType(OverloadCandidateSet &CS,
   auto ConsiderCandidate = [&](const OverloadCandidate &Candidate) {
     if (!Candidate.Function)
       return;
+    if (Candidate.Function->isInvalidDecl())
+      return;
     QualType T = Candidate.Function->getReturnType();
     if (T.isNull())
       return;
@@ -14477,9 +14519,9 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
     if (Call.isInvalid())
       return ExprError();
     // Record usage of conversion in an implicit cast.
-    Call = ImplicitCastExpr::Create(Context, Call.get()->getType(),
-                                    CK_UserDefinedConversion, Call.get(),
-                                    nullptr, VK_RValue);
+    Call = ImplicitCastExpr::Create(
+        Context, Call.get()->getType(), CK_UserDefinedConversion, Call.get(),
+        nullptr, VK_RValue, CurFPFeatureOverrides());
 
     return BuildCallExpr(S, Call.get(), LParenLoc, Args, RParenLoc);
   }
@@ -14931,10 +14973,9 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
     if (SubExpr == ICE->getSubExpr())
       return ICE;
 
-    return ImplicitCastExpr::Create(Context, ICE->getType(),
-                                    ICE->getCastKind(),
-                                    SubExpr, nullptr,
-                                    ICE->getValueKind());
+    return ImplicitCastExpr::Create(Context, ICE->getType(), ICE->getCastKind(),
+                                    SubExpr, nullptr, ICE->getValueKind(),
+                                    CurFPFeatureOverrides());
   }
 
   if (auto *GSE = dyn_cast<GenericSelectionExpr>(E)) {

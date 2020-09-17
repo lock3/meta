@@ -6,15 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/StringRef.h"
-
 #include "CommandObjectCommands.h"
 #include "CommandObjectHelp.h"
+#include "CommandObjectRegexCommand.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/IOHandler.h"
 #include "lldb/Interpreter/CommandHistory.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
-#include "lldb/Interpreter/CommandObjectRegexCommand.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionValueBoolean.h"
@@ -24,6 +22,7 @@
 #include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/StringList.h"
+#include "llvm/ADT/StringRef.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -618,6 +617,17 @@ public:
 
   ~CommandObjectCommandsUnalias() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (!m_interpreter.HasCommands() || request.GetCursorIndex() != 0)
+      return;
+
+    for (const auto &ent : m_interpreter.GetAliases()) {
+      request.TryCompleteCurrentArg(ent.first, ent.second->GetHelp());
+    }
+  }
+
 protected:
   bool DoExecute(Args &args, CommandReturnObject &result) override {
     CommandObject::CommandMap::iterator pos;
@@ -698,6 +708,18 @@ public:
   }
 
   ~CommandObjectCommandsDelete() override = default;
+
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    if (!m_interpreter.HasCommands() || request.GetCursorIndex() != 0)
+      return;
+
+    for (const auto &ent : m_interpreter.GetCommands()) {
+      if (ent.second->IsRemovable())
+        request.TryCompleteCurrentArg(ent.first, ent.second->GetHelp());
+    }
+  }
 
 protected:
   bool DoExecute(Args &args, CommandReturnObject &result) override {

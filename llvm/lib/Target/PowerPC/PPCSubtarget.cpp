@@ -11,9 +11,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "PPCSubtarget.h"
+#include "GISel/PPCCallLowering.h"
+#include "GISel/PPCLegalizerInfo.h"
+#include "GISel/PPCRegisterBankInfo.h"
 #include "PPC.h"
 #include "PPCRegisterInfo.h"
 #include "PPCTargetMachine.h"
+#include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/IR/Attributes.h"
@@ -49,11 +53,19 @@ PPCSubtarget &PPCSubtarget::initializeSubtargetDependencies(StringRef CPU,
 
 PPCSubtarget::PPCSubtarget(const Triple &TT, const std::string &CPU,
                            const std::string &FS, const PPCTargetMachine &TM)
-    : PPCGenSubtargetInfo(TT, CPU, FS), TargetTriple(TT),
+    : PPCGenSubtargetInfo(TT, CPU, /*TuneCPU*/ CPU, FS), TargetTriple(TT),
       IsPPC64(TargetTriple.getArch() == Triple::ppc64 ||
               TargetTriple.getArch() == Triple::ppc64le),
       TM(TM), FrameLowering(initializeSubtargetDependencies(CPU, FS)),
-      InstrInfo(*this), TLInfo(TM, *this) {}
+      InstrInfo(*this), TLInfo(TM, *this) {
+  CallLoweringInfo.reset(new PPCCallLowering(*getTargetLowering()));
+  Legalizer.reset(new PPCLegalizerInfo(*this));
+  auto *RBI = new PPCRegisterBankInfo(*getRegisterInfo());
+  RegBankInfo.reset(RBI);
+
+  InstSelector.reset(createPPCInstructionSelector(
+      *static_cast<const PPCTargetMachine *>(&TM), *this, *RBI));
+}
 
 void PPCSubtarget::initializeEnvironment() {
   StackAlignment = Align(16);
@@ -73,6 +85,7 @@ void PPCSubtarget::initializeEnvironment() {
   HasP8Crypto = false;
   HasP9Vector = false;
   HasP9Altivec = false;
+  HasMMA = false;
   HasP10Vector = false;
   HasPrefixInstrs = false;
   HasPCRelativeMemops = false;
@@ -107,6 +120,7 @@ void PPCSubtarget::initializeEnvironment() {
   HasHTM = false;
   HasFloat128 = false;
   HasFusion = false;
+  HasStoreFusion = false;
   HasAddiLoadFusion = false;
   HasAddisLoadFusion = false;
   IsISA3_0 = false;
@@ -139,7 +153,7 @@ void PPCSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
   InstrItins = getInstrItineraryForCPU(CPUName);
 
   // Parse features string.
-  ParseSubtargetFeatures(CPUName, FS);
+  ParseSubtargetFeatures(CPUName, /*TuneCPU*/ CPUName, FS);
 
   // If the user requested use of 64-bit regs, but the cpu selected doesn't
   // support it, ignore.
@@ -225,4 +239,21 @@ bool PPCSubtarget::isPPC64() const { return TM.isPPC64(); }
 bool PPCSubtarget::isUsingPCRelativeCalls() const {
   return isPPC64() && hasPCRelativeMemops() && isELFv2ABI() &&
          CodeModel::Medium == getTargetMachine().getCodeModel();
+}
+
+// GlobalISEL
+const CallLowering *PPCSubtarget::getCallLowering() const {
+  return CallLoweringInfo.get();
+}
+
+const RegisterBankInfo *PPCSubtarget::getRegBankInfo() const {
+  return RegBankInfo.get();
+}
+
+const LegalizerInfo *PPCSubtarget::getLegalizerInfo() const {
+  return Legalizer.get();
+}
+
+InstructionSelector *PPCSubtarget::getInstructionSelector() const {
+  return InstSelector.get();
 }

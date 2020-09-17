@@ -1700,9 +1700,12 @@ are listed below.
 
 **-fbasic-block-sections=[labels, all, list=<arg>, none]**
 
-  Controls whether Clang emits a label for each basic block.  Further, with
-  values "all" and "list=arg", each basic block or a subset of basic blocks
-  can be placed in its own unique section.
+  Controls how Clang emits text sections for basic blocks. With values ``all``
+  and ``list=<arg>``, each basic block or a subset of basic blocks can be placed
+  in its own unique section. With the "labels" value, normal text sections are
+  emitted, but a ``.bb_addr_map`` section is emitted which includes address
+  offsets for each basic block in the program, relative to the parent function
+  address.
 
   With the ``list=<arg>`` option, a file containing the subset of basic blocks
   that need to placed in unique sections can be specified.  The format of the
@@ -2351,6 +2354,12 @@ below. If multiple flags are present, the last one is used.
 .. option:: -g
 
   Generate complete debug info.
+
+.. option:: -feliminate-unused-debug-types
+
+  By default, Clang does not emit type information for types that are defined
+  but not used in a program. To retain the debug info for these unused types,
+  the negation **-fno-eliminate-unused-debug-types** can be used.
 
 Controlling Macro Debug Info Generation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -3220,11 +3229,6 @@ backend.
 
 Operating System Features and Limitations
 -----------------------------------------
-
-Darwin (macOS)
-^^^^^^^^^^^^^^
-
-Thread Sanitizer is not supported.
 
 Windows
 ^^^^^^^

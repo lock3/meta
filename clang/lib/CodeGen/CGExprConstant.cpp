@@ -2040,8 +2040,12 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
     return llvm::ConstantInt::get(CGM.getLLVMContext(),
                                   Value.getFixedPoint().getValue());
   case APValue::Reflection:
-    // FIXME: Could this branch be reached?
-    llvm_unreachable("Reflections should not be codegened.");
+    // FIXME: This emits an unused garbage value, but there's not much
+    // meaningful we can emit here; This seems to be okay, and the
+    // value seems to be only used by debug builds... But perhaps we
+    // can do better?
+    return llvm::ConstantInt::get(CGM.getLLVMContext(),
+                                  llvm::APInt(/*numBits=*/1, /*val=*/1));
   case APValue::ComplexInt: {
     llvm::Constant *Complex[2];
 
