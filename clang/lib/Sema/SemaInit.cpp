@@ -8712,10 +8712,9 @@ ExprResult InitializationSequence::Perform(Sema &S,
       //
       // We can't hack around this and just update ResultType, since there's
       // no guarantee it's actually provided.
-      CurInit = ImplicitCastExpr::Create(S.Context, Step->Type,
-                                         CK_ParameterQualification,
-                                         CurInit.get(), nullptr,
-                                         CurInit.get()->getValueKind());
+      CurInit = ImplicitCastExpr::Create(
+          S.Context, Step->Type, CK_ParameterQualification, CurInit.get(),
+          nullptr, CurInit.get()->getValueKind(), S.getCurFPFeatures());
       break;
     }
     }

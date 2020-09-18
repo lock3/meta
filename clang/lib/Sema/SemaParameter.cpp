@@ -777,7 +777,9 @@ struct Rewriter : TreeTransform<Rewriter> {
     SourceLocation Loc;
     ValueDecl *VD = const_cast<ValueDecl*>(cast<ValueDecl>(D));
     Expr *Cond = new (Cxt) CXXParameterInfoExpr(VD, Cxt.BoolTy, Loc);
-    return IfStmt::Create(Cxt, Loc, false, nullptr, nullptr, Cond, Loc, Loc, S0, Loc, S1);
+    return IfStmt::Create(
+        Cxt, Loc, /*IsConstexpr=*/false, /*Init=*/nullptr, /*Var=*/nullptr,
+        Cond, /*LPL=*/Loc, /*RPL=*/Loc, S0, /*EL=*/Loc, S1);
   }
 
   /// Finds any last uses in S, storing them in Decls. Returns true if Decls
