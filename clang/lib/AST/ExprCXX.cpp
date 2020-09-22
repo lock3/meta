@@ -2061,3 +2061,23 @@ CXXFragmentCaptureExpr *CXXFragmentCaptureExpr::CreateEmpty(
     const ASTContext &C, EmptyShell Empty) {
   return new (C) CXXFragmentCaptureExpr(Empty);
 }
+
+CXXInjectedValueExpr *CXXInjectedValueExpr::Create(
+    const ASTContext &C, Expr *E, const APValue &Result) {
+  void *Mem = C.Allocate(totalSizeToAlloc<APValue>(1),
+                         alignof(CXXInjectedValueExpr));
+
+  auto *IVE = new (Mem) CXXInjectedValueExpr(E);
+  IVE->APValueResult() = Result;
+  return IVE;
+}
+
+CXXInjectedValueExpr *CXXInjectedValueExpr::CreateEmpty(
+    const ASTContext &C, EmptyShell Empty) {
+  void *Mem = C.Allocate(totalSizeToAlloc<APValue>(1),
+                         alignof(CXXInjectedValueExpr));
+
+  auto *E = new (Mem) CXXInjectedValueExpr(Empty);
+  E->APValueResult() = { };
+  return E;
+}

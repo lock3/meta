@@ -1369,6 +1369,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::TypoExprClass:
   case Expr::CXXFragmentExprClass:
   case Expr::CXXFragmentCaptureExprClass:
+  case Expr::CXXInjectedValueExprClass:
     // FIXME: Many of the above can throw.
     return CT_Cannot;
 
