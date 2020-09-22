@@ -2635,6 +2635,10 @@ void StmtPrinter::VisitCXXFragmentCaptureExpr(CXXFragmentCaptureExpr *Node) {
  OS << "}";
 }
 
+void StmtPrinter::VisitCXXInjectedValueExpr(CXXInjectedValueExpr *Node) {
+ Visit(Node->getInitializer());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

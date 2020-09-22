@@ -8794,6 +8794,14 @@ TreeTransform<Derived>::TransformCXXFragmentCaptureExpr(
       E->getOffset(), E->getEndLoc());
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXInjectedValueExpr(
+    CXXInjectedValueExpr *E) {
+  return CXXInjectedValueExpr::Create(
+      SemaRef.Context, E->getInitializer(), E->getAPValueResult());
+}
+
 // Objective-C Statements.
 
 template<typename Derived>

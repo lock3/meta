@@ -362,6 +362,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXCompilerErrorExprClass:
   case Stmt::CXXFragmentExprClass:
   case Stmt::CXXFragmentCaptureExprClass:
+  case Stmt::CXXInjectedValueExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 

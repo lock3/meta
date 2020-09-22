@@ -2767,6 +2767,7 @@ DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
 DEF_TRAVERSE_STMT(CXXFragmentExpr, {})
 DEF_TRAVERSE_STMT(CXXFragmentCaptureExpr, {})
+DEF_TRAVERSE_STMT(CXXInjectedValueExpr, {})
 
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {
   if (S->getLifetimeExtendedTemporaryDecl()) {

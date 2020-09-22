@@ -1362,19 +1362,39 @@ ConstantEmitter::tryEmitAbstract(const APValue &value, QualType destType) {
   return validateAndPopAbstract(C, state);
 }
 
+static QualType extractQualTypeForConstantExpr(
+    CodeGenFunction *CGF, const Expr *E, bool AllowCaptures) {
+  const Expr *Inner = E->IgnoreImplicit();
+
+  if (auto *Call = dyn_cast<CallExpr>(Inner))
+    return Call->getCallReturnType(CGF->getContext());
+  if (auto *Ctor = dyn_cast<CXXConstructExpr>(Inner))
+    return Ctor->getType();
+
+  if (AllowCaptures) {
+    if (auto *Frag = dyn_cast<CXXFragmentCaptureExpr>(Inner))
+      return Frag->getType();
+  }
+
+  return {};
+}
+
 llvm::Constant *ConstantEmitter::tryEmitConstantExpr(const ConstantExpr *CE) {
   if (!CE->hasAPValueResult())
     return nullptr;
-  const Expr *Inner = CE->getSubExpr()->IgnoreImplicit();
-  QualType RetType;
-  if (auto *Call = dyn_cast<CallExpr>(Inner))
-    RetType = Call->getCallReturnType(CGF->getContext());
-  else if (auto *Ctor = dyn_cast<CXXConstructExpr>(Inner))
-    RetType = Ctor->getType();
-  else if (auto *Frag = dyn_cast<CXXFragmentCaptureExpr>(Inner))
-    RetType = Frag->getType();
+  QualType RetType = extractQualTypeForConstantExpr(
+      CGF, CE->getSubExpr(), /*AllowCaptures=*/false);
   llvm::Constant *Res =
       emitAbstract(CE->getBeginLoc(), CE->getAPValueResult(), RetType);
+  return Res;
+}
+
+llvm::Constant *ConstantEmitter::tryEmitInjectedValueExpr(
+    const CXXInjectedValueExpr *IVE) {
+  QualType RetType = extractQualTypeForConstantExpr(
+      CGF, IVE->getInitializer(), /*AllowCaptures=*/true);
+  llvm::Constant *Res =
+      emitAbstract(IVE->getBeginLoc(), IVE->getAPValueResult(), RetType);
   return Res;
 }
 

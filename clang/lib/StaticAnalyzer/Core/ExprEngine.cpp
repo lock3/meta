@@ -1313,6 +1313,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CapturedStmtClass:
     case Stmt::CXXFragmentExprClass:
     case Stmt::CXXFragmentCaptureExprClass:
+    case Stmt::CXXInjectedValueExprClass:
     case Stmt::CXXInjectionStmtClass:
     case Stmt::CXXBaseInjectionStmtClass:
     {
