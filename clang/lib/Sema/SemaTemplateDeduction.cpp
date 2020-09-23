@@ -6167,6 +6167,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     // Search in the underlying type.
     MarkUsedTemplateParameters(Ctx, cast<ParameterType>(T)->getParameterType(),
                                OnlyDeduced, Depth, Used);
+    break;
 
   // None of these types have any template parameters in them.
   case Type::Builtin:
