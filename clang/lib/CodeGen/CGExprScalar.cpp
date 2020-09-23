@@ -429,6 +429,15 @@ public:
       return nullptr;
     }
   }
+
+  Value *VisitCXXInjectedValueExpr(CXXInjectedValueExpr *E) {
+    if (Value *Result = ConstantEmitter(CGF).tryEmitInjectedValueExpr(E)) {
+      assert(!E->isGLValue());
+      return Result;
+    }
+    llvm_unreachable("failed to generate a constant for an injected value");
+  }
+
   Value *VisitParenExpr(ParenExpr *PE) {
     return Visit(PE->getSubExpr());
   }

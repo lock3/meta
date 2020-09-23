@@ -111,6 +111,7 @@ public:
   llvm::Constant *tryEmitAbstractForMemory(const APValue &value, QualType T);
 
   llvm::Constant *tryEmitConstantExpr(const ConstantExpr *CE);
+  llvm::Constant *tryEmitInjectedValueExpr(const CXXInjectedValueExpr *CE);
 
   llvm::Constant *emitNullForMemory(QualType T) {
     return emitNullForMemory(CGM, T);

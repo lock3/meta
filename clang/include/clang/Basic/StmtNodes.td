@@ -169,6 +169,7 @@ def LambdaExpr : StmtNode<Expr>;
 def CXXFoldExpr : StmtNode<Expr>;
 def CXXFragmentExpr : StmtNode<Expr>;
 def CXXFragmentCaptureExpr : StmtNode<Expr>;
+def CXXInjectedValueExpr : StmtNode<Expr>;
 def CXXParameterInfoExpr : StmtNode<Expr>;
 
 // C++ Coroutines TS expressions

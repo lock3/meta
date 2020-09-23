@@ -56,7 +56,6 @@ namespace clang {
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
-  class InjectionContext;
   struct InjectionEffect;
 
 /// A simple array of base specifiers.
@@ -1031,7 +1030,6 @@ class ConstantExpr final
   friend TrailingObjects;
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
-  friend class InjectionContext;
 
 public:
   /// Describes the kind of result that can be tail-allocated.

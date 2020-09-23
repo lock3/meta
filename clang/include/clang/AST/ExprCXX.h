@@ -6193,6 +6193,64 @@ public:
   }
 };
 
+class CXXInjectedValueExpr final
+    : public Expr,
+      private llvm::TrailingObjects<CXXInjectedValueExpr, APValue> {
+  friend TrailingObjects;
+
+  /// The expression which initialized this value.
+  Stmt *E;
+
+  APValue &APValueResult() {
+    return *getTrailingObjects<APValue>();
+  }
+
+  APValue &APValueResult() const {
+    return const_cast<CXXInjectedValueExpr *>(this)->APValueResult();
+  }
+
+  CXXInjectedValueExpr(Expr *E)
+    : Expr(CXXInjectedValueExprClass, E->getType(), E->getValueKind(),
+           E->getObjectKind()), E(E) {
+    setDependence(computeDependence(this));
+  }
+
+  CXXInjectedValueExpr(EmptyShell Empty)
+    : Expr(CXXInjectedValueExprClass, Empty) {}
+public:
+  static CXXInjectedValueExpr *Create(
+      const ASTContext &C, Expr *E, const APValue &Result);
+
+  static CXXInjectedValueExpr *CreateEmpty(const ASTContext &C,
+                                           EmptyShell Empty);
+
+  Expr *getInitializer() {
+    return cast<Expr>(E);
+  }
+
+  const Expr *getInitializer() const {
+    return const_cast<CXXInjectedValueExpr *>(this)->getInitializer();
+  }
+
+  APValue getAPValueResult() const {
+    return APValueResult();
+  }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return E->getBeginLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return E->getEndLoc();
+  }
+
+  child_range children() { return child_range(&E, &E + 1); }
+  const_child_range children() const { return const_child_range(&E, &E + 1); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInjectedValueExprClass;
+  }
+};
+
 /// Represents a query for information about a particular parameter.
 class CXXParameterInfoExpr : public Expr {
   ValueDecl *Parm;

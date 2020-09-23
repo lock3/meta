@@ -3388,6 +3388,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXDependentVariadicReifierExprClass:
   case CXXFragmentExprClass:
   case CXXFragmentCaptureExprClass:
+  case CXXInjectedValueExprClass:
   case CXXSelectMemberExprClass:
   case CXXSelectPackExprClass:
   case CXXParameterInfoExprClass:
