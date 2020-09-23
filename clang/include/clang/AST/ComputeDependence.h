@@ -87,6 +87,7 @@ class CXXPseudoDestructorExpr;
 class OverloadExpr;
 class DependentScopeDeclRefExpr;
 class CXXConstructExpr;
+class CXXDefaultInitExpr;
 class LambdaExpr;
 class CXXUnresolvedConstructExpr;
 class CXXDependentScopeMemberExpr;
@@ -187,6 +188,7 @@ ExprDependence computeDependence(OverloadExpr *E, bool KnownDependent,
                                  bool KnownContainsUnexpandedParameterPack);
 ExprDependence computeDependence(DependentScopeDeclRefExpr *E);
 ExprDependence computeDependence(CXXConstructExpr *E);
+ExprDependence computeDependence(CXXDefaultInitExpr *E);
 ExprDependence computeDependence(LambdaExpr *E,
                                  bool ContainsUnexpandedParameterPack);
 ExprDependence computeDependence(CXXUnresolvedConstructExpr *E);

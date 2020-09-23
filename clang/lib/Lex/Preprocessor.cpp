@@ -1422,6 +1422,8 @@ ModuleLoader::~ModuleLoader() = default;
 
 CommentHandler::~CommentHandler() = default;
 
+EmptylineHandler::~EmptylineHandler() = default;
+
 CodeCompletionHandler::~CodeCompletionHandler() = default;
 
 void Preprocessor::createPreprocessingRecord() {
