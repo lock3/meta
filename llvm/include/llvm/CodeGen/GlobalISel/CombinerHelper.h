@@ -17,6 +17,7 @@
 #ifndef LLVM_CODEGEN_GLOBALISEL_COMBINER_HELPER_H
 #define LLVM_CODEGEN_GLOBALISEL_COMBINER_HELPER_H
 
+#include "llvm/ADT/APFloat.h"
 #include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/CodeGen/Register.h"
 #include "llvm/Support/Alignment.h"
@@ -266,6 +267,12 @@ public:
   bool matchCombineUnmergeZExtToZExt(MachineInstr &MI);
   bool applyCombineUnmergeZExtToZExt(MachineInstr &MI);
 
+  /// Transform fp_instr(cst) to constant result of the fp operation.
+  bool matchCombineConstantFoldFpUnary(MachineInstr &MI,
+                                       Optional<APFloat> &Cst);
+  bool applyCombineConstantFoldFpUnary(MachineInstr &MI,
+                                       Optional<APFloat> &Cst);
+
   /// Transform IntToPtr(PtrToInt(x)) to x if cast is in the same address space.
   bool matchCombineI2PToP2I(MachineInstr &MI, Register &Reg);
   bool applyCombineI2PToP2I(MachineInstr &MI, Register &Reg);
@@ -297,6 +304,22 @@ public:
   /// Match fabs(fabs(x)) to fabs(x).
   bool matchCombineFAbsOfFAbs(MachineInstr &MI, Register &Src);
   bool applyCombineFAbsOfFAbs(MachineInstr &MI, Register &Src);
+
+  /// Transform trunc ([asz]ext x) to x or ([asz]ext x) or (trunc x).
+  bool matchCombineTruncOfExt(MachineInstr &MI,
+                              std::pair<Register, unsigned> &MatchInfo);
+  bool applyCombineTruncOfExt(MachineInstr &MI,
+                              std::pair<Register, unsigned> &MatchInfo);
+
+  /// Transform trunc (shl x, K) to shl (trunc x),
+  /// K => K < VT.getScalarSizeInBits().
+  bool matchCombineTruncOfShl(MachineInstr &MI,
+                              std::pair<Register, Register> &MatchInfo);
+  bool applyCombineTruncOfShl(MachineInstr &MI,
+                              std::pair<Register, Register> &MatchInfo);
+
+  /// Transform G_MUL(x, -1) to G_SUB(0, x)
+  bool applyCombineMulByNegativeOne(MachineInstr &MI);
 
   /// Return true if any explicit use operand on \p MI is defined by a
   /// G_IMPLICIT_DEF.

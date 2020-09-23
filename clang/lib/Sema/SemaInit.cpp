@@ -8501,7 +8501,8 @@ ExprResult InitializationSequence::Perform(Sema &S,
 
     case SK_StringInit: {
       QualType Ty = Step->Type;
-      CheckStringInit(CurInit.get(), ResultType ? *ResultType : Ty,
+      bool UpdateType = ResultType && Entity.getType()->isIncompleteArrayType();
+      CheckStringInit(CurInit.get(), UpdateType ? *ResultType : Ty,
                       S.Context.getAsArrayType(Ty), S);
       break;
     }

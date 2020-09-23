@@ -2628,7 +2628,7 @@ Decl *InjectionContext::InjectTemplateTemplateParmDecl(
     if (!TName.isNull())
       Parm->setDefaultArgument(
           getSema().Context,
-          TemplateArgumentLoc(TemplateArgument(TName),
+          TemplateArgumentLoc(getSema().Context, TemplateArgument(TName),
                               QualifierLoc,
                               D->getDefaultArgument().getTemplateNameLoc()));
   }
