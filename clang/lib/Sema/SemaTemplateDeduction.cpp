@@ -2707,11 +2707,11 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
       Builder.MakeTrivial(Context, QTN->getQualifier(), Loc);
 
     if (Arg.getKind() == TemplateArgument::Template)
-      return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                                 Loc);
+      return TemplateArgumentLoc(
+          Context, Arg, Builder.getWithLocInContext(Context), Loc);
 
-    return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                               Loc, Loc);
+    return TemplateArgumentLoc(
+        Context, Arg, Builder.getWithLocInContext(Context), Loc, Loc);
   }
 
   case TemplateArgument::Reflected:
@@ -6156,6 +6156,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     // Search in the underlying type.
     MarkUsedTemplateParameters(Ctx, cast<ParameterType>(T)->getParameterType(),
                                OnlyDeduced, Depth, Used);
+    break;
 
   // None of these types have any template parameters in them.
   case Type::Builtin:
