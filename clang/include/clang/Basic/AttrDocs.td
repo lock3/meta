@@ -57,6 +57,32 @@ global variable or function should be in after translation.
   let Heading = "section, __declspec(allocate)";
 }
 
+def InitPriorityDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+In C++, the order in which global variables are initialized across translation
+units is unspecified, unlike the ordering within a single translation unit. The
+``init_priority`` attribute allows you to specify a relative ordering for the
+initialization of objects declared at namespace scope in C++. The priority is
+given as an integer constant expression between 101 and 65535 (inclusive).
+Priorities outside of that range are reserved for use by the implementation. A
+lower value indicates a higher priority of initialization. Note that only the
+relative ordering of values is important. For example:
+
+.. code-block:: c++
+
+  struct SomeType { SomeType(); };
+  __attribute__((init_priority(200))) SomeType Obj1;
+  __attribute__((init_priority(101))) SomeType Obj2;
+
+``Obj1`` will be initialized *before* ``Obj2`` despite the usual order of
+initialization being the opposite.
+
+This attribute is only supported for C++ and Objective-C++ and is ignored in
+other language modes.
+  }];
+}
+
 def InitSegDocs : Documentation {
   let Category = DocCatVariable;
   let Content = [{
@@ -3476,6 +3502,51 @@ Swift.
   }];
 }
 
+def SwiftBridgeDocs : Documentation {
+  let Category = SwiftDocs;
+  let Heading = "swift_bridge";
+  let Content = [{
+The ``swift_bridge`` attribute indicates that the declaration to which the
+attribute appertains is bridged to the named Swift type.
+
+  .. code-block:: c
+
+    __attribute__((__objc_root__))
+    @interface Base
+    - (instancetype)init;
+    @end
+
+    __attribute__((__swift_bridge__("BridgedI")))
+    @interface I : Base
+    @end
+
+In this example, the Objective-C interface ``I`` will be made available to Swift
+with the name ``BridgedI``.  It would be possible for the compiler to refer to
+``I`` still in order to bridge the type back to Objective-C.
+  }];
+}
+
+def SwiftBridgedTypedefDocs : Documentation {
+  let Category = SwiftDocs;
+  let Heading = "swift_bridged";
+  let Content = [{
+The ``swift_bridged_typedef`` attribute indicates that when the typedef to which
+the attribute appertains is imported into Swift, it should refer to the bridged
+Swift type (e.g. Swift's ``String``) rather than the Objective-C type as written
+(e.g. ``NSString``).
+
+  .. code-block:: c
+
+    @interface NSString;
+    typedef NSString *AliasedString __attribute__((__swift_bridged_typedef__));
+
+    extern void acceptsAliasedString(AliasedString _Nonnull parameter);
+
+In this case, the function ``acceptsAliasedString`` will be imported into Swift
+as a function which accepts a ``String`` type parameter.
+  }];
+}
+
 def SwiftObjCMembersDocs : Documentation {
   let Category = SwiftDocs;
   let Heading = "swift_objc_members";
@@ -3524,6 +3595,30 @@ it is instead imported as ``Void``.
 considered to have thrown if they leave a non-null error in the error parameter.
 The return type is left unmodified.
 
+  }];
+}
+
+def SwiftNameDocs : Documentation {
+  let Category = SwiftDocs;
+  let Heading = "swift_name";
+  let Content = [{
+The ``swift_name`` attribute provides the name of the declaration in Swift. If
+this attribute is absent, the name is transformed according to the algorithm
+built into the Swift compiler.
+
+The argument is a string literal that contains the Swift name of the function,
+variable, or type. When renaming a function, the name may be a compound Swift
+name.  For a type, enum constant, property, or variable declaration, the name
+must be a simple or qualified identifier.
+
+  .. code-block:: c
+
+    @interface URL
+    - (void) initWithString:(NSString *)s __attribute__((__swift_name__("URL.init(_:)")))
+    @end
+
+    void __attribute__((__swift_name__("squareRoot()"))) sqrt(double v) {
+    }
   }];
 }
 
@@ -3633,12 +3728,24 @@ Clang provides the following context selector extensions, used via
     match_all
     match_any
     match_none
+    disable_implicit_base
+    allow_templates
 
 The match extensions change when the *entire* context selector is considered a
 match for an OpenMP context. The default is ``all``, with ``none`` no trait in the
 selector is allowed to be in the OpenMP context, with ``any`` a single trait in
 both the selector and OpenMP context is sufficient. Only a single match
 extension trait is allowed per context selector.
+The disable extensions remove default effects of the ``begin declare variant``
+applied to a definition. If ``disable_implicit_base`` is given, we will not
+introduce an implicit base function for a variant if no base function was
+found. The variant is still generated but will never be called, due to the
+absence of a base function and consequently calls to a base function.
+The allow extensions change when the ``begin declare variant`` effect is
+applied to a definition. If ``allow_templates`` is given, template function
+definitions are considered as specializations of existing or assumed template
+declarations with the same name. The template parameters for the base functions
+are used to instantiate the specialization.
 
   }];
 }

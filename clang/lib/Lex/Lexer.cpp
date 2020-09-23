@@ -125,6 +125,8 @@ void Lexer::InitLexer(const char *BufStart, const char *BufPtr,
 
   // Default to not keeping comments.
   ExtendedTokenMode = 0;
+
+  NewLinePtr = nullptr;
 }
 
 /// Lexer constructor - Create a new lexer object for the specified buffer
@@ -2199,6 +2201,15 @@ bool Lexer::SkipWhitespace(Token &Result, const char *CurPtr,
 
   unsigned char Char = *CurPtr;
 
+  const char *lastNewLine = nullptr;
+  auto setLastNewLine = [&](const char *Ptr) {
+    lastNewLine = Ptr;
+    if (!NewLinePtr)
+      NewLinePtr = Ptr;
+  };
+  if (SawNewline)
+    setLastNewLine(CurPtr - 1);
+
   // Skip consecutive spaces efficiently.
   while (true) {
     // Skip horizontal whitespace very aggressively.
@@ -2216,6 +2227,8 @@ bool Lexer::SkipWhitespace(Token &Result, const char *CurPtr,
     }
 
     // OK, but handle newline.
+    if (*CurPtr == '\n')
+      setLastNewLine(CurPtr);
     SawNewline = true;
     Char = *++CurPtr;
   }
@@ -2239,6 +2252,12 @@ bool Lexer::SkipWhitespace(Token &Result, const char *CurPtr,
   if (SawNewline) {
     Result.setFlag(Token::StartOfLine);
     TokAtPhysicalStartOfLine = true;
+
+    if (NewLinePtr && lastNewLine && NewLinePtr != lastNewLine && PP) {
+      if (auto *Handler = PP->getEmptylineHandler())
+        Handler->HandleEmptyline(SourceRange(getSourceLocation(NewLinePtr + 1),
+                                             getSourceLocation(lastNewLine)));
+    }
   }
 
   BufferPtr = CurPtr;
@@ -2379,7 +2398,7 @@ bool Lexer::SkipLineComment(Token &Result, const char *CurPtr,
   // contribute to another token), it isn't needed for correctness.  Note that
   // this is ok even in KeepWhitespaceMode, because we would have returned the
   /// comment above in that mode.
-  ++CurPtr;
+  NewLinePtr = CurPtr++;
 
   // The next returned token is at the start of the line.
   Result.setFlag(Token::StartOfLine);
@@ -3213,6 +3232,9 @@ LexNextToken:
   char Char = getAndAdvanceChar(CurPtr, Result);
   tok::TokenKind Kind;
 
+  if (!isVerticalWhitespace(Char))
+    NewLinePtr = nullptr;
+
   switch (Char) {
   case 0:  // Null.
     // Found end of file?
@@ -3267,6 +3289,7 @@ LexNextToken:
       // Since we consumed a newline, we are back at the start of a line.
       IsAtStartOfLine = true;
       IsAtPhysicalStartOfLine = true;
+      NewLinePtr = CurPtr - 1;
 
       Kind = tok::eod;
       break;
