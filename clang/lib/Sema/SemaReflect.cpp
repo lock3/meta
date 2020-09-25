@@ -290,7 +290,7 @@ static bool SetQuery(Sema &SemaRef, Expr *&Arg, ReflectionQuery &Query) {
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   Expr::EvalContext EvalCtx(SemaRef.Context, SemaRef.GetReflectionCallbackObj());
-  if (!Arg->EvaluateAsRValue(Result, EvalCtx)) {
+  if (!Arg->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen, EvalCtx)) {
     // FIXME: This is not the right error.
     SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_not_constant);
     for (PartialDiagnosticAt PD : Diags)
@@ -962,7 +962,7 @@ Sema::RangeTraverser::operator bool()
 
     Expr::EvalContext EvalCtx(SemaRef.Context,
                               SemaRef.GetReflectionCallbackObj());
-    if (!EqualExpr->EvaluateAsRValue(EqualRes, EvalCtx)) {
+    if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen, EvalCtx)) {
       SemaRef.Diag(SourceLocation(),
                    diag::err_constexpr_range_iteration_failed);
       for (PartialDiagnosticAt PD : Diags)
@@ -1212,7 +1212,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
-  if (!Eval->EvaluateAsRValue(Result, EvalCtx)) {
+  if (!Eval->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen, EvalCtx)) {
     Diag(Eval->getExprLoc(), diag::err_reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
@@ -1298,7 +1298,7 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
   // Try evaluating the expression as an rvalue and then extract the result.
   Expr::EvalResult Result;
   Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
-  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
+  if (!E->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen, EvalCtx)) {
     // FIXME: This is not the right error.
     S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
     return false;

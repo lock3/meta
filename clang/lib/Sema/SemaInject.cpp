@@ -4382,7 +4382,7 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
       Sema, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
-  bool Folded = Call->EvaluateAsRValue(Result, EvalCtx);
+  bool Folded = Call->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen, EvalCtx);
   if (!Folded) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.
