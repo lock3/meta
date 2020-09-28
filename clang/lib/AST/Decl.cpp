@@ -4844,11 +4844,9 @@ NamespaceDecl *NamespaceDecl::getMostRecentDeclImpl() {
 void ValueDecl::anchor() {}
 
 bool ValueDecl::isWeak() const {
-  for (const auto *I : attrs())
-    if (isa<WeakAttr>(I) || isa<WeakRefAttr>(I))
-      return true;
-
-  return isWeakImported();
+  auto *MostRecent = getMostRecentDecl();
+  return MostRecent->hasAttr<WeakAttr>() ||
+         MostRecent->hasAttr<WeakRefAttr>() || isWeakImported();
 }
 
 void ImplicitParamDecl::anchor() {}

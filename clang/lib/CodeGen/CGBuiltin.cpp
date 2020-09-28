@@ -811,7 +811,12 @@ static llvm::Value *EmitX86BitTestIntrinsic(CodeGenFunction &CGF,
   AsmOS << SizeSuffix << " $2, ($1)\n\tsetc ${0:b}";
 
   // Build the constraints. FIXME: We should support immediates when possible.
-  std::string Constraints = "=r,r,r,~{cc},~{flags},~{fpsr}";
+  std::string Constraints = "=r,r,r,~{cc},~{memory}";
+  std::string MachineClobbers = CGF.getTarget().getClobbers();
+  if (!MachineClobbers.empty()) {
+    Constraints += ',';
+    Constraints += MachineClobbers;
+  }
   llvm::IntegerType *IntType = llvm::IntegerType::get(
       CGF.getLLVMContext(),
       CGF.getContext().getTypeSize(E->getArg(1)->getType()));
@@ -5660,7 +5665,7 @@ Value *CodeGenFunction::EmitCommonNeonBuiltinExpr(
     if (BuiltinID == NEON::BI__builtin_neon_splatq_lane_v)
       NumElements = NumElements * 2;
     if (BuiltinID == NEON::BI__builtin_neon_splat_laneq_v)
-      NumElements = NumElements / 2;
+      NumElements = NumElements.divideCoefficientBy(2);
 
     Ops[0] = Builder.CreateBitCast(Ops[0], VTy);
     return EmitNeonSplat(Ops[0], cast<ConstantInt>(Ops[1]), NumElements);
@@ -8499,8 +8504,7 @@ Value *CodeGenFunction::EmitAArch64SVEBuiltinExpr(unsigned BuiltinID,
   case SVE::BI__builtin_sve_svtbl2_f64: {
     SVETypeFlags TF(Builtin->TypeModifier);
     auto VTy = cast<llvm::VectorType>(getSVEType(TF));
-    auto TupleTy = llvm::VectorType::get(VTy->getElementType(),
-                                         VTy->getElementCount() * 2);
+    auto TupleTy = llvm::VectorType::getDoubleElementsVectorType(VTy);
     Function *FExtr =
         CGM.getIntrinsic(Intrinsic::aarch64_sve_tuple_get, {VTy, TupleTy});
     Value *V0 = Builder.CreateCall(FExtr, {Ops[0], Builder.getInt32(0)});
@@ -14243,6 +14247,63 @@ Value *CodeGenFunction::EmitPPCBuiltinExpr(unsigned BuiltinID,
     Value *Undef = ConstantInt::get(Builder.getInt1Ty(), false);
     Function *F = CGM.getIntrinsic(Intrinsic::cttz, ResultType);
     return Builder.CreateCall(F, {X, Undef});
+  }
+  case PPC::BI__builtin_altivec_vec_replace_elt:
+  case PPC::BI__builtin_altivec_vec_replace_unaligned: {
+    // The third argument of vec_replace_elt and vec_replace_unaligned must
+    // be a compile time constant and will be emitted either to the vinsw
+    // or vinsd instruction.
+    ConstantInt *ArgCI = dyn_cast<ConstantInt>(Ops[2]);
+    assert(ArgCI &&
+           "Third Arg to vinsw/vinsd intrinsic must be a constant integer!");
+    llvm::Type *ResultType = ConvertType(E->getType());
+    llvm::Function *F = nullptr;
+    Value *Call = nullptr;
+    int64_t ConstArg = ArgCI->getSExtValue();
+    unsigned ArgWidth = Ops[1]->getType()->getPrimitiveSizeInBits();
+    bool Is32Bit = false;
+    assert((ArgWidth == 32 || ArgWidth == 64) && "Invalid argument width");
+    // The input to vec_replace_elt is an element index, not a byte index.
+    if (BuiltinID == PPC::BI__builtin_altivec_vec_replace_elt)
+      ConstArg *= ArgWidth / 8;
+    if (ArgWidth == 32) {
+      Is32Bit = true;
+      // When the second argument is 32 bits, it can either be an integer or
+      // a float. The vinsw intrinsic is used in this case.
+      F = CGM.getIntrinsic(Intrinsic::ppc_altivec_vinsw);
+      // Fix the constant according to endianess.
+      if (getTarget().isLittleEndian())
+        ConstArg = 12 - ConstArg;
+    } else {
+      // When the second argument is 64 bits, it can either be a long long or
+      // a double. The vinsd intrinsic is used in this case.
+      F = CGM.getIntrinsic(Intrinsic::ppc_altivec_vinsd);
+      // Fix the constant for little endian.
+      if (getTarget().isLittleEndian())
+        ConstArg = 8 - ConstArg;
+    }
+    Ops[2] = ConstantInt::getSigned(Int32Ty, ConstArg);
+    // Depending on ArgWidth, the input vector could be a float or a double.
+    // If the input vector is a float type, bitcast the inputs to integers. Or,
+    // if the input vector is a double, bitcast the inputs to 64-bit integers.
+    if (!Ops[1]->getType()->isIntegerTy(ArgWidth)) {
+      Ops[0] = Builder.CreateBitCast(
+          Ops[0], Is32Bit ? llvm::FixedVectorType::get(Int32Ty, 4)
+                          : llvm::FixedVectorType::get(Int64Ty, 2));
+      Ops[1] = Builder.CreateBitCast(Ops[1], Is32Bit ? Int32Ty : Int64Ty);
+    }
+    // Emit the call to vinsw or vinsd.
+    Call = Builder.CreateCall(F, Ops);
+    // Depending on the builtin, bitcast to the approriate result type.
+    if (BuiltinID == PPC::BI__builtin_altivec_vec_replace_elt &&
+        !Ops[1]->getType()->isIntegerTy())
+      return Builder.CreateBitCast(Call, ResultType);
+    else if (BuiltinID == PPC::BI__builtin_altivec_vec_replace_elt &&
+             Ops[1]->getType()->isIntegerTy())
+      return Call;
+    else
+      return Builder.CreateBitCast(Call,
+                                   llvm::FixedVectorType::get(Int8Ty, 16));
   }
   case PPC::BI__builtin_altivec_vpopcntb:
   case PPC::BI__builtin_altivec_vpopcnth:

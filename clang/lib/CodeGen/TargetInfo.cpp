@@ -4508,7 +4508,7 @@ bool AIXABIInfo::isPromotableTypeForABI(QualType Ty) const {
 
 ABIArgInfo AIXABIInfo::classifyReturnType(QualType RetTy) const {
   if (RetTy->isAnyComplexType())
-    llvm::report_fatal_error("complex type is not supported on AIX yet");
+    return ABIArgInfo::getDirect();
 
   if (RetTy->isVectorType())
     llvm::report_fatal_error("vector type is not supported on AIX yet");
@@ -4529,7 +4529,7 @@ ABIArgInfo AIXABIInfo::classifyArgumentType(QualType Ty) const {
   Ty = useFirstFieldIfTransparentUnion(Ty);
 
   if (Ty->isAnyComplexType())
-    llvm::report_fatal_error("complex type is not supported on AIX yet");
+    return ABIArgInfo::getDirect();
 
   if (Ty->isVectorType())
     llvm::report_fatal_error("vector type is not supported on AIX yet");
@@ -4554,8 +4554,9 @@ ABIArgInfo AIXABIInfo::classifyArgumentType(QualType Ty) const {
 }
 
 CharUnits AIXABIInfo::getParamTypeAlignment(QualType Ty) const {
-  if (Ty->isAnyComplexType())
-    llvm::report_fatal_error("complex type is not supported on AIX yet");
+  // Complex types are passed just like their elements.
+  if (const ComplexType *CTy = Ty->getAs<ComplexType>())
+    Ty = CTy->getElementType();
 
   if (Ty->isVectorType())
     llvm::report_fatal_error("vector type is not supported on AIX yet");
@@ -5525,40 +5526,33 @@ public:
     if (!FD)
       return;
 
-    LangOptions::SignReturnAddressScopeKind Scope =
-        CGM.getLangOpts().getSignReturnAddressScope();
-    LangOptions::SignReturnAddressKeyKind Key =
-        CGM.getLangOpts().getSignReturnAddressKey();
-    bool BranchTargetEnforcement = CGM.getLangOpts().BranchTargetEnforcement;
-    if (const auto *TA = FD->getAttr<TargetAttr>()) {
-      ParsedTargetAttr Attr = TA->parse();
-      if (!Attr.BranchProtection.empty()) {
-        TargetInfo::BranchProtectionInfo BPI;
-        StringRef Error;
-        (void)CGM.getTarget().validateBranchProtection(Attr.BranchProtection,
-                                                       BPI, Error);
-        assert(Error.empty());
-        Scope = BPI.SignReturnAddr;
-        Key = BPI.SignKey;
-        BranchTargetEnforcement = BPI.BranchTargetEnforcement;
-      }
-    }
+    const auto *TA = FD->getAttr<TargetAttr>();
+    if (TA == nullptr)
+      return;
+
+    ParsedTargetAttr Attr = TA->parse();
+    if (Attr.BranchProtection.empty())
+      return;
+
+    TargetInfo::BranchProtectionInfo BPI;
+    StringRef Error;
+    (void)CGM.getTarget().validateBranchProtection(Attr.BranchProtection,
+                                                   BPI, Error);
+    assert(Error.empty());
 
     auto *Fn = cast<llvm::Function>(GV);
-    if (Scope != LangOptions::SignReturnAddressScopeKind::None) {
-      Fn->addFnAttr("sign-return-address",
-                    Scope == LangOptions::SignReturnAddressScopeKind::All
-                        ? "all"
-                        : "non-leaf");
+    static const char *SignReturnAddrStr[] = {"none", "non-leaf", "all"};
+    Fn->addFnAttr("sign-return-address", SignReturnAddrStr[static_cast<int>(BPI.SignReturnAddr)]);
 
+    if (BPI.SignReturnAddr != LangOptions::SignReturnAddressScopeKind::None) {
       Fn->addFnAttr("sign-return-address-key",
-                    Key == LangOptions::SignReturnAddressKeyKind::AKey
+                    BPI.SignKey == LangOptions::SignReturnAddressKeyKind::AKey
                         ? "a_key"
                         : "b_key");
     }
 
-    if (BranchTargetEnforcement)
-      Fn->addFnAttr("branch-target-enforcement");
+    Fn->addFnAttr("branch-target-enforcement",
+                  BPI.BranchTargetEnforcement ? "true" : "false");
   }
 };
 
