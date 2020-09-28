@@ -19,6 +19,7 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/FoldingSet.h"
 
 namespace clang {
   class AddrLabelExpr;
@@ -182,6 +183,8 @@ public:
     static LValueBase getDynamicAlloc(DynamicAllocLValue LV, QualType Type);
     static LValueBase getTypeInfo(TypeInfoLValue LV, QualType TypeInfo);
 
+    void profile(llvm::FoldingSetNodeID &ID) const;
+
     template <class T>
     bool is() const { return Ptr.is<T>(); }
 
@@ -207,6 +210,7 @@ public:
       return !(LHS == RHS);
     }
     friend llvm::hash_code hash_value(const LValueBase &Base);
+    friend struct llvm::DenseMapInfo<LValueBase>;
 
   private:
     PtrTy Ptr;
@@ -234,8 +238,7 @@ public:
 
   public:
     LValuePathEntry() : Value() {}
-    LValuePathEntry(BaseOrMemberType BaseOrMember)
-        : Value{reinterpret_cast<uintptr_t>(BaseOrMember.getOpaqueValue())} {}
+    LValuePathEntry(BaseOrMemberType BaseOrMember);
     static LValuePathEntry ArrayIndex(uint64_t Index) {
       LValuePathEntry Result;
       Result.Value = Index;
@@ -247,6 +250,8 @@ public:
           reinterpret_cast<void *>(Value));
     }
     uint64_t getAsArrayIndex() const { return Value; }
+
+    void profile(llvm::FoldingSetNodeID &ID) const;
 
     friend bool operator==(LValuePathEntry A, LValuePathEntry B) {
       return A.Value == B.Value;
@@ -420,6 +425,11 @@ public:
 
   /// Swaps the contents of this and the given APValue.
   void swap(APValue &RHS);
+
+  /// Profile this value. There is no guarantee that values of different
+  /// types will not produce the same profiled value, so the type should
+  /// typically also be profiled if it's not implied by the context.
+  void profile(llvm::FoldingSetNodeID &ID) const;
 
   ValueKind getKind() const { return Kind; }
 
