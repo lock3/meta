@@ -37,10 +37,6 @@
 
 #define WARPSIZE 32
 
-// The named barrier for active parallel threads of a team in an L1 parallel
-// region to synchronize with each other.
-#define L1_BARRIER (1)
-
 // Maximum number of preallocated arguments to an outlined parallel/simd function.
 // Anything more requires dynamic memory allocation.
 #define MAX_SHARED_ARGS 20
@@ -187,7 +183,15 @@ INLINE void __kmpc_impl_syncwarp(__kmpc_impl_lanemask_t Mask) {
 #endif // CUDA_VERSION
 }
 
-INLINE void __kmpc_impl_named_sync(int barrier, uint32_t num_threads) {
+// NVPTX specific kernel initialization
+INLINE void __kmpc_impl_target_init() { /* nvptx needs no extra setup */
+}
+
+// Barrier until num_threads arrive.
+INLINE void __kmpc_impl_named_sync(uint32_t num_threads) {
+  // The named barrier for active parallel threads of a team in an L1 parallel
+  // region to synchronize with each other.
+  int barrier = 1;
   asm volatile("bar.sync %0, %1;"
                :
                : "r"(barrier), "r"(num_threads)

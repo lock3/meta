@@ -361,10 +361,11 @@ public:
       return !VD->needsDestruction(getContext()) && InitDecl->evaluateValue();
 
     // Otherwise, we need a thread wrapper unless we know that every
-    // translation unit will emit the value as a constant. We rely on
-    // ICE-ness not varying between translation units, which isn't actually
+    // translation unit will emit the value as a constant. We rely on the
+    // variable being constant-initialized in every translation unit if it's
+    // constant-initialized in any translation unit, which isn't actually
     // guaranteed by the standard but is necessary for sanity.
-    return InitDecl->isInitKnownICE() && InitDecl->isInitICE();
+    return InitDecl->hasConstantInitialization();
   }
 
   bool usesThreadWrapperFunction(const VarDecl *VD) const override {
@@ -2111,7 +2112,7 @@ CharUnits ItaniumCXXABI::getArrayCookieSizeImpl(QualType elementType) {
   // The array cookie is a size_t; pad that up to the element alignment.
   // The cookie is actually right-justified in that space.
   return std::max(CharUnits::fromQuantity(CGM.SizeSizeInBytes),
-                  CGM.getContext().getTypeAlignInChars(elementType));
+                  CGM.getContext().getPreferredTypeAlignInChars(elementType));
 }
 
 Address ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
@@ -2128,7 +2129,7 @@ Address ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
 
   // The size of the cookie.
   CharUnits CookieSize =
-    std::max(SizeSize, Ctx.getTypeAlignInChars(ElementType));
+      std::max(SizeSize, Ctx.getPreferredTypeAlignInChars(ElementType));
   assert(CookieSize == getArrayCookieSizeImpl(ElementType));
 
   // Compute an offset to the cookie.
@@ -3093,6 +3094,9 @@ static bool TypeInfoIsInStandardLibrary(const BuiltinType *Ty) {
 #define SVE_TYPE(Name, Id, SingletonId) \
     case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
+#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+    case BuiltinType::Id:
+#include "clang/Basic/PPCTypes.def"
     case BuiltinType::ShortAccum:
     case BuiltinType::Accum:
     case BuiltinType::LongAccum:

@@ -3050,7 +3050,7 @@ static bool getName(const Reflection R, APValue &Result) {
     // Generate the result value.
     Expr::EvalResult Eval;
     Expr::EvalContext EvalCtx(Ctx, nullptr);
-    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
+    if (!Str->EvaluateAsConstantExpr(Eval, EvalCtx))
       return false;
     Result = Eval.Val;
     return true;
@@ -3064,7 +3064,7 @@ static bool getName(const Reflection R, APValue &Result) {
     // Generate the result value.
     Expr::EvalResult Eval;
     Expr::EvalContext EvalCtx(Ctx, nullptr);
-    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
+    if (!Str->EvaluateAsConstantExpr(Eval, EvalCtx))
       return false;
     Result = Eval.Val;
     return true;

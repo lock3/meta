@@ -42,6 +42,7 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CRC.h"
+#include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 using namespace clang;
 using namespace CodeGen;
@@ -914,8 +915,8 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
   }
 
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D)) {
-    Builder.setIsFPConstrained(FD->usesFPIntrin());
-    if (FD->usesFPIntrin())
+    Builder.setIsFPConstrained(FD->hasAttr<StrictFPAttr>());
+    if (FD->hasAttr<StrictFPAttr>())
       Fn->addFnAttr(llvm::Attribute::StrictFP);
   }
 
@@ -1481,12 +1482,12 @@ bool CodeGenFunction::ConstantFoldsToSimpleInteger(const Expr *Cond,
 /// EmitBranchOnBoolExpr - Emit a branch on a boolean condition (e.g. for an if
 /// statement) to the specified blocks.  Based on the condition, this might try
 /// to simplify the codegen of the conditional based on the branch.
-/// \param Weights The weights determined by the likelihood attributes.
+/// \param LH The value of the likelihood attribute on the True branch.
 void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
                                            llvm::BasicBlock *TrueBlock,
                                            llvm::BasicBlock *FalseBlock,
                                            uint64_t TrueCount,
-                                           llvm::MDNode *Weights) {
+                                           Stmt::Likelihood LH) {
   Cond = Cond->IgnoreParens();
 
   if (const BinaryOperator *CondBOp = dyn_cast<BinaryOperator>(Cond)) {
@@ -1501,7 +1502,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
         // br(1 && X) -> br(X).
         incrementProfileCounter(CondBOp);
         return EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock,
-                                    TrueCount, Weights);
+                                    TrueCount, LH);
       }
 
       // If we have "X && 1", simplify the code to use an uncond branch.
@@ -1510,7 +1511,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
           ConstantBool) {
         // br(X && 1) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, FalseBlock,
-                                    TrueCount, Weights);
+                                    TrueCount, LH);
       }
 
       // Emit the LHS as a conditional.  If the LHS conditional is false, we
@@ -1523,8 +1524,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       ConditionalEvaluation eval(*this);
       {
         ApplyDebugLocation DL(*this, Cond);
+        // Propagate the likelihood attribute like __builtin_expect
+        // __builtin_expect(X && Y, 1) -> X and Y are likely
+        // __builtin_expect(X && Y, 0) -> only Y is unlikely
         EmitBranchOnBoolExpr(CondBOp->getLHS(), LHSTrue, FalseBlock, RHSCount,
-                             Weights);
+                             LH == Stmt::LH_Unlikely ? Stmt::LH_None : LH);
         EmitBlock(LHSTrue);
       }
 
@@ -1534,7 +1538,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       // Any temporaries created here are conditional.
       eval.begin(*this);
       EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock, TrueCount,
-                           Weights);
+                           LH);
       eval.end(*this);
 
       return;
@@ -1549,7 +1553,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
         // br(0 || X) -> br(X).
         incrementProfileCounter(CondBOp);
         return EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock,
-                                    TrueCount, Weights);
+                                    TrueCount, LH);
       }
 
       // If we have "X || 0", simplify the code to use an uncond branch.
@@ -1558,7 +1562,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
           !ConstantBool) {
         // br(X || 0) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, FalseBlock,
-                                    TrueCount, Weights);
+                                    TrueCount, LH);
       }
 
       // Emit the LHS as a conditional.  If the LHS conditional is true, we
@@ -1573,9 +1577,12 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
 
       ConditionalEvaluation eval(*this);
       {
+        // Propagate the likelihood attribute like __builtin_expect
+        // __builtin_expect(X || Y, 1) -> only Y is likely
+        // __builtin_expect(X || Y, 0) -> both X and Y are unlikely
         ApplyDebugLocation DL(*this, Cond);
         EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, LHSFalse, LHSCount,
-                             Weights);
+                             LH == Stmt::LH_Likely ? Stmt::LH_None : LH);
         EmitBlock(LHSFalse);
       }
 
@@ -1585,7 +1592,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       // Any temporaries created here are conditional.
       eval.begin(*this);
       EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock, RHSCount,
-                           Weights);
+                           LH);
 
       eval.end(*this);
 
@@ -1598,9 +1605,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     if (CondUOp->getOpcode() == UO_LNot) {
       // Negate the count.
       uint64_t FalseCount = getCurrentProfileCount() - TrueCount;
+      // The values of the enum are chosen to make this negation possible.
+      LH = static_cast<Stmt::Likelihood>(-LH);
       // Negate the condition and swap the destination blocks.
       return EmitBranchOnBoolExpr(CondUOp->getSubExpr(), FalseBlock, TrueBlock,
-                                  FalseCount, Weights);
+                                  FalseCount, LH);
     }
   }
 
@@ -1609,9 +1618,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     llvm::BasicBlock *LHSBlock = createBasicBlock("cond.true");
     llvm::BasicBlock *RHSBlock = createBasicBlock("cond.false");
 
+    // The ConditionalOperator itself has no likelihood information for its
+    // true and false branches. This matches the behavior of __builtin_expect.
     ConditionalEvaluation cond(*this);
     EmitBranchOnBoolExpr(CondOp->getCond(), LHSBlock, RHSBlock,
-                         getProfileCount(CondOp), Weights);
+                         getProfileCount(CondOp), Stmt::LH_None);
 
     // When computing PGO branch weights, we only know the overall count for
     // the true block. This code is essentially doing tail duplication of the
@@ -1631,14 +1642,14 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     {
       ApplyDebugLocation DL(*this, Cond);
       EmitBranchOnBoolExpr(CondOp->getLHS(), TrueBlock, FalseBlock,
-                           LHSScaledTrueCount, Weights);
+                           LHSScaledTrueCount, LH);
     }
     cond.end(*this);
 
     cond.begin(*this);
     EmitBlock(RHSBlock);
     EmitBranchOnBoolExpr(CondOp->getRHS(), TrueBlock, FalseBlock,
-                         TrueCount - LHSScaledTrueCount, Weights);
+                         TrueCount - LHSScaledTrueCount, LH);
     cond.end(*this);
 
     return;
@@ -1667,8 +1678,7 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     }
   }
 
-  // Create branch weights based on the number of times we get here and the
-  // number of times the condition should be true.
+  llvm::MDNode *Weights = createBranchWeights(LH);
   if (!Weights) {
     uint64_t CurrentCount = std::max(getCurrentProfileCount(), TrueCount);
     Weights = createProfileWeights(TrueCount, CurrentCount - TrueCount);
@@ -2226,13 +2236,16 @@ void CodeGenFunction::emitAlignmentAssumption(llvm::Value *PtrValue,
 llvm::Value *CodeGenFunction::EmitAnnotationCall(llvm::Function *AnnotationFn,
                                                  llvm::Value *AnnotatedVal,
                                                  StringRef AnnotationStr,
-                                                 SourceLocation Location) {
-  llvm::Value *Args[4] = {
-    AnnotatedVal,
-    Builder.CreateBitCast(CGM.EmitAnnotationString(AnnotationStr), Int8PtrTy),
-    Builder.CreateBitCast(CGM.EmitAnnotationUnit(Location), Int8PtrTy),
-    CGM.EmitAnnotationLineNo(Location)
+                                                 SourceLocation Location,
+                                                 const AnnotateAttr *Attr) {
+  SmallVector<llvm::Value *, 5> Args = {
+      AnnotatedVal,
+      Builder.CreateBitCast(CGM.EmitAnnotationString(AnnotationStr), Int8PtrTy),
+      Builder.CreateBitCast(CGM.EmitAnnotationUnit(Location), Int8PtrTy),
+      CGM.EmitAnnotationLineNo(Location),
   };
+  if (Attr)
+    Args.push_back(CGM.EmitAnnotationArgs(Attr));
   return Builder.CreateCall(AnnotationFn, Args);
 }
 
@@ -2243,7 +2256,7 @@ void CodeGenFunction::EmitVarAnnotations(const VarDecl *D, llvm::Value *V) {
   for (const auto *I : D->specific_attrs<AnnotateAttr>())
     EmitAnnotationCall(CGM.getIntrinsic(llvm::Intrinsic::var_annotation),
                        Builder.CreateBitCast(V, CGM.Int8PtrTy, V->getName()),
-                       I->getAnnotation(), D->getLocation());
+                       I->getAnnotation(), D->getLocation(), I);
 }
 
 Address CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
@@ -2260,7 +2273,7 @@ Address CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
     // itself.
     if (VTy != CGM.Int8PtrTy)
       V = Builder.CreateBitCast(V, CGM.Int8PtrTy);
-    V = EmitAnnotationCall(F, V, I->getAnnotation(), D->getLocation());
+    V = EmitAnnotationCall(F, V, I->getAnnotation(), D->getLocation(), I);
     V = Builder.CreateBitCast(V, VTy);
   }
 
@@ -2296,34 +2309,6 @@ void CGBuilderInserter::InsertHelper(
     CGF->InsertHelper(I, Name, BB, InsertPt);
 }
 
-static bool hasRequiredFeatures(const SmallVectorImpl<StringRef> &ReqFeatures,
-                                CodeGenModule &CGM, const FunctionDecl *FD,
-                                std::string &FirstMissing) {
-  // If there aren't any required features listed then go ahead and return.
-  if (ReqFeatures.empty())
-    return false;
-
-  // Now build up the set of caller features and verify that all the required
-  // features are there.
-  llvm::StringMap<bool> CallerFeatureMap;
-  CGM.getContext().getFunctionFeatureMap(CallerFeatureMap, FD);
-
-  // If we have at least one of the features in the feature list return
-  // true, otherwise return false.
-  return std::all_of(
-      ReqFeatures.begin(), ReqFeatures.end(), [&](StringRef Feature) {
-        SmallVector<StringRef, 1> OrFeatures;
-        Feature.split(OrFeatures, '|');
-        return llvm::any_of(OrFeatures, [&](StringRef Feature) {
-          if (!CallerFeatureMap.lookup(Feature)) {
-            FirstMissing = Feature.str();
-            return false;
-          }
-          return true;
-        });
-      });
-}
-
 // Emits an error if we don't have a valid set of target features for the
 // called function.
 void CodeGenFunction::checkTargetFeatures(const CallExpr *E,
@@ -2350,19 +2335,20 @@ void CodeGenFunction::checkTargetFeatures(SourceLocation Loc,
   // listed cpu and any listed features.
   unsigned BuiltinID = TargetDecl->getBuiltinID();
   std::string MissingFeature;
+  llvm::StringMap<bool> CallerFeatureMap;
+  CGM.getContext().getFunctionFeatureMap(CallerFeatureMap, FD);
   if (BuiltinID) {
-    SmallVector<StringRef, 1> ReqFeatures;
-    const char *FeatureList =
-        CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID);
+    StringRef FeatureList(
+        CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID));
     // Return if the builtin doesn't have any required features.
-    if (!FeatureList || StringRef(FeatureList) == "")
+    if (FeatureList.empty())
       return;
-    StringRef(FeatureList).split(ReqFeatures, ',');
-    if (!hasRequiredFeatures(ReqFeatures, CGM, FD, MissingFeature))
+    assert(FeatureList.find(' ') == StringRef::npos &&
+           "Space in feature list");
+    TargetFeatures TF(CallerFeatureMap);
+    if (!TF.hasRequiredFeatures(FeatureList))
       CGM.getDiags().Report(Loc, diag::err_builtin_needs_feature)
-          << TargetDecl->getDeclName()
-          << CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID);
-
+          << TargetDecl->getDeclName() << FeatureList;
   } else if (!TargetDecl->isMultiVersion() &&
              TargetDecl->hasAttr<TargetAttr>()) {
     // Get the required features for the callee.
@@ -2385,7 +2371,13 @@ void CodeGenFunction::checkTargetFeatures(SourceLocation Loc,
       if (F.getValue())
         ReqFeatures.push_back(F.getKey());
     }
-    if (!hasRequiredFeatures(ReqFeatures, CGM, FD, MissingFeature))
+    if (!llvm::all_of(ReqFeatures, [&](StringRef Feature) {
+      if (!CallerFeatureMap.lookup(Feature)) {
+        MissingFeature = Feature.str();
+        return false;
+      }
+      return true;
+    }))
       CGM.getDiags().Report(Loc, diag::err_function_needs_feature)
           << FD->getDeclName() << TargetDecl->getDeclName() << MissingFeature;
   }
@@ -2540,4 +2532,37 @@ llvm::DebugLoc CodeGenFunction::SourceLocToDebugLoc(SourceLocation Location) {
     return DI->SourceLocToDebugLoc(Location);
 
   return llvm::DebugLoc();
+}
+
+static Optional<std::pair<uint32_t, uint32_t>>
+getLikelihoodWeights(Stmt::Likelihood LH) {
+  switch (LH) {
+  case Stmt::LH_Unlikely:
+    return std::pair<uint32_t, uint32_t>(llvm::UnlikelyBranchWeight,
+                                         llvm::LikelyBranchWeight);
+  case Stmt::LH_None:
+    return None;
+  case Stmt::LH_Likely:
+    return std::pair<uint32_t, uint32_t>(llvm::LikelyBranchWeight,
+                                         llvm::UnlikelyBranchWeight);
+  }
+  llvm_unreachable("Unknown Likelihood");
+}
+
+llvm::MDNode *CodeGenFunction::createBranchWeights(Stmt::Likelihood LH) const {
+  Optional<std::pair<uint32_t, uint32_t>> LHW = getLikelihoodWeights(LH);
+  if (!LHW)
+    return nullptr;
+
+  llvm::MDBuilder MDHelper(CGM.getLLVMContext());
+  return MDHelper.createBranchWeights(LHW->first, LHW->second);
+}
+
+llvm::MDNode *CodeGenFunction::createProfileOrBranchWeightsForLoop(
+    const Stmt *Cond, uint64_t LoopCount, const Stmt *Body) const {
+  llvm::MDNode *Weights = createProfileWeightsForLoop(Cond, LoopCount);
+  if (!Weights && CGM.getCodeGenOpts().OptimizationLevel)
+    Weights = createBranchWeights(Stmt::getLikelihood(Body));
+
+  return Weights;
 }

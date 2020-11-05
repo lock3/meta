@@ -1016,9 +1016,8 @@ RangeTraverser::operator bool()
 
     Expr *EqualExpr = Equal.get();
 
-  Expr::EvalContext EvalCtx(SemaRef.Context, SemaRef.GetReflectionCallbackObj());
-  if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
-                                         EvalCtx)) {
+    Expr::EvalContext EvalCtx(SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, EvalCtx)) {
       SemaRef.Diag(SourceLocation(), diag::err_constexpr_range_iteration_failed);
       for (PartialDiagnosticAt PD : Diags)
         SemaRef.Diag(PD.first, PD.second);

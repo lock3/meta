@@ -1345,7 +1345,7 @@ public:
     return SemaRef.ActOnLabelStmt(IdentLoc, L, ColonLoc, SubStmt);
   }
 
-  /// Build a new label statement.
+  /// Build a new attributed statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
@@ -5746,6 +5746,7 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
                                              /* DefArg */ nullptr);
   newParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
                         OldParm->getFunctionScopeIndex() + indexAdjustment);
+  transformedLocalDecl(OldParm, {newParm});
   return newParm;
 }
 
@@ -13659,12 +13660,12 @@ TreeTransform<Derived>::TransformCXXUnresolvedConstructExpr(
 
   bool ArgumentChanged = false;
   SmallVector<Expr*, 8> Args;
-  Args.reserve(E->arg_size());
+  Args.reserve(E->getNumArgs());
   {
     EnterExpressionEvaluationContext Context(
         getSema(), EnterExpressionEvaluationContext::InitList,
         E->isListInitialization());
-    if (getDerived().TransformExprs(E->arg_begin(), E->arg_size(), true, Args,
+    if (getDerived().TransformExprs(E->arg_begin(), E->getNumArgs(), true, Args,
                                     &ArgumentChanged))
       return ExprError();
   }

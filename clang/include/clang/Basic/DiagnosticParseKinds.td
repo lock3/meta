@@ -712,7 +712,7 @@ def err_ms_property_expected_accessor_name : Error<
 def err_ms_property_expected_comma_or_rparen : Error<
   "expected ',' or ')' at end of property accessor list">;
 def err_ms_property_initializer : Error<
-  "property declaration cannot have an in-class initializer">;
+  "property declaration cannot have a default member initializer">;
 
 def warn_cxx20_compat_explicit_bool : Warning<
   "this expression will be parsed as explicit(bool) in C++20">,
@@ -862,21 +862,23 @@ def warn_cxx98_compat_defaulted_deleted_function : Warning<
   "%select{defaulted|deleted}0 function definitions are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
 
-// C++11 in-class member initialization
+// C++11 default member initialization
 def ext_nonstatic_member_init : ExtWarn<
-  "in-class initialization of non-static data member is a C++11 extension">,
-  InGroup<CXX11>;
+  "default member initializer for non-static data member is a C++11 "
+  "extension">, InGroup<CXX11>;
 def warn_cxx98_compat_nonstatic_member_init : Warning<
-  "in-class initialization of non-static data members is incompatible with C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
+  "default member initializer for non-static data members is incompatible with "
+  "C++98">, InGroup<CXX98Compat>, DefaultIgnore;
 def ext_bitfield_member_init: ExtWarn<
   "default member initializer for bit-field is a C++20 extension">,
   InGroup<CXX20>;
 def warn_cxx17_compat_bitfield_member_init: Warning<
   "default member initializer for bit-field is incompatible with "
   "C++ standards before C++20">, InGroup<CXXPre20Compat>, DefaultIgnore;
+def err_anon_bitfield_member_init : Error<
+  "anonymous bit-field cannot have a default member initializer">;
 def err_incomplete_array_member_init: Error<
-  "array bound cannot be deduced from an in-class initializer">;
+  "array bound cannot be deduced from a default member initializer">;
 
 // C++11 alias-declaration
 def ext_alias_declaration : ExtWarn<
@@ -1136,14 +1138,20 @@ def err_pragma_file_or_compound_scope : Error<
 // - #pragma stdc unknown
 def ext_stdc_pragma_ignored : ExtWarn<"unknown pragma in STDC namespace">,
    InGroup<UnknownPragmas>;
-def warn_stdc_fenv_access_not_supported :
-   Warning<"pragma STDC FENV_ACCESS ON is not supported, ignoring pragma">,
-   InGroup<UnknownPragmas>;
+// The C standard 7.6.1p2 says "The [FENV_ACCESS] pragma shall occur either
+// outside external declarations or preceding all explicit declarations and
+// statements inside a compound statement.
+def err_pragma_stdc_fenv_access_scope : Error<
+  "'#pragma STDC FENV_ACCESS' can only appear at file scope or at the start of"
+  " a compound statement">;
 def warn_stdc_fenv_round_not_supported :
    Warning<"pragma STDC FENV_ROUND is not supported">,
    InGroup<UnknownPragmas>;
 def warn_stdc_unknown_rounding_mode : Warning<
   "invalid or unsupported rounding mode in '#pragma STDC FENV_ROUND' - ignored">,
+  InGroup<IgnoredPragmas>;
+def warn_pragma_fp_ignored : Warning<
+  "'#pragma %0' is not supported on this target - ignored">,
   InGroup<IgnoredPragmas>;
 // - #pragma comment
 def err_pragma_comment_malformed : Error<
@@ -1383,12 +1391,13 @@ def err_pragma_loop_invalid_option : Error<
   "pipeline, pipeline_initiation_interval, vectorize_predicate, or distribute">;
 
 def err_pragma_fp_invalid_option : Error<
-  "%select{invalid|missing}0 option%select{ %1|}0; expected 'contract' or 'reassociate'">;
+  "%select{invalid|missing}0 option%select{ %1|}0; expected 'contract', 'reassociate' or 'exceptions'">;
 def err_pragma_fp_invalid_argument : Error<
-  "unexpected argument '%0' to '#pragma clang fp %1'; "
+  "unexpected argument '%0' to '#pragma clang fp %1'; expected "
   "%select{"
-  "expected 'fast' or 'on' or 'off'|"
-  "expected 'on' or 'off'}2">;
+  "'fast' or 'on' or 'off'|"
+  "'on' or 'off'|"
+  "'ignore', 'maytrap' or 'strict'}2">;
 
 def err_pragma_invalid_keyword : Error<
   "invalid argument; expected 'enable'%select{|, 'full'}0%select{|, 'assume_safety'}1 or 'disable'">;

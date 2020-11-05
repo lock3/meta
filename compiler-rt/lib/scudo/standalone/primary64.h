@@ -14,6 +14,7 @@
 #include "list.h"
 #include "local_cache.h"
 #include "memtag.h"
+#include "options.h"
 #include "release.h"
 #include "stats.h"
 #include "string_utils.h"
@@ -93,8 +94,8 @@ public:
     }
     setOption(Option::ReleaseInterval, static_cast<sptr>(ReleaseToOsInterval));
 
-    if (SupportsMemoryTagging)
-      UseMemoryTagging = systemSupportsMemoryTagging();
+    if (SupportsMemoryTagging && systemSupportsMemoryTagging())
+      Options.set(OptionBit::UseMemoryTagging);
   }
   void init(s32 ReleaseToOsInterval) {
     memset(this, 0, sizeof(*this));
@@ -190,7 +191,7 @@ public:
       const s32 Interval =
           Max(Min(static_cast<s32>(Value), MaxReleaseToOsIntervalMs),
               MinReleaseToOsIntervalMs);
-      atomic_store(&ReleaseToOsIntervalMs, Interval, memory_order_relaxed);
+      atomic_store_relaxed(&ReleaseToOsIntervalMs, Interval);
       return true;
     }
     // Not supported by the Primary, but not an error either.
@@ -207,10 +208,10 @@ public:
     return TotalReleasedBytes;
   }
 
-  bool useMemoryTagging() const {
-    return SupportsMemoryTagging && UseMemoryTagging;
+  static bool useMemoryTagging(Options Options) {
+    return SupportsMemoryTagging && Options.get(OptionBit::UseMemoryTagging);
   }
-  void disableMemoryTagging() { UseMemoryTagging = false; }
+  void disableMemoryTagging() { Options.clear(OptionBit::UseMemoryTagging); }
 
   const char *getRegionInfoArrayAddress() const {
     return reinterpret_cast<const char *>(RegionInfoArray);
@@ -262,6 +263,8 @@ public:
     return B;
   }
 
+  AtomicOptions Options;
+
 private:
   static const uptr RegionSize = 1UL << RegionSizeLog;
   static const uptr NumClasses = SizeClassMap::NumClasses;
@@ -306,7 +309,6 @@ private:
   uptr PrimaryBase;
   MapPlatformData Data;
   atomic_s32 ReleaseToOsIntervalMs;
-  bool UseMemoryTagging;
   alignas(SCUDO_CACHE_LINE_SIZE) RegionInfo RegionInfoArray[NumClasses];
 
   RegionInfo *getRegionInfo(uptr ClassId) {
@@ -373,7 +375,7 @@ private:
       if (UNLIKELY(!map(reinterpret_cast<void *>(RegionBeg + MappedUser),
                         UserMapSize, "scudo:primary",
                         MAP_ALLOWNOMEM | MAP_RESIZABLE |
-                            (useMemoryTagging() ? MAP_MEMTAG : 0),
+                            (useMemoryTagging(Options.load()) ? MAP_MEMTAG : 0),
                         &Region->Data)))
         return nullptr;
       Region->MappedUser += UserMapSize;
@@ -468,8 +470,7 @@ private:
     }
 
     if (!Force) {
-      const s32 IntervalMs =
-          atomic_load(&ReleaseToOsIntervalMs, memory_order_relaxed);
+      const s32 IntervalMs = atomic_load_relaxed(&ReleaseToOsIntervalMs);
       if (IntervalMs < 0)
         return 0;
       if (Region->ReleaseInfo.LastReleaseAtNs +

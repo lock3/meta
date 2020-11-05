@@ -1,19 +1,22 @@
-/*===- ir.c - Simple test of C APIs ---------------------------------------===*\
-|*                                                                            *|
-|* Part of the LLVM Project, under the Apache License v2.0 with LLVM          *|
-|* Exceptions.                                                                *|
-|* See https://llvm.org/LICENSE.txt for license information.                  *|
-|* SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception                    *|
-|*                                                                            *|
-\*===----------------------------------------------------------------------===*/
+//===- ir.c - Simple test of C APIs ---------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM
+// Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
 
 /* RUN: mlir-capi-ir-test 2>&1 | FileCheck %s
  */
 
 #include "mlir-c/IR.h"
+#include "mlir-c/AffineExpr.h"
 #include "mlir-c/AffineMap.h"
+#include "mlir-c/Diagnostics.h"
 #include "mlir-c/Registration.h"
 #include "mlir-c/StandardAttributes.h"
+#include "mlir-c/StandardDialect.h"
 #include "mlir-c/StandardTypes.h"
 
 #include <assert.h>
@@ -64,9 +67,7 @@ void populateLoopBody(MlirContext ctx, MlirBlock loopBody,
 
 MlirModule makeAdd(MlirContext ctx, MlirLocation location) {
   MlirModule moduleOp = mlirModuleCreateEmpty(location);
-  MlirOperation module = mlirModuleGetOperation(moduleOp);
-  MlirRegion moduleBodyRegion = mlirOperationGetRegion(module, 0);
-  MlirBlock moduleBody = mlirRegionGetFirstBlock(moduleBodyRegion);
+  MlirBlock moduleBody = mlirModuleGetBody(moduleOp);
 
   MlirType memrefType = mlirTypeParseGet(ctx, "memref<?xf32>");
   MlirType funcBodyArgTypes[] = {memrefType, memrefType};
@@ -151,10 +152,12 @@ struct ModuleStats {
   unsigned numBlocks;
   unsigned numRegions;
   unsigned numValues;
+  unsigned numBlockArguments;
+  unsigned numOpResults;
 };
 typedef struct ModuleStats ModuleStats;
 
-void collectStatsSingle(OpListNode *head, ModuleStats *stats) {
+int collectStatsSingle(OpListNode *head, ModuleStats *stats) {
   MlirOperation operation = head->op;
   stats->numOperations += 1;
   stats->numValues += mlirOperationGetNumResults(operation);
@@ -164,12 +167,39 @@ void collectStatsSingle(OpListNode *head, ModuleStats *stats) {
 
   stats->numRegions += numRegions;
 
+  intptr_t numResults = mlirOperationGetNumResults(operation);
+  for (intptr_t i = 0; i < numResults; ++i) {
+    MlirValue result = mlirOperationGetResult(operation, i);
+    if (!mlirValueIsAOpResult(result))
+      return 1;
+    if (mlirValueIsABlockArgument(result))
+      return 2;
+    if (!mlirOperationEqual(operation, mlirOpResultGetOwner(result)))
+      return 3;
+    if (i != mlirOpResultGetResultNumber(result))
+      return 4;
+    ++stats->numOpResults;
+  }
+
   for (unsigned i = 0; i < numRegions; ++i) {
     MlirRegion region = mlirOperationGetRegion(operation, i);
     for (MlirBlock block = mlirRegionGetFirstBlock(region);
          !mlirBlockIsNull(block); block = mlirBlockGetNextInRegion(block)) {
       ++stats->numBlocks;
-      stats->numValues += mlirBlockGetNumArguments(block);
+      intptr_t numArgs = mlirBlockGetNumArguments(block);
+      stats->numValues += numArgs;
+      for (intptr_t j = 0; j < numArgs; ++j) {
+        MlirValue arg = mlirBlockGetArgument(block, j);
+        if (!mlirValueIsABlockArgument(arg))
+          return 5;
+        if (mlirValueIsAOpResult(arg))
+          return 6;
+        if (!mlirBlockEqual(block, mlirBlockArgumentGetOwner(arg)))
+          return 7;
+        if (j != mlirBlockArgumentGetArgNumber(arg))
+          return 8;
+        ++stats->numBlockArguments;
+      }
 
       for (MlirOperation child = mlirBlockGetFirstOperation(block);
            !mlirOperationIsNull(child);
@@ -181,9 +211,10 @@ void collectStatsSingle(OpListNode *head, ModuleStats *stats) {
       }
     }
   }
+  return 0;
 }
 
-void collectStats(MlirOperation operation) {
+int collectStats(MlirOperation operation) {
   OpListNode *head = malloc(sizeof(OpListNode));
   head->op = operation;
   head->next = NULL;
@@ -194,9 +225,13 @@ void collectStats(MlirOperation operation) {
   stats.numBlocks = 0;
   stats.numRegions = 0;
   stats.numValues = 0;
+  stats.numBlockArguments = 0;
+  stats.numOpResults = 0;
 
   do {
-    collectStatsSingle(head, &stats);
+    int retval = collectStatsSingle(head, &stats);
+    if (retval)
+      return retval;
     OpListNode *next = head->next;
     free(head);
     head = next;
@@ -207,6 +242,11 @@ void collectStats(MlirOperation operation) {
   fprintf(stderr, "Number of blocks: %u\n", stats.numBlocks);
   fprintf(stderr, "Number of regions: %u\n", stats.numRegions);
   fprintf(stderr, "Number of values: %u\n", stats.numValues);
+  fprintf(stderr, "Number of block arguments: %u\n", stats.numBlockArguments);
+  fprintf(stderr, "Number of op results: %u\n", stats.numOpResults);
+  if (stats.numValues != stats.numBlockArguments + stats.numOpResults)
+    return 100;
+  return 0;
 }
 
 static void printToStderr(const char *str, intptr_t len, void *userData) {
@@ -214,35 +254,116 @@ static void printToStderr(const char *str, intptr_t len, void *userData) {
   fwrite(str, 1, len, stderr);
 }
 
-static void printFirstOfEach(MlirOperation operation) {
+static void printFirstOfEach(MlirContext ctx, MlirOperation operation) {
   // Assuming we are given a module, go to the first operation of the first
   // function.
   MlirRegion region = mlirOperationGetRegion(operation, 0);
   MlirBlock block = mlirRegionGetFirstBlock(region);
   operation = mlirBlockGetFirstOperation(block);
   region = mlirOperationGetRegion(operation, 0);
+  MlirOperation parentOperation = operation;
   block = mlirRegionGetFirstBlock(region);
   operation = mlirBlockGetFirstOperation(block);
 
-  // In the module we created, the first operation of the first function is an
-  // "std.dim", which has an attribute an a single result that we can use to
-  // test the printing mechanism.
+  // Verify that parent operation and block report correctly.
+  fprintf(stderr, "Parent operation eq: %d\n",
+          mlirOperationEqual(mlirOperationGetParentOperation(operation),
+                             parentOperation));
+  fprintf(stderr, "Block eq: %d\n",
+          mlirBlockEqual(mlirOperationGetBlock(operation), block));
+
+  // In the module we created, the first operation of the first function is
+  // an "std.dim", which has an attribute and a single result that we can
+  // use to test the printing mechanism.
   mlirBlockPrint(block, printToStderr, NULL);
   fprintf(stderr, "\n");
+  fprintf(stderr, "First operation: ");
   mlirOperationPrint(operation, printToStderr, NULL);
   fprintf(stderr, "\n");
 
-  MlirNamedAttribute namedAttr = mlirOperationGetAttribute(operation, 0);
-  mlirAttributePrint(namedAttr.attribute, printToStderr, NULL);
+  // Get the operation name and print it.
+  MlirIdentifier ident = mlirOperationGetName(operation);
+  MlirStringRef identStr = mlirIdentifierStr(ident);
+  fprintf(stderr, "Operation name: '");
+  for (size_t i = 0; i < identStr.length; ++i)
+    fputc(identStr.data[i], stderr);
+  fprintf(stderr, "'\n");
+
+  // Get the identifier again and verify equal.
+  MlirIdentifier identAgain = mlirIdentifierGet(ctx, identStr);
+  fprintf(stderr, "Identifier equal: %d\n",
+          mlirIdentifierEqual(ident, identAgain));
+
+  // Get the block terminator and print it.
+  MlirOperation terminator = mlirBlockGetTerminator(block);
+  fprintf(stderr, "Terminator: ");
+  mlirOperationPrint(terminator, printToStderr, NULL);
   fprintf(stderr, "\n");
 
+  // Get the attribute by index.
+  MlirNamedAttribute namedAttr0 = mlirOperationGetAttribute(operation, 0);
+  fprintf(stderr, "Get attr 0: ");
+  mlirAttributePrint(namedAttr0.attribute, printToStderr, NULL);
+  fprintf(stderr, "\n");
+
+  // Now re-get the attribute by name.
+  MlirAttribute attr0ByName =
+      mlirOperationGetAttributeByName(operation, namedAttr0.name);
+  fprintf(stderr, "Get attr 0 by name: ");
+  mlirAttributePrint(attr0ByName, printToStderr, NULL);
+  fprintf(stderr, "\n");
+
+  // Get a non-existing attribute and assert that it is null (sanity).
+  fprintf(stderr, "does_not_exist is null: %d\n",
+          mlirAttributeIsNull(
+              mlirOperationGetAttributeByName(operation, "does_not_exist")));
+
+  // Get result 0 and its type.
   MlirValue value = mlirOperationGetResult(operation, 0);
+  fprintf(stderr, "Result 0: ");
   mlirValuePrint(value, printToStderr, NULL);
   fprintf(stderr, "\n");
+  fprintf(stderr, "Value is null: %d\n", mlirValueIsNull(value));
 
   MlirType type = mlirValueGetType(value);
+  fprintf(stderr, "Result 0 type: ");
   mlirTypePrint(type, printToStderr, NULL);
   fprintf(stderr, "\n");
+
+  // Set a custom attribute.
+  mlirOperationSetAttributeByName(operation, "custom_attr",
+                                  mlirBoolAttrGet(ctx, 1));
+  fprintf(stderr, "Op with set attr: ");
+  mlirOperationPrint(operation, printToStderr, NULL);
+  fprintf(stderr, "\n");
+
+  // Remove the attribute.
+  fprintf(stderr, "Remove attr: %d\n",
+          mlirOperationRemoveAttributeByName(operation, "custom_attr"));
+  fprintf(stderr, "Remove attr again: %d\n",
+          mlirOperationRemoveAttributeByName(operation, "custom_attr"));
+  fprintf(stderr, "Removed attr is null: %d\n",
+          mlirAttributeIsNull(
+              mlirOperationGetAttributeByName(operation, "custom_attr")));
+
+  // Add a large attribute to verify printing flags.
+  int64_t eltsShape[] = {4};
+  int32_t eltsData[] = {1, 2, 3, 4};
+  mlirOperationSetAttributeByName(
+      operation, "elts",
+      mlirDenseElementsAttrInt32Get(
+          mlirRankedTensorTypeGet(1, eltsShape, mlirIntegerTypeGet(ctx, 32)), 4,
+          eltsData));
+  MlirOpPrintingFlags flags = mlirOpPrintingFlagsCreate();
+  mlirOpPrintingFlagsElideLargeElementsAttrs(flags, 2);
+  mlirOpPrintingFlagsPrintGenericOpForm(flags);
+  mlirOpPrintingFlagsEnableDebugInfo(flags, /*prettyForm=*/0);
+  mlirOpPrintingFlagsUseLocalScope(flags);
+  fprintf(stderr, "Op print with all flags: ");
+  mlirOperationPrintWithFlags(operation, flags, printToStderr, NULL);
+  fprintf(stderr, "\n");
+
+  mlirOpPrintingFlagsDestroy(flags);
 }
 
 /// Creates an operation with a region containing multiple blocks with
@@ -478,6 +599,10 @@ int printStandardAttributes(MlirContext ctx) {
       fabs(mlirFloatAttrGetValueDouble(floating) - 2.0) > 1E-6)
     return 1;
   mlirAttributeDump(floating);
+
+  // Exercise mlirAttributeGetType() just for the first one.
+  MlirType floatingType = mlirAttributeGetType(floating);
+  mlirTypeDump(floatingType);
 
   MlirAttribute integer = mlirIntegerAttrGet(mlirIntegerTypeGet(ctx, 32), 42);
   if (!mlirAttributeIsAInteger(integer) ||
@@ -790,6 +915,176 @@ int printAffineMap(MlirContext ctx) {
   return 0;
 }
 
+int printAffineExpr(MlirContext ctx) {
+  MlirAffineExpr affineDimExpr = mlirAffineDimExprGet(ctx, 5);
+  MlirAffineExpr affineSymbolExpr = mlirAffineSymbolExprGet(ctx, 5);
+  MlirAffineExpr affineConstantExpr = mlirAffineConstantExprGet(ctx, 5);
+  MlirAffineExpr affineAddExpr =
+      mlirAffineAddExprGet(affineDimExpr, affineSymbolExpr);
+  MlirAffineExpr affineMulExpr =
+      mlirAffineMulExprGet(affineDimExpr, affineSymbolExpr);
+  MlirAffineExpr affineModExpr =
+      mlirAffineModExprGet(affineDimExpr, affineSymbolExpr);
+  MlirAffineExpr affineFloorDivExpr =
+      mlirAffineFloorDivExprGet(affineDimExpr, affineSymbolExpr);
+  MlirAffineExpr affineCeilDivExpr =
+      mlirAffineCeilDivExprGet(affineDimExpr, affineSymbolExpr);
+
+  // Tests mlirAffineExprDump.
+  mlirAffineExprDump(affineDimExpr);
+  mlirAffineExprDump(affineSymbolExpr);
+  mlirAffineExprDump(affineConstantExpr);
+  mlirAffineExprDump(affineAddExpr);
+  mlirAffineExprDump(affineMulExpr);
+  mlirAffineExprDump(affineModExpr);
+  mlirAffineExprDump(affineFloorDivExpr);
+  mlirAffineExprDump(affineCeilDivExpr);
+
+  // Tests methods of affine binary operation expression, takes add expression
+  // as an example.
+  mlirAffineExprDump(mlirAffineBinaryOpExprGetLHS(affineAddExpr));
+  mlirAffineExprDump(mlirAffineBinaryOpExprGetRHS(affineAddExpr));
+
+  // Tests methods of affine dimension expression.
+  if (mlirAffineDimExprGetPosition(affineDimExpr) != 5)
+    return 1;
+
+  // Tests methods of affine symbol expression.
+  if (mlirAffineSymbolExprGetPosition(affineSymbolExpr) != 5)
+    return 2;
+
+  // Tests methods of affine constant expression.
+  if (mlirAffineConstantExprGetValue(affineConstantExpr) != 5)
+    return 3;
+
+  // Tests methods of affine expression.
+  if (mlirAffineExprIsSymbolicOrConstant(affineDimExpr) ||
+      !mlirAffineExprIsSymbolicOrConstant(affineSymbolExpr) ||
+      !mlirAffineExprIsSymbolicOrConstant(affineConstantExpr) ||
+      mlirAffineExprIsSymbolicOrConstant(affineAddExpr) ||
+      mlirAffineExprIsSymbolicOrConstant(affineMulExpr) ||
+      mlirAffineExprIsSymbolicOrConstant(affineModExpr) ||
+      mlirAffineExprIsSymbolicOrConstant(affineFloorDivExpr) ||
+      mlirAffineExprIsSymbolicOrConstant(affineCeilDivExpr))
+    return 4;
+
+  if (!mlirAffineExprIsPureAffine(affineDimExpr) ||
+      !mlirAffineExprIsPureAffine(affineSymbolExpr) ||
+      !mlirAffineExprIsPureAffine(affineConstantExpr) ||
+      !mlirAffineExprIsPureAffine(affineAddExpr) ||
+      mlirAffineExprIsPureAffine(affineMulExpr) ||
+      mlirAffineExprIsPureAffine(affineModExpr) ||
+      mlirAffineExprIsPureAffine(affineFloorDivExpr) ||
+      mlirAffineExprIsPureAffine(affineCeilDivExpr))
+    return 5;
+
+  if (mlirAffineExprGetLargestKnownDivisor(affineDimExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineSymbolExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineConstantExpr) != 5 ||
+      mlirAffineExprGetLargestKnownDivisor(affineAddExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineMulExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineModExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineFloorDivExpr) != 1 ||
+      mlirAffineExprGetLargestKnownDivisor(affineCeilDivExpr) != 1)
+    return 6;
+
+  if (!mlirAffineExprIsMultipleOf(affineDimExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineSymbolExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineConstantExpr, 5) ||
+      !mlirAffineExprIsMultipleOf(affineAddExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineMulExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineModExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineFloorDivExpr, 1) ||
+      !mlirAffineExprIsMultipleOf(affineCeilDivExpr, 1))
+    return 7;
+
+  if (!mlirAffineExprIsFunctionOfDim(affineDimExpr, 5) ||
+      mlirAffineExprIsFunctionOfDim(affineSymbolExpr, 5) ||
+      mlirAffineExprIsFunctionOfDim(affineConstantExpr, 5) ||
+      !mlirAffineExprIsFunctionOfDim(affineAddExpr, 5) ||
+      !mlirAffineExprIsFunctionOfDim(affineMulExpr, 5) ||
+      !mlirAffineExprIsFunctionOfDim(affineModExpr, 5) ||
+      !mlirAffineExprIsFunctionOfDim(affineFloorDivExpr, 5) ||
+      !mlirAffineExprIsFunctionOfDim(affineCeilDivExpr, 5))
+    return 8;
+
+  // Tests 'IsA' methods of affine binary operation expression.
+  if (!mlirAffineExprIsAAdd(affineAddExpr))
+    return 9;
+
+  if (!mlirAffineExprIsAMul(affineMulExpr))
+    return 10;
+
+  if (!mlirAffineExprIsAMod(affineModExpr))
+    return 11;
+
+  if (!mlirAffineExprIsAFloorDiv(affineFloorDivExpr))
+    return 12;
+
+  if (!mlirAffineExprIsACeilDiv(affineCeilDivExpr))
+    return 13;
+
+  return 0;
+}
+
+int registerOnlyStd() {
+  MlirContext ctx = mlirContextCreate();
+  // The built-in dialect is always loaded.
+  if (mlirContextGetNumLoadedDialects(ctx) != 1)
+    return 1;
+
+  MlirDialect std =
+      mlirContextGetOrLoadDialect(ctx, mlirStandardDialectGetNamespace());
+  if (!mlirDialectIsNull(std))
+    return 2;
+
+  mlirContextRegisterStandardDialect(ctx);
+  if (mlirContextGetNumRegisteredDialects(ctx) != 1)
+    return 3;
+  if (mlirContextGetNumLoadedDialects(ctx) != 1)
+    return 4;
+
+  std = mlirContextGetOrLoadDialect(ctx, mlirStandardDialectGetNamespace());
+  if (mlirDialectIsNull(std))
+    return 5;
+  if (mlirContextGetNumLoadedDialects(ctx) != 2)
+    return 6;
+
+  MlirDialect alsoStd = mlirContextLoadStandardDialect(ctx);
+  if (!mlirDialectEqual(std, alsoStd))
+    return 7;
+
+  MlirStringRef stdNs = mlirDialectGetNamespace(std);
+  MlirStringRef alsoStdNs = mlirStandardDialectGetNamespace();
+  if (stdNs.length != alsoStdNs.length ||
+      strncmp(stdNs.data, alsoStdNs.data, stdNs.length))
+    return 8;
+
+  return 0;
+}
+
+// Wraps a diagnostic into additional text we can match against.
+MlirLogicalResult errorHandler(MlirDiagnostic diagnostic) {
+  fprintf(stderr, "processing diagnostic <<\n");
+  mlirDiagnosticPrint(diagnostic, printToStderr, NULL);
+  fprintf(stderr, "\n");
+  MlirLocation loc = mlirDiagnosticGetLocation(diagnostic);
+  mlirLocationPrint(loc, printToStderr, NULL);
+  assert(mlirDiagnosticGetNumNotes(diagnostic) == 0);
+  fprintf(stderr, ">> end of diagnostic\n");
+  return mlirLogicalResultSuccess();
+}
+
+void testDiagnostics() {
+  MlirContext ctx = mlirContextCreate();
+  MlirDiagnosticHandlerID id =
+      mlirContextAttachDiagnosticHandler(ctx, errorHandler);
+  MlirLocation loc = mlirLocationUnknownGet(ctx);
+  mlirEmitError(loc, "test diagnostics");
+  mlirContextDetachDiagnosticHandler(ctx, id);
+  mlirEmitError(loc, "more test diagnostics");
+}
+
 int main() {
   MlirContext ctx = mlirContextCreate();
   mlirRegisterAllDialects(ctx);
@@ -815,17 +1110,25 @@ int main() {
   // CHECK: }
   // clang-format on
 
-  collectStats(module);
+  fprintf(stderr, "@stats\n");
+  int errcode = collectStats(module);
+  fprintf(stderr, "%d\n", errcode);
   // clang-format off
+  // CHECK-LABEL: @stats
   // CHECK: Number of operations: 13
   // CHECK: Number of attributes: 4
   // CHECK: Number of blocks: 3
   // CHECK: Number of regions: 3
   // CHECK: Number of values: 9
+  // CHECK: Number of block arguments: 3
+  // CHECK: Number of op results: 6
+  // CHECK: 0
   // clang-format on
 
-  printFirstOfEach(module);
+  printFirstOfEach(ctx, module);
   // clang-format off
+  // CHECK: Parent operation eq: 1
+  // CHECK: Block eq: 1
   // CHECK:   %[[C0:.*]] = constant 0 : index
   // CHECK:   %[[DIM:.*]] = dim %{{.*}}, %[[C0]] : memref<?xf32>
   // CHECK:   %[[C1:.*]] = constant 1 : index
@@ -836,10 +1139,21 @@ int main() {
   // CHECK:     store %[[SUM]], %{{.*}}[%[[I]]] : memref<?xf32>
   // CHECK:   }
   // CHECK: return
-  // CHECK: constant 0 : index
-  // CHECK: 0 : index
-  // CHECK: constant 0 : index
-  // CHECK: index
+  // CHECK: First operation: {{.*}} = constant 0 : index
+  // CHECK: Operation name: 'std.constant'
+  // CHECK: Identifier equal: 1
+  // CHECK: Terminator: return
+  // CHECK: Get attr 0: 0 : index
+  // CHECK: Get attr 0 by name: 0 : index
+  // CHECK: does_not_exist is null: 1
+  // CHECK: Result 0: {{.*}} = constant 0 : index
+  // CHECK: Value is null: 0
+  // CHECK: Result 0 type: index
+  // CHECK: Op with set attr: {{.*}} {custom_attr = true}
+  // CHECK: Remove attr: 1
+  // CHECK: Remove attr again: 0
+  // CHECK: Removed attr is null: 1
+  // CHECK: Op print with all flags: %{{.*}} = "std.constant"() {elts = opaque<"", "0xDEADBEEF"> : tensor<4xi32>, value = 0 : index} : () -> index loc(unknown)
   // clang-format on
 
   mlirModuleDestroy(moduleOp);
@@ -882,12 +1196,13 @@ int main() {
   // CHECK: 0
   // clang-format on
   fprintf(stderr, "@types\n");
-  int errcode = printStandardTypes(ctx);
+  errcode = printStandardTypes(ctx);
   fprintf(stderr, "%d\n", errcode);
 
   // clang-format off
   // CHECK-LABEL: @attrs
   // CHECK: 2.000000e+00 : f64
+  // CHECK: f64
   // CHECK: 42 : i32
   // CHECK: true
   // CHECK: #std.abc
@@ -935,7 +1250,43 @@ int main() {
   errcode = printAffineMap(ctx);
   fprintf(stderr, "%d\n", errcode);
 
+  // clang-format off
+  // CHECK: d5
+  // CHECK: s5
+  // CHECK: 5
+  // CHECK: d5 + s5
+  // CHECK: d5 * s5
+  // CHECK: d5 mod s5
+  // CHECK: d5 floordiv s5
+  // CHECK: d5 ceildiv s5
+  // CHECK: d5
+  // CHECK: s5
+  // CHECK: 0
+  // clang-format on
+  fprintf(stderr, "@affineExpr\n");
+  errcode = printAffineExpr(ctx);
+  fprintf(stderr, "%d\n", errcode);
+
+  fprintf(stderr, "@registration\n");
+  errcode = registerOnlyStd();
+  fprintf(stderr, "%d\n", errcode);
+  // clang-format off
+  // CHECK-LABEL: @registration
+  // CHECK: 0
+  // clang-format on
+
   mlirContextDestroy(ctx);
+
+  fprintf(stderr, "@test_diagnostics\n");
+  testDiagnostics();
+  // clang-format off
+  // CHECK-LABEL: @test_diagnostics
+  // CHECK: processing diagnostic <<
+  // CHECK:   test diagnostics
+  // CHECK:   loc(unknown)
+  // CHECK: >> end of diagnostic
+  // CHECK-NOT: processing diagnostic
+  // CHECK:     more test diagnostics
 
   return 0;
 }

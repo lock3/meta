@@ -704,6 +704,10 @@ let Command = "script import" in {
     Desc<"Allow the script to be loaded even if it was already loaded before. "
     "This argument exists for backwards compatibility, but reloading is always "
     "allowed, whether you specify it or not.">;
+  def relative_to_command_file : Option<"relative-to-command-file", "c">,
+    Group<1>, Desc<"Resolve non-absolute paths relative to the location of the "
+    "current command file. This argument can only be used when the command is "
+    "being sourced from a file.">;
 }
 
 let Command = "script add" in {
@@ -879,7 +883,7 @@ let Command = "target modules lookup" in {
 }
 
 let Command = "target stop hook add" in {
-  def target_stop_hook_add_one_liner : Option<"one-liner", "o">,
+  def target_stop_hook_add_one_liner : Option<"one-liner", "o">, GroupRange<1,3>,
     Arg<"OneLiner">, Desc<"Add a command for the stop hook.  Can be specified "
     "more than once, and commands will be run in the order they appear.">;
   def target_stop_hook_add_shlib : Option<"shlib", "s">, Arg<"ShlibName">,
@@ -897,19 +901,19 @@ let Command = "target stop hook add" in {
   def target_stop_hook_add_queue_name : Option<"queue-name", "q">,
     Arg<"QueueName">, Desc<"The stop hook is run only for threads in the queue "
     "whose name is given by this argument.">;
-  def target_stop_hook_add_file : Option<"file", "f">, Group<1>,
+  def target_stop_hook_add_file : Option<"file", "f">, Groups<[1,4]>,
     Arg<"Filename">, Desc<"Specify the source file within which the stop-hook "
     "is to be run.">, Completion<"SourceFile">;
-  def target_stop_hook_add_start_line : Option<"start-line", "l">, Group<1>,
+  def target_stop_hook_add_start_line : Option<"start-line", "l">, Groups<[1,4]>,
     Arg<"LineNum">, Desc<"Set the start of the line range for which the "
     "stop-hook is to be run.">;
-  def target_stop_hook_add_end_line : Option<"end-line", "e">, Group<1>,
+  def target_stop_hook_add_end_line : Option<"end-line", "e">, Groups<[1,4]>,
     Arg<"LineNum">, Desc<"Set the end of the line range for which the stop-hook"
     " is to be run.">;
-  def target_stop_hook_add_classname : Option<"classname", "c">, Group<2>,
+  def target_stop_hook_add_classname : Option<"classname", "c">, Groups<[2,5]>,
     Arg<"ClassName">,
     Desc<"Specify the class within which the stop-hook is to be run.">;
-  def target_stop_hook_add_name : Option<"name", "n">, Group<3>,
+  def target_stop_hook_add_name : Option<"name", "n">, Groups<[3,6]>,
     Arg<"FunctionName">, Desc<"Set the function name within which the stop hook"
     " will be run.">, Completion<"Symbol">;
   def target_stop_hook_add_auto_continue : Option<"auto-continue", "G">,
@@ -1003,6 +1007,21 @@ let Command = "thread plan list" in {
     "specified more than once.">;
   def thread_plan_list_unreported : Option<"unreported", "u">, Group<1>,
     Desc<"Display thread plans for unreported threads">;
+}
+
+let Command = "thread trace dump instructions" in {
+  def thread_trace_dump_instructions_count : Option<"count", "c">, Group<1>,
+    Arg<"Count">,
+    Desc<"The number of instructions to display starting at the current "
+    "position in reverse order chronologically.">;
+  def thread_trace_dump_instructions_start_position:
+    Option<"start-position", "s">,
+    Group<1>,
+    Arg<"Index">,
+    Desc<"The position of the first instruction to print. Defaults to the "
+    "current position, i.e. where the thread is stopped. The instructions are "
+    "indexed in reverse order, which means that a start position of 0 refers "
+    "to the last instruction chronologically.">;
 }
 
 let Command = "type summary add" in {

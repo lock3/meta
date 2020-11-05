@@ -425,6 +425,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "speculative_load_hardening";
   if (hasAttribute(Attribute::Speculatable))
     return "speculatable";
+  if (hasAttribute(Attribute::NoStackProtect))
+    return "nossp";
   if (hasAttribute(Attribute::StackProtect))
     return "ssp";
   if (hasAttribute(Attribute::StackProtectReq))
@@ -451,6 +453,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "immarg";
   if (hasAttribute(Attribute::NoUndef))
     return "noundef";
+  if (hasAttribute(Attribute::MustProgress))
+    return "mustprogress";
 
   const bool IsByVal = hasAttribute(Attribute::ByVal);
   if (IsByVal || hasAttribute(Attribute::StructRet)) {
@@ -1886,6 +1890,7 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
         .addAttribute(Attribute::NoAlias)
         .addAttribute(Attribute::NoCapture)
         .addAttribute(Attribute::NonNull)
+        .addAlignmentAttr(1)             // the int here is ignored
         .addDereferenceableAttr(1)       // the int here is ignored
         .addDereferenceableOrNullAttr(1) // the int here is ignored
         .addAttribute(Attribute::ReadNone)
@@ -1895,6 +1900,10 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
         .addByValAttr(Ty)
         .addStructRetAttr(Ty)
         .addByRefAttr(Ty);
+
+  // Some attributes can apply to all "values" but there are no `void` values.
+  if (Ty->isVoidTy())
+    Incompatible.addAttribute(Attribute::NoUndef);
 
   return Incompatible;
 }
@@ -1932,9 +1941,17 @@ static void setOR(Function &Caller, const Function &Callee) {
 /// If the inlined function had a higher stack protection level than the
 /// calling function, then bump up the caller's stack protection level.
 static void adjustCallerSSPLevel(Function &Caller, const Function &Callee) {
+  assert(!(Callee.hasFnAttribute(Attribute::NoStackProtect) &&
+           (Caller.hasFnAttribute(Attribute::StackProtect) ||
+            Caller.hasFnAttribute(Attribute::StackProtectStrong) ||
+            Caller.hasFnAttribute(Attribute::StackProtectReq))) &&
+         "stack protected caller but callee requested no stack protector");
+  assert(!(Caller.hasFnAttribute(Attribute::NoStackProtect) &&
+           (Callee.hasFnAttribute(Attribute::StackProtect) ||
+            Callee.hasFnAttribute(Attribute::StackProtectStrong) ||
+            Callee.hasFnAttribute(Attribute::StackProtectReq))) &&
+         "stack protected callee but caller requested no stack protector");
   // If upgrading the SSP attribute, clear out the old SSP Attributes first.
-  // Having multiple SSP attributes doesn't actually hurt, but it adds useless
-  // clutter to the IR.
   AttrBuilder OldSSPAttr;
   OldSSPAttr.addAttribute(Attribute::StackProtect)
       .addAttribute(Attribute::StackProtectStrong)
