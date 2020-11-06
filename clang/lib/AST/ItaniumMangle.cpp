@@ -3487,8 +3487,8 @@ void CXXNameMangler::mangleType(const DependentSizedMatrixType *T) {
   // U<Len>matrix_type<row expr><column expr><element type>
   StringRef VendorQualifier = "matrix_type";
   Out << "U" << VendorQualifier.size() << VendorQualifier;
-  mangleTemplateArg(T->getRowExpr());
-  mangleTemplateArg(T->getColumnExpr());
+  mangleTemplateArg(TemplateArgument(T->getRowExpr()));
+  mangleTemplateArg(TemplateArgument(T->getColumnExpr()));
   mangleType(T->getElementType());
 }
 

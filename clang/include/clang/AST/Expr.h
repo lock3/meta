@@ -6377,6 +6377,9 @@ private:
   friend class ASTStmtWriter;
 };
 
+const StreamingDiagnostic &operator<<(const StreamingDiagnostic &DB,
+                                      const Expr *E);
+
 } // end namespace clang
 
 #endif // LLVM_CLANG_AST_EXPR_H

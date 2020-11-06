@@ -217,7 +217,7 @@ public:
   /// This form of template argument only occurs in template argument
   /// lists used for dependent types and for expression; it will not
   /// occur in a non-dependent, canonical template argument list.
-  TemplateArgument(Expr *E) {
+  explicit TemplateArgument(Expr *E) {
     TypeOrValue.Kind = Expression;
     TypeOrValue.V = reinterpret_cast<uintptr_t>(E);
   }

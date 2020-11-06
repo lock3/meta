@@ -4837,3 +4837,15 @@ OMPIteratorExpr *OMPIteratorExpr::CreateEmpty(const ASTContext &Context,
       alignof(OMPIteratorExpr));
   return new (Mem) OMPIteratorExpr(EmptyShell(), NumIterators);
 }
+
+const StreamingDiagnostic &clang::operator<<(const StreamingDiagnostic &DB,
+                                             const Expr *E) {
+  // FIXME: We're guessing at LangOptions!
+  SmallString<32> Str;
+  llvm::raw_svector_ostream OS(Str);
+  LangOptions LangOpts;
+  LangOpts.CPlusPlus = true;
+  PrintingPolicy Policy(LangOpts);
+  E->printPretty(OS, nullptr, Policy);
+  return DB << OS.str();
+}

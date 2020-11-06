@@ -460,8 +460,9 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
                               S.Context.NullPtrTy, NTTP->getLocation()),
                           NullPtrType, CK_NullToPointer)
           .get();
+  TemplateArgument TV(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
+                                       DeducedTemplateArgument(TV),
                                        Value->getType(), Info, Deduced);
 }
 
@@ -473,8 +474,9 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
     const NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+  TemplateArgument TV(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
+                                       DeducedTemplateArgument(TV),
                                        Value->getType(), Info, Deduced);
 }
 
