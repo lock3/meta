@@ -528,6 +528,11 @@ public:
     Inst.addOperand(MCOperand::createReg(VSRpRegs[getVSRpEvenReg()]));
   }
 
+  void addRegVSRpEvenRCOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::createReg(VSRpRegs[getVSRpEvenReg()]));
+  }
+
   void addRegCRBITRCOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::createReg(CRBITRegs[getCRBit()]));
@@ -1732,7 +1737,7 @@ bool PPCAsmParser::ParseDirectiveMachine(SMLoc L) {
   // Implement ".machine any" (by doing nothing) for the benefit
   // of existing assembler code.  Likewise, we can then implement
   // ".machine push" and ".machine pop" as no-op.
-  if (CPU != "any" && CPU != "push" && CPU != "pop")
+  if (CPU != "any" && CPU != "push" && CPU != "pop" && CPU != "ppc64")
     return TokError("unrecognized machine type");
 
   Parser.Lex();

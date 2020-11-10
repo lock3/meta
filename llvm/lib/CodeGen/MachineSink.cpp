@@ -127,6 +127,12 @@ namespace {
     /// current block.
     DenseSet<DebugVariable> SeenDbgVars;
 
+    std::map<std::pair<MachineBasicBlock *, MachineBasicBlock *>, bool>
+        HasStoreCache;
+    std::map<std::pair<MachineBasicBlock *, MachineBasicBlock *>,
+             std::vector<MachineInstr *>>
+        StoreInstrCache;
+
   public:
     static char ID; // Pass identification
 
@@ -159,6 +165,9 @@ namespace {
                                      MachineBasicBlock *From,
                                      MachineBasicBlock *To);
 
+    bool hasStoreBetween(MachineBasicBlock *From, MachineBasicBlock *To,
+                         MachineInstr &MI);
+
     /// Postpone the splitting of the given critical
     /// edge (\p From, \p To).
     ///
@@ -184,12 +193,12 @@ namespace {
     /// to the copy source.
     void SalvageUnsunkDebugUsersOfCopy(MachineInstr &,
                                        MachineBasicBlock *TargetBlock);
-    bool AllUsesDominatedByBlock(unsigned Reg, MachineBasicBlock *MBB,
-                                 MachineBasicBlock *DefMBB,
-                                 bool &BreakPHIEdge, bool &LocalUse) const;
+    bool AllUsesDominatedByBlock(Register Reg, MachineBasicBlock *MBB,
+                                 MachineBasicBlock *DefMBB, bool &BreakPHIEdge,
+                                 bool &LocalUse) const;
     MachineBasicBlock *FindSuccToSinkTo(MachineInstr &MI, MachineBasicBlock *MBB,
                bool &BreakPHIEdge, AllSuccsCache &AllSuccessors);
-    bool isProfitableToSinkTo(unsigned Reg, MachineInstr &MI,
+    bool isProfitableToSinkTo(Register Reg, MachineInstr &MI,
                               MachineBasicBlock *MBB,
                               MachineBasicBlock *SuccToSinkTo,
                               AllSuccsCache &AllSuccessors);
@@ -253,12 +262,11 @@ bool MachineSinking::PerformTrivialForwardCoalescing(MachineInstr &MI,
 /// occur in blocks dominated by the specified block. If any use is in the
 /// definition block, then return false since it is never legal to move def
 /// after uses.
-bool
-MachineSinking::AllUsesDominatedByBlock(unsigned Reg,
-                                        MachineBasicBlock *MBB,
-                                        MachineBasicBlock *DefMBB,
-                                        bool &BreakPHIEdge,
-                                        bool &LocalUse) const {
+bool MachineSinking::AllUsesDominatedByBlock(Register Reg,
+                                             MachineBasicBlock *MBB,
+                                             MachineBasicBlock *DefMBB,
+                                             bool &BreakPHIEdge,
+                                             bool &LocalUse) const {
   assert(Register::isVirtualRegister(Reg) && "Only makes sense for vregs");
 
   // Ignore debug uses because debug info doesn't affect the code.
@@ -359,6 +367,9 @@ bool MachineSinking::runOnMachineFunction(MachineFunction &MF) {
     if (!MadeChange) break;
     EverMadeChange = true;
   }
+
+  HasStoreCache.clear();
+  StoreInstrCache.clear();
 
   // Now clear any kill flags for recorded registers.
   for (auto I : RegsToClearKillFlags)
@@ -560,7 +571,7 @@ bool MachineSinking::PostponeSplitCriticalEdge(MachineInstr &MI,
 }
 
 /// isProfitableToSinkTo - Return true if it is profitable to sink MI.
-bool MachineSinking::isProfitableToSinkTo(unsigned Reg, MachineInstr &MI,
+bool MachineSinking::isProfitableToSinkTo(Register Reg, MachineInstr &MI,
                                           MachineBasicBlock *MBB,
                                           MachineBasicBlock *SuccToSinkTo,
                                           AllSuccsCache &AllSuccessors) {
@@ -920,6 +931,73 @@ static void performSink(MachineInstr &MI, MachineBasicBlock &SuccToSinkTo,
   }
 }
 
+/// hasStoreBetween - check if there is store betweeen straight line blocks From
+/// and To.
+bool MachineSinking::hasStoreBetween(MachineBasicBlock *From,
+                                     MachineBasicBlock *To, MachineInstr &MI) {
+  // Make sure From and To are in straight line which means From dominates To
+  // and To post dominates From.
+  if (!DT->dominates(From, To) || !PDT->dominates(To, From))
+    return true;
+
+  auto BlockPair = std::make_pair(From, To);
+
+  // Does these two blocks pair be queried before and have a definite cached
+  // result?
+  if (HasStoreCache.find(BlockPair) != HasStoreCache.end())
+    return HasStoreCache[BlockPair];
+
+  if (StoreInstrCache.find(BlockPair) != StoreInstrCache.end())
+    return std::any_of(
+        StoreInstrCache[BlockPair].begin(), StoreInstrCache[BlockPair].end(),
+        [&](MachineInstr *I) { return I->mayAlias(AA, MI, false); });
+
+  bool SawStore = false;
+  bool HasAliasedStore = false;
+  DenseSet<MachineBasicBlock *> HandledBlocks;
+  // Go through all reachable blocks from From.
+  for (MachineBasicBlock *BB : depth_first(From)) {
+    // We insert the instruction at the start of block To, so no need to worry
+    // about stores inside To.
+    // Store in block From should be already considered when just enter function
+    // SinkInstruction.
+    if (BB == To || BB == From)
+      continue;
+
+    // We already handle this BB in previous iteration.
+    if (HandledBlocks.count(BB))
+      continue;
+
+    HandledBlocks.insert(BB);
+    // To post dominates BB, it must be a path from block From.
+    if (PDT->dominates(To, BB)) {
+      for (MachineInstr &I : *BB) {
+        // Treat as alias conservatively for a call or an ordered memory
+        // operation.
+        if (I.isCall() || I.hasOrderedMemoryRef()) {
+          HasStoreCache[BlockPair] = true;
+          return true;
+        }
+
+        if (I.mayStore()) {
+          SawStore = true;
+          // We still have chance to sink MI if all stores between are not
+          // aliased to MI.
+          // Cache all store instructions, so that we don't need to go through
+          // all From reachable blocks for next load instruction.
+          if (I.mayAlias(AA, MI, false))
+            HasAliasedStore = true;
+          StoreInstrCache[BlockPair].push_back(&I);
+        }
+      }
+    }
+  }
+  // If there is no store at all, cache the result.
+  if (!SawStore)
+    HasStoreCache[BlockPair] = false;
+  return HasAliasedStore;
+}
+
 /// SinkInstruction - Determine whether it is safe to sink the specified machine
 /// instruction out of its current block into a successor.
 bool MachineSinking::SinkInstruction(MachineInstr &MI, bool &SawStore,
@@ -980,8 +1058,9 @@ bool MachineSinking::SinkInstruction(MachineInstr &MI, bool &SawStore,
     // We cannot sink a load across a critical edge - there may be stores in
     // other code paths.
     bool TryBreak = false;
-    bool store = true;
-    if (!MI.isSafeToMove(AA, store)) {
+    bool Store =
+        MI.mayLoad() ? hasStoreBetween(ParentBlock, SuccToSinkTo, MI) : true;
+    if (!MI.isSafeToMove(AA, Store)) {
       LLVM_DEBUG(dbgs() << " *** NOTE: Won't sink load along critical edge.\n");
       TryBreak = true;
     }
@@ -1312,9 +1391,9 @@ static bool hasRegisterDependency(MachineInstr *MI,
   return HasRegDependency;
 }
 
-static SmallSet<unsigned, 4> getRegUnits(unsigned Reg,
-                                         const TargetRegisterInfo *TRI) {
-  SmallSet<unsigned, 4> RegUnits;
+static SmallSet<MCRegister, 4> getRegUnits(MCRegister Reg,
+                                           const TargetRegisterInfo *TRI) {
+  SmallSet<MCRegister, 4> RegUnits;
   for (auto RI = MCRegUnitIterator(Reg, TRI); RI.isValid(); ++RI)
     RegUnits.insert(*RI);
   return RegUnits;
@@ -1364,8 +1443,8 @@ bool PostRAMachineSinking::tryToSinkCopy(MachineBasicBlock &CurBB,
           continue;
 
         // Record debug use of each reg unit.
-        SmallSet<unsigned, 4> Units = getRegUnits(MO.getReg(), TRI);
-        for (unsigned Reg : Units)
+        SmallSet<MCRegister, 4> Units = getRegUnits(MO.getReg(), TRI);
+        for (MCRegister Reg : Units)
           SeenDbgInstrs[Reg].push_back(MI);
       }
       continue;
@@ -1414,8 +1493,8 @@ bool PostRAMachineSinking::tryToSinkCopy(MachineBasicBlock &CurBB,
       if (!MO.isReg() || !MO.isDef())
         continue;
 
-      SmallSet<unsigned, 4> Units = getRegUnits(MO.getReg(), TRI);
-      for (unsigned Reg : Units)
+      SmallSet<MCRegister, 4> Units = getRegUnits(MO.getReg(), TRI);
+      for (MCRegister Reg : Units)
         for (auto *MI : SeenDbgInstrs.lookup(Reg))
           DbgValsToSinkSet.insert(MI);
     }

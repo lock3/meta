@@ -286,7 +286,7 @@ void LinkerDriver::addLibrary(StringRef name) {
   if (Optional<std::string> path = searchLibrary(name))
     addFile(*path, /*withLOption=*/true);
   else
-    error("unable to find library -l" + name);
+    error("unable to find library -l" + name, ErrorTag::LibNotFound, {name});
 }
 
 // This function is called on startup. We need this for LTO since
@@ -895,7 +895,6 @@ static void parseClangOption(StringRef opt, const Twine &msg) {
   raw_string_ostream os(err);
 
   const char *argv[] = {config->progName.data(), opt.data()};
-  cl::ResetAllOptionOccurrences();
   if (cl::ParseCommandLineOptions(2, argv, "", &os))
     return;
   os.flush();
@@ -945,6 +944,10 @@ static void readConfigs(opt::InputArgList &args) {
   config->enableNewDtags =
       args.hasFlag(OPT_enable_new_dtags, OPT_disable_new_dtags, true);
   config->entry = args.getLastArgValue(OPT_entry);
+
+  errorHandler().errorHandlingScript =
+      args.getLastArgValue(OPT_error_handling_script);
+
   config->executeOnly =
       args.hasFlag(OPT_execute_only, OPT_no_execute_only, false);
   config->exportDynamic =
@@ -1104,6 +1107,8 @@ static void readConfigs(opt::InputArgList &args) {
     else
       error(errPrefix + toString(pat.takeError()));
   }
+
+  cl::ResetAllOptionOccurrences();
 
   // Parse LTO options.
   if (auto *arg = args.getLastArg(OPT_plugin_opt_mcpu_eq))
@@ -1836,9 +1841,9 @@ template <class ELFT> void LinkerDriver::compileBitcodeFiles() {
 
 // The --wrap option is a feature to rename symbols so that you can write
 // wrappers for existing functions. If you pass `-wrap=foo`, all
-// occurrences of symbol `foo` are resolved to `wrap_foo` (so, you are
-// expected to write `wrap_foo` function as a wrapper). The original
-// symbol becomes accessible as `real_foo`, so you can call that from your
+// occurrences of symbol `foo` are resolved to `__wrap_foo` (so, you are
+// expected to write `__wrap_foo` function as a wrapper). The original
+// symbol becomes accessible as `__real_foo`, so you can call that from your
 // wrapper.
 //
 // This data structure is instantiated for each -wrap option.
@@ -1866,7 +1871,7 @@ static std::vector<WrappedSymbol> addWrappedSymbols(opt::InputArgList &args) {
     if (!sym)
       continue;
 
-    Symbol *real = addUndefined(saver.save("__real_" + name));
+    Symbol *real = addUnusedUndefined(saver.save("__real_" + name));
     Symbol *wrap = addUnusedUndefined(saver.save("__wrap_" + name));
     v.push_back({sym, real, wrap});
 
@@ -1991,7 +1996,7 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &args) {
   // Handle -u/--undefined before input files. If both a.a and b.so define foo,
   // -u foo a.a b.so will fetch a.a.
   for (StringRef name : config->undefined)
-    addUnusedUndefined(name);
+    addUnusedUndefined(name)->referenced = true;
 
   // Add all files to the symbol table. This will add almost all
   // symbols that we need to the symbol table. This process might

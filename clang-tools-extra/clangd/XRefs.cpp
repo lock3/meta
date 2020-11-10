@@ -171,22 +171,33 @@ SymbolLocation getPreferredLocation(const Location &ASTLoc,
   return Merged.CanonicalDeclaration;
 }
 
+std::vector<std::pair<const NamedDecl *, DeclRelationSet>>
+getDeclAtPositionWithRelations(ParsedAST &AST, SourceLocation Pos,
+                               DeclRelationSet Relations,
+                               ASTNodeKind *NodeKind = nullptr) {
+  unsigned Offset = AST.getSourceManager().getDecomposedSpellingLoc(Pos).second;
+  std::vector<std::pair<const NamedDecl *, DeclRelationSet>> Result;
+  auto ResultFromTree = [&](SelectionTree ST) {
+    if (const SelectionTree::Node *N = ST.commonAncestor()) {
+      if (NodeKind)
+        *NodeKind = N->ASTNode.getNodeKind();
+      llvm::copy_if(allTargetDecls(N->ASTNode), std::back_inserter(Result),
+                    [&](auto &Entry) { return !(Entry.second & ~Relations); });
+    }
+    return !Result.empty();
+  };
+  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(), Offset,
+                            Offset, ResultFromTree);
+  return Result;
+}
+
 std::vector<const NamedDecl *>
 getDeclAtPosition(ParsedAST &AST, SourceLocation Pos, DeclRelationSet Relations,
                   ASTNodeKind *NodeKind = nullptr) {
-  unsigned Offset = AST.getSourceManager().getDecomposedSpellingLoc(Pos).second;
   std::vector<const NamedDecl *> Result;
-  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(), Offset,
-                            Offset, [&](SelectionTree ST) {
-                              if (const SelectionTree::Node *N =
-                                      ST.commonAncestor()) {
-                                if (NodeKind)
-                                  *NodeKind = N->ASTNode.getNodeKind();
-                                llvm::copy(targetDecl(N->ASTNode, Relations),
-                                           std::back_inserter(Result));
-                              }
-                              return !Result.empty();
-                            });
+  for (auto &Entry :
+       getDeclAtPositionWithRelations(AST, Pos, Relations, NodeKind))
+    Result.push_back(Entry.first);
   return Result;
 }
 
@@ -310,14 +321,16 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
 
     // Record SymbolID for index lookup later.
     if (auto ID = getSymbolID(D))
-      ResultIndex[*ID] = Result.size() - 1;
+      ResultIndex[ID] = Result.size() - 1;
   };
 
   // Emit all symbol locations (declaration or definition) from AST.
   DeclRelationSet Relations =
       DeclRelation::TemplatePattern | DeclRelation::Alias;
-  for (const NamedDecl *D :
-       getDeclAtPosition(AST, CurLoc, Relations, NodeKind)) {
+  auto Candidates =
+      getDeclAtPositionWithRelations(AST, CurLoc, Relations, NodeKind);
+  for (const auto &E : Candidates) {
+    const NamedDecl *D = E.first;
     // Special case: void foo() ^override: jump to the overridden method.
     if (const auto *CMD = llvm::dyn_cast<CXXMethodDecl>(D)) {
       const InheritableAttr *Attr = D->getAttr<OverrideAttr>();
@@ -333,6 +346,18 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
       }
     }
 
+    // Special case: the cursor is on an alias, prefer other results.
+    // This targets "using ns::^Foo", where the target is more interesting.
+    // This does not trigger on renaming aliases:
+    //   `using Foo = ^Bar` already targets Bar via a TypeLoc
+    //   `using ^Foo = Bar` has no other results, as Underlying is filtered.
+    if (E.second & DeclRelation::Alias && Candidates.size() > 1 &&
+        // beginLoc/endLoc are a token range, so rewind the identifier we're in.
+        SM.isPointWithin(TouchedIdentifier ? TouchedIdentifier->location()
+                                           : CurLoc,
+                         D->getBeginLoc(), D->getEndLoc()))
+      continue;
+
     // Special case: the point of declaration of a template specialization,
     // it's more useful to navigate to the template declaration.
     if (auto *CTSD = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
@@ -341,18 +366,6 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
         AddResultDecl(CTSD->getSpecializedTemplate());
         continue;
       }
-    }
-
-    // Give the underlying decl if navigation is triggered on a non-renaming
-    // alias.
-    if (llvm::isa<UsingDecl>(D) || llvm::isa<UnresolvedUsingValueDecl>(D)) {
-      // FIXME: address more complicated cases. TargetDecl(... Underlying) gives
-      // all overload candidates, we only want the targeted one if the cursor is
-      // on an using-alias usage, workround it with getDeclAtPosition.
-      llvm::for_each(
-          getDeclAtPosition(AST, CurLoc, DeclRelation::Underlying, NodeKind),
-          [&](const NamedDecl *UD) { AddResultDecl(UD); });
-      continue;
     }
 
     // Special case: if the class name is selected, also map Objective-C
@@ -500,8 +513,8 @@ locateSymbolTextually(const SpelledWord &Word, ParsedAST &AST,
       Located.Definition = *MaybeDefLoc;
     }
 
-    if (ScoredResults.size() >= 3) {
-      // If we have more than 3 results, don't return anything,
+    if (ScoredResults.size() >= 5) {
+      // If we have more than 5 results, don't return anything,
       // as confidence is too low.
       // FIXME: Alternatively, try a stricter query?
       TooMany = true;
@@ -514,8 +527,8 @@ locateSymbolTextually(const SpelledWord &Word, ParsedAST &AST,
     Relevance.Name = Sym.Name;
     Relevance.Query = SymbolRelevanceSignals::Generic;
     Relevance.merge(Sym);
-    auto Score =
-        evaluateSymbolAndRelevance(Quality.evaluate(), Relevance.evaluate());
+    auto Score = evaluateSymbolAndRelevance(Quality.evaluateHeuristics(),
+                                            Relevance.evaluateHeuristics());
     dlog("locateSymbolNamedTextuallyAt: {0}{1} = {2}\n{3}{4}\n", Sym.Scope,
          Sym.Name, Score, Quality, Relevance);
 
@@ -562,19 +575,34 @@ const syntax::Token *findNearbyIdentifier(const SpelledWord &Word,
   auto Cost = [&](SourceLocation Loc) -> unsigned {
     assert(SM.getFileID(Loc) == File && "spelled token in wrong file?");
     unsigned Line = SM.getSpellingLineNumber(Loc);
-    if (Line > WordLine)
-      return 1 + llvm::Log2_64(Line - WordLine);
-    if (Line < WordLine)
-      return 2 + llvm::Log2_64(WordLine - Line);
-    return 0;
+    return Line >= WordLine ? Line - WordLine : 2 * (WordLine - Line);
   };
   const syntax::Token *BestTok = nullptr;
-  // Search bounds are based on word length: 2^N lines forward.
-  unsigned BestCost = Word.Text.size() + 1;
+  unsigned BestCost = -1;
+  // Search bounds are based on word length:
+  // - forward: 2^N lines
+  // - backward: 2^(N-1) lines.
+  unsigned MaxDistance =
+      1U << std::min<unsigned>(Word.Text.size(),
+                               std::numeric_limits<unsigned>::digits - 1);
+  // Line number for SM.translateLineCol() should be one-based, also
+  // SM.translateLineCol() can handle line number greater than
+  // number of lines in the file.
+  // - LineMin = max(1, WordLine + 1 - 2^(N-1))
+  // - LineMax = WordLine + 1 + 2^N
+  unsigned LineMin =
+      WordLine + 1 <= MaxDistance / 2 ? 1 : WordLine + 1 - MaxDistance / 2;
+  unsigned LineMax = WordLine + 1 + MaxDistance;
+  SourceLocation LocMin = SM.translateLineCol(File, LineMin, 1);
+  assert(LocMin.isValid());
+  SourceLocation LocMax = SM.translateLineCol(File, LineMax, 1);
+  assert(LocMax.isValid());
 
   // Updates BestTok and BestCost if Tok is a good candidate.
   // May return true if the cost is too high for this token.
   auto Consider = [&](const syntax::Token &Tok) {
+    if (Tok.location() < LocMin || Tok.location() > LocMax)
+      return true; // we are too far from the word, break the outer loop.
     if (!(Tok.kind() == tok::identifier && Tok.text(SM) == Word.Text))
       return false;
     // No point guessing the same location we started with.
@@ -1126,7 +1154,7 @@ ReferencesResult findReferences(ParsedAST &AST, Position Pos, uint32_t Limit,
     if (auto MacroSID = getSymbolID(Macro->Name, Macro->Info, SM)) {
       // Collect macro references from main file.
       const auto &IDToRefs = AST.getMacros().MacroRefs;
-      auto Refs = IDToRefs.find(*MacroSID);
+      auto Refs = IDToRefs.find(MacroSID);
       if (Refs != IDToRefs.end()) {
         for (const auto &Ref : Refs->second) {
           Location Result;
@@ -1135,16 +1163,15 @@ ReferencesResult findReferences(ParsedAST &AST, Position Pos, uint32_t Limit,
           Results.References.push_back(std::move(Result));
         }
       }
-      Req.IDs.insert(*MacroSID);
+      Req.IDs.insert(MacroSID);
     }
   } else {
     // Handle references to Decls.
 
-    // We also show references to the targets of using-decls, so we include
-    // DeclRelation::Underlying.
-    DeclRelationSet Relations = DeclRelation::TemplatePattern |
-                                DeclRelation::Alias | DeclRelation::Underlying;
-    auto Decls = getDeclAtPosition(AST, *CurLoc, Relations);
+    DeclRelationSet Relations =
+        DeclRelation::TemplatePattern | DeclRelation::Alias;
+    std::vector<const NamedDecl *> Decls =
+        getDeclAtPosition(AST, *CurLoc, Relations);
 
     // We traverse the AST to find references in the main file.
     auto MainFileRefs = findRefs(Decls, AST);
@@ -1173,7 +1200,7 @@ ReferencesResult findReferences(ParsedAST &AST, Position Pos, uint32_t Limit,
         if (D->getParentFunctionOrMethod())
           continue;
         if (auto ID = getSymbolID(D))
-          Req.IDs.insert(*ID);
+          Req.IDs.insert(ID);
       }
     }
   }
@@ -1282,8 +1309,8 @@ declToTypeHierarchyItem(ASTContext &Ctx, const NamedDecl &ND) {
       SM, Lexer::getLocForEndOfToken(NameLoc, 0, SM, Ctx.getLangOpts()));
 
   index::SymbolInfo SymInfo = index::getSymbolInfo(&ND);
-  // FIXME: this is not classifying constructors, destructors and operators
-  //        correctly (they're all "methods").
+  // FIXME: This is not classifying constructors, destructors and operators
+  // correctly.
   SymbolKind SK = indexSymbolKindToSymbolKind(SymInfo.Kind);
 
   TypeHierarchyItem THI;
@@ -1305,9 +1332,8 @@ declToTypeHierarchyItem(ASTContext &Ctx, const NamedDecl &ND) {
   // This allows typeHierarchy/resolve to be used to
   // resolve children of items returned in a previous request
   // for parents.
-  if (auto ID = getSymbolID(&ND)) {
-    THI.data = ID->str();
-  }
+  if (auto ID = getSymbolID(&ND))
+    THI.data = ID.str();
 
   return THI;
 }
@@ -1512,8 +1538,8 @@ getTypeHierarchy(ParsedAST &AST, Position Pos, int ResolveLevels,
     Result->children.emplace();
 
     if (Index) {
-      if (Optional<SymbolID> ID = getSymbolID(CXXRD))
-        fillSubTypes(*ID, *Result->children, Index, ResolveLevels, TUPath);
+      if (auto ID = getSymbolID(CXXRD))
+        fillSubTypes(ID, *Result->children, Index, ResolveLevels, TUPath);
     }
   }
 

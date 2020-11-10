@@ -105,6 +105,7 @@ static const uint64_t kSystemZ_ShadowOffset64 = 1ULL << 52;
 static const uint64_t kMIPS32_ShadowOffset32 = 0x0aaa0000;
 static const uint64_t kMIPS64_ShadowOffset64 = 1ULL << 37;
 static const uint64_t kAArch64_ShadowOffset64 = 1ULL << 36;
+static const uint64_t kRISCV64_ShadowOffset64 = 0x20000000;
 static const uint64_t kFreeBSD_ShadowOffset32 = 1ULL << 30;
 static const uint64_t kFreeBSD_ShadowOffset64 = 1ULL << 46;
 static const uint64_t kNetBSD_ShadowOffset32 = 1ULL << 30;
@@ -447,6 +448,7 @@ static ShadowMapping getShadowMapping(Triple &TargetTriple, int LongSize,
   bool IsMIPS64 = TargetTriple.isMIPS64();
   bool IsArmOrThumb = TargetTriple.isARM() || TargetTriple.isThumb();
   bool IsAArch64 = TargetTriple.getArch() == Triple::aarch64;
+  bool IsRISCV64 = TargetTriple.getArch() == Triple::riscv64;
   bool IsWindows = TargetTriple.isOSWindows();
   bool IsFuchsia = TargetTriple.isOSFuchsia();
   bool IsMyriad = TargetTriple.getVendor() == llvm::Triple::Myriad;
@@ -515,6 +517,8 @@ static ShadowMapping getShadowMapping(Triple &TargetTriple, int LongSize,
       Mapping.Offset = kDynamicShadowSentinel;
     else if (IsAArch64)
       Mapping.Offset = kAArch64_ShadowOffset64;
+    else if (IsRISCV64)
+      Mapping.Offset = kRISCV64_ShadowOffset64;
     else
       Mapping.Offset = kDefaultShadowOffset64;
   }
@@ -533,6 +537,7 @@ static ShadowMapping getShadowMapping(Triple &TargetTriple, int LongSize,
   // we could OR the constant in a single instruction, but it's more
   // efficient to load it once and use indexed addressing.
   Mapping.OrShadowOffset = !IsAArch64 && !IsPPC64 && !IsSystemZ && !IsPS4CPU &&
+                           !IsRISCV64 &&
                            !(Mapping.Offset & (Mapping.Offset - 1)) &&
                            Mapping.Offset != kDynamicShadowSentinel;
   bool IsAndroidWithIfuncSupport =
@@ -554,22 +559,6 @@ static uint64_t GetCtorAndDtorPriority(Triple &TargetTriple) {
   } else {
     return kAsanCtorAndDtorPriority;
   }
-}
-
-// For a ret instruction followed by a musttail call, we cannot insert anything
-// in between. Instead we use the musttail call instruction as the insertion
-// point.
-static Instruction *adjustForMusttailCall(Instruction *I) {
-  ReturnInst *RI = dyn_cast<ReturnInst>(I);
-  if (!RI)
-    return I;
-  Instruction *Prev = RI->getPrevNode();
-  if (BitCastInst *BCI = dyn_cast_or_null<BitCastInst>(Prev))
-    Prev = BCI->getPrevNode();
-  if (CallInst *CI = dyn_cast_or_null<CallInst>(Prev))
-    if (CI->isMustTailCall())
-      return CI;
-  return RI;
 }
 
 namespace {
@@ -980,8 +969,14 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
   void createDynamicAllocasInitStorage();
 
   // ----------------------- Visitors.
-  /// Collect all Ret instructions.
-  void visitReturnInst(ReturnInst &RI) { RetVec.push_back(&RI); }
+  /// Collect all Ret instructions, or the musttail call instruction if it
+  /// precedes the return instruction.
+  void visitReturnInst(ReturnInst &RI) {
+    if (CallInst *CI = RI.getParent()->getTerminatingMustTailCall())
+      RetVec.push_back(CI);
+    else
+      RetVec.push_back(&RI);
+  }
 
   /// Collect all Resume instructions.
   void visitResumeInst(ResumeInst &RI) { RetVec.push_back(&RI); }
@@ -1016,8 +1011,7 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
   // Unpoison dynamic allocas redzones.
   void unpoisonDynamicAllocas() {
     for (Instruction *Ret : RetVec)
-      unpoisonDynamicAllocasBeforeInst(adjustForMusttailCall(Ret),
-                                       DynamicAllocaLayout);
+      unpoisonDynamicAllocasBeforeInst(Ret, DynamicAllocaLayout);
 
     for (Instruction *StackRestoreInst : StackRestoreVec)
       unpoisonDynamicAllocasBeforeInst(StackRestoreInst,
@@ -1078,7 +1072,9 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
         !ConstantInt::isValueValidForType(IntptrTy, SizeValue))
       return;
     // Find alloca instruction that corresponds to llvm.lifetime argument.
-    AllocaInst *AI = findAllocaForValue(II.getArgOperand(1));
+    // Currently we can only handle lifetime markers pointing to the
+    // beginning of the alloca.
+    AllocaInst *AI = findAllocaForValue(II.getArgOperand(1), true);
     if (!AI) {
       HasUntracedLifetimeIntrinsic = true;
       return;
@@ -1881,6 +1877,14 @@ bool ModuleAddressSanitizer::shouldInstrumentGlobal(GlobalVariable *G) const {
         Section.startswith(".init_array") ||
         Section.startswith(".fini_array")) {
       return false;
+    }
+
+    // Do not instrument user-defined sections (with names resembling
+    // valid C identifiers)
+    if (TargetTriple.isOSBinFormatELF()) {
+      if (std::all_of(Section.begin(), Section.end(),
+                      [](char c) { return llvm::isAlnum(c) || c == '_'; }))
+        return false;
     }
 
     // On COFF, if the section name contains '$', it is highly likely that the
@@ -3318,8 +3322,7 @@ void FunctionStackPoisoner::processStaticAllocas() {
 
   // (Un)poison the stack before all ret instructions.
   for (Instruction *Ret : RetVec) {
-    Instruction *Adjusted = adjustForMusttailCall(Ret);
-    IRBuilder<> IRBRet(Adjusted);
+    IRBuilder<> IRBRet(Ret);
     // Mark the current frame as retired.
     IRBRet.CreateStore(ConstantInt::get(IntptrTy, kRetiredStackFrameMagic),
                        BasePlus0);
@@ -3338,7 +3341,7 @@ void FunctionStackPoisoner::processStaticAllocas() {
       Value *Cmp =
           IRBRet.CreateICmpNE(FakeStack, Constant::getNullValue(IntptrTy));
       Instruction *ThenTerm, *ElseTerm;
-      SplitBlockAndInsertIfThenElse(Cmp, Adjusted, &ThenTerm, &ElseTerm);
+      SplitBlockAndInsertIfThenElse(Cmp, Ret, &ThenTerm, &ElseTerm);
 
       IRBuilder<> IRBPoison(ThenTerm);
       if (StackMallocIdx <= 4) {

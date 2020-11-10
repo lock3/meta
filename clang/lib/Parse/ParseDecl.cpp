@@ -2217,6 +2217,7 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
 
   // Inform the current actions module that we just parsed this declarator.
   Decl *ThisDecl = nullptr;
+  Decl *OuterDecl = nullptr;
   switch (TemplateInfo.Kind) {
   case ParsedTemplateInfo::NonTemplate:
     ThisDecl = Actions.ActOnDeclarator(getCurScope(), D);
@@ -2227,10 +2228,12 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
     ThisDecl = Actions.ActOnTemplateDeclarator(getCurScope(),
                                                *TemplateInfo.TemplateParams,
                                                D);
-    if (VarTemplateDecl *VT = dyn_cast_or_null<VarTemplateDecl>(ThisDecl))
+    if (VarTemplateDecl *VT = dyn_cast_or_null<VarTemplateDecl>(ThisDecl)) {
       // Re-direct this decl to refer to the templated decl so that we can
       // initialize it.
       ThisDecl = VT->getTemplatedDecl();
+      OuterDecl = VT;
+    }
     break;
   }
   case ParsedTemplateInfo::ExplicitInstantiation: {
@@ -2408,8 +2411,7 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
   }
 
   Actions.FinalizeDeclaration(ThisDecl);
-
-  return ThisDecl;
+  return OuterDecl ? OuterDecl : ThisDecl;
 }
 
 /// ParseSpecifierQualifierList
@@ -4164,8 +4166,13 @@ void Parser::ParseStructDeclaration(
     DeclaratorInfo.D.setCommaLoc(CommaLoc);
 
     // Attributes are only allowed here on successive declarators.
-    if (!FirstDeclarator)
+    if (!FirstDeclarator) {
+      // However, this does not apply for [[]] attributes (which could show up
+      // before or after the __attribute__ attributes).
+      DiagnoseAndSkipCXX11Attributes();
       MaybeParseGNUAttributes(DeclaratorInfo.D);
+      DiagnoseAndSkipCXX11Attributes();
+    }
 
     /// struct-declarator: declarator
     /// struct-declarator: declarator[opt] ':' constant-expression
@@ -6553,6 +6560,7 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
   CachedTokens *ExceptionSpecTokens = nullptr;
   ParsedAttributesWithRange FnAttrs(AttrFactory);
   TypeResult TrailingReturnType;
+  SourceLocation TrailingReturnTypeLoc;
 
   /* LocalEndLoc is the end location for the local FunctionTypeLoc.
      EndLoc is the end location for the function declarator.
@@ -6663,6 +6671,7 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
         SourceRange Range;
         TrailingReturnType =
             ParseTrailingReturnType(Range, D.mayBeFollowedByCXXDirectInit());
+        TrailingReturnTypeLoc = Range.getBegin();
         EndLoc = Range.getEnd();
       }
     } else if (standardAttributesAllowed()) {
@@ -6695,7 +6704,8 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
                     DynamicExceptionRanges.data(), DynamicExceptions.size(),
                     NoexceptExpr.isUsable() ? NoexceptExpr.get() : nullptr,
                     ExceptionSpecTokens, DeclsInPrototype, StartLoc,
-                    LocalEndLoc, D, TrailingReturnType, &DS),
+                    LocalEndLoc, D, TrailingReturnType, TrailingReturnTypeLoc,
+                    &DS),
                 std::move(FnAttrs), EndLoc);
 }
 

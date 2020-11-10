@@ -112,6 +112,13 @@ public:
   static Attribute getWithByRefType(LLVMContext &Context, Type *Ty);
   static Attribute getWithPreallocatedType(LLVMContext &Context, Type *Ty);
 
+  /// For a typed attribute, return the equivalent attribute with the type
+  /// changed to \p ReplacementTy.
+  Attribute getWithNewType(LLVMContext &Context, Type *ReplacementTy) {
+    assert(isTypeAttribute() && "this requires a typed attribute");
+    return get(Context, getKindAsEnum(), ReplacementTy);
+  }
+
   static Attribute::AttrKind getAttrKindFromName(StringRef AttrName);
 
   static StringRef getNameFromAttrKind(Attribute::AttrKind AttrKind);
@@ -508,6 +515,17 @@ public:
   LLVM_NODISCARD AttributeList removeParamAttributes(LLVMContext &C,
                                                      unsigned ArgNo) const {
     return removeAttributes(C, ArgNo + FirstArgIndex);
+  }
+
+  /// Replace the type contained by attribute \p AttrKind at index \p ArgNo wih
+  /// \p ReplacementTy, preserving all other attributes.
+  LLVM_NODISCARD AttributeList replaceAttributeType(LLVMContext &C,
+                                                    unsigned ArgNo,
+                                                    Attribute::AttrKind Kind,
+                                                    Type *ReplacementTy) const {
+    Attribute Attr = getAttribute(ArgNo, Kind);
+    auto Attrs = removeAttribute(C, ArgNo, Kind);
+    return Attrs.addAttribute(C, ArgNo, Attr.getWithNewType(C, ReplacementTy));
   }
 
   /// \brief Add the dereferenceable attribute to the attribute set at the given

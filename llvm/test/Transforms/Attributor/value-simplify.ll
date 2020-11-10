@@ -379,31 +379,31 @@ define internal i32* @test_preallocated(i32* preallocated(i32) %a) {
   ret i32* %a
 }
 define i32* @complicated_args_preallocated() {
-; IS__TUNIT_OPM: Function Attrs: nounwind
+; IS__TUNIT_OPM: Function Attrs: nofree nosync nounwind willreturn
 ; IS__TUNIT_OPM-LABEL: define {{[^@]+}}@complicated_args_preallocated
 ; IS__TUNIT_OPM-SAME: () [[ATTR0:#.*]] {
-; IS__TUNIT_OPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1)
-; IS__TUNIT_OPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR5:#.*]] [ "preallocated"(token [[C]]) ]
+; IS__TUNIT_OPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1) [[ATTR5:#.*]]
+; IS__TUNIT_OPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR1:#.*]] [ "preallocated"(token [[C]]) ]
 ; IS__TUNIT_OPM-NEXT:    ret i32* [[CALL]]
 ;
-; IS__TUNIT_NPM: Function Attrs: nounwind
+; IS__TUNIT_NPM: Function Attrs: nofree nosync nounwind willreturn
 ; IS__TUNIT_NPM-LABEL: define {{[^@]+}}@complicated_args_preallocated
 ; IS__TUNIT_NPM-SAME: () [[ATTR0:#.*]] {
-; IS__TUNIT_NPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1)
-; IS__TUNIT_NPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR4:#.*]] [ "preallocated"(token [[C]]) ]
+; IS__TUNIT_NPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1) [[ATTR4:#.*]]
+; IS__TUNIT_NPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR1:#.*]] [ "preallocated"(token [[C]]) ]
 ; IS__TUNIT_NPM-NEXT:    ret i32* [[CALL]]
 ;
-; IS__CGSCC_OPM: Function Attrs: nounwind
+; IS__CGSCC_OPM: Function Attrs: nofree nosync nounwind willreturn
 ; IS__CGSCC_OPM-LABEL: define {{[^@]+}}@complicated_args_preallocated
 ; IS__CGSCC_OPM-SAME: () [[ATTR0:#.*]] {
-; IS__CGSCC_OPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1)
+; IS__CGSCC_OPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1) [[ATTR5]]
 ; IS__CGSCC_OPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR6:#.*]] [ "preallocated"(token [[C]]) ]
 ; IS__CGSCC_OPM-NEXT:    ret i32* [[CALL]]
 ;
-; IS__CGSCC_NPM: Function Attrs: nounwind
+; IS__CGSCC_NPM: Function Attrs: nofree nosync nounwind willreturn
 ; IS__CGSCC_NPM-LABEL: define {{[^@]+}}@complicated_args_preallocated
 ; IS__CGSCC_NPM-SAME: () [[ATTR0:#.*]] {
-; IS__CGSCC_NPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1)
+; IS__CGSCC_NPM-NEXT:    [[C:%.*]] = call token @llvm.call.preallocated.setup(i32 noundef 1) [[ATTR4]]
 ; IS__CGSCC_NPM-NEXT:    [[CALL:%.*]] = call i32* @test_preallocated(i32* noalias nocapture nofree noundef writeonly preallocated(i32) align 536870912 null) [[ATTR5:#.*]] [ "preallocated"(token [[C]]) ]
 ; IS__CGSCC_NPM-NEXT:    ret i32* [[CALL]]
 ;
@@ -788,3 +788,18 @@ define internal i8 @callee(i8 %a) {
   ret i8 %c
 }
 
+
+define i1 @icmp() {
+; IS__TUNIT____: Function Attrs: nofree nosync nounwind readnone willreturn
+; IS__TUNIT____-LABEL: define {{[^@]+}}@icmp
+; IS__TUNIT____-SAME: () [[ATTR1]] {
+; IS__TUNIT____-NEXT:    ret i1 true
+;
+; IS__CGSCC____: Function Attrs: nofree norecurse nosync nounwind readnone willreturn
+; IS__CGSCC____-LABEL: define {{[^@]+}}@icmp
+; IS__CGSCC____-SAME: () [[ATTR1]] {
+; IS__CGSCC____-NEXT:    ret i1 true
+;
+  %c = icmp eq i8* null, null
+  ret i1 %c
+}

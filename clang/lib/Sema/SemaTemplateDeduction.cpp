@@ -171,28 +171,39 @@ static void MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
 /// If the given expression is of a form that permits the deduction
 /// of a non-type template parameter, return the declaration of that
 /// non-type template parameter.
-static NonTypeTemplateParmDecl *
-getDeducedParameterFromExpr(TemplateDeductionInfo &Info, Expr *E) {
+static const NonTypeTemplateParmDecl *
+getDeducedParameterFromExpr(const Expr *E, unsigned Depth) {
   // If we are within an alias template, the expression may have undergone
   // any number of parameter substitutions already.
   while (true) {
-    if (ImplicitCastExpr *IC = dyn_cast<ImplicitCastExpr>(E))
+    if (const auto *IC = dyn_cast<ImplicitCastExpr>(E))
       E = IC->getSubExpr();
-    else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
+    else if (const auto *CE = dyn_cast<ConstantExpr>(E))
       E = CE->getSubExpr();
-    else if (SubstNonTypeTemplateParmExpr *Subst =
-               dyn_cast<SubstNonTypeTemplateParmExpr>(E))
+    else if (const auto *Subst = dyn_cast<SubstNonTypeTemplateParmExpr>(E))
       E = Subst->getReplacement();
-    else
+    else if (const auto *CCE = dyn_cast<CXXConstructExpr>(E)) {
+      // Look through implicit copy construction from an lvalue of the same type.
+      if (CCE->getParenOrBraceRange().isValid())
+        break;
+      // Note, there could be default arguments.
+      assert(CCE->getNumArgs() >= 1 && "implicit construct expr should have 1 arg");
+      E = CCE->getArg(0);
+    } else
       break;
   }
 
-  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
-    if (auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(DRE->getDecl()))
-      if (NTTP->getDepth() == Info.getDeducedDepth())
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(E))
+    if (const auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(DRE->getDecl()))
+      if (NTTP->getDepth() == Depth)
         return NTTP;
 
   return nullptr;
+}
+
+static const NonTypeTemplateParmDecl *
+getDeducedParameterFromExpr(TemplateDeductionInfo &Info, Expr *E) {
+  return getDeducedParameterFromExpr(E, Info.getDeducedDepth());
 }
 
 /// Determine whether two declaration pointers refer to the same
@@ -378,7 +389,7 @@ checkDeducedTemplateArguments(ASTContext &Context,
 /// deduction is funneled through here.
 static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
-    NonTypeTemplateParmDecl *NTTP, const DeducedTemplateArgument &NewDeduced,
+    const NonTypeTemplateParmDecl *NTTP, const DeducedTemplateArgument &NewDeduced,
     QualType ValueType, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   assert(NTTP->getDepth() == Info.getDeducedDepth() &&
@@ -387,7 +398,7 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
   DeducedTemplateArgument Result = checkDeducedTemplateArguments(
       S.Context, Deduced[NTTP->getIndex()], NewDeduced);
   if (Result.isNull()) {
-    Info.Param = NTTP;
+    Info.Param = const_cast<NonTypeTemplateParmDecl*>(NTTP);
     Info.FirstArg = Deduced[NTTP->getIndex()];
     Info.SecondArg = NewDeduced;
     return Sema::TDK_Inconsistent;
@@ -414,10 +425,16 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
   // type from an argument (of non-reference type) should be performed.
   // For now, we just remove reference types from both sides and let
   // the final check for matching types sort out the mess.
+  ValueType = ValueType.getNonReferenceType();
+  if (ParamType->isReferenceType())
+    ParamType = ParamType.getNonReferenceType();
+  else
+    // Top-level cv-qualifiers are irrelevant for a non-reference type.
+    ValueType = ValueType.getUnqualifiedType();
+
   return DeduceTemplateArgumentsByTypeMatch(
-      S, TemplateParams, ParamType.getNonReferenceType(),
-      ValueType.getNonReferenceType(), Info, Deduced, TDF_SkipNonDependent,
-      /*PartialOrdering=*/false,
+      S, TemplateParams, ParamType, ValueType, Info, Deduced,
+      TDF_SkipNonDependent, /*PartialOrdering=*/false,
       /*ArrayBound=*/NewDeduced.wasDeducedFromArrayBound());
 }
 
@@ -425,7 +442,7 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
 /// from the given integral constant.
 static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
-    NonTypeTemplateParmDecl *NTTP, const llvm::APSInt &Value,
+    const NonTypeTemplateParmDecl *NTTP, const llvm::APSInt &Value,
     QualType ValueType, bool DeducedFromArrayBound, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   return DeduceNonTypeTemplateArgument(
@@ -439,7 +456,7 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
 /// from the given null pointer template argument type.
 static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
-    NonTypeTemplateParmDecl *NTTP, QualType NullPtrType,
+    const NonTypeTemplateParmDecl *NTTP, QualType NullPtrType,
     TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   Expr *Value =
@@ -459,7 +476,7 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
 /// \returns true if deduction succeeded, false otherwise.
 static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
-    NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
+    const NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
       DeducedTemplateArgument(
@@ -473,7 +490,7 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
 /// \returns true if deduction succeeded, false otherwise.
 static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
-    NonTypeTemplateParmDecl *NTTP, ValueDecl *D, QualType T,
+    const NonTypeTemplateParmDecl *NTTP, ValueDecl *D, QualType T,
     TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   D = D ? cast<ValueDecl>(D->getCanonicalDecl()) : nullptr;
@@ -1605,14 +1622,18 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       return Sema::TDK_Success;
     }
   } else if (!Param->isDependentType()) {
-    CanQualType ParamUnqualType = CanParam.getUnqualifiedType(),
-                ArgUnqualType = CanArg.getUnqualifiedType();
-    bool Success =
-        (TDF & TDF_AllowCompatibleFunctionType)
-            ? S.isSameOrCompatibleFunctionType(ParamUnqualType, ArgUnqualType)
-            : ParamUnqualType == ArgUnqualType;
-    if (Success)
+    if (!(TDF & TDF_SkipNonDependent)) {
+      CanQualType ParamUnqualType = CanParam.getUnqualifiedType(),
+                  ArgUnqualType = CanArg.getUnqualifiedType();
+      bool Success =
+          (TDF & TDF_AllowCompatibleFunctionType)
+              ? S.isSameOrCompatibleFunctionType(ParamUnqualType, ArgUnqualType)
+              : ParamUnqualType == ArgUnqualType;
+      if (Success)
+        return Sema::TDK_Success;
+    } else {
       return Sema::TDK_Success;
+    }
   }
 
   switch (Param->getTypeClass()) {
@@ -1764,7 +1785,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
         return Result;
 
       // Determine the array bound is something we can deduce.
-      NonTypeTemplateParmDecl *NTTP
+      const NonTypeTemplateParmDecl *NTTP
         = getDeducedParameterFromExpr(Info, DependentArrayParm->getSizeExpr());
       if (!NTTP)
         return Sema::TDK_Success;
@@ -1833,7 +1854,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       // deducing through the noexcept-specifier if it's part of the canonical
       // type. libstdc++ relies on this.
       Expr *NoexceptExpr = FunctionProtoParam->getNoexceptExpr();
-      if (NonTypeTemplateParmDecl *NTTP =
+      if (const NonTypeTemplateParmDecl *NTTP =
           NoexceptExpr ? getDeducedParameterFromExpr(Info, NoexceptExpr)
                        : nullptr) {
         assert(NTTP->getDepth() == Info.getDeducedDepth() &&
@@ -2022,7 +2043,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the vector size, if we can.
-        NonTypeTemplateParmDecl *NTTP =
+        const NonTypeTemplateParmDecl *NTTP =
             getDeducedParameterFromExpr(Info, VectorParam->getSizeExpr());
         if (!NTTP)
           return Sema::TDK_Success;
@@ -2046,7 +2067,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the vector size, if we can.
-        NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
+        const NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
             Info, VectorParam->getSizeExpr());
         if (!NTTP)
           return Sema::TDK_Success;
@@ -2075,8 +2096,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the vector size, if we can.
-        NonTypeTemplateParmDecl *NTTP
-          = getDeducedParameterFromExpr(Info, VectorParam->getSizeExpr());
+        const NonTypeTemplateParmDecl *NTTP =
+            getDeducedParameterFromExpr(Info, VectorParam->getSizeExpr());
         if (!NTTP)
           return Sema::TDK_Success;
 
@@ -2101,8 +2122,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the vector size, if we can.
-        NonTypeTemplateParmDecl *NTTP
-          = getDeducedParameterFromExpr(Info, VectorParam->getSizeExpr());
+        const NonTypeTemplateParmDecl *NTTP =
+            getDeducedParameterFromExpr(Info, VectorParam->getSizeExpr());
         if (!NTTP)
           return Sema::TDK_Success;
 
@@ -2181,7 +2202,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
               return Sema::TDK_NonDeducedMismatch;
             }
 
-            NonTypeTemplateParmDecl *NTTP =
+            const NonTypeTemplateParmDecl *NTTP =
                 getDeducedParameterFromExpr(Info, ParamExpr);
             if (!NTTP)
               return Sema::TDK_Success;
@@ -2228,7 +2249,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the address space, if we can.
-        NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
+        const NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
             Info, AddressSpaceParam->getAddrSpaceExpr());
         if (!NTTP)
           return Sema::TDK_Success;
@@ -2251,7 +2272,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           return Result;
 
         // Perform deduction on the address space, if we can.
-        NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
+        const NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(
             Info, AddressSpaceParam->getAddrSpaceExpr());
         if (!NTTP)
           return Sema::TDK_Success;
@@ -2270,7 +2291,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
         if (IntParam->isUnsigned() != IntArg->isUnsigned())
           return Sema::TDK_NonDeducedMismatch;
 
-        NonTypeTemplateParmDecl *NTTP =
+        const NonTypeTemplateParmDecl *NTTP =
             getDeducedParameterFromExpr(Info, IntParam->getNumBitsExpr());
         if (!NTTP)
           return Sema::TDK_Success;
@@ -2391,8 +2412,8 @@ DeduceTemplateArguments(Sema &S,
     return Sema::TDK_NonDeducedMismatch;
 
   case TemplateArgument::Expression:
-    if (NonTypeTemplateParmDecl *NTTP
-          = getDeducedParameterFromExpr(Info, Param.getAsExpr())) {
+    if (const NonTypeTemplateParmDecl *NTTP =
+            getDeducedParameterFromExpr(Info, Param.getAsExpr())) {
       if (Arg.getKind() == TemplateArgument::Integral)
         return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
                                              Arg.getAsIntegral(),
@@ -4004,7 +4025,7 @@ static Sema::TemplateDeductionResult DeduceFromInitializerList(
   //   from the length of the initializer list.
   if (auto *DependentArrTy = dyn_cast_or_null<DependentSizedArrayType>(ArrTy)) {
     // Determine the array bound is something we can deduce.
-    if (NonTypeTemplateParmDecl *NTTP =
+    if (const NonTypeTemplateParmDecl *NTTP =
             getDeducedParameterFromExpr(Info, DependentArrTy->getSizeExpr())) {
       // We can perform template argument deduction for the given non-type
       // template parameter.
@@ -5023,8 +5044,12 @@ bool Sema::DeduceReturnType(FunctionDecl *FD, SourceLocation Loc,
            "failed to deduce lambda return type");
 
     // Build the new return type from scratch.
+    CallingConv RetTyCC = FD->getReturnType()
+                              ->getPointeeType()
+                              ->castAs<FunctionType>()
+                              ->getCallConv();
     QualType RetType = getLambdaConversionFunctionResultType(
-        CallOp->getType()->castAs<FunctionProtoType>());
+        CallOp->getType()->castAs<FunctionProtoType>(), RetTyCC);
     if (FD->getReturnType()->getAs<PointerType>())
       RetType = Context.getPointerType(RetType);
     else {
@@ -5750,26 +5775,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   if (const PackExpansionExpr *Expansion = dyn_cast<PackExpansionExpr>(E))
     E = Expansion->getPattern();
 
-  // Skip through any implicit casts we added while type-checking, and any
-  // substitutions performed by template alias expansion.
-  while (true) {
-    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E))
-      E = ICE->getSubExpr();
-    else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
-      E = CE->getSubExpr();
-    else if (const SubstNonTypeTemplateParmExpr *Subst =
-               dyn_cast<SubstNonTypeTemplateParmExpr>(E))
-      E = Subst->getReplacement();
-    else
-      break;
-  }
-
-  const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E);
-  if (!DRE)
-    return;
-
-  const NonTypeTemplateParmDecl *NTTP
-    = dyn_cast<NonTypeTemplateParmDecl>(DRE->getDecl());
+  const NonTypeTemplateParmDecl *NTTP = getDeducedParameterFromExpr(E, Depth);
   if (!NTTP)
     return;
 

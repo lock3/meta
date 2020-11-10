@@ -518,7 +518,7 @@ protected:
 
     unsigned : NumExprBits;
 
-    unsigned Kind : 6;
+    unsigned Kind : 7;
     unsigned PartOfExplicitCast : 1; // Only set for ImplicitCastExpr.
 
     /// True if the call expression has some floating-point features.
@@ -1191,8 +1191,14 @@ public:
   static void EnableStatistics();
   static void PrintStats();
 
+  /// \returns the likelihood of a set of attributes.
+  static Likelihood getLikelihood(ArrayRef<const Attr *> Attrs);
+
   /// \returns the likelihood of a statement.
   static Likelihood getLikelihood(const Stmt *S);
+
+  /// \returns the likelihood attribute of a statement.
+  static const Attr *getLikelihoodAttr(const Stmt *S);
 
   /// \returns the likelihood of the 'then' branch of an 'if' statement. The
   /// 'else' branch is required to determine whether both branches specify the

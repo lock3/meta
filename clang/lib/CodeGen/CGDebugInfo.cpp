@@ -374,9 +374,8 @@ CGDebugInfo::computeChecksum(FileID FID, SmallString<32> &Checksum) const {
     return None;
 
   SourceManager &SM = CGM.getContext().getSourceManager();
-  bool Invalid;
-  const llvm::MemoryBuffer *MemBuffer = SM.getBuffer(FID, &Invalid);
-  if (Invalid)
+  Optional<llvm::MemoryBufferRef> MemBuffer = SM.getBufferOrNone(FID);
+  if (!MemBuffer)
     return None;
 
   llvm::MD5 Hash;
@@ -753,6 +752,13 @@ llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {
       return DBuilder.createVectorType(/*Size*/ 0, Align, ElemTy,
                                        SubscriptArray);
     }
+  // It doesn't make sense to generate debug info for PowerPC MMA vector types.
+  // So we return a safe type here to avoid generating an error.
+#define PPC_MMA_VECTOR_TYPE(Name, Id, size) \
+  case BuiltinType::Id:
+#include "clang/Basic/PPCTypes.def"
+    return CreateType(cast<const BuiltinType>(CGM.getContext().IntTy));
+
   case BuiltinType::UChar:
   case BuiltinType::Char_U:
     Encoding = llvm::dwarf::DW_ATE_unsigned_char;
@@ -1727,7 +1733,7 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
   // info is emitted.
   if (DebugKind == codegenoptions::DebugInfoConstructor)
     if (const CXXConstructorDecl *CD = dyn_cast<CXXConstructorDecl>(Method))
-      completeClass(CD->getParent());
+      completeUnusedClass(*CD->getParent());
 
   llvm::DINodeArray TParamsArray = CollectFunctionTemplateParams(Method, Unit);
   llvm::DISubprogram *SP = DBuilder.createMethod(
@@ -2045,7 +2051,8 @@ StringRef CGDebugInfo::getDynamicInitializerName(const VarDecl *VD,
                                                  llvm::Function *InitFn) {
   // If we're not emitting codeview, use the mangled name. For Itanium, this is
   // arbitrary.
-  if (!CGM.getCodeGenOpts().EmitCodeView)
+  if (!CGM.getCodeGenOpts().EmitCodeView ||
+      StubKind == DynamicInitKind::GlobalArrayDestructor)
     return InitFn->getName();
 
   // Print the normal qualified name for the variable, then break off the last
@@ -2070,6 +2077,7 @@ StringRef CGDebugInfo::getDynamicInitializerName(const VarDecl *VD,
 
   switch (StubKind) {
   case DynamicInitKind::NoStub:
+  case DynamicInitKind::GlobalArrayDestructor:
     llvm_unreachable("not an initializer");
   case DynamicInitKind::Initializer:
     OS << "`dynamic initializer for '";
@@ -3841,7 +3849,8 @@ void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, SourceLocation Loc,
   if (Name.startswith("\01"))
     Name = Name.substr(1);
 
-  if (!HasDecl || D->isImplicit() || D->hasAttr<ArtificialAttr>()) {
+  if (!HasDecl || D->isImplicit() || D->hasAttr<ArtificialAttr>() ||
+      (isa<VarDecl>(D) && GD.getDynamicInitKind() != DynamicInitKind::NoStub)) {
     Flags |= llvm::DINode::FlagArtificial;
     // Artificial functions should not silently reuse CurLoc.
     CurLoc = SourceLocation();
@@ -4736,13 +4745,10 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
     }
   }
 
-  llvm::DIScope *DContext = nullptr;
-
   // Do not emit separate definitions for function local consts.
   if (isa<FunctionDecl>(VD->getDeclContext()))
     return;
 
-  // Emit definition for static members in CodeView.
   VD = cast<ValueDecl>(VD->getCanonicalDecl());
   auto *VarD = dyn_cast<VarDecl>(VD);
   if (VarD && VarD->isStaticDataMember()) {
@@ -4755,15 +4761,9 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
     RetainedTypes.push_back(
         CGM.getContext().getRecordType(RD).getAsOpaquePtr());
 
-    if (!CGM.getCodeGenOpts().EmitCodeView)
-      return;
-
-    // Use the global scope for static members.
-    DContext = getContextDescriptor(
-        cast<Decl>(CGM.getContext().getTranslationUnitDecl()), TheCU);
-  } else {
-    DContext = getDeclContextDescriptor(VD);
+    return;
   }
+  llvm::DIScope *DContext = getDeclContextDescriptor(VD);
 
   auto &GV = DeclCache[VD];
   if (GV)

@@ -141,6 +141,10 @@ static StringInitFailureKind IsStringInit(Expr *init, QualType declType,
   return IsStringInit(init, arrayType, Context);
 }
 
+bool Sema::IsStringInit(Expr *Init, const ArrayType *AT) {
+  return ::IsStringInit(Init, AT, Context) == SIF_None;
+}
+
 /// Update the type of a string literal, including any surrounding parentheses,
 /// to match the type of the object which it is initializing.
 static void updateStringLiteralType(Expr *E, QualType Ty) {
@@ -1121,6 +1125,7 @@ static void warnBracedScalarInit(Sema &S, const InitializedEntity &Entity,
   case InitializedEntity::EK_ArrayElement:
   case InitializedEntity::EK_Parameter:
   case InitializedEntity::EK_Parameter_CF_Audited:
+  case InitializedEntity::EK_TemplateParameter:
   case InitializedEntity::EK_Result:
     // Extra braces here are suspicious.
     DiagID = diag::warn_braces_around_init;
@@ -3130,7 +3135,8 @@ CheckArrayDesignatorExpr(Sema &S, Expr *Index, llvm::APSInt &Value) {
   SourceLocation Loc = Index->getBeginLoc();
 
   // Make sure this is an integer constant expression.
-  ExprResult Result = S.VerifyIntegerConstantExpression(Index, &Value);
+  ExprResult Result =
+      S.VerifyIntegerConstantExpression(Index, &Value, Sema::AllowFold);
   if (Result.isInvalid())
     return Result;
 
@@ -3282,6 +3288,7 @@ DeclarationName InitializedEntity::getName() const {
   case EK_Variable:
   case EK_Member:
   case EK_Binding:
+  case EK_TemplateParameter:
     return Variable.VariableOrMember->getDeclName();
 
   case EK_LambdaCapture:
@@ -3312,6 +3319,7 @@ ValueDecl *InitializedEntity::getDecl() const {
   case EK_Variable:
   case EK_Member:
   case EK_Binding:
+  case EK_TemplateParameter:
     return Variable.VariableOrMember;
 
   case EK_Parameter:
@@ -3349,6 +3357,7 @@ bool InitializedEntity::allowsNRVO() const {
   case EK_Variable:
   case EK_Parameter:
   case EK_Parameter_CF_Audited:
+  case EK_TemplateParameter:
   case EK_Member:
   case EK_Binding:
   case EK_New:
@@ -3380,6 +3389,7 @@ unsigned InitializedEntity::dumpImpl(raw_ostream &OS) const {
   case EK_Parameter: OS << "Parameter"; break;
   case EK_Parameter_CF_Audited: OS << "CF audited function Parameter";
     break;
+  case EK_TemplateParameter: OS << "TemplateParameter"; break;
   case EK_Result: OS << "Result"; break;
   case EK_StmtExprResult: OS << "StmtExprResult"; break;
   case EK_Exception: OS << "Exception"; break;
@@ -6011,6 +6021,11 @@ getAssignmentAction(const InitializedEntity &Entity, bool Diagnose = false) {
     // FIXME: Can we tell apart casting vs. converting?
     return Sema::AA_Casting;
 
+  case InitializedEntity::EK_TemplateParameter:
+    // This is really initialization, but refer to it as conversion for
+    // consistency with CheckConvertedConstantExpression.
+    return Sema::AA_Converting;
+
   case InitializedEntity::EK_Member:
   case InitializedEntity::EK_Binding:
   case InitializedEntity::EK_ArrayElement:
@@ -6045,6 +6060,7 @@ static bool shouldBindAsTemporary(const InitializedEntity &Entity) {
   case InitializedEntity::EK_LambdaToBlockConversionBlockElement:
   case InitializedEntity::EK_LambdaCapture:
   case InitializedEntity::EK_CompoundLiteralInit:
+  case InitializedEntity::EK_TemplateParameter:
     return false;
 
   case InitializedEntity::EK_Parameter:
@@ -6079,6 +6095,7 @@ static bool shouldDestroyEntity(const InitializedEntity &Entity) {
     case InitializedEntity::EK_Variable:
     case InitializedEntity::EK_Parameter:
     case InitializedEntity::EK_Parameter_CF_Audited:
+    case InitializedEntity::EK_TemplateParameter:
     case InitializedEntity::EK_Temporary:
     case InitializedEntity::EK_ArrayElement:
     case InitializedEntity::EK_Exception:
@@ -6112,6 +6129,7 @@ static SourceLocation getInitializationLoc(const InitializedEntity &Entity,
   case InitializedEntity::EK_Member:
   case InitializedEntity::EK_Parameter:
   case InitializedEntity::EK_Parameter_CF_Audited:
+  case InitializedEntity::EK_TemplateParameter:
   case InitializedEntity::EK_Temporary:
   case InitializedEntity::EK_New:
   case InitializedEntity::EK_Base:
@@ -6355,7 +6373,7 @@ static void CheckCXX98CompatAccessibleCopy(Sema &S,
 
 void InitializationSequence::PrintInitLocationNote(Sema &S,
                                               const InitializedEntity &Entity) {
-  if (Entity.isParameterKind() && Entity.getDecl()) {
+  if (Entity.isParamOrTemplateParamKind() && Entity.getDecl()) {
     if (Entity.getDecl()->getLocation().isInvalid())
       return;
 
@@ -6621,6 +6639,10 @@ static LifetimeResult getEntityLifetime(
     //      the call.
     return {nullptr, LK_FullExpression};
 
+  case InitializedEntity::EK_TemplateParameter:
+    // FIXME: This will always be ill-formed; should we eagerly diagnose it here?
+    return {nullptr, LK_FullExpression};
+
   case InitializedEntity::EK_Result:
     //   -- The lifetime of a temporary bound to the returned value in a
     //      function return statement is not extended; the temporary is
@@ -6703,15 +6725,22 @@ struct IndirectLocalPathEntry {
     VarInit,
     LValToRVal,
     LifetimeBoundCall,
+    TemporaryCopy,
+    LambdaCaptureInit,
     GslReferenceInit,
     GslPointerInit
   } Kind;
   Expr *E;
-  const Decl *D = nullptr;
+  union {
+    const Decl *D = nullptr;
+    const LambdaCapture *Capture;
+  };
   IndirectLocalPathEntry() {}
   IndirectLocalPathEntry(EntryKind K, Expr *E) : Kind(K), E(E) {}
   IndirectLocalPathEntry(EntryKind K, Expr *E, const Decl *D)
       : Kind(K), E(E), D(D) {}
+  IndirectLocalPathEntry(EntryKind K, Expr *E, const LambdaCapture *Capture)
+      : Kind(K), E(E), Capture(Capture) {}
 };
 
 using IndirectLocalPath = llvm::SmallVectorImpl<IndirectLocalPathEntry>;
@@ -6905,6 +6934,26 @@ static bool implicitObjectParamIsLifetimeBound(const FunctionDecl *FD) {
     if (ATL.getAttrAs<LifetimeBoundAttr>())
       return true;
   }
+
+  // Assume that all assignment operators with a "normal" return type return
+  // *this, that is, an lvalue reference that is the same type as the implicit
+  // object parameter (or the LHS for a non-member operator$=).
+  OverloadedOperatorKind OO = FD->getDeclName().getCXXOverloadedOperator();
+  if (OO == OO_Equal || isCompoundAssignmentOperator(OO)) {
+    QualType RetT = FD->getReturnType();
+    if (RetT->isLValueReferenceType()) {
+      ASTContext &Ctx = FD->getASTContext();
+      QualType LHST;
+      auto *MD = dyn_cast<CXXMethodDecl>(FD);
+      if (MD && MD->isCXXInstanceMember())
+        LHST = Ctx.getLValueReferenceType(MD->getThisObjectType());
+      else
+        LHST = MD->getParamDecl(0)->getType();
+      if (Ctx.hasSameType(RetT, LHST))
+        return true;
+    }
+  }
+
   return false;
 }
 
@@ -7250,15 +7299,37 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
   // The lifetime of an init-capture is that of the closure object constructed
   // by a lambda-expression.
   if (auto *LE = dyn_cast<LambdaExpr>(Init)) {
+    LambdaExpr::capture_iterator CapI = LE->capture_begin();
     for (Expr *E : LE->capture_inits()) {
+      assert(CapI != LE->capture_end());
+      const LambdaCapture &Cap = *CapI++;
       if (!E)
         continue;
+      if (Cap.capturesVariable())
+        Path.push_back({IndirectLocalPathEntry::LambdaCaptureInit, E, &Cap});
       if (E->isGLValue())
         visitLocalsRetainedByReferenceBinding(Path, E, RK_ReferenceBinding,
                                               Visit, EnableLifetimeWarnings);
       else
         visitLocalsRetainedByInitializer(Path, E, Visit, true,
                                          EnableLifetimeWarnings);
+      if (Cap.capturesVariable())
+        Path.pop_back();
+    }
+  }
+
+  // Assume that a copy or move from a temporary references the same objects
+  // that the temporary does.
+  if (auto *CCE = dyn_cast<CXXConstructExpr>(Init)) {
+    if (CCE->getConstructor()->isCopyOrMoveConstructor()) {
+      if (auto *MTE = dyn_cast<MaterializeTemporaryExpr>(CCE->getArg(0))) {
+        Expr *Arg = MTE->getSubExpr();
+        Path.push_back({IndirectLocalPathEntry::TemporaryCopy, Arg,
+                        CCE->getConstructor()});
+        visitLocalsRetainedByInitializer(Path, Arg, Visit, true,
+                                         /*EnableLifetimeWarnings*/false);
+        Path.pop_back();
+      }
     }
   }
 
@@ -7335,14 +7406,31 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
   }
 }
 
+/// Whether a path to an object supports lifetime extension.
+enum PathLifetimeKind {
+  /// Lifetime-extend along this path.
+  Extend,
+  /// We should lifetime-extend, but we don't because (due to technical
+  /// limitations) we can't. This happens for default member initializers,
+  /// which we don't clone for every use, so we don't have a unique
+  /// MaterializeTemporaryExpr to update.
+  ShouldExtend,
+  /// Do not lifetime extend along this path.
+  NoExtend
+};
+
 /// Determine whether this is an indirect path to a temporary that we are
-/// supposed to lifetime-extend along (but don't).
-static bool shouldLifetimeExtendThroughPath(const IndirectLocalPath &Path) {
+/// supposed to lifetime-extend along.
+static PathLifetimeKind
+shouldLifetimeExtendThroughPath(const IndirectLocalPath &Path) {
+  PathLifetimeKind Kind = PathLifetimeKind::Extend;
   for (auto Elem : Path) {
-    if (Elem.Kind != IndirectLocalPathEntry::DefaultInit)
-      return false;
+    if (Elem.Kind == IndirectLocalPathEntry::DefaultInit)
+      Kind = PathLifetimeKind::ShouldExtend;
+    else if (Elem.Kind != IndirectLocalPathEntry::LambdaCaptureInit)
+      return PathLifetimeKind::NoExtend;
   }
-  return true;
+  return Kind;
 }
 
 /// Find the range for the first interesting entry in the path at or after I.
@@ -7353,6 +7441,7 @@ static SourceRange nextPathEntryRange(const IndirectLocalPath &Path, unsigned I,
     case IndirectLocalPathEntry::AddressOf:
     case IndirectLocalPathEntry::LValToRVal:
     case IndirectLocalPathEntry::LifetimeBoundCall:
+    case IndirectLocalPathEntry::TemporaryCopy:
     case IndirectLocalPathEntry::GslReferenceInit:
     case IndirectLocalPathEntry::GslPointerInit:
       // These exist primarily to mark the path as not permitting or
@@ -7364,6 +7453,11 @@ static SourceRange nextPathEntryRange(const IndirectLocalPath &Path, unsigned I,
         return SourceRange();
       LLVM_FALLTHROUGH;
     case IndirectLocalPathEntry::DefaultInit:
+      return Path[I].E->getSourceRange();
+
+    case IndirectLocalPathEntry::LambdaCaptureInit:
+      if (!Path[I].Capture->capturesVariable())
+        continue;
       return Path[I].E->getSourceRange();
     }
   }
@@ -7442,17 +7536,16 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         return false;
       }
 
-      // Lifetime-extend the temporary.
-      if (Path.empty()) {
+      switch (shouldLifetimeExtendThroughPath(Path)) {
+      case PathLifetimeKind::Extend:
         // Update the storage duration of the materialized temporary.
         // FIXME: Rebuild the expression instead of mutating it.
         MTE->setExtendingDecl(ExtendingEntity->getDecl(),
                               ExtendingEntity->allocateManglingNumber());
         // Also visit the temporaries lifetime-extended by this initializer.
         return true;
-      }
 
-      if (shouldLifetimeExtendThroughPath(Path)) {
+      case PathLifetimeKind::ShouldExtend:
         // We're supposed to lifetime-extend the temporary along this path (per
         // the resolution of DR1815), but we don't support that yet.
         //
@@ -7461,7 +7554,9 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         // lifetime extend its temporaries.
         Diag(DiagLoc, diag::warn_unsupported_lifetime_extension)
             << RK << DiagRange;
-      } else {
+        break;
+
+      case PathLifetimeKind::NoExtend:
         // If the path goes through the initialization of a variable or field,
         // it can't possibly reach a temporary created in this full-expression.
         // We will have already diagnosed any problems with the initializer.
@@ -7472,6 +7567,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
             << RK << !Entity.getParent()
             << ExtendingEntity->getDecl()->isImplicit()
             << ExtendingEntity->getDecl() << Init->isGLValue() << DiagRange;
+        break;
       }
       break;
     }
@@ -7492,7 +7588,8 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
             return false;
           }
           bool IsSubobjectMember = ExtendingEntity != &Entity;
-          Diag(DiagLoc, shouldLifetimeExtendThroughPath(Path)
+          Diag(DiagLoc, shouldLifetimeExtendThroughPath(Path) !=
+                                PathLifetimeKind::NoExtend
                             ? diag::err_dangling_member
                             : diag::warn_dangling_member)
               << ExtendingDecl << IsSubobjectMember << RK << DiagRange;
@@ -7599,6 +7696,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         break;
 
       case IndirectLocalPathEntry::LifetimeBoundCall:
+      case IndirectLocalPathEntry::TemporaryCopy:
       case IndirectLocalPathEntry::GslPointerInit:
       case IndirectLocalPathEntry::GslReferenceInit:
         // FIXME: Consider adding a note for these.
@@ -7611,11 +7709,24 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         break;
       }
 
-      case IndirectLocalPathEntry::VarInit:
+      case IndirectLocalPathEntry::VarInit: {
         const VarDecl *VD = cast<VarDecl>(Elem.D);
         Diag(VD->getLocation(), diag::note_local_var_initializer)
             << VD->getType()->isReferenceType()
             << VD->isImplicit() << VD->getDeclName()
+            << nextPathEntryRange(Path, I + 1, L);
+        break;
+      }
+
+      case IndirectLocalPathEntry::LambdaCaptureInit:
+        if (!Elem.Capture->capturesVariable())
+          break;
+        // FIXME: We can't easily tell apart an init-capture from a nested
+        // capture of an init-capture.
+        const VarDecl *VD = Elem.Capture->getCapturedVar();
+        Diag(Elem.Capture->getLocation(), diag::note_lambda_capture_initializer)
+            << VD << VD->isInitCapture() << Elem.Capture->isExplicit()
+            << (Elem.Capture->getCaptureKind() == LCK_ByRef) << VD
             << nextPathEntryRange(Path, I + 1, L);
         break;
       }
@@ -7892,7 +8003,7 @@ ExprResult InitializationSequence::Perform(Sema &S,
 
   if (S.getLangOpts().CPlusPlus11 && Entity.getType()->isReferenceType() &&
       Args.size() == 1 && isa<InitListExpr>(Args[0]) &&
-      !Entity.isParameterKind()) {
+      !Entity.isParamOrTemplateParamKind()) {
     // Produce a C++98 compatibility warning if we are initializing a reference
     // from an initializer list. For parameters, we produce a better warning
     // elsewhere.
@@ -9773,7 +9884,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
 
   auto TemplateName = DeducedTST->getTemplateName();
   if (TemplateName.isDependent())
-    return Context.DependentTy;
+    return SubstAutoType(TSInfo->getType(), Context.DependentTy);
 
   // We can only perform deduction for class templates.
   auto *Template =
@@ -9792,7 +9903,7 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
     Diag(TSInfo->getTypeLoc().getBeginLoc(),
          diag::warn_cxx14_compat_class_template_argument_deduction)
         << TSInfo->getTypeLoc().getSourceRange() << 0;
-    return Context.DependentTy;
+    return SubstAutoType(TSInfo->getType(), Context.DependentTy);
   }
 
   // FIXME: Perform "exact type" matching first, per CWG discussion?

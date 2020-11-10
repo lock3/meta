@@ -71,6 +71,7 @@ IntrinsicCostAttributes::IntrinsicCostAttributes(Intrinsic::ID Id,
   if (const auto *FPMO = dyn_cast<FPMathOperator>(&CI))
     FMF = FPMO->getFastMathFlags();
 
+  Arguments.insert(Arguments.begin(), CI.arg_begin(), CI.arg_end());
   FunctionType *FTy =
     CI.getCalledFunction()->getFunctionType();
   ParamTys.insert(ParamTys.begin(), FTy->param_begin(), FTy->param_end());
@@ -374,6 +375,10 @@ bool TargetTransformInfo::isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV,
 
 bool TargetTransformInfo::isLSRCostLess(LSRCost &C1, LSRCost &C2) const {
   return TTIImpl->isLSRCostLess(C1, C2);
+}
+
+bool TargetTransformInfo::isNumRegsMajorCostOfLSR() const {
+  return TTIImpl->isNumRegsMajorCostOfLSR();
 }
 
 bool TargetTransformInfo::isProfitableLSRChainElement(Instruction *I) const {
@@ -802,11 +807,13 @@ int TargetTransformInfo::getCFInstrCost(unsigned Opcode,
 
 int TargetTransformInfo::getCmpSelInstrCost(unsigned Opcode, Type *ValTy,
                                             Type *CondTy,
+                                            CmpInst::Predicate VecPred,
                                             TTI::TargetCostKind CostKind,
                                             const Instruction *I) const {
   assert((I == nullptr || I->getOpcode() == Opcode) &&
          "Opcode should reflect passed instruction.");
-  int Cost = TTIImpl->getCmpSelInstrCost(Opcode, ValTy, CondTy, CostKind, I);
+  int Cost =
+      TTIImpl->getCmpSelInstrCost(Opcode, ValTy, CondTy, VecPred, CostKind, I);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }

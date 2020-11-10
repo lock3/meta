@@ -2218,30 +2218,6 @@ argument.
   int *pb =__builtin_preserve_access_index(&v->c[3].b);
   __builtin_preserve_access_index(v->j);
 
-``__builtin_unique_stable_name``
---------------------------------
-
-``__builtin_unique_stable_name()`` is a builtin that takes a type or expression and
-produces a string literal containing a unique name for the type (or type of the
-expression) that is stable across split compilations.
-
-In cases where the split compilation needs to share a unique token for a type
-across the boundary (such as in an offloading situation), this name can be used
-for lookup purposes.
-
-This builtin is superior to RTTI for this purpose for two reasons.  First, this
-value is computed entirely at compile time, so it can be used in constant
-expressions. Second, this value encodes lambda functions based on line-number
-rather than the order in which it appears in a function. This is valuable
-because it is stable in cases where an unrelated lambda is introduced
-conditionally in the same function.
-
-The current implementation of this builtin uses a slightly modified Itanium
-Mangler to produce the unique name. The lambda ordinal is replaced with one or
-more line/column pairs in the format ``LINE->COL``, separated with a ``~``
-character. Typically, only one pair will be included, however in the case of
-macro expansions the entire macro expansion stack is expressed.
-
 Multiprecision Arithmetic Builtins
 ----------------------------------
 
@@ -3206,7 +3182,7 @@ The pragma can take two values: ``on`` and ``off``.
   float f(float x, float y, float z)
   {
     // Enable floating point reassociation across statements
-    #pragma fp reassociate(on)
+    #pragma clang fp reassociate(on)
     float t = x + y;
     float v = t + z;
   }
@@ -3234,6 +3210,31 @@ statements in C).
 The pragma can also be used with ``off`` which turns FP contraction off for a
 section of the code. This can be useful when fast contraction is otherwise
 enabled for the translation unit with the ``-ffp-contract=fast`` flag.
+
+
+``#pragma clang fp exceptions`` specifies floating point exception behavior. It
+may take one the the values: ``ignore``, ``maytrap`` or ``strict``. Meaning of
+these values is same as for `constrained floating point intrinsics <http://llvm.org/docs/LangRef.html#constrained-floating-point-intrinsics>`_.
+
+.. code-block:: c++
+
+  {
+    // Preserve floating point exceptions
+    #pragma clang fp exceptions(strict)
+    z = x + y;
+    if (fetestexcept(FE_OVERFLOW))
+	  ...
+  }
+
+A ``#pragma clang fp`` pragma may contain any number of options:
+
+.. code-block:: c++
+
+  void func(float *dest, float a, float b) {
+    #pragma clang fp exceptions(maytrap) contract(fast) reassociate(on)
+    ...
+  }
+
 
 The ``#pragma float_control`` pragma allows precise floating-point
 semantics and floating-point exception behavior to be specified

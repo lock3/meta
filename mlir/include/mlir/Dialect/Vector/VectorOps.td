@@ -13,9 +13,9 @@
 #ifndef VECTOR_OPS
 #define VECTOR_OPS
 
-include "mlir/Dialect/Affine/IR/AffineOpsBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/VectorInterfaces.td"
+include "mlir/Interfaces/ViewLikeInterface.td"
 
 def Vector_Dialect : Dialect {
   let name = "vector";
@@ -148,13 +148,13 @@ def Vector_ContractionOp :
       : vector<10xf16>, vector<10xf16> into f32
     ```
   }];
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value lhs, Value rhs, "
-    "Value acc, ArrayAttr indexingMaps, ArrayAttr iteratorTypes">,
-    OpBuilder<
-      "OpBuilder &builder, OperationState &result, Value lhs, Value rhs, "
-      "Value acc, ArrayRef<ArrayRef<AffineExpr>> indexingExprs, "
-      "ArrayRef<StringRef> iteratorTypes">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$lhs, "Value":$rhs, "Value":$acc,
+      "ArrayAttr":$indexingMaps, "ArrayAttr":$iteratorTypes)>,
+    OpBuilderDAG<(ins "Value":$lhs, "Value":$rhs, "Value":$acc,
+      "ArrayRef<ArrayRef<AffineExpr>>":$indexingExprs,
+      "ArrayRef<StringRef>":$iteratorTypes)>
+  ];
   let extraClassDeclaration = [{
     VectorType getLhsType() {
       return lhs().getType().cast<VectorType>();
@@ -208,7 +208,7 @@ def Vector_ReductionOp :
     Note that these operations are restricted to 1-D vectors to remain
     close to the corresponding LLVM intrinsics:
 
-    http://llvm.org/docs/LangRef.html#experimental-vector-reduction-intrinsics
+    http://llvm.org/docs/LangRef.html#vector-reduction-intrinsics
 
     Example:
 
@@ -311,8 +311,9 @@ def Vector_ShuffleOp :
                : vector<2xf32>, vector<2xf32>       ; yields vector<4xf32>
     ```
   }];
-  let builders = [OpBuilder<"OpBuilder &builder, OperationState &result,"
-                            "Value v1, Value v2, ArrayRef<int64_t>">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$v1, "Value":$v2, "ArrayRef<int64_t>")>
+  ];
   let extraClassDeclaration = [{
     static StringRef getMaskAttrName() { return "mask"; }
     VectorType getV1VectorType() {
@@ -353,12 +354,10 @@ def Vector_ExtractElementOp :
     $vector `[` $position `:` type($position) `]` attr-dict `:` type($vector)
   }];
 
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "int64_t position">,
-    OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "Value position">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "int64_t":$position)>,
+    OpBuilderDAG<(ins "Value":$source, "Value":$position)>
+  ];
   let extraClassDeclaration = [{
     VectorType getVectorType() {
       return vector().getType().cast<VectorType>();
@@ -384,13 +383,12 @@ def Vector_ExtractOp :
     %2 = vector.extract %0[3, 3, 3]: vector<4x8x16xf32>
     ```
   }];
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source,"
-    "ArrayRef<int64_t> position">,
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "ArrayRef<int64_t>":$position)>,
     // Convenience builder which assumes the values in `position` are defined by
     // ConstantIndexOp.
-    OpBuilder<"OpBuilder &builder, OperationState &result, Value source,"
-    "ValueRange position">];
+    OpBuilderDAG<(ins "Value":$source, "ValueRange":$position)>
+  ];
   let extraClassDeclaration = [{
     static StringRef getPositionAttrName() { return "position"; }
     VectorType getVectorType() {
@@ -435,10 +433,10 @@ def Vector_ExtractSlicesOp :
                                    vector<2x2xf32>, vector<2x1xf32>>
     ```
   }];
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, TupleType tupleType, " #
-    "Value vector, ArrayRef<int64_t> sizes, " #
-    "ArrayRef<int64_t> strides">];
+  let builders = [
+    OpBuilderDAG<(ins "TupleType":$tupleType, "Value":$vector,
+      "ArrayRef<int64_t>":$sizes, "ArrayRef<int64_t>":$strides)>
+  ];
   let extraClassDeclaration = [{
     VectorType getSourceVectorType() {
       return vector().getType().cast<VectorType>();
@@ -455,6 +453,62 @@ def Vector_ExtractSlicesOp :
     $vector `,` $sizes `,` $strides attr-dict `:` type($vector) `into`
     type(results)
   }];
+}
+
+def Vector_ExtractMapOp :
+  Vector_Op<"extract_map", [NoSideEffect]>,
+    Arguments<(ins AnyVector:$vector, Index:$id)>,
+    Results<(outs AnyVector)> {
+  let summary = "vector extract map operation";
+  let description = [{
+    Takes an 1-D vector and extracts a sub-part of the vector starting at id.
+
+    Similarly to vector.tuple_get, this operation is used for progressive
+    lowering and should be folded away before converting to LLVM.
+
+    It is different than `vector.extract_slice` and
+    `vector.extract_strided_slice` as it takes a Value as index instead of an
+    attribute. Also in the future it is meant to support extracting along any
+    dimensions and not only the most major ones.
+
+    For instance:
+    ```
+    // dynamic computation producing the value 0 of index type
+    %idx0 = ... : index
+    // dynamic computation producing the value 1 of index type
+    %idx1 = ... : index
+    %0 = constant dense<0, 1, 2, 3>: vector<4xi32>
+    // extracts values [0, 1]
+    %1 = vector.extract_map %0[%idx0] : vector<4xi32> to vector<2xi32>
+    // extracts values [1, 2]
+    %2 = vector.extract_map %0[%idx1] : vector<4xi32> to vector<2xi32>
+    ```
+
+    Example:
+
+    ```mlir
+    %ev = vector.extract_map %v[%id] : vector<32xf32> to vector<1xf32>
+    ```
+  }];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$vector, "Value":$id, "int64_t":$multiplicity)>];
+  let extraClassDeclaration = [{
+    VectorType getSourceVectorType() {
+      return vector().getType().cast<VectorType>();
+    }
+    VectorType getResultType() {
+      return getResult().getType().cast<VectorType>();
+    }
+    int64_t multiplicity() {
+      return getSourceVectorType().getNumElements() /
+        getResultType().getNumElements();
+    }
+  }];
+  let assemblyFormat = [{
+    $vector `[` $id `]` attr-dict `:` type($vector) `to` type(results)
+  }];
+
+  let hasFolder = 1;
 }
 
 def Vector_FMAOp :
@@ -481,9 +535,10 @@ def Vector_FMAOp :
   // Fully specified by traits.
   let verifier = ?;
   let assemblyFormat = "$lhs `,` $rhs `,` $acc attr-dict `:` type($lhs)";
-  let builders = [OpBuilder<
-    "OpBuilder &b, OperationState &result, Value lhs, Value rhs, Value acc",
-    "build(b, result, lhs.getType(), lhs, rhs, acc);">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$lhs, "Value":$rhs, "Value":$acc),
+    [{build($_builder, $_state, lhs.getType(), lhs, rhs, acc);}]>
+  ];
   let extraClassDeclaration = [{
     VectorType getVectorType() { return lhs().getType().cast<VectorType>(); }
   }];
@@ -520,12 +575,10 @@ def Vector_InsertElementOp :
     type($result)
   }];
 
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "Value dest, int64_t position">,
-    OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "Value dest, Value position">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "Value":$dest, "int64_t":$position)>,
+    OpBuilderDAG<(ins "Value":$source, "Value":$dest, "Value":$position)>
+  ];
   let extraClassDeclaration = [{
     Type getSourceType() { return source().getType(); }
     VectorType getDestVectorType() {
@@ -559,13 +612,12 @@ def Vector_InsertOp :
     $source `,` $dest $position attr-dict `:` type($source) `into` type($dest)
   }];
 
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "Value dest, ArrayRef<int64_t> position">,
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "Value":$dest,
+      "ArrayRef<int64_t>":$position)>,
     // Convenience builder which assumes all values are constant indices.
-    OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, "
-    "Value dest, ValueRange position">];
+    OpBuilderDAG<(ins "Value":$source, "Value":$dest, "ValueRange":$position)>
+  ];
   let extraClassDeclaration = [{
     static StringRef getPositionAttrName() { return "position"; }
     Type getSourceType() { return source().getType(); }
@@ -632,6 +684,67 @@ def Vector_InsertSlicesOp :
   }];
 }
 
+def Vector_InsertMapOp :
+  Vector_Op<"insert_map", [NoSideEffect, AllTypesMatch<["dest", "result"]>]>,
+    Arguments<(ins AnyVector:$vector, AnyVector:$dest, Index:$id)>,
+    Results<(outs AnyVector:$result)> {
+  let summary = "vector insert map operation";
+  let description = [{
+    Inserts a 1-D vector and within a larger vector starting at id. The new
+    vector created will have the same size as the destination operand vector.
+
+    Similarly to vector.tuple_get, this operation is used for progressive
+    lowering and should be folded away before converting to LLVM.
+
+    It is different than `vector.insert` and `vector.insert_strided_slice` as it
+    takes a Value as index instead of an attribute. Also in the future it is
+    meant to support inserting along any dimensions and not only the most major
+    ones.
+
+    This operations is meant to be used in combination with vector.extract_map.
+
+    For instance:
+    ```
+    // dynamic computation producing the value 0 of index type
+    %idx0 = ... : index
+    // dynamic computation producing the value 1 of index type
+    %idx1 = ... : index /
+    %0 = constant dense<0, 1, 2, 3>: vector<4xi32>
+    // extracts values [0, 1]
+    %1 = vector.extract_map %0[%idx0] : vector<4xi32> to vector<2xi32>
+    // extracts values [1, 2]
+    %2 = vector.extract_map %0[%idx1] : vector<4xi32> to vector<2xi32>
+    // insert [0, 1] into [x, x, x, x] and produce [0, 1, x, x]
+    %3 = vector.insert_map %1, %0[%idx0] : vector<2xi32> into vector<4xi32>
+    // insert [1, 2] into [x, x, x, x] and produce [x, 1, 2, x]
+    %4 = vector.insert_map %2, %0[%idx1] : vector<2xi32> into vector<4xi32>
+    ```
+    Example:
+
+    ```mlir
+    %v = vector.insert_map %ev %v[%id] : vector<1xf32> into vector<32xf32>
+    ```
+  }];
+  let builders = [OpBuilderDAG<(ins "Value":$vector, "Value":$dest,
+                                "Value":$id, "int64_t":$multiplicity)>];
+  let extraClassDeclaration = [{
+    VectorType getSourceVectorType() {
+      return vector().getType().cast<VectorType>();
+    }
+    VectorType getResultType() {
+      return getResult().getType().cast<VectorType>();
+    }
+    int64_t multiplicity() {
+      return getResultType().getNumElements() /
+        getSourceVectorType().getNumElements();
+    }
+  }];
+  let assemblyFormat = [{
+    $vector `,` $dest `[` $id `]` attr-dict
+      `:` type($vector) `into` type($result)
+  }];
+}
+
 def Vector_InsertStridedSliceOp :
   Vector_Op<"insert_strided_slice", [NoSideEffect,
     PredOpTrait<"operand #0 and result have same element type",
@@ -666,9 +779,10 @@ def Vector_InsertStridedSliceOp :
     $source `,` $dest attr-dict `:` type($source) `into` type($dest)
   }];
 
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, Value dest, " #
-    "ArrayRef<int64_t> offsets, ArrayRef<int64_t> strides">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "Value":$dest,
+      "ArrayRef<int64_t>":$offsets, "ArrayRef<int64_t>":$strides)>
+  ];
   let extraClassDeclaration = [{
     static StringRef getOffsetsAttrName() { return "offsets"; }
     static StringRef getStridesAttrName() { return "strides"; }
@@ -730,9 +844,8 @@ def Vector_OuterProductOp :
   }];
   let builders = [
     // Build an op without mask, use the type of `acc` as the return type.
-    OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value lhs, Value rhs, "
-    "Value acc">];
+    OpBuilderDAG<(ins "Value":$lhs, "Value":$rhs, "Value":$acc)>
+  ];
   let extraClassDeclaration = [{
     VectorType getOperandVectorTypeLHS() {
       return lhs().getType().cast<VectorType>();
@@ -904,10 +1017,10 @@ def Vector_ExtractStridedSliceOp :
       vector<4x8x16xf32> to vector<2x4x16xf32>
     ```
   }];
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source, " #
-    "ArrayRef<int64_t> offsets, ArrayRef<int64_t> sizes, " #
-    "ArrayRef<int64_t> strides">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$source, "ArrayRef<int64_t>":$offsets,
+      "ArrayRef<int64_t>":$sizes, "ArrayRef<int64_t>":$strides)>
+  ];
   let extraClassDeclaration = [{
     static StringRef getOffsetsAttrName() { return "offsets"; }
     static StringRef getSizesAttrName() { return "sizes"; }
@@ -916,6 +1029,7 @@ def Vector_ExtractStridedSliceOp :
     void getOffsets(SmallVectorImpl<int64_t> &results);
   }];
   let hasCanonicalizer = 1;
+  let hasFolder = 1;
   let assemblyFormat = "$vector attr-dict `:` type($vector) `to` type(results)";
 }
 
@@ -1069,14 +1183,13 @@ def Vector_TransferReadOp :
 
   let builders = [
     // Builder that sets padding to zero.
-    OpBuilder<"OpBuilder &builder, OperationState &result, VectorType vector, "
-              "Value memref, ValueRange indices, AffineMap permutationMap, "
-              "ArrayRef<bool> maybeMasked = {}">,
+    OpBuilderDAG<(ins "VectorType":$vector, "Value":$memref,
+      "ValueRange":$indices, "AffineMap":$permutationMap,
+      CArg<"ArrayRef<bool>", "{}">:$maybeMasked)>,
     // Builder that sets permutation map (resp. padding) to
     // 'getMinorIdentityMap' (resp. zero).
-    OpBuilder<"OpBuilder &builder, OperationState &result, VectorType vector, "
-              "Value memref, ValueRange indices, "
-              "ArrayRef<bool> maybeMasked = {}">
+    OpBuilderDAG<(ins "VectorType":$vector, "Value":$memref,
+      "ValueRange":$indices, CArg<"ArrayRef<bool>", "{}">:$maybeMasked)>
   ];
 
   let hasFolder = 1;
@@ -1154,11 +1267,10 @@ def Vector_TransferWriteOp :
 
   let builders = [
     // Builder that sets permutation map to 'getMinorIdentityMap'.
-    OpBuilder<"OpBuilder &builder, OperationState &result, Value vector, "
-              "Value memref, ValueRange indices, "
-              "ArrayRef<bool> maybeMasked = {}">,
-    OpBuilder<"OpBuilder &builder, OperationState &result, Value vector, "
-              "Value memref, ValueRange indices, AffineMap permutationMap">,
+    OpBuilderDAG<(ins "Value":$vector, "Value":$memref, "ValueRange":$indices,
+      CArg<"ArrayRef<bool>", "{}">:$maybeMasked)>,
+    OpBuilderDAG<(ins "Value":$vector, "Value":$memref, "ValueRange":$indices,
+      "AffineMap":$permutationMap)>,
   ];
 
   let hasFolder = 1;
@@ -1537,6 +1649,7 @@ def Vector_ShapeCastOp :
   }];
   let assemblyFormat = "$source attr-dict `:` type($source) `to` type($result)";
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
 }
 
 def Vector_BitCastOp :
@@ -1575,7 +1688,7 @@ def Vector_BitCastOp :
 }
 
 def Vector_TypeCastOp :
-  Vector_Op<"type_cast", [NoSideEffect]>,
+  Vector_Op<"type_cast", [NoSideEffect, ViewLikeOpInterface]>,
     Arguments<(ins StaticShapeMemRefOf<[AnyType]>:$memref)>,
     Results<(outs AnyMemRef:$result)> {
   let summary = "type_cast op converts a scalar memref to a vector memref";
@@ -1602,8 +1715,7 @@ def Vector_TypeCastOp :
 
   /// Build the canonical memRefType with a single vector.
   /// E.g. memref<4 x 5 x vector<6 x f32>> -> memref<vector<4 x 5 x 6 x f32>>.
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value source">];
+  let builders = [OpBuilderDAG<(ins "Value":$source)>];
 
   let extraClassDeclaration = [{
     MemRefType getMemRefType() {
@@ -1612,6 +1724,8 @@ def Vector_TypeCastOp :
     MemRefType getResultMemRefType() {
       return getResult().getType().cast<MemRefType>();
     }
+    // Implement ViewLikeOpInterface.
+    Value getViewSource() { return memref(); }
   }];
 
   let assemblyFormat = [{
@@ -1756,9 +1870,9 @@ def Vector_TransposeOp :
                           [c, f] ]
     ```
   }];
-  let builders = [OpBuilder<
-    "OpBuilder &builder, OperationState &result, Value vector, "
-    "ArrayRef<int64_t> transp">];
+  let builders = [
+    OpBuilderDAG<(ins "Value":$vector, "ArrayRef<int64_t>":$transp)>
+  ];
   let extraClassDeclaration = [{
     VectorType getVectorType() {
       return vector().getType().cast<VectorType>();
@@ -1902,14 +2016,14 @@ def Vector_MatmulOp : Vector_Op<"matrix_multiply", [NoSideEffect,
     ```
   }];
   let builders = [
-   OpBuilder<"OpBuilder &builder, OperationState &result, Value lhs, Value rhs, "
-             "unsigned lhsRows, unsigned lhsColumns, unsigned rhsColumns",
+   OpBuilderDAG<(ins "Value":$lhs, "Value":$rhs, "unsigned":$lhsRows,
+     "unsigned":$lhsColumns, "unsigned":$rhsColumns),
    [{
-     result.addOperands({lhs, rhs});
-     result.addAttribute("lhs_rows", builder.getI32IntegerAttr(lhsRows));
-     result.addAttribute("lhs_columns", builder.getI32IntegerAttr(lhsColumns));
-     result.addAttribute("rhs_columns", builder.getI32IntegerAttr(rhsColumns));
-     result.addTypes(VectorType::get(lhsRows * rhsColumns,
+     $_state.addOperands({lhs, rhs});
+     $_state.addAttribute("lhs_rows",$_builder.getI32IntegerAttr(lhsRows));
+     $_state.addAttribute("lhs_columns",$_builder.getI32IntegerAttr(lhsColumns));
+     $_state.addAttribute("rhs_columns",$_builder.getI32IntegerAttr(rhsColumns));
+     $_state.addTypes(VectorType::get(lhsRows * rhsColumns,
        lhs.getType().cast<VectorType>().getElementType()));
    }]>,
   ];
