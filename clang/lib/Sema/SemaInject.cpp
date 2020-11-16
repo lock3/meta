@@ -734,19 +734,6 @@ public:
     return QualType();
   }
 
-  ParmVarDecl *TransformFunctionTypeParam(
-      ParmVarDecl *OldParm, int indexAdjustment,
-      Optional<unsigned> NumExpansions, bool ExpectParameterPack) {
-    ParmVarDecl *NewParm =
-        TreeTransform<InjectionContext>::TransformFunctionTypeParam(
-            OldParm, indexAdjustment, NumExpansions, ExpectParameterPack);
-
-    if (NewParm)
-      AddDeclSubstitution(OldParm, NewParm);
-
-    return NewParm;
-  }
-
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
                                SmallVectorImpl<ParmVarDecl *> &Parms);
 
