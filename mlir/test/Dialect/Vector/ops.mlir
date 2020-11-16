@@ -432,3 +432,14 @@ func @expand_and_compress(%base: memref<?xf32>, %mask: vector<16xi1>, %passthru:
   vector.compressstore %base, %mask, %0 : memref<?xf32>, vector<16xi1>, vector<16xf32>
   return
 }
+
+// CHECK-LABEL: @extract_insert_map
+func @extract_insert_map(%v: vector<32xf32>, %id : index) -> vector<32xf32> {
+  // CHECK: %[[V:.*]] = vector.extract_map %{{.*}}[%{{.*}}] : vector<32xf32> to vector<2xf32>
+  %vd = vector.extract_map %v[%id] : vector<32xf32> to vector<2xf32>
+  // CHECK: %[[R:.*]] = vector.insert_map %[[V]], %{{.*}}[%{{.*}}] : vector<2xf32> into vector<32xf32>
+  %r = vector.insert_map %vd, %v[%id] : vector<2xf32> into vector<32xf32>
+  // CHECK: return %[[R]] : vector<32xf32>
+  return %r : vector<32xf32>
+}
+

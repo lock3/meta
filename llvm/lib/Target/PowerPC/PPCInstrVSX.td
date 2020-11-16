@@ -167,7 +167,7 @@ multiclass XX3Form_Rcr<bits<6> opcode, bits<7> xo, string asmbase,
     def _rec    : XX3Form_Rc<opcode, xo, (outs vsrc:$XT), (ins vsrc:$XA, vsrc:$XB),
                        !strconcat(asmbase, !strconcat(". ", asmstr)), itin,
                        [(set InTy:$XT,
-                                (InTy (PPCvcmp_o InTy:$XA, InTy:$XB, xo)))]>,
+                                (InTy (PPCvcmp_rec InTy:$XA, InTy:$XB, xo)))]>,
                        isRecordForm;
   }
 }
@@ -2590,6 +2590,16 @@ def : Pat<(int_ppc_vsx_xvdivsp v4f32:$A, v4f32:$B),
           (XVDIVSP $A, $B)>;
 def : Pat<(int_ppc_vsx_xvdivdp v2f64:$A, v2f64:$B),
           (XVDIVDP $A, $B)>;
+
+// Vector test for software divide and sqrt.
+def : Pat<(i32 (int_ppc_vsx_xvtdivdp v2f64:$A, v2f64:$B)),
+          (COPY_TO_REGCLASS (XVTDIVDP $A, $B), GPRC)>;
+def : Pat<(i32 (int_ppc_vsx_xvtdivsp v4f32:$A, v4f32:$B)),
+          (COPY_TO_REGCLASS (XVTDIVSP $A, $B), GPRC)>;
+def : Pat<(i32 (int_ppc_vsx_xvtsqrtdp v2f64:$A)),
+          (COPY_TO_REGCLASS (XVTSQRTDP $A), GPRC)>;
+def : Pat<(i32 (int_ppc_vsx_xvtsqrtsp v4f32:$A)),
+          (COPY_TO_REGCLASS (XVTSQRTSP $A), GPRC)>;
 
 // Reciprocal estimate
 def : Pat<(int_ppc_vsx_xvresp v4f32:$A),

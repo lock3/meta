@@ -15,16 +15,12 @@
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Vector/VectorOps.h"
 #include "mlir/IR/AffineMap.h"
-#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Module.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/StandardTypes.h"
-#include "mlir/IR/Types.h"
 #include "mlir/Target/LLVMIR/TypeTranslation.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
@@ -561,28 +557,36 @@ public:
     auto kind = reductionOp.kind();
     Type eltType = reductionOp.dest().getType();
     Type llvmType = typeConverter.convertType(eltType);
-    if (eltType.isSignlessInteger()) {
+    if (eltType.isIntOrIndex()) {
       // Integer reductions: add/mul/min/max/and/or/xor.
       if (kind == "add")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_add>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_add>(
             op, llvmType, operands[0]);
       else if (kind == "mul")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_mul>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_mul>(
+            op, llvmType, operands[0]);
+      else if (kind == "min" &&
+               (eltType.isIndex() || eltType.isUnsignedInteger()))
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_umin>(
             op, llvmType, operands[0]);
       else if (kind == "min")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_smin>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_smin>(
+            op, llvmType, operands[0]);
+      else if (kind == "max" &&
+               (eltType.isIndex() || eltType.isUnsignedInteger()))
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_umax>(
             op, llvmType, operands[0]);
       else if (kind == "max")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_smax>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_smax>(
             op, llvmType, operands[0]);
       else if (kind == "and")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_and>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_and>(
             op, llvmType, operands[0]);
       else if (kind == "or")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_or>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_or>(
             op, llvmType, operands[0]);
       else if (kind == "xor")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_xor>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_xor>(
             op, llvmType, operands[0]);
       else
         return failure();
@@ -596,7 +600,7 @@ public:
                                         : rewriter.create<LLVM::ConstantOp>(
                                               op->getLoc(), llvmType,
                                               rewriter.getZeroAttr(eltType));
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fadd>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fadd>(
             op, llvmType, acc, operands[0],
             rewriter.getBoolAttr(reassociateFPReductions));
       } else if (kind == "mul") {
@@ -606,14 +610,14 @@ public:
                         : rewriter.create<LLVM::ConstantOp>(
                               op->getLoc(), llvmType,
                               rewriter.getFloatAttr(eltType, 1.0));
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fmul>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmul>(
             op, llvmType, acc, operands[0],
             rewriter.getBoolAttr(reassociateFPReductions));
       } else if (kind == "min")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_fmin>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmin>(
             op, llvmType, operands[0]);
       else if (kind == "max")
-        rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_fmax>(
+        rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmax>(
             op, llvmType, operands[0]);
       else
         return failure();
@@ -1034,7 +1038,12 @@ public:
 class VectorInsertStridedSliceOpSameRankRewritePattern
     : public OpRewritePattern<InsertStridedSliceOp> {
 public:
-  using OpRewritePattern<InsertStridedSliceOp>::OpRewritePattern;
+  VectorInsertStridedSliceOpSameRankRewritePattern(MLIRContext *ctx)
+      : OpRewritePattern<InsertStridedSliceOp>(ctx) {
+    // This pattern creates recursive InsertStridedSliceOp, but the recursion is
+    // bounded as the rank is strictly decreasing.
+    setHasBoundedRewriteRecursion();
+  }
 
   LogicalResult matchAndRewrite(InsertStridedSliceOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1085,28 +1094,37 @@ public:
     rewriter.replaceOp(op, res);
     return success();
   }
-  /// This pattern creates recursive InsertStridedSliceOp, but the recursion is
-  /// bounded as the rank is strictly decreasing.
-  bool hasBoundedRewriteRecursion() const final { return true; }
 };
 
-/// Returns true if the memory underlying `memRefType` has a contiguous layout.
-/// Strides are written to `strides`.
-static bool isContiguous(MemRefType memRefType,
-                         SmallVectorImpl<int64_t> &strides) {
+/// Returns the strides if the memory underlying `memRefType` has a contiguous
+/// static layout.
+static llvm::Optional<SmallVector<int64_t, 4>>
+computeContiguousStrides(MemRefType memRefType) {
   int64_t offset;
-  auto successStrides = getStridesAndOffset(memRefType, strides, offset);
-  bool isContiguous = strides.empty() || strides.back() == 1;
-  if (isContiguous) {
-    auto sizes = memRefType.getShape();
-    for (int index = 0, e = strides.size() - 2; index < e; ++index) {
-      if (strides[index] != strides[index + 1] * sizes[index + 1]) {
-        isContiguous = false;
-        break;
-      }
-    }
+  SmallVector<int64_t, 4> strides;
+  if (failed(getStridesAndOffset(memRefType, strides, offset)))
+    return None;
+  if (!strides.empty() && strides.back() != 1)
+    return None;
+  // If no layout or identity layout, this is contiguous by definition.
+  if (memRefType.getAffineMaps().empty() ||
+      memRefType.getAffineMaps().front().isIdentity())
+    return strides;
+
+  // Otherwise, we must determine contiguity form shapes. This can only ever
+  // work in static cases because MemRefType is underspecified to represent
+  // contiguous dynamic shapes in other ways than with just empty/identity
+  // layout.
+  auto sizes = memRefType.getShape();
+  for (int index = 0, e = strides.size() - 2; index < e; ++index) {
+    if (ShapedType::isDynamic(sizes[index + 1]) ||
+        ShapedType::isDynamicStrideOrOffset(strides[index]) ||
+        ShapedType::isDynamicStrideOrOffset(strides[index + 1]))
+      return None;
+    if (strides[index] != strides[index + 1] * sizes[index + 1])
+      return None;
   }
-  return succeeded(successStrides) && isContiguous;
+  return strides;
 }
 
 class VectorTypeCastOpConversion : public ConvertToLLVMPattern {
@@ -1142,9 +1160,17 @@ public:
     if (!llvmTargetDescriptorTy || !llvmTargetDescriptorTy.isStructTy())
       return failure();
 
-    // Only contiguous source tensors supported atm.
-    SmallVector<int64_t, 4> strides;
-    if (!isContiguous(sourceMemRefType, strides))
+    // Only contiguous source buffers supported atm.
+    auto sourceStrides = computeContiguousStrides(sourceMemRefType);
+    if (!sourceStrides)
+      return failure();
+    auto targetStrides = computeContiguousStrides(targetMemRefType);
+    if (!targetStrides)
+      return failure();
+    // Only support static strides for now, regardless of contiguity.
+    if (llvm::any_of(*targetStrides, [](int64_t stride) {
+          return ShapedType::isDynamicStrideOrOffset(stride);
+        }))
       return failure();
 
     auto int64Ty = LLVM::LLVMType::getInt64Ty(rewriter.getContext());
@@ -1173,8 +1199,8 @@ public:
           rewriter.getIntegerAttr(rewriter.getIndexType(), indexedSize.value());
       auto size = rewriter.create<LLVM::ConstantOp>(loc, int64Ty, sizeAttr);
       desc.setSize(rewriter, loc, index, size);
-      auto strideAttr =
-          rewriter.getIntegerAttr(rewriter.getIndexType(), strides[index]);
+      auto strideAttr = rewriter.getIntegerAttr(rewriter.getIndexType(),
+                                                (*targetStrides)[index]);
       auto stride = rewriter.create<LLVM::ConstantOp>(loc, int64Ty, strideAttr);
       desc.setStride(rewriter, loc, index, stride);
     }
@@ -1215,8 +1241,8 @@ public:
                                        op->getContext()))
       return failure();
     // Only contiguous source tensors supported atm.
-    SmallVector<int64_t, 4> strides;
-    if (!isContiguous(xferOp.getMemRefType(), strides))
+    auto strides = computeContiguousStrides(xferOp.getMemRefType());
+    if (!strides)
       return failure();
 
     auto toLLVMTy = [&](Type t) { return typeConverter.convertType(t); };
@@ -1328,17 +1354,15 @@ public:
       printer = getPrintFloat(op);
     } else if (eltType.isF64()) {
       printer = getPrintDouble(op);
+    } else if (eltType.isIndex()) {
+      printer = getPrintU64(op);
     } else if (auto intTy = eltType.dyn_cast<IntegerType>()) {
       // Integers need a zero or sign extension on the operand
       // (depending on the source type) as well as a signed or
       // unsigned print method. Up to 64-bit is supported.
       unsigned width = intTy.getWidth();
       if (intTy.isUnsigned()) {
-        if (width <= 32) {
-          if (width < 32)
-            conversion = PrintConversion::ZeroExt32;
-          printer = getPrintU32(op);
-        } else if (width <= 64) {
+        if (width <= 64) {
           if (width < 64)
             conversion = PrintConversion::ZeroExt64;
           printer = getPrintU64(op);
@@ -1347,16 +1371,12 @@ public:
         }
       } else {
         assert(intTy.isSignless() || intTy.isSigned());
-        if (width <= 32) {
+        if (width <= 64) {
           // Note that we *always* zero extend booleans (1-bit integers),
           // so that true/false is printed as 1/0 rather than -1/0.
           if (width == 1)
-            conversion = PrintConversion::ZeroExt32;
-          else if (width < 32)
-            conversion = PrintConversion::SignExt32;
-          printer = getPrintI32(op);
-        } else if (width <= 64) {
-          if (width < 64)
+            conversion = PrintConversion::ZeroExt64;
+          else if (width < 64)
             conversion = PrintConversion::SignExt64;
           printer = getPrintI64(op);
         } else {
@@ -1378,11 +1398,11 @@ public:
 
 private:
   enum class PrintConversion {
+    // clang-format off
     None,
-    ZeroExt32,
-    SignExt32,
     ZeroExt64,
     SignExt64
+    // clang-format on
   };
 
   void emitRanks(ConversionPatternRewriter &rewriter, Operation *op,
@@ -1391,14 +1411,6 @@ private:
     Location loc = op->getLoc();
     if (rank == 0) {
       switch (conversion) {
-      case PrintConversion::ZeroExt32:
-        value = rewriter.create<ZeroExtendIOp>(
-            loc, value, LLVM::LLVMType::getInt32Ty(rewriter.getContext()));
-        break;
-      case PrintConversion::SignExt32:
-        value = rewriter.create<SignExtendIOp>(
-            loc, value, LLVM::LLVMType::getInt32Ty(rewriter.getContext()));
-        break;
       case PrintConversion::ZeroExt64:
         value = rewriter.create<ZeroExtendIOp>(
             loc, value, LLVM::LLVMType::getInt64Ty(rewriter.getContext()));
@@ -1455,41 +1467,33 @@ private:
   }
 
   // Helpers for method names.
-  Operation *getPrintI32(Operation *op) const {
-    return getPrint(op, "print_i32",
-                    LLVM::LLVMType::getInt32Ty(op->getContext()));
-  }
   Operation *getPrintI64(Operation *op) const {
-    return getPrint(op, "print_i64",
+    return getPrint(op, "printI64",
                     LLVM::LLVMType::getInt64Ty(op->getContext()));
-  }
-  Operation *getPrintU32(Operation *op) const {
-    return getPrint(op, "printU32",
-                    LLVM::LLVMType::getInt32Ty(op->getContext()));
   }
   Operation *getPrintU64(Operation *op) const {
     return getPrint(op, "printU64",
                     LLVM::LLVMType::getInt64Ty(op->getContext()));
   }
   Operation *getPrintFloat(Operation *op) const {
-    return getPrint(op, "print_f32",
+    return getPrint(op, "printF32",
                     LLVM::LLVMType::getFloatTy(op->getContext()));
   }
   Operation *getPrintDouble(Operation *op) const {
-    return getPrint(op, "print_f64",
+    return getPrint(op, "printF64",
                     LLVM::LLVMType::getDoubleTy(op->getContext()));
   }
   Operation *getPrintOpen(Operation *op) const {
-    return getPrint(op, "print_open", {});
+    return getPrint(op, "printOpen", {});
   }
   Operation *getPrintClose(Operation *op) const {
-    return getPrint(op, "print_close", {});
+    return getPrint(op, "printClose", {});
   }
   Operation *getPrintComma(Operation *op) const {
-    return getPrint(op, "print_comma", {});
+    return getPrint(op, "printComma", {});
   }
   Operation *getPrintNewline(Operation *op) const {
-    return getPrint(op, "print_newline", {});
+    return getPrint(op, "printNewline", {});
   }
 };
 
@@ -1499,7 +1503,12 @@ private:
 class VectorExtractStridedSliceOpConversion
     : public OpRewritePattern<ExtractStridedSliceOp> {
 public:
-  using OpRewritePattern<ExtractStridedSliceOp>::OpRewritePattern;
+  VectorExtractStridedSliceOpConversion(MLIRContext *ctx)
+      : OpRewritePattern<ExtractStridedSliceOp>(ctx) {
+    // This pattern creates recursive ExtractStridedSliceOp, but the recursion
+    // is bounded as the rank is strictly decreasing.
+    setHasBoundedRewriteRecursion();
+  }
 
   LogicalResult matchAndRewrite(ExtractStridedSliceOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1546,9 +1555,6 @@ public:
     rewriter.replaceOp(op, res);
     return success();
   }
-  /// This pattern creates recursive ExtractStridedSliceOp, but the recursion is
-  /// bounded as the rank is strictly decreasing.
-  bool hasBoundedRewriteRecursion() const final { return true; }
 };
 
 } // namespace
@@ -1613,7 +1619,7 @@ void LowerVectorToLLVMPass::runOnOperation() {
     populateVectorToVectorCanonicalizationPatterns(patterns, &getContext());
     populateVectorSlicesLoweringPatterns(patterns, &getContext());
     populateVectorContractLoweringPatterns(patterns, &getContext());
-    applyPatternsAndFoldGreedily(getOperation(), patterns);
+    applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 
   // Convert to the LLVM IR dialect.
@@ -1626,7 +1632,8 @@ void LowerVectorToLLVMPass::runOnOperation() {
   populateStdToLLVMConversionPatterns(converter, patterns);
 
   LLVMConversionTarget target(getContext());
-  if (failed(applyPartialConversion(getOperation(), target, patterns)))
+  if (failed(
+          applyPartialConversion(getOperation(), target, std::move(patterns))))
     signalPassFailure();
 }
 

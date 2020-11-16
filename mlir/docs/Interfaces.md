@@ -228,3 +228,15 @@ format of the header for each interface section goes as follows:
          - RegionKind::Graph - represents a graph region without control flow semantics
          - RegionKind::SSACFG - represents an [SSA-style control flow](LangRef.md#modeling-control-flow) region with basic blocks and reachability
      - `hasSSADominance(unsigned index)` - Return true if the region with the given index inside this operation requires dominance.
+
+##### SymbolInterfaces
+
+*   `SymbolOpInterface` - Used to represent
+    [`Symbol`](SymbolsAndSymbolTables.md#symbol) operations which reside
+    immediately within a region that defines a
+    [`SymbolTable`](SymbolsAndSymbolTables.md#symbol-table).
+
+*   `SymbolUserOpInterface` - Used to represent operations that reference
+    [`Symbol`](SymbolsAndSymbolTables.md#symbol) operations. This provides the
+    ability to perform safe and efficient verification of symbol uses, as well
+    as additional functionality.

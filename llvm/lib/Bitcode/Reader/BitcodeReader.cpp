@@ -579,9 +579,7 @@ public:
   /// \returns true if an error occurred.
   Error parseBitcodeInto(
       Module *M, bool ShouldLazyLoadMetadata = false, bool IsImporting = false,
-      DataLayoutCallbackTy DataLayoutCallback = [](std::string) {
-        return None;
-      });
+      DataLayoutCallbackTy DataLayoutCallback = [](StringRef) { return None; });
 
   static uint64_t decodeSignRotatedValue(uint64_t V);
 
@@ -678,7 +676,7 @@ private:
   /// Read a value out of the specified record from slot 'Slot'. Increment Slot
   /// past the number of slots used by the value in the record. Return true if
   /// there is an error.
-  bool popValue(SmallVectorImpl<uint64_t> &Record, unsigned &Slot,
+  bool popValue(const SmallVectorImpl<uint64_t> &Record, unsigned &Slot,
                 unsigned InstNum, Type *Ty, Value *&ResVal) {
     if (getValue(Record, Slot, InstNum, Ty, ResVal))
       return true;
@@ -1537,6 +1535,10 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::NoUndef;
   case bitc::ATTR_KIND_BYREF:
     return Attribute::ByRef;
+  case bitc::ATTR_KIND_MUSTPROGRESS:
+    return Attribute::MustProgress;
+  case bitc::ATTR_KIND_NO_STACK_PROTECT:
+    return Attribute::NoStackProtect;
   }
 }
 

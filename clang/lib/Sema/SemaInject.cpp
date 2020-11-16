@@ -734,19 +734,6 @@ public:
     return QualType();
   }
 
-  ParmVarDecl *TransformFunctionTypeParam(
-      ParmVarDecl *OldParm, int indexAdjustment,
-      Optional<unsigned> NumExpansions, bool ExpectParameterPack) {
-    ParmVarDecl *NewParm =
-        TreeTransform<InjectionContext>::TransformFunctionTypeParam(
-            OldParm, indexAdjustment, NumExpansions, ExpectParameterPack);
-
-    if (NewParm)
-      AddDeclSubstitution(OldParm, NewParm);
-
-    return NewParm;
-  }
-
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
                                SmallVectorImpl<ParmVarDecl *> &Parms);
 
@@ -4382,7 +4369,7 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
       Sema, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
-  bool Folded = Call->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen, EvalCtx);
+  bool Folded = Call->EvaluateAsConstantExpr(Result, EvalCtx);
   if (!Folded) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.

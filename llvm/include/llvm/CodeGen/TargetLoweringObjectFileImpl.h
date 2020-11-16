@@ -63,6 +63,8 @@ public:
 
   MCSection *getSectionForJumpTable(const Function &F,
                                     const TargetMachine &TM) const override;
+  MCSection *getSectionForLSDA(const Function &F,
+                               const TargetMachine &TM) const override;
 
   MCSection *
   getSectionForMachineBasicBlock(const Function &F,
@@ -143,6 +145,7 @@ public:
 
 class TargetLoweringObjectFileCOFF : public TargetLoweringObjectFile {
   mutable unsigned NextUniqueID = 0;
+  const TargetMachine *TM = nullptr;
 
 public:
   ~TargetLoweringObjectFileCOFF() override = default;

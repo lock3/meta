@@ -228,7 +228,6 @@ std::string DetailsToString(const Details &details) {
           [](const ProcBindingDetails &) { return "ProcBinding"; },
           [](const NamelistDetails &) { return "Namelist"; },
           [](const CommonBlockDetails &) { return "CommonBlockDetails"; },
-          [](const FinalProcDetails &) { return "FinalProc"; },
           [](const TypeParamDetails &) { return "TypeParam"; },
           [](const MiscDetails &) { return "Misc"; },
           [](const AssocEntityDetails &) { return "AssocEntity"; },
@@ -436,7 +435,6 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Details &details) {
               os << ' ' << object->name();
             }
           },
-          [&](const FinalProcDetails &) {},
           [&](const TypeParamDetails &x) {
             DumpOptional(os, "type", x.type());
             os << ' ' << common::EnumToString(x.attr());
@@ -561,6 +559,25 @@ const Symbol *DerivedTypeDetails::GetParentComponent(const Scope &scope) const {
       if (const Symbol & symbol{*iter->second};
           symbol.test(Symbol::Flag::ParentComp)) {
         return &symbol;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const Symbol *DerivedTypeDetails::GetFinalForRank(int rank) const {
+  for (const auto &pair : finals_) {
+    const Symbol &symbol{*pair.second};
+    if (const auto *details{symbol.detailsIf<SubprogramDetails>()}) {
+      if (details->dummyArgs().size() == 1) {
+        if (const Symbol * arg{details->dummyArgs().at(0)}) {
+          if (const auto *object{arg->detailsIf<ObjectEntityDetails>()}) {
+            if (rank == object->shape().Rank() || object->IsAssumedRank() ||
+                symbol.attrs().test(Attr::ELEMENTAL)) {
+              return &symbol;
+            }
+          }
+        }
       }
     }
   }

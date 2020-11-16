@@ -15,6 +15,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
 
@@ -39,25 +40,17 @@ public:
     // Find smaller and greater rank and extent tensor.
     Value lhsRank = rewriter.create<DimOp>(loc, op.lhs(), zero);
     Value rhsRank = rewriter.create<DimOp>(loc, op.rhs(), zero);
-    Value lhsSmaller =
+    Value lhsRankULE =
         rewriter.create<CmpIOp>(loc, CmpIPredicate::ule, lhsRank, rhsRank);
     Type indexTy = rewriter.getIndexType();
-    Type extentTensorTy = op.lhs().getType();
-    auto ifOp = rewriter.create<scf::IfOp>(
-        loc, TypeRange{indexTy, extentTensorTy, indexTy, extentTensorTy},
-        lhsSmaller,
-        [&](OpBuilder &b, Location loc) {
-          b.create<scf::YieldOp>(
-              loc, ValueRange{lhsRank, op.lhs(), rhsRank, op.rhs()});
-        },
-        [&](OpBuilder &b, Location loc) {
-          b.create<scf::YieldOp>(
-              loc, ValueRange{rhsRank, op.rhs(), lhsRank, op.lhs()});
-        });
-    Value lesserRank = ifOp.getResult(0);
-    Value lesserRankOperand = ifOp.getResult(1);
-    Value greaterRank = ifOp.getResult(2);
-    Value greaterRankOperand = ifOp.getResult(3);
+    Value lesserRank =
+        rewriter.create<SelectOp>(loc, lhsRankULE, lhsRank, rhsRank);
+    Value greaterRank =
+        rewriter.create<SelectOp>(loc, lhsRankULE, rhsRank, lhsRank);
+    Value lesserRankOperand =
+        rewriter.create<SelectOp>(loc, lhsRankULE, op.lhs(), op.rhs());
+    Value greaterRankOperand =
+        rewriter.create<SelectOp>(loc, lhsRankULE, op.rhs(), op.lhs());
 
     Value rankDiff =
         rewriter.create<SubIOp>(loc, indexTy, greaterRank, lesserRank);
@@ -131,7 +124,7 @@ class ConvertShapeConstraints
     OwningRewritePatternList patterns;
     populateConvertShapeConstraintsConversionPatterns(patterns, context);
 
-    if (failed(applyPatternsAndFoldGreedily(func, patterns)))
+    if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       return signalPassFailure();
   }
 };

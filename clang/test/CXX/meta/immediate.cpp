@@ -97,7 +97,7 @@ namespace Bad {
              // expected-warning {{expression result unused}}
 
     f2(n + 1); // expected-error {{call to consteval function 'Bad::f2<int>' is not a constant expression}} \
-               // expected-note {{read of non-const variable 'n' is not allowed in a constant expression}} \
+               // expected-note {{function parameter 'n' with unknown value cannot be used in a constant expression}} \
                // expected-warning {{expression result unused}}
 
     S2<int> s3{n}; // expected-note {{declared here}}

@@ -69,13 +69,13 @@ bool link(ArrayRef<const char *> args, bool canExitEarly, raw_ostream &stdoutOS,
   lld::stderrOS = &stderrOS;
 
   errorHandler().cleanupCallback = []() {
+    TpiSource::clear();
     freeArena();
     ObjFile::instances.clear();
     PDBInputFile::instances.clear();
     ImportFile::instances.clear();
     BitcodeFile::instances.clear();
     memset(MergeChunk::instances, 0, sizeof(MergeChunk::instances));
-    TpiSource::clear();
     OutputSection::clear();
   };
 
@@ -408,10 +408,17 @@ void LinkerDriver::parseDirectives(InputFile *file) {
     case OPT_section:
       parseSection(arg->getValue());
       break;
-    case OPT_subsystem:
+    case OPT_subsystem: {
+      bool gotVersion = false;
       parseSubsystem(arg->getValue(), &config->subsystem,
-                     &config->majorOSVersion, &config->minorOSVersion);
+                     &config->majorSubsystemVersion,
+                     &config->minorSubsystemVersion, &gotVersion);
+      if (gotVersion) {
+        config->majorOSVersion = config->majorSubsystemVersion;
+        config->minorOSVersion = config->minorSubsystemVersion;
+      }
       break;
+    }
     // Only add flags here that link.exe accepts in
     // `#pragma comment(linker, "/flag")`-generated sections.
     case OPT_editandcontinue:
@@ -1459,8 +1466,18 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
 
   // Handle /subsystem
   if (auto *arg = args.getLastArg(OPT_subsystem))
-    parseSubsystem(arg->getValue(), &config->subsystem, &config->majorOSVersion,
-                   &config->minorOSVersion);
+    parseSubsystem(arg->getValue(), &config->subsystem,
+                   &config->majorSubsystemVersion,
+                   &config->minorSubsystemVersion);
+
+  // Handle /osversion
+  if (auto *arg = args.getLastArg(OPT_osversion)) {
+    parseVersion(arg->getValue(), &config->majorOSVersion,
+                 &config->minorOSVersion);
+  } else {
+    config->majorOSVersion = config->majorSubsystemVersion;
+    config->minorOSVersion = config->minorSubsystemVersion;
+  }
 
   // Handle /timestamp
   if (llvm::opt::Arg *arg = args.getLastArg(OPT_timestamp, OPT_repro)) {
@@ -1991,6 +2008,12 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
     while (run());
   }
 
+  // Create wrapped symbols for -wrap option.
+  std::vector<WrappedSymbol> wrapped = addWrappedSymbols(args);
+  // Load more object files that might be needed for wrapped symbols.
+  if (!wrapped.empty())
+    while (run());
+
   if (config->autoImport) {
     // MinGW specific.
     // Load any further object files that might be needed for doing automatic
@@ -2033,6 +2056,10 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   // If we generated native object files from bitcode files, this resolves
   // references to the symbols we use from them.
   run();
+
+  // Apply symbol renames for -wrap.
+  if (!wrapped.empty())
+    wrapSymbols(wrapped);
 
   // Resolve remaining undefined symbols and warn about imported locals.
   symtab->resolveRemainingUndefines();

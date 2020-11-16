@@ -335,7 +335,7 @@ def PPCrfebb      : SDNode<"PPCISD::RFEBB", SDT_PPCsc,
                            [SDNPHasChain, SDNPSideEffect]>;
 
 def PPCvcmp       : SDNode<"PPCISD::VCMP" , SDT_PPCvcmp, []>;
-def PPCvcmp_o     : SDNode<"PPCISD::VCMPo", SDT_PPCvcmp, [SDNPOutGlue]>;
+def PPCvcmp_rec   : SDNode<"PPCISD::VCMP_rec", SDT_PPCvcmp, [SDNPOutGlue]>;
 
 def PPCcondbranch : SDNode<"PPCISD::COND_BRANCH", SDT_PPCcondbr,
                            [SDNPHasChain, SDNPOptInGlue]>;
@@ -1081,6 +1081,7 @@ def HasExtDiv : Predicate<"Subtarget->hasExtDiv()">;
 def IsISA3_0 : Predicate<"Subtarget->isISA3_0()">;
 def HasFPU : Predicate<"Subtarget->hasFPU()">;
 def PCRelativeMemops : Predicate<"Subtarget->hasPCRelativeMemops()">;
+def IsNotISA3_1 : Predicate<"!Subtarget->isISA3_1()">;
 
 //===----------------------------------------------------------------------===//
 // PowerPC Multiclass Definitions.
@@ -1439,10 +1440,7 @@ def ADJCALLSTACKUP   : PPCEmitTimePseudo<(outs), (ins u16imm:$amt1, u16imm:$amt2
                               "#ADJCALLSTACKUP $amt1 $amt2",
                               [(callseq_end timm:$amt1, timm:$amt2)]>;
 }
-
-def UPDATE_VRSAVE    : PPCEmitTimePseudo<(outs gprc:$rD), (ins gprc:$rS),
-                              "UPDATE_VRSAVE $rD, $rS", []>;
-}
+} // hasCtrlDep
 
 let Defs = [R1], Uses = [R1] in
 def DYNALLOC : PPCEmitTimePseudo<(outs gprc:$result), (ins gprc:$negsize, memri:$fpsi), "#DYNALLOC",
@@ -2919,18 +2917,6 @@ let isCodeGenOnly = 1 in {
 def : InstAlias<"mtvrsave $rS", (MTVRSAVE gprc:$rS)>;
 def : InstAlias<"mfvrsave $rS", (MFVRSAVE gprc:$rS)>;
 
-// SPILL_VRSAVE - Indicate that we're dumping the VRSAVE register,
-// so we'll need to scavenge a register for it.
-let mayStore = 1 in
-def SPILL_VRSAVE : PPCEmitTimePseudo<(outs), (ins VRSAVERC:$vrsave, memri:$F),
-                     "#SPILL_VRSAVE", []>;
-
-// RESTORE_VRSAVE - Indicate that we're restoring the VRSAVE register (previously
-// spilled), so we'll need to scavenge a register for it.
-let mayLoad = 1 in
-def RESTORE_VRSAVE : PPCEmitTimePseudo<(outs VRSAVERC:$vrsave), (ins memri:$F),
-                     "#RESTORE_VRSAVE", []>;
-
 let hasSideEffects = 0 in {
 // mtocrf's input needs to be prepared by shifting by an amount dependent
 // on the cr register selected. Thus, post-ra anti-dep breaking must not
@@ -3905,6 +3891,7 @@ def : Pat<(i1 (setcc i64:$s1, i64:$s2, SETGT)),
 def : Pat<(i1 (setcc i64:$s1, i64:$s2, SETEQ)),
           (EXTRACT_SUBREG (CMPD $s1, $s2), sub_eq)>;
 
+let Predicates = [IsNotISA3_1] in {
 // Instantiations of CRNotPat for i32.
 defm : CRNotPat<(i1 (setcc i32:$s1, immZExt16:$imm, SETUGE)),
                 (EXTRACT_SUBREG (CMPLWI $s1, imm:$imm), sub_lt)>;
@@ -3962,6 +3949,7 @@ defm : CRNotPat<(i1 (setcc i64:$s1, i64:$s2, SETLE)),
                 (EXTRACT_SUBREG (CMPD $s1, $s2), sub_gt)>;
 defm : CRNotPat<(i1 (setcc i64:$s1, i64:$s2, SETNE)),
                 (EXTRACT_SUBREG (CMPD $s1, $s2), sub_eq)>;
+}
 
 multiclass FSetCCPat<SDNode SetCC, ValueType Ty, PatLeaf FCmp> {
   defm : CRNotPat<(i1 (SetCC Ty:$s1, Ty:$s2, SETUGE)),

@@ -13,7 +13,7 @@
 #ifndef LLVM_LIB_TARGET_AARCH64_AARCH64FRAMELOWERING_H
 #define LLVM_LIB_TARGET_AARCH64_AARCH64FRAMELOWERING_H
 
-#include "AArch64StackOffset.h"
+#include "llvm/Support/TypeSize.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 
 namespace llvm {
@@ -67,6 +67,11 @@ public:
   bool hasFP(const MachineFunction &MF) const override;
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
 
+  bool
+  assignCalleeSavedSpillSlots(MachineFunction &MF,
+                              const TargetRegisterInfo *TRI,
+                              std::vector<CalleeSavedInfo> &CSI) const override;
+
   void determineCalleeSaves(MachineFunction &MF, BitVector &SavedRegs,
                             RegScavenger *RS) const override;
 
@@ -112,6 +117,10 @@ public:
     // frame block at the moment.
     return StackId != TargetStackID::SVEVector;
   }
+
+  void
+  orderFrameObjects(const MachineFunction &MF,
+                    SmallVectorImpl<int> &ObjectsToAllocate) const override;
 
 private:
   bool shouldCombineCSRLocalStackBump(MachineFunction &MF,
