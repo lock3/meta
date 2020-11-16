@@ -3698,6 +3698,18 @@ void Sema::AddAnnotationAttr(Decl *D, const AttributeCommonInfo &CI,
     if (E->isValueDependent() || E->isTypeDependent())
       continue;
 
+    if (auto *CE = dyn_cast<ConstantExpr>(E)) {
+      // This expression is already a non-dependent constant expression,
+      // so we don't need to make a new constant expression for it.
+      //
+      // This is different from upstream as we don't transform
+      // ConstantExprs to their sub expressions. Thus, upstream
+      // has to rebuild this, and for us, rebuilding this
+      // results in a nested redundant ConstantExpr.
+      assert(!CE->getDependence() && CE->hasAPValueResult());
+      continue;
+    }
+
     if (E->getType()->isArrayType())
       E = ImpCastExprToType(E, Context.getPointerType(E->getType()),
                             clang::CK_ArrayToPointerDecay)
