@@ -1004,6 +1004,12 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseCXXBoolLiteral();
     break;
 
+  case tok::pipe: {
+    if (getLangOpts().Reflection)
+      Res = ParseCXXDeclSpliceExpr();
+    break;
+  }
+
   case tok::kw___objc_yes:
   case tok::kw___objc_no:
     Res = ParseObjCBoolLiteral();
@@ -1148,14 +1154,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
                                      isVectorLiteral,
                                      NotPrimaryExpression);
       }
-    }
-
-    if (Tok.is(tok::kw_idexpr)) {
-      ExprResult IdExpr = ParseCXXIdExprExpression();
-      if (IdExpr.isInvalid())
-        return ExprError();
-
-      return IdExpr;
     }
 
     // Consume the identifier so that we can see if it is followed by a '(' or
@@ -1487,10 +1485,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
 
   case tok::kw_reflexpr:
     Res = ParseCXXReflectExpression();
-    break;
-
-  case tok::kw_idexpr:
-    Res = ParseCXXIdExprExpression();
     break;
 
   case tok::kw_valueof:

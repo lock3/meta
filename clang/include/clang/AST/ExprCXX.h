@@ -5330,47 +5330,42 @@ public:
   child_range children() { return child_range(&Message, &Message + 1); }
 };
 
-class CXXIdExprExpr : public Expr {
+class CXXDeclSpliceExpr : public Expr {
   Expr *Reflection;
 
-  SourceLocation KeywordLoc;
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
+  SourceLocation LPipeLoc;
+  SourceLocation RPipeLoc;
 
-  CXXIdExprExpr(
-      QualType T, Expr *Reflection, SourceLocation KeywordLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc)
-    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary),
-      Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+  CXXDeclSpliceExpr(
+      QualType T, Expr *Reflection,
+      SourceLocation LPipeLoc, SourceLocation RPipeLoc)
+    : Expr(CXXDeclSpliceExprClass, T, VK_RValue, OK_Ordinary),
+      Reflection(Reflection), LPipeLoc(LPipeLoc), RPipeLoc(RPipeLoc) {
     setDependence(computeDependence(this));
   }
 
-  CXXIdExprExpr(EmptyShell Empty)
-    : Expr(CXXIdExprExprClass, Empty) {}
+  CXXDeclSpliceExpr(EmptyShell Empty)
+    : Expr(CXXDeclSpliceExprClass, Empty) {}
 
 public:
-  static CXXIdExprExpr *Create(
-      const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc);
+  static CXXDeclSpliceExpr *Create(
+      const ASTContext &C, SourceLocation LPipeLoc, Expr *Reflection,
+      SourceLocation RPipeLoc);
 
-  static CXXIdExprExpr *CreateEmpty(const ASTContext &C);
+  static CXXDeclSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the reflection operand.
   Expr *getReflection() const { return Reflection; }
 
-  /// Returns the source code location of the trait keyword.
-  SourceLocation getKeywordLoc() const { return KeywordLoc; }
-
   /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
+  SourceLocation getLPipeLoc() const { return LPipeLoc; }
 
   /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
+  SourceLocation getRPipeLoc() const { return RPipeLoc; }
 
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
+  SourceLocation getBeginLoc() const { return getLPipeLoc(); }
 
-  SourceLocation getEndLoc() const { return RParenLoc; }
+  SourceLocation getEndLoc() const { return getRPipeLoc(); }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
@@ -5381,7 +5376,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXIdExprExprClass;
+    return T->getStmtClass() == CXXDeclSpliceExprClass;
   }
 };
 

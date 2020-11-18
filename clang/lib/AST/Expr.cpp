@@ -3313,7 +3313,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXReflectPrintReflectionExprClass:
   case CXXReflectDumpReflectionExprClass:
   case CXXCompilerErrorExprClass:
-  case CXXIdExprExprClass:
+  case CXXDeclSpliceExprClass:
   case CXXMemberIdExprExprClass:
   case CXXValueOfExprClass:
   case CXXDependentSpliceIdExprClass:

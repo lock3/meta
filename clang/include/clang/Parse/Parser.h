@@ -3150,7 +3150,8 @@ private:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
-  ExprResult ParseCXXIdExprExpression();
+  ExprResult ParseCXXSpliceOperand();
+  ExprResult ParseCXXDeclSpliceExpr();
   ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,

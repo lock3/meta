@@ -1910,15 +1910,15 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
   return new (C) CXXCompilerErrorExpr(Empty);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::Create(
-    const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc) {
-  return new (C) CXXIdExprExpr(
-      C.DependentTy, Reflection, KeywordLoc, LParenLoc, RParenLoc);
+CXXDeclSpliceExpr *CXXDeclSpliceExpr::Create(
+    const ASTContext &C, SourceLocation LPipeLoc, Expr *Reflection,
+    SourceLocation RPipeLoc) {
+  return new (C) CXXDeclSpliceExpr(
+      C.DependentTy, Reflection, LPipeLoc, RPipeLoc);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXIdExprExpr(EmptyShell());
+CXXDeclSpliceExpr *CXXDeclSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXDeclSpliceExpr(EmptyShell());
 }
 
 CXXMemberIdExprExpr::CXXMemberIdExprExpr(

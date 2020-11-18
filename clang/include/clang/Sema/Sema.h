@@ -10283,11 +10283,10 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
-                                Expr *Refl,
-                                SourceLocation LParenLoc,
-                                SourceLocation RParenLoc,
-                                SourceLocation EllipsisLoc = SourceLocation());
+  ExprResult ActOnCXXDeclSpliceExpr(SourceLocation LPipeLoc,
+                                    Expr *Reflection,
+                                    SourceLocation RPipeLoc,
+                                 SourceLocation EllipsisLoc = SourceLocation());
 
   ExprResult ActOnCXXMemberIdExprExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,

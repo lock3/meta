@@ -404,7 +404,7 @@ ExprDependence clang::computeDependence(CXXCompilerErrorExpr *E) {
   return D;
 }
 
-ExprDependence clang::computeDependence(CXXIdExprExpr *E) {
+ExprDependence clang::computeDependence(CXXDeclSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 

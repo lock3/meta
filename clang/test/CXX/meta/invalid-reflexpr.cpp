@@ -6,8 +6,8 @@ namespace meta {
 
 constexpr meta::info invalid_refl = reflexpr(); // expected-error {{expected expression}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}}
 
-int idexpr_test() {
-  return idexpr(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
+int decl_splice_test() {
+  return |invalid_refl|; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 }
 
 int unqualid_test() {

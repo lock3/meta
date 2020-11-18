@@ -2504,10 +2504,10 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
-  OS << "idexpr(";
+void StmtPrinter::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
+  OS << '|';
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << '|';
 }
 
 void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {

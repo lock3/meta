@@ -2122,7 +2122,7 @@ void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
+void StmtProfiler::VisitCXXDeclSpliceExpr(const CXXDeclSpliceExpr *E) {
   VisitExpr(E);
 }
 

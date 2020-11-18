@@ -1606,12 +1606,10 @@ public:
                                                    LParenLoc, RParenLoc);
   }
 
-  /// Build a new idexpr expression.
-  ExprResult RebuildCXXIdExprExpr(
-      Expr *Reflection, SourceLocation KeywordLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc) {
-    return getSema().ActOnCXXIdExprExpr(
-        KeywordLoc, Reflection, LParenLoc, RParenLoc);
+  /// Build a new decl splice expression.
+  ExprResult RebuildCXXDeclSpliceExpr(
+      SourceLocation LPipeLoc, Expr *Reflection, SourceLocation RPipeLoc) {
+    return getSema().ActOnCXXDeclSpliceExpr(LPipeLoc, Reflection, RPipeLoc);
   }
 
   /// Build a new member idexpr expression.
@@ -8309,13 +8307,13 @@ TreeTransform<Derived>::TransformCXXReflectDumpReflectionExpr(
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
+TreeTransform<Derived>::TransformCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
   ExprResult Refl = getDerived().TransformExpr(E->getReflection());
   if (Refl.isInvalid())
     return ExprError();
 
-  return getDerived().RebuildCXXIdExprExpr(
-      Refl.get(), E->getKeywordLoc(), E->getLParenLoc(), E->getRParenLoc());
+  return getDerived().RebuildCXXDeclSpliceExpr(
+      E->getLPipeLoc(), Refl.get(), E->getRPipeLoc());
 }
 
 template <typename Derived>

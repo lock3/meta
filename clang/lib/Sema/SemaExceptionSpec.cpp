@@ -1406,7 +1406,7 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
-  case Expr::CXXIdExprExprClass:
+  case Expr::CXXDeclSpliceExprClass:
   case Expr::CXXMemberIdExprExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXValueOfExprClass:

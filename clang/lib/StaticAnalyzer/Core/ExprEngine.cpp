@@ -1222,7 +1222,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXReflectPrintReflectionExprClass:
     case Stmt::CXXReflectDumpReflectionExprClass:
     case Stmt::CXXCompilerErrorExprClass:
-    case Stmt::CXXIdExprExprClass:
+    case Stmt::CXXDeclSpliceExprClass:
     case Stmt::CXXMemberIdExprExprClass:
     case Stmt::CXXDependentSpliceIdExprClass:
     case Stmt::CXXValueOfExprClass:

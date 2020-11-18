@@ -597,15 +597,14 @@ static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl) {
   return ExprError();
 }
 
-ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
-                                    Expr *Refl,
-                                    SourceLocation LParenLoc,
-                                    SourceLocation RParenLoc,
-                                    SourceLocation EllipsisLoc) {
-  if (Refl->isTypeDependent() || Refl->isValueDependent())
-    return CXXIdExprExpr::Create(Context, Refl, KWLoc, LParenLoc, LParenLoc);
+ExprResult Sema::ActOnCXXDeclSpliceExpr(SourceLocation LPipeLoc,
+                                        Expr *Reflection,
+                                        SourceLocation RPipeLoc,
+                                        SourceLocation EllipsisLoc) {
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent())
+    return CXXDeclSpliceExpr::Create(Context, LPipeLoc, Reflection, RPipeLoc);
 
-  return getIdExprReflectedExpr(*this, Refl);
+  return getIdExprReflectedExpr(*this, Reflection);
 }
 
 ExprResult Sema::ActOnCXXMemberIdExprExpr(
@@ -1093,12 +1092,11 @@ getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
 }
 
 static ExprResult
-getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
-                   SourceLocation EllipsisLoc = SourceLocation())
+getAsCXXDeclSpliceExpr(Sema &SemaRef, Expr *Expression,
+                       SourceLocation EllipsisLoc = SourceLocation())
 {
-  return SemaRef.ActOnCXXIdExprExpr(SourceLocation(), Expression,
-                                    SourceLocation(), SourceLocation(),
-                                    EllipsisLoc);
+  return SemaRef.ActOnCXXDeclSpliceExpr(SourceLocation(), Expression,
+                                        SourceLocation(), EllipsisLoc);
 }
 
 static ExprResult
@@ -1169,7 +1167,7 @@ bool Sema::ActOnVariadicReifier(
       C = getAsCXXValueOfExpr(*this, *Traverser);
       break;
     case tok::kw_idexpr:
-      C = getAsCXXIdExprExpr(*this, *Traverser);
+      C = getAsCXXDeclSpliceExpr(*this, *Traverser);
       break;
     case tok::kw_unqualid:
       C = getAsCXXIdentifierSplice(*this, *Traverser);

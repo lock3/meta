@@ -288,33 +288,37 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
                                            T.getCloseLocation());
 }
 
+ExprResult Parser::ParseCXXSpliceOperand() {
+  EnterExpressionEvaluationContext ConstantEvaluated(
+      Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+  ExprResult LHS(ParseCastExpression(AnyCastExpr, false, NotTypeCast));
+  ExprResult Res(ParseRHSOfBinaryExpression(LHS, prec::ExclusiveOr));
+  return Actions.ActOnConstantExpression(Res);
+}
+
 /// Parse an idexpr expression.
 ///
 /// \verbatim
 ///   idexpr-splice:
-///     idexpr '(' constant-expression ')'
+///     '|' constant-expression '|'
 /// \endverbatim
-ExprResult Parser::ParseCXXIdExprExpression() {
-  assert(Tok.is(tok::kw_idexpr) && "Not idexpr");
-  SourceLocation Loc = ConsumeToken();
+ExprResult Parser::ParseCXXDeclSpliceExpr() {
+  assert(Tok.is(tok::pipe) && "Not idexpr");
+  SourceLocation LPipeLoc = ConsumeToken();
 
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return ExprError();
-
-  ExprResult Expr = ParseConstantExpression();
+  ExprResult Expr = ParseCXXSpliceOperand();
   if (Expr.isInvalid()) {
-    Parens.skipToEnd();
+    // Parens.skipToEnd();
     return ExprError();
   }
 
-  if (Parens.consumeClose())
+  if (!Tok.is(tok::pipe)) {
+    Diag(Tok, diag::err_expected_end_of_splice);
     return ExprError();
+  }
 
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXIdExprExpr(Loc, Expr.get(), LPLoc, RPLoc);
+  SourceLocation RPipeLoc = ConsumeToken();
+  return Actions.ActOnCXXDeclSpliceExpr(LPipeLoc, Expr.get(), RPipeLoc);
 }
 
 ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {

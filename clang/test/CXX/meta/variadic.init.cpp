@@ -130,9 +130,6 @@ void bad_context_init()
 
   };
 
-  struct S1 : typename(...v) {
-    S1() : idexpr(...v)() {} // expected-error {{cannot use idexpr as reifier in this context: typename expected.}}
-  };
   struct S2 : typename(...v) {
     S2() : valueof(...v)() {} // expected-error {{cannot use valueof as reifier in this context: typename expected.}}
   };
@@ -140,8 +137,6 @@ void bad_context_init()
     S3() : unqualid(...v)() {} // expected-error {{cannot use unqualid as reifier in this context: typename expected.}}
   };
 
-  struct S4 : idexpr(...v) { // expected-error {{cannot use idexpr as reifier in this context: typename expected.}}
-  };
   struct S5 : valueof(...v) { // expected-error {{cannot use valueof as reifier in this context: typename expected.}}
   };
   struct S6 : unqualid(...v) { // expected-error {{cannot use unqualid as reifier in this context: typename expected.}}

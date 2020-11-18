@@ -15,7 +15,7 @@ namespace n {
 template<meta::info member>
 constexpr void do_thing() {
   static_assert(valueof(member)() == 1);
-  static_assert(idexpr(member)() == 1);
+  static_assert(|member|() == 1);
 }
 
 int main() {

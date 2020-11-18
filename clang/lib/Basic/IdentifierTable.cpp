@@ -304,7 +304,6 @@ bool IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const {
   case kw_valueof:
   case kw_unqualid:
   case kw_typename:
-  case kw_idexpr:
   case kw_templarg:
   case kw_namespace:
     return true;

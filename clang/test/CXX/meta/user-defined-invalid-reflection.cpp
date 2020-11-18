@@ -7,8 +7,8 @@ namespace meta {
 namespace non_template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
 
-  int idexpr_test() {
-    return idexpr(invalid_refl); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+  int decl_splice_test() {
+    return |invalid_refl|; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
   }
 
   int unqualid_test() {
@@ -31,8 +31,8 @@ namespace template_reflection {
   template<int V>
   constexpr meta::info invalid_refl = __invalid_reflection(__concatenate("Error code: ", V));
 
-  int idexpr_test() {
-    return idexpr(invalid_refl<1>); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+  int decl_splice_test() {
+    return |invalid_refl<1>|; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
   }
 
   int unqualid_test() {
