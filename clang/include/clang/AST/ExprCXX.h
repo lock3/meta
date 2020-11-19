@@ -5333,14 +5333,14 @@ public:
 class CXXDeclSpliceExpr : public Expr {
   Expr *Reflection;
 
-  SourceLocation LPipeLoc;
-  SourceLocation RPipeLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
 
   CXXDeclSpliceExpr(
       QualType T, Expr *Reflection,
-      SourceLocation LPipeLoc, SourceLocation RPipeLoc)
+      SourceLocation SBELoc, SourceLocation SEELoc)
     : Expr(CXXDeclSpliceExprClass, T, VK_RValue, OK_Ordinary),
-      Reflection(Reflection), LPipeLoc(LPipeLoc), RPipeLoc(RPipeLoc) {
+      Reflection(Reflection), SBELoc(SBELoc), SEELoc(SEELoc) {
     setDependence(computeDependence(this));
   }
 
@@ -5349,23 +5349,25 @@ class CXXDeclSpliceExpr : public Expr {
 
 public:
   static CXXDeclSpliceExpr *Create(
-      const ASTContext &C, SourceLocation LPipeLoc, Expr *Reflection,
-      SourceLocation RPipeLoc);
+      const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
+      SourceLocation SEELoc);
 
   static CXXDeclSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the reflection operand.
   Expr *getReflection() const { return Reflection; }
 
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLPipeLoc() const { return LPipeLoc; }
+  /// Returns the source code location of the left token
+  /// introducing the expression operand.
+  SourceLocation getSBELoc() const { return SBELoc; }
 
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRPipeLoc() const { return RPipeLoc; }
+  /// Returns the source code location of the right token
+  /// terminating the expression operand.
+  SourceLocation getSEELoc() const { return SEELoc; }
 
-  SourceLocation getBeginLoc() const { return getLPipeLoc(); }
+  SourceLocation getBeginLoc() const { return getSBELoc(); }
 
-  SourceLocation getEndLoc() const { return getRPipeLoc(); }
+  SourceLocation getEndLoc() const { return getSEELoc(); }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());

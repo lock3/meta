@@ -597,12 +597,12 @@ static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl) {
   return ExprError();
 }
 
-ExprResult Sema::ActOnCXXDeclSpliceExpr(SourceLocation LPipeLoc,
+ExprResult Sema::ActOnCXXDeclSpliceExpr(SourceLocation SBELoc,
                                         Expr *Reflection,
-                                        SourceLocation RPipeLoc,
+                                        SourceLocation SEELoc,
                                         SourceLocation EllipsisLoc) {
   if (Reflection->isTypeDependent() || Reflection->isValueDependent())
-    return CXXDeclSpliceExpr::Create(Context, LPipeLoc, Reflection, RPipeLoc);
+    return CXXDeclSpliceExpr::Create(Context, SBELoc, Reflection, SEELoc);
 
   return getIdExprReflectedExpr(*this, Reflection);
 }

@@ -1608,8 +1608,8 @@ public:
 
   /// Build a new decl splice expression.
   ExprResult RebuildCXXDeclSpliceExpr(
-      SourceLocation LPipeLoc, Expr *Reflection, SourceLocation RPipeLoc) {
-    return getSema().ActOnCXXDeclSpliceExpr(LPipeLoc, Reflection, RPipeLoc);
+      SourceLocation SBELoc, Expr *Reflection, SourceLocation SEELoc) {
+    return getSema().ActOnCXXDeclSpliceExpr(SBELoc, Reflection, SEELoc);
   }
 
   /// Build a new member idexpr expression.
@@ -8313,7 +8313,7 @@ TreeTransform<Derived>::TransformCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
     return ExprError();
 
   return getDerived().RebuildCXXDeclSpliceExpr(
-      E->getLPipeLoc(), Refl.get(), E->getRPipeLoc());
+      E->getSBELoc(), Refl.get(), E->getSEELoc());
 }
 
 template <typename Derived>

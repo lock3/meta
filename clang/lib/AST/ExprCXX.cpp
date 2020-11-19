@@ -1911,10 +1911,9 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
 }
 
 CXXDeclSpliceExpr *CXXDeclSpliceExpr::Create(
-    const ASTContext &C, SourceLocation LPipeLoc, Expr *Reflection,
-    SourceLocation RPipeLoc) {
-  return new (C) CXXDeclSpliceExpr(
-      C.DependentTy, Reflection, LPipeLoc, RPipeLoc);
+    const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
+    SourceLocation SEELoc) {
+  return new (C) CXXDeclSpliceExpr(C.DependentTy, Reflection, SBELoc, SEELoc);
 }
 
 CXXDeclSpliceExpr *CXXDeclSpliceExpr::CreateEmpty(const ASTContext &C) {

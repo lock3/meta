@@ -399,6 +399,12 @@ bool Parser::isFoldOperator(tok::TokenKind Kind) const {
 /// precedence of at least \p MinPrec.
 ExprResult
 Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
+  // Check to see if this is a valid splice ending token sequence. If
+  // so, this isn't a binary expression at all, this is the end of a
+  // splice.
+  if (!matchCXXSpliceEndTokenSequence())
+    return LHS;
+
   prec::Level NextTokPrec = getBinOpPrecedence(Tok.getKind(),
                                                GreaterThanIsOperator,
                                                getLangOpts().CPlusPlus11);
@@ -1003,12 +1009,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw_false:
     Res = ParseCXXBoolLiteral();
     break;
-
-  case tok::pipe: {
-    if (getLangOpts().Reflection)
-      Res = ParseCXXDeclSpliceExpr();
-    break;
-  }
 
   case tok::kw___objc_yes:
   case tok::kw___objc_no:
@@ -1792,6 +1792,11 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   }
   case tok::l_square:
     if (getLangOpts().CPlusPlus11) {
+      if (getLangOpts().Reflection && NextToken().is(tok::less)) {
+        Res = ParseCXXDeclSpliceExpr();
+        break;
+      }
+
       if (getLangOpts().ObjC) {
         // C++11 lambda expressions and Objective-C message sends both start with a
         // square bracket.  There are three possibilities here:

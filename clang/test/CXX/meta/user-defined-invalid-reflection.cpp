@@ -8,7 +8,7 @@ namespace non_template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
 
   int decl_splice_test() {
-    return |invalid_refl|; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+    return [<invalid_refl>]; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
   }
 
   int unqualid_test() {
@@ -32,7 +32,7 @@ namespace template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection(__concatenate("Error code: ", V));
 
   int decl_splice_test() {
-    return |invalid_refl<1>|; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+    return [<invalid_refl<1>>]; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
   }
 
   int unqualid_test() {

@@ -2505,9 +2505,9 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
 }
 
 void StmtPrinter::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
-  OS << '|';
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << '|';
+  OS << ">]";
 }
 
 void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {

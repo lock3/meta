@@ -288,37 +288,65 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
                                            T.getCloseLocation());
 }
 
-ExprResult Parser::ParseCXXSpliceOperand() {
-  EnterExpressionEvaluationContext ConstantEvaluated(
-      Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated);
-  ExprResult LHS(ParseCastExpression(AnyCastExpr, false, NotTypeCast));
-  ExprResult Res(ParseRHSOfBinaryExpression(LHS, prec::ExclusiveOr));
-  return Actions.ActOnConstantExpression(Res);
+bool Parser::matchCXXSpliceBeginTokenSequence() {
+  if (Tok.isNot(tok::l_square))
+    return true;
+  if (NextToken().isNot(tok::less))
+    return true;
+
+  return false;
 }
 
-/// Parse an idexpr expression.
+bool Parser::ParseCXXSpliceExprBegin(SourceLocation &SL) {
+  if (matchCXXSpliceBeginTokenSequence())
+    return true;
+  SL = ConsumeBracket();
+  ConsumeToken();
+  return false;
+}
+
+bool Parser::matchCXXSpliceEndTokenSequence() {
+  if (Tok.isNot(tok::greater))
+    return true;
+  if (NextToken().isNot(tok::r_square))
+    return true;
+
+  return false;
+}
+
+bool Parser::ParseCXXSpliceExprEnd(SourceLocation &SL) {
+  if (matchCXXSpliceEndTokenSequence()) {
+    Diag(Tok, diag::err_expected_end_of_splice);
+    return true;
+  }
+
+  ConsumeToken();
+  SL = ConsumeBracket();
+  return false;
+}
+
+/// Parse an expression splice expression.
 ///
 /// \verbatim
-///   idexpr-splice:
-///     '|' constant-expression '|'
+///   decl-splice:
+///     '[' '<' constant-expression '>' ']'
 /// \endverbatim
 ExprResult Parser::ParseCXXDeclSpliceExpr() {
-  assert(Tok.is(tok::pipe) && "Not idexpr");
-  SourceLocation LPipeLoc = ConsumeToken();
+  assert(Tok.is(tok::l_square) && NextToken().is(tok::less) && "Not '[<'");
 
-  ExprResult Expr = ParseCXXSpliceOperand();
-  if (Expr.isInvalid()) {
-    // Parens.skipToEnd();
+  SourceLocation SBELoc;
+  if (ParseCXXSpliceExprBegin(SBELoc))
     return ExprError();
-  }
 
-  if (!Tok.is(tok::pipe)) {
-    Diag(Tok, diag::err_expected_end_of_splice);
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid())
     return ExprError();
-  }
 
-  SourceLocation RPipeLoc = ConsumeToken();
-  return Actions.ActOnCXXDeclSpliceExpr(LPipeLoc, Expr.get(), RPipeLoc);
+  SourceLocation SEELoc;
+  if (ParseCXXSpliceExprEnd(SEELoc))
+    return ExprError();
+
+  return Actions.ActOnCXXDeclSpliceExpr(SBELoc, Expr.get(), SEELoc);
 }
 
 ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {

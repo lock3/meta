@@ -10283,9 +10283,9 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXDeclSpliceExpr(SourceLocation LPipeLoc,
+  ExprResult ActOnCXXDeclSpliceExpr(SourceLocation SBELoc,
                                     Expr *Reflection,
-                                    SourceLocation RPipeLoc,
+                                    SourceLocation SEELoc,
                                  SourceLocation EllipsisLoc = SourceLocation());
 
   ExprResult ActOnCXXMemberIdExprExpr(
