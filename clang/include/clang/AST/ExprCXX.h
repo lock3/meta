@@ -5382,9 +5382,9 @@ public:
   }
 };
 
-class CXXMemberIdExprExpr final
+class CXXMemberDeclSpliceExpr final
   : public Expr,
-    private llvm::TrailingObjects<CXXMemberIdExprExpr,
+    private llvm::TrailingObjects<CXXMemberDeclSpliceExpr,
                                   ASTTemplateKWAndArgsInfo,
                                   TemplateArgumentLoc> {
   friend TrailingObjects;
@@ -5397,17 +5397,17 @@ class CXXMemberIdExprExpr final
   unsigned HasTemplateKWAndArgsInfo : 1;
 
   SourceLocation OpLoc;
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
 
-  CXXMemberIdExprExpr(
+  CXXMemberDeclSpliceExpr(
       QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
       SourceLocation OpLoc, SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *Args);
 
-  CXXMemberIdExprExpr(EmptyShell Empty)
-    : Expr(CXXMemberIdExprExprClass, Empty) {}
+  CXXMemberDeclSpliceExpr(EmptyShell Empty)
+    : Expr(CXXMemberDeclSpliceExprClass, Empty) {}
 
   size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
     return hasTemplateKWAndArgsInfo();
@@ -5417,14 +5417,14 @@ class CXXMemberIdExprExpr final
     return HasTemplateKWAndArgsInfo;
   }
 public:
-  static CXXMemberIdExprExpr *Create(
+  static CXXMemberDeclSpliceExpr *Create(
       const ASTContext &C, Expr *Base, Expr *Reflection,
       bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *TemplateArgs);
 
-  static CXXMemberIdExprExpr *CreateEmpty(const ASTContext &C);
+  static CXXMemberDeclSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the base expression
   Expr *getBase() const { return cast<Expr>(Base); }
@@ -5445,11 +5445,13 @@ public:
     return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->TemplateKWLoc;
   }
 
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
+  /// Returns the source code location of the left token
+  /// introducing the expression operand.
+  SourceLocation getSBELoc() const { return SBELoc; }
 
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
+  /// Returns the source code location of the right token
+  /// terminating the expression operand.
+  SourceLocation getSEELoc() const { return SEELoc; }
 
   /// Retrieve the location of the left angle bracket starting the
   /// explicit template argument list following the name, if any.
@@ -5504,11 +5506,11 @@ public:
   SourceLocation getEndLoc() const {
     if (hasExplicitTemplateArgs())
       return getRAngleLoc();
-    return RParenLoc;
+    return getSEELoc();
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXMemberIdExprExprClass;
+    return T->getStmtClass() == CXXMemberDeclSpliceExprClass;
   }
 
   // Iterators

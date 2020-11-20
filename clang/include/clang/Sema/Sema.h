@@ -10288,16 +10288,16 @@ public:
                                     SourceLocation SEELoc,
                                  SourceLocation EllipsisLoc = SourceLocation());
 
-  ExprResult ActOnCXXMemberIdExprExpr(
+  ExprResult ActOnCXXMemberDeclSpliceExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc,  SourceLocation RParenLoc,
+      SourceLocation SBELoc,  SourceLocation SEELoc,
       const TemplateArgumentListInfo *TemplateArgs);
 
-  ExprResult ActOnCXXMemberIdExprExpr(
+  ExprResult ActOnCXXMemberDeclSpliceExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc,  SourceLocation RParenLoc,
+      SourceLocation SBELoc,  SourceLocation SEELoc,
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
       SourceLocation RAngleLoc);
 

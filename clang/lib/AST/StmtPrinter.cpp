@@ -2510,7 +2510,7 @@ void StmtPrinter::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
   OS << ">]";
 }
 
-void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void StmtPrinter::VisitCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
   PrintExpr(E->getBase());
 
   if (E->isArrow())
@@ -2518,9 +2518,9 @@ void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
   else
     OS << ".";
 
-  OS << "idexpr(";
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << ">]";
 }
 
 void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {

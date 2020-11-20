@@ -825,7 +825,7 @@ class CastExpressionIdValidator final : public CorrectionCandidateCallback {
 /// [G++]   binary-type-trait '(' type-id ',' type-id ')'           [TODO]
 /// [EMBT]  array-type-trait '(' type-id ',' integer ')'
 /// [clang] '^' block-literal
-/// [meta]  idexpr-splice
+/// [meta]  decl-splice
 ///
 ///       constant: [C99 6.4.4]
 ///         integer-constant
@@ -2142,12 +2142,8 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
     }
     case tok::arrow:
     case tok::period: {
-      // postfix-expression: p-e '->' idexpr-splice
-      //
-      // If the next token is idexpr process this as a special
-      // expression
-
-      if (NextToken().is(tok::kw_idexpr)) {
+      // postfix-expression: p-e '->' decl-splice
+      if (NextToken().is(tok::l_square) && GetLookAheadToken(2).is(tok::less)) {
         // The template case isn't in p1240, leave it off for now.
         //
         // (NextToken().is(tok::kw_template) &&
@@ -2157,7 +2153,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         // if (LHS.isInvalid())
         //  break;
 
-        LHS = ParseCXXMemberIdExprExpression(LHS.get());
+        LHS = ParseCXXMemberDeclSpliceExpr(LHS.get());
         break;
       }
 

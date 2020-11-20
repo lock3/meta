@@ -32,13 +32,13 @@ void check_decl_splice_dependent_addr() {
 }
 
 template<typename T>
-void check_idexpr_dependent_member_ref() {
-  static_assert(s1.idexpr(reflexpr(T::num)) == 12);
-  static_assert(s1.idexpr(reflexpr(T::f1))() == 42);
+void check_decl_splice_dependent_member_ref() {
+  static_assert(s1.[<reflexpr(T::num)>] == 12);
+  static_assert(s1.[<reflexpr(T::f1)>]() == 42);
 }
 
 int main() {
-  // static_assert(idexpr(reflexpr(42)) == 42); // expected-error
+  // static_assert([<reflexpr(42)>] == 42); // expected-error
 
   static_assert([<reflexpr(global1)>] == 75);
   check_decl_splice_dependent_val<reflexpr(global1), 75>();
@@ -63,7 +63,7 @@ int main() {
 
   // static_assert(|reflexpr(s1.num)| == 12); // expected-error
 
-  static_assert(s1.idexpr(reflexpr(S::num)) == 12);
-  static_assert(s1.idexpr(reflexpr(S::f1))() == 42);
-  check_idexpr_dependent_member_ref<S>();
+  static_assert(s1.[<reflexpr(S::num)>] == 12);
+  static_assert(s1.[<reflexpr(S::f1)>]() == 42);
+  check_decl_splice_dependent_member_ref<S>();
 }

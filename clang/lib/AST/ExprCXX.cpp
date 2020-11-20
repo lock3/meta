@@ -1920,15 +1920,15 @@ CXXDeclSpliceExpr *CXXDeclSpliceExpr::CreateEmpty(const ASTContext &C) {
   return new (C) CXXDeclSpliceExpr(EmptyShell());
 }
 
-CXXMemberIdExprExpr::CXXMemberIdExprExpr(
+CXXMemberDeclSpliceExpr::CXXMemberDeclSpliceExpr(
     QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc,
     const TemplateArgumentListInfo *Args)
-    : Expr(CXXMemberIdExprExprClass, T, VK_RValue, OK_Ordinary),
+    : Expr(CXXMemberDeclSpliceExprClass, T, VK_RValue, OK_Ordinary),
       Base(Base), Reflection(Reflection), IsArrow(IsArrow),
       HasTemplateKWAndArgsInfo(Args != nullptr || TemplateKWLoc.isValid()),
-      OpLoc(OpLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+      OpLoc(OpLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
   if (Args) {
     auto Deps = TemplateArgumentDependence::None;
     getTrailingObjects<ASTTemplateKWAndArgsInfo>()->initializeFrom(
@@ -1941,7 +1941,7 @@ CXXMemberIdExprExpr::CXXMemberIdExprExpr(
   setDependence(computeDependence(this));
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
+CXXMemberDeclSpliceExpr *CXXMemberDeclSpliceExpr::Create(
     const ASTContext &C, Expr *Base, Expr *Reflection,
     bool IsArrow, SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -1951,13 +1951,13 @@ CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
       totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
           HasTemplateKWAndArgsInfo, Args ? Args->size() : 0);
   void *Mem = C.Allocate(Size);
-  return new (Mem) CXXMemberIdExprExpr(
+  return new (Mem) CXXMemberDeclSpliceExpr(
       C.DependentTy, Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, Args);
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXMemberIdExprExpr(EmptyShell());
+CXXMemberDeclSpliceExpr *CXXMemberDeclSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXMemberDeclSpliceExpr(EmptyShell());
 }
 
 // Assume that the name is an ordinary lvalue for now.

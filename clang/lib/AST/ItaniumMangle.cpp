@@ -3968,7 +3968,7 @@ recurse:
   case Expr::OMPIteratorExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXDeclSpliceExprClass:
-  case Expr::CXXMemberIdExprExprClass:
+  case Expr::CXXMemberDeclSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:

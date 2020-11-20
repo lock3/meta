@@ -16,12 +16,12 @@ struct foo {
 
   template<auto F, typename A>
   void call(A arg) {
-    this->idexpr(F)(arg);
+    this->[<F>](arg);
   }
 
   // template<auto F, typename A>
   // void delegate(A arg) {
-  //   this->template idexpr(F)<A, A>(arg);
+  //   this->template [<F>]<A, A>(arg);
   // }
 };
 
@@ -61,7 +61,7 @@ struct foo {
 
   template<auto F>
   auto get() {
-    return this->idexpr(F);
+    return this->[<F>];
   }
 };
 

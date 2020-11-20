@@ -332,7 +332,7 @@ bool Parser::ParseCXXSpliceExprEnd(SourceLocation &SL) {
 ///     '[' '<' constant-expression '>' ']'
 /// \endverbatim
 ExprResult Parser::ParseCXXDeclSpliceExpr() {
-  assert(Tok.is(tok::l_square) && NextToken().is(tok::less) && "Not '[<'");
+  assert(!matchCXXSpliceBeginTokenSequence() && "Not '[<'");
 
   SourceLocation SBELoc;
   if (ParseCXXSpliceExprBegin(SBELoc))
@@ -349,7 +349,7 @@ ExprResult Parser::ParseCXXDeclSpliceExpr() {
   return Actions.ActOnCXXDeclSpliceExpr(SBELoc, Expr.get(), SEELoc);
 }
 
-ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
+ExprResult Parser::ParseCXXMemberDeclSpliceExpr(Expr *Base) {
   assert(Tok.isOneOf(tok::arrow, tok::period));
 
   bool IsArrow = Tok.getKind() == tok::arrow;
@@ -358,25 +358,17 @@ ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
   if (Tok.is(tok::kw_template))
     TemplateKWLoc = ConsumeToken();
 
-  if (ExpectAndConsume(tok::kw_idexpr))
-    return ExprError();
-
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
+  SourceLocation SBELoc;
+  if (ParseCXXSpliceExprBegin(SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid()) {
-    Parens.skipToEnd();
-    return ExprError();
-  }
-
-  if (Parens.consumeClose())
+  if (Expr.isInvalid())
     return ExprError();
 
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
+  SourceLocation SEELoc;
+  if (ParseCXXSpliceExprEnd(SEELoc))
+    return ExprError();
 
   // Check for template arguments
   if (Tok.is(tok::less) && !TemplateKWLoc.isInvalid()) {
@@ -390,14 +382,14 @@ ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
 
     ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
 
-    return Actions.ActOnCXXMemberIdExprExpr(
+    return Actions.ActOnCXXMemberDeclSpliceExpr(
         Base, Expr.get(), IsArrow, OperatorLoc, TemplateKWLoc,
-        LPLoc, RPLoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
+        SBELoc, SEELoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
   }
 
-  return Actions.ActOnCXXMemberIdExprExpr(
+  return Actions.ActOnCXXMemberDeclSpliceExpr(
       Base, Expr.get(), IsArrow, OperatorLoc,
-      TemplateKWLoc, LPLoc, RPLoc, /*TemplateArgs=*/nullptr);
+      TemplateKWLoc, SBELoc, SEELoc, /*TemplateArgs=*/nullptr);
 }
 
 /// Parse a valueof expression.

@@ -2126,7 +2126,7 @@ void StmtProfiler::VisitCXXDeclSpliceExpr(const CXXDeclSpliceExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXMemberIdExprExpr(const CXXMemberIdExprExpr *E) {
+void StmtProfiler::VisitCXXMemberDeclSpliceExpr(const CXXMemberDeclSpliceExpr *E) {
   VisitExpr(E);
 }
 

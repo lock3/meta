@@ -1612,13 +1612,13 @@ public:
     return getSema().ActOnCXXDeclSpliceExpr(SBELoc, Reflection, SEELoc);
   }
 
-  /// Build a new member idexpr expression.
-  ExprResult RebuildCXXMemberIdExprExpr(
+  /// Build a new member expression splice expression.
+  ExprResult RebuildCXXMemberExprSpliceExpr(
       Expr *Base, Expr *Reflection, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
       SourceLocation LParenLoc, SourceLocation RParenLoc,
       TemplateArgumentListInfo *TemplateArgs) {
-    return getSema().ActOnCXXMemberIdExprExpr(
+    return getSema().ActOnCXXMemberDeclSpliceExpr(
         Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
         LParenLoc, RParenLoc, TemplateArgs);
   }
@@ -8318,7 +8318,7 @@ TreeTransform<Derived>::TransformCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+TreeTransform<Derived>::TransformCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
   ExprResult Base = getDerived().TransformExpr(E->getBase());
   if (Base.isInvalid())
     return ExprError();
@@ -8343,9 +8343,9 @@ TreeTransform<Derived>::TransformCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
     TemplateArgsPtr = &TemplateArgs;
   }
 
-  return getDerived().RebuildCXXMemberIdExprExpr(
+  return getDerived().RebuildCXXMemberDeclSpliceExpr(
       Base.get(), Refl.get(), E->isArrow(), E->getOperatorLoc(),
-      TemplateKWLoc, E->getLParenLoc(), E->getRParenLoc(),
+      TemplateKWLoc, E->getSBELoc(), E->getSEELoc(),
       TemplateArgsPtr);
 }
 

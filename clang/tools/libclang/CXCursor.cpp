@@ -321,7 +321,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXReflectPrintReflectionExprClass:
   case Stmt::CXXReflectDumpReflectionExprClass:
   case Stmt::CXXDeclSpliceExprClass:
-  case Stmt::CXXMemberIdExprExprClass:
+  case Stmt::CXXMemberDeclSpliceExprClass:
   case Stmt::CXXValueOfExprClass:
   case Stmt::CXXDependentSpliceIdExprClass:
   case Stmt::CXXConcatenateExprClass:

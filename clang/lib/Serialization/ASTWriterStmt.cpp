@@ -423,7 +423,7 @@ void ASTStmtWriter::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void ASTStmtWriter::VisitCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 

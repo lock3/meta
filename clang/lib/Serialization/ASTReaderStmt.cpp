@@ -519,7 +519,7 @@ void ASTStmtReader::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void ASTStmtReader::VisitCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 

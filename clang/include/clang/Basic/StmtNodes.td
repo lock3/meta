@@ -185,7 +185,7 @@ def CXXReflectPrintReflectionExpr : StmtNode<Expr>;
 def CXXReflectDumpReflectionExpr : StmtNode<Expr>;
 def CXXCompilerErrorExpr : StmtNode<Expr>;
 def CXXDeclSpliceExpr : StmtNode<Expr>;
-def CXXMemberIdExprExpr : StmtNode<Expr>;
+def CXXMemberDeclSpliceExpr : StmtNode<Expr>;
 def CXXDependentSpliceIdExpr : StmtNode<Expr>;
 def CXXValueOfExpr : StmtNode<Expr>;
 def CXXConcatenateExpr : StmtNode<Expr>;

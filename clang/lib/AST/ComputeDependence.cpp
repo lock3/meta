@@ -408,7 +408,7 @@ ExprDependence clang::computeDependence(CXXDeclSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(CXXMemberIdExprExpr *E) {
+ExprDependence clang::computeDependence(CXXMemberDeclSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 

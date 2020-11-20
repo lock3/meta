@@ -607,13 +607,13 @@ ExprResult Sema::ActOnCXXDeclSpliceExpr(SourceLocation SBELoc,
   return getIdExprReflectedExpr(*this, Reflection);
 }
 
-ExprResult Sema::ActOnCXXMemberIdExprExpr(
+ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
     Expr *Base, Expr *Refl, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
     const TemplateArgumentListInfo *TemplateArgs) {
   if (Refl->isTypeDependent() || Refl->isValueDependent())
-    return CXXMemberIdExprExpr::Create(
+    return CXXMemberDeclSpliceExpr::Create(
         Context, Base, Refl, IsArrow, OpLoc, TemplateKWLoc,
         LParenLoc, LParenLoc, TemplateArgs);
 
@@ -675,7 +675,7 @@ ExprResult Sema::ActOnCXXMemberIdExprExpr(
       TemplateArgs, ToDecls.begin(), ToDecls.end());
 }
 
-ExprResult Sema::ActOnCXXMemberIdExprExpr(
+ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
     Expr *Base, Expr *Refl, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -684,7 +684,7 @@ ExprResult Sema::ActOnCXXMemberIdExprExpr(
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
   translateTemplateArguments(TemplateArgsPtr, TemplateArgs);
 
-  return ActOnCXXMemberIdExprExpr(
+  return ActOnCXXMemberDeclSpliceExpr(
       Base, Refl, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, &TemplateArgs);
 }

@@ -3157,7 +3157,7 @@ public:
   bool ParseCXXSpliceExprBegin(SourceLocation &SL);
   bool ParseCXXSpliceExprEnd(SourceLocation &SL);
   ExprResult ParseCXXDeclSpliceExpr();
-  ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
+  ExprResult ParseCXXMemberDeclSpliceExpr(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
                                          SourceLocation &EndLoc);

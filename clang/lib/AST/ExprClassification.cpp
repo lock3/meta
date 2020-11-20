@@ -207,7 +207,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXDeclSpliceExprClass:
-  case Expr::CXXMemberIdExprExprClass:
+  case Expr::CXXMemberDeclSpliceExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXConcatenateExprClass:
