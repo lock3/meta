@@ -402,7 +402,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
   // Check to see if this is a valid splice ending token sequence. If
   // so, this isn't a binary expression at all, this is the end of a
   // splice.
-  if (!matchCXXSpliceEndTokenSequence())
+  if (matchCXXSpliceEnd(tok::greater))
     return LHS;
 
   prec::Level NextTokPrec = getBinOpPrecedence(Tok.getKind(),

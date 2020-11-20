@@ -3144,18 +3144,20 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 
+private:
+  bool matchCXXSpliceBegin(tok::TokenKind T);
+  bool matchCXXSpliceEnd(tok::TokenKind T);
+
+  bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
+  bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);
+
+public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc);
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
-private:
-  bool matchCXXSpliceBeginTokenSequence();
-  bool matchCXXSpliceEndTokenSequence();
-public:
-  bool ParseCXXSpliceExprBegin(SourceLocation &SL);
-  bool ParseCXXSpliceExprEnd(SourceLocation &SL);
   ExprResult ParseCXXDeclSpliceExpr();
   ExprResult ParseCXXMemberDeclSpliceExpr(Expr *Base);
   ExprResult ParseCXXValueOfExpression();

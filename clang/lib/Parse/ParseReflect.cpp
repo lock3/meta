@@ -288,34 +288,35 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
                                            T.getCloseLocation());
 }
 
-bool Parser::matchCXXSpliceBeginTokenSequence() {
+bool Parser::matchCXXSpliceBegin(tok::TokenKind T) {
   if (Tok.isNot(tok::l_square))
-    return true;
-  if (NextToken().isNot(tok::less))
-    return true;
+    return false;
+  if (NextToken().isNot(T))
+    return false;
 
-  return false;
+  return true;
 }
 
-bool Parser::ParseCXXSpliceExprBegin(SourceLocation &SL) {
-  if (matchCXXSpliceBeginTokenSequence())
+bool Parser::matchCXXSpliceEnd(tok::TokenKind T) {
+  if (Tok.isNot(T))
+    return false;
+  if (NextToken().isNot(tok::r_square))
+    return false;
+
+  return true;
+}
+
+bool Parser::parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL) {
+  if (!matchCXXSpliceBegin(T))
     return true;
+
   SL = ConsumeBracket();
   ConsumeToken();
   return false;
 }
 
-bool Parser::matchCXXSpliceEndTokenSequence() {
-  if (Tok.isNot(tok::greater))
-    return true;
-  if (NextToken().isNot(tok::r_square))
-    return true;
-
-  return false;
-}
-
-bool Parser::ParseCXXSpliceExprEnd(SourceLocation &SL) {
-  if (matchCXXSpliceEndTokenSequence()) {
+bool Parser::parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL) {
+  if (!matchCXXSpliceEnd(T)) {
     Diag(Tok, diag::err_expected_end_of_splice);
     return true;
   }
@@ -332,10 +333,10 @@ bool Parser::ParseCXXSpliceExprEnd(SourceLocation &SL) {
 ///     '[' '<' constant-expression '>' ']'
 /// \endverbatim
 ExprResult Parser::ParseCXXDeclSpliceExpr() {
-  assert(!matchCXXSpliceBeginTokenSequence() && "Not '[<'");
+  assert(matchCXXSpliceBegin(tok::less) && "Not '[<'");
 
   SourceLocation SBELoc;
-  if (ParseCXXSpliceExprBegin(SBELoc))
+  if (parseCXXSpliceBegin(tok::less, SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
@@ -343,7 +344,7 @@ ExprResult Parser::ParseCXXDeclSpliceExpr() {
     return ExprError();
 
   SourceLocation SEELoc;
-  if (ParseCXXSpliceExprEnd(SEELoc))
+  if (parseCXXSpliceEnd(tok::greater, SEELoc))
     return ExprError();
 
   return Actions.ActOnCXXDeclSpliceExpr(SBELoc, Expr.get(), SEELoc);
@@ -359,7 +360,7 @@ ExprResult Parser::ParseCXXMemberDeclSpliceExpr(Expr *Base) {
     TemplateKWLoc = ConsumeToken();
 
   SourceLocation SBELoc;
-  if (ParseCXXSpliceExprBegin(SBELoc))
+  if (parseCXXSpliceBegin(tok::less, SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
@@ -367,7 +368,7 @@ ExprResult Parser::ParseCXXMemberDeclSpliceExpr(Expr *Base) {
     return ExprError();
 
   SourceLocation SEELoc;
-  if (ParseCXXSpliceExprEnd(SEELoc))
+  if (parseCXXSpliceEnd(tok::greater, SEELoc))
     return ExprError();
 
   // Check for template arguments
