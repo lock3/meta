@@ -1092,14 +1092,6 @@ getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
 }
 
 static ExprResult
-getAsCXXDeclSpliceExpr(Sema &SemaRef, Expr *Expression,
-                       SourceLocation EllipsisLoc = SourceLocation())
-{
-  return SemaRef.ActOnCXXDeclSpliceExpr(SourceLocation(), Expression,
-                                        SourceLocation(), EllipsisLoc);
-}
-
-static ExprResult
 getAsCXXIdentifierSplice(Sema &SemaRef, Expr *Expression)
 {
   SourceLocation &&Loc = Expression->getExprLoc();
@@ -1165,9 +1157,6 @@ bool Sema::ActOnVariadicReifier(
     switch (KW->getTokenID()) {
     case tok::kw_valueof:
       C = getAsCXXValueOfExpr(*this, *Traverser);
-      break;
-    case tok::kw_idexpr:
-      C = getAsCXXDeclSpliceExpr(*this, *Traverser);
       break;
     case tok::kw_unqualid:
       C = getAsCXXIdentifierSplice(*this, *Traverser);

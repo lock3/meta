@@ -8469,9 +8469,6 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   case tok::kw_valueof:
     Keyword = &(getSema().Context.Idents.get("valueof"));
     break;
-  case tok::kw_idexpr:
-    Keyword = &(getSema().Context.Idents.get("idexpr"));
-    break;
   case tok::kw_unqualid:
     Keyword = &(getSema().Context.Idents.get("unqualid"));
     break;

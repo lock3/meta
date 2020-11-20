@@ -733,7 +733,6 @@ bool Parser::ParseTemplateReifier(TemplateArgList &Args) {
     break;
   case tok::kw_valueof:
   case tok::kw_unqualid:
-  case tok::kw_idexpr:
     if (ParseNonTypeReifier(Args, KWLoc))
       return true;
     break;

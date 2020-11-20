@@ -2140,9 +2140,6 @@ MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
   case tok::kw_valueof:
     diag_id = 0;
     break;
-  case tok::kw_idexpr:
-    diag_id = 1;
-    break;
   case tok::kw_unqualid:
     diag_id = 2;
     break;
