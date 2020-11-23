@@ -1091,36 +1091,6 @@ getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
                                       EllipsisLoc);
 }
 
-static ExprResult
-getAsCXXIdentifierSplice(Sema &SemaRef, Expr *Expression)
-{
-  SourceLocation &&Loc = Expression->getExprLoc();
-
-  ArrayRef<Expr *> Parts(&Expression, 1);
-
-  IdentifierInfo *II;
-  if (SemaRef.ActOnCXXIdentifierSplice(Parts, II))
-    return ExprError();
-
-  CXXScopeSpec NewSS;
-  DeclarationNameInfo DNI(II, Loc);
-
-  ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
-  ExprResult BuiltExpr =
-    SemaRef.ActOnIdExpression(ParserLookup.getCurScope(), NewSS,
-                              SourceLocation(), DNI,
-                              /*TemplateArgsPtr=*/nullptr,
-                              UnqualifiedIdKind::IK_Identifier,
-                              /*TemplateID=*/nullptr,
-                              /*HasTrailingLParen=*/false,
-                              /*IsAddresOfOperand=*/false,
-                              /*CCC=*/nullptr,
-                              /*IsInlineAsmIdentifier=*/false,
-                              /*KeywordReplacement=*/nullptr);
-
-  return BuiltExpr.isInvalid() ? ExprError() : BuiltExpr;
-}
-
 static QualType
 getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
 {
@@ -1157,9 +1127,6 @@ bool Sema::ActOnVariadicReifier(
     switch (KW->getTokenID()) {
     case tok::kw_valueof:
       C = getAsCXXValueOfExpr(*this, *Traverser);
-      break;
-    case tok::kw_unqualid:
-      C = getAsCXXIdentifierSplice(*this, *Traverser);
       break;
     case tok::kw_typename:
       Diag(KWLoc, diag::err_invalid_reifier_context) << 3 << 0;

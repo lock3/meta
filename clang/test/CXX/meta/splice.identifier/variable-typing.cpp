@@ -12,15 +12,15 @@ class B1 {
 void C1() { }
 
 void test() {
-  unqualid("A", 1) a;
-  local_var::unqualid("A", 1) qualified_a;
-  unqualid("B", 1)<1> b;
-  local_var::unqualid("B", 1)<1> qualified_b;
-  unqualid("C", 1) c;
+  [# "A", 1 #] a;
+  local_var::[# "A", 1 #] qualified_a;
+  [# "B", 1 #]<1> b;
+  local_var::[# "B", 1 #]<1> qualified_b;
+  [# "C", 1 #] c;
   // expected-error@-1 {{expected ';' after expression}}
   // expected-warning@-2 {{expression result unused}}
   // expected-error@-3 {{use of undeclared identifier 'c'}}
-  local_var::unqualid("C", 1) qualified_c;
+  local_var::[# "C", 1 #] qualified_c;
   // expected-error@-1 {{expected ';' after expression}}
   // expected-warning@-2 {{expression result unused}}
   // expected-error@-3 {{use of undeclared identifier 'qualified_c'}}
@@ -40,12 +40,12 @@ class B1 {
 void C1() { } // expected-note {{splice resolved to 'C1' here}} expected-note {{splice resolved to 'C1' here}}
 
 void test() {
-  typename unqualid("A", 1) a;
-  typename kw_local_var::unqualid("A", 1) qualified_a;
-  typename unqualid("B", 1)<1> b;
-  typename kw_local_var::unqualid("B", 1)<1> qualified_b;
-  typename unqualid("C", 1) c; // expected-error {{identifier splice does not name a type or class template}}
-  typename kw_local_var::unqualid("C", 1) qualified_c; // expected-error {{identifier splice does not name a type or class template}}
+  typename [# "A", 1 #] a;
+  typename kw_local_var::[# "A", 1 #] qualified_a;
+  typename [# "B", 1 #]<1> b;
+  typename kw_local_var::[# "B", 1 #]<1> qualified_b;
+  typename [# "C", 1 #] c; // expected-error {{identifier splice does not name a type or class template}}
+  typename kw_local_var::[# "C", 1 #] qualified_c; // expected-error {{identifier splice does not name a type or class template}}
 }
 
 } // end namespace kw_local_var
@@ -63,10 +63,10 @@ void C1() { } // expected-note {{splice resolved to 'C1' here}} expected-note {{
 
 template<int I>
 void foo() {
-  typename unqualid("A", I) a;
-  typename dependent_local_var::unqualid("A", I) qualified_a;
-  typename unqualid("B", I)<I> b;
-  typename dependent_local_var::unqualid("B", I)<I> qualified_b;
+  typename [# "A", I #] a;
+  typename dependent_local_var::[# "A", I #] qualified_a;
+  typename [# "B", I #]<I> b;
+  typename dependent_local_var::[# "B", I #]<I> qualified_b;
 }
 
 // Note these test cases are split as the first failure stops further
@@ -74,12 +74,12 @@ void foo() {
 
 template<int I>
 void foo_failure_a() {
-  typename unqualid("C", I) c; // expected-error {{identifier splice does not name a type or class template}}
+  typename [# "C", I #] c; // expected-error {{identifier splice does not name a type or class template}}
 }
 
 template<int I>
 void foo_failure_b() {
-  typename dependent_local_var::unqualid("C", I) qualified_c; // expected-error {{identifier splice does not name a type or class template}}
+  typename dependent_local_var::[# "C", I #] qualified_c; // expected-error {{identifier splice does not name a type or class template}}
 }
 
 void test() {
@@ -107,9 +107,9 @@ void C1() { } // expected-note {{splice resolved to 'C1' here}}
 
 template<int I>
 void foo() {
-  typename hidden::unqualid("A", I) a;
-  typename hidden::unqualid("B", I)<I> b;
-  typename hidden::unqualid("C", I) c; // expected-error {{identifier splice does not name a type or class template}}
+  typename hidden::[# "A", I #] a;
+  typename hidden::[# "B", I #]<I> b;
+  typename hidden::[# "C", I #] c; // expected-error {{identifier splice does not name a type or class template}}
 }
 
 void test() {
@@ -120,7 +120,7 @@ void test() {
 
 namespace inline_class_var {
 
-class {} unqualid("a");
+class {} [# "a" #];
 
 } // end namespace class_var
 
@@ -128,7 +128,7 @@ namespace dependent_inline_class_var {
 
 template<int I>
 struct A1 {
-  class {} unqualid("a" , I);
+  class {} [# "a" , I #];
 };
 
 void test() {

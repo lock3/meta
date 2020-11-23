@@ -1646,7 +1646,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
 
   // [Meta] id-expression: template unqualid ( reflection )
   case tok::kw_template: {
-    if (Tok.is(tok::kw_template) && !NextToken().is(tok::kw_unqualid)) {
+    if (Tok.is(tok::kw_template) &&
+        !matchCXXSpliceBegin(tok::hash, /*LookAhead=*/1)) {
       NotCastExpr = true;
       return ExprError();
     }
@@ -1654,7 +1655,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     LLVM_FALLTHROUGH;
   }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
-  case tok::kw_unqualid: // [Meta] id-expression: unqualid ( reflection )
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 
@@ -1792,9 +1792,16 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   }
   case tok::l_square:
     if (getLangOpts().CPlusPlus11) {
-      if (getLangOpts().Reflection && NextToken().is(tok::less)) {
-        Res = ParseCXXDeclSpliceExpr();
-        break;
+      if (getLangOpts().Reflection) {
+        if (NextToken().is(tok::less)) {
+          Res = ParseCXXDeclSpliceExpr();
+          break;
+        }
+
+        if (NextToken().is(tok::hash)) {
+          Res = ParseCXXIdExpression(isAddressOfOperand);
+          break;
+        }
       }
 
       if (getLangOpts().ObjC) {
@@ -2143,7 +2150,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
     case tok::arrow:
     case tok::period: {
       // postfix-expression: p-e '->' decl-splice
-      if (NextToken().is(tok::l_square) && GetLookAheadToken(2).is(tok::less)) {
+      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
         // The template case isn't in p1240, leave it off for now.
         //
         // (NextToken().is(tok::kw_template) &&

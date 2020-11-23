@@ -3194,7 +3194,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         ConsumeAnnotationToken(); // The typename
       }
 
-      if (!Next.isIdentifier())
+      if (!isIdentifier(/*LookAhead=*/1))
         goto DoneWithDeclSpec;
 
       // Check whether this is a constructor declaration. If we're in a
@@ -3222,7 +3222,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         if (TryAnnotateTypeConstraint())
           goto DoneWithDeclSpec;
         if (Tok.isNot(tok::annot_cxxscope) ||
-            !NextToken().isIdentifier())
+            !isIdentifier(/*LookAhead=*/1))
           continue;
         // Eat the scope spec so the identifier is current.
         ConsumeAnnotationToken();
@@ -4436,7 +4436,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
 
   // Must have either 'enum name' or 'enum {...}' or (rarely) 'enum : T { ... }'.
   if (!isIdentifier() && Tok.isNot(tok::l_brace) &&
-      Tok.isNot(tok::colon) && Tok.isNot(tok::kw_unqualid)) {
+      Tok.isNot(tok::colon)) {
     Diag(Tok, diag::err_expected_either) << tok::identifier << tok::l_brace;
 
     // Skip the rest of this declarator, up until the comma or semicolon.
@@ -4450,9 +4450,6 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   if (isIdentifier()) {
     Name = Tok.getIdentifierInfo();
     NameLoc = ConsumeIdentifier();
-  } else if (Tok.is(tok::kw_unqualid)) {
-    // Ignore failure in an attempt to get better diagnostics.
-    ParseCXXIdentifierSplice(Name, NameLoc);
   }
 
   if (!Name && ScopedEnumKWLoc.isValid()) {
@@ -5371,7 +5368,7 @@ bool Parser::isConstructorDeclarator(bool IsUnqualified, bool DeductionGuide) {
   if (isDeclarationSpecifier())
     IsConstructor = true;
   else if (isIdentifier() ||
-           (Tok.is(tok::annot_cxxscope) && NextToken().isIdentifier())) {
+           (Tok.is(tok::annot_cxxscope) && isIdentifier(/*LookAhead=*/1))) {
     // We've seen "C ( X" or "C ( X::Y", but "X" / "X::Y" is not a type.
     // This might be a parenthesized member name, but is more likely to
     // be a constructor declaration with an invalid argument type. Keep

@@ -302,7 +302,6 @@ bool IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const {
   // Check each reifier keyword manually.
   switch(ID) {
   case kw_valueof:
-  case kw_unqualid:
   case kw_typename:
   case kw_templarg:
   case kw_namespace:

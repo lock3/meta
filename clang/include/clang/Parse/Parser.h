@@ -504,14 +504,15 @@ public:
   bool AnnotateIdentifierSplice();
   bool TryAnnotateIdentifierSplice();
 
-  bool isIdentifier() {
-    if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
-      AnnotateIdentifierSplice();
+  bool isIdentifier(unsigned LookAhead = 0) {
+    if (matchCXXSpliceBegin(tok::hash, LookAhead) &&
+        getRelativeToken(2 + LookAhead).isNot(tok::ellipsis)) {
+      if (!LookAhead)
+        AnnotateIdentifierSplice();
       return true;
     }
 
-    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice,
-                       tok::annot_invalid_identifier_splice);
+    return getRelativeToken(LookAhead).isIdentifier();
   }
 
   // FIXME: This should probably be private similar to the other
@@ -850,6 +851,13 @@ public:
   }
 
 private:
+  const Token &getRelativeToken(unsigned Dist) {
+    if (Dist == 0)
+      return Tok;
+
+    return PP.LookAhead(Dist - 1);
+  }
+
   static void setTypeAnnotation(Token &Tok, TypeResult T) {
     assert((T.isInvalid() || T.get()) &&
            "produced a valid-but-null type annotation?");
@@ -3145,8 +3153,8 @@ private:
   ExprResult ParseCXXCompilerErrorExpression();
 
 private:
-  bool matchCXXSpliceBegin(tok::TokenKind T);
-  bool matchCXXSpliceEnd(tok::TokenKind T);
+  bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
+  bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
 
   bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
   bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);

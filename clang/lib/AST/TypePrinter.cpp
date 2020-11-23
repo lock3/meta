@@ -1096,7 +1096,7 @@ void TypePrinter::printDependentIdentifierSpliceBefore(
   if (Qualifier)
     Qualifier->print(OS, Policy);
 
-  OS << "unqualid(" << T->getIdentifierInfo()->getName() << ")";
+  OS << "[# " << T->getIdentifierInfo()->getName() << " #]";
 
   if (T->getNumArgs()) {
     IncludeStrongLifetimeRAII Strong(Policy);

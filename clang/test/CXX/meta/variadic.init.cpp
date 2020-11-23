@@ -133,13 +133,8 @@ void bad_context_init()
   struct S2 : typename(...v) {
     S2() : valueof(...v)() {} // expected-error {{cannot use valueof as reifier in this context: typename expected.}}
   };
-  struct S3 : typename(...v) {
-    S3() : unqualid(...v)() {} // expected-error {{cannot use unqualid as reifier in this context: typename expected.}}
-  };
 
   struct S5 : valueof(...v) { // expected-error {{cannot use valueof as reifier in this context: typename expected.}}
-  };
-  struct S6 : unqualid(...v) { // expected-error {{cannot use unqualid as reifier in this context: typename expected.}}
   };
 }
 

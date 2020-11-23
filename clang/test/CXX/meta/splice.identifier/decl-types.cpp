@@ -3,10 +3,10 @@
 
 namespace enums {
 
-enum unqualid("enum_t") { };
+enum [# "enum_t" #] { };
 
-enum class unqualid("enum_class_t");
-enum class unqualid("enum_class_t") { };
+enum class [# "enum_class_t" #];
+enum class [# "enum_class_t" #] { };
 
 void test() {
   enum_t et;
@@ -17,11 +17,11 @@ void test() {
 
 namespace classes {
 
-struct unqualid("struct_t");
-struct unqualid("struct_t") { };
+struct [# "struct_t" #];
+struct [# "struct_t" #] { };
 
-class unqualid("class_t");
-class unqualid("class_t") { };
+class [# "class_t" #];
+class [# "class_t" #] { };
 
 void test() {
   struct_t st;
@@ -32,11 +32,11 @@ void test() {
 
 namespace namespaces {
 
-namespace unqualid("namespace_ns") {
+namespace [# "namespace_ns" #] {
   int x;
 }
 
-namespace unqualid("namespace_ns")::unqualid("nested") {
+namespace [# "namespace_ns" #]::[# "nested" #] {
   int x;
 }
 

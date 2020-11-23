@@ -89,9 +89,9 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
     IdentLoc = ConsumeIdentifier();
 
     while (Tok.is(tok::coloncolon) &&
-           (NextToken().isIdentifier() ||
+           (isIdentifier(/*LookAhead=*/1) ||
             (NextToken().is(tok::kw_inline) &&
-             GetLookAheadToken(2).isIdentifier()))) {
+             isIdentifier(/*LookAhead=*/2)))) {
 
       InnerNamespaceInfo Info;
 
@@ -1326,8 +1326,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::annot_pragma_ms_vtordisp:
   // struct foo {...} _Pragma(pointers_to_members(...));
   case tok::annot_pragma_ms_pointers_to_members:
-  // struct foo {...} unqualid(...);
-  case tok::kw_unqualid:
+  // struct foo {...} [# ... #];
   case tok::annot_identifier_splice:
     return true;
   case tok::colon:
@@ -2140,9 +2139,6 @@ MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
   case tok::kw_valueof:
     diag_id = 0;
     break;
-  case tok::kw_unqualid:
-    diag_id = 2;
-    break;
   default:
     llvm_unreachable("Invalid reifier.");
   }
@@ -2622,7 +2618,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     bool isAccessDecl;
     if (Tok.isNot(tok::annot_cxxscope))
       isAccessDecl = false;
-    else if (NextToken().isIdentifier())
+    else if (isIdentifier(/*LookAhead=*/1))
       isAccessDecl = GetLookAheadToken(2).is(tok::semi);
     else
       isAccessDecl = NextToken().is(tok::kw_operator);

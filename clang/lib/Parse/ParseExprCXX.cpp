@@ -2837,7 +2837,6 @@ bool Parser::ParseUnqualifiedId(
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
-/// [Meta]  unqualid ( reflection )
 ///
 /// \endcode
 ///
@@ -2877,7 +2876,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
   if (Tok.is(tok::kw_template)) {
-    if (TemplateKWLoc && (ObjectType || SS.isSet() || NextToken().is(tok::kw_unqualid))) {
+    if (TemplateKWLoc && (ObjectType || SS.isSet() ||
+                          matchCXXSpliceBegin(tok::hash, /*LookAhead=*/1))) {
       TemplateSpecified = true;
       *TemplateKWLoc = ConsumeToken();
     } else {

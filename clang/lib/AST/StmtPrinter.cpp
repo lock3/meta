@@ -2549,9 +2549,6 @@ void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
   case tok::kw_valueof:
     OS << "valueof(...)";
     break;
-  case tok::kw_unqualid:
-    OS << "unqualid(...)";
-    break;
   case tok::kw_typename:
     OS << "typename(...)";
     break;

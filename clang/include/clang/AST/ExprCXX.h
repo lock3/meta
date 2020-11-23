@@ -5712,7 +5712,7 @@ public:
 
 /// Represents a dependent identifier splice, i.e.
 ///
-///   'unqualid' '(' expression-list ')'
+///   '[' '#' expression-list '#' ']'
 ///
 class CXXDependentSpliceIdExpr final
     : public Expr,

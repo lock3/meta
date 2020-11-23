@@ -4,9 +4,9 @@
 namespace enum_enumerators {
 
 enum enum_n {
-  unqualid("A", 1),
-  unqualid("A", 2),
-  unqualid("A", 3)
+  [# "A", 1 #],
+  [# "A", 2 #],
+  [# "A", 3 #]
 };
 
 void test() {
@@ -18,9 +18,9 @@ void test() {
 namespace enum_class_enumerators {
 
 enum class enum_n {
-  unqualid("A", 1),
-  unqualid("A", 2),
-  unqualid("A", 3)
+  [# "A", 1 #],
+  [# "A", 2 #],
+  [# "A", 3 #]
 };
 
 void test() {

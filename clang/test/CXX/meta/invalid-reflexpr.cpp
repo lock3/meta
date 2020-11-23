@@ -10,8 +10,8 @@ int decl_splice_test() {
   return [<invalid_refl>]; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 }
 
-int unqualid_test() {
-  return unqualid(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
+int identifier_splice_test() {
+  return [# invalid_refl #]; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 }
 
 using ReflectedType = typename(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}

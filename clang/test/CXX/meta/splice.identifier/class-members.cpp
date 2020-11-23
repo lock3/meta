@@ -5,10 +5,10 @@ namespace inline_members {
 
 class container_type {
 public:
-  int unqualid("data_member_", 1);
-  void unqualid("member_fn_", 1)() { }
+  int [# "data_member_", 1 #];
+  void [# "member_fn_", 1 #]() { }
 
-  static void unqualid("static_member_fn_", 1)() { }
+  static void [# "static_member_fn_", 1 #]() { }
 };
 
 void test() {
@@ -26,10 +26,10 @@ namespace dependent_inline_members {
 template<int T>
 class container_type {
 public:
-  int unqualid("data_member_", T);
-  void unqualid("member_fn_", T)() { }
+  int [# "data_member_", T #];
+  void [# "member_fn_", T #]() { }
 
-  static void unqualid("static_member_fn_", T)() { }
+  static void [# "static_member_fn_", T #]() { }
 };
 
 void test() {
@@ -46,16 +46,16 @@ namespace outofline_members {
 
 class container_type {
 public:
-  void unqualid("member_fn_", 1)();
+  void [# "member_fn_", 1 #]();
 
-  static int unqualid("static_data_member_", 1);
-  static void unqualid("static_member_fn_", 1)();
+  static int [# "static_data_member_", 1 #];
+  static void [# "static_member_fn_", 1 #]();
 };
 
-void container_type::unqualid("member_fn_", 1)() { }
+void container_type::[# "member_fn_", 1 #]() { }
 
-int container_type::unqualid("static_data_member_", 1) = 0;
-void container_type::unqualid("static_member_fn_", 1)() { }
+int container_type::[# "static_data_member_", 1 #] = 0;
+void container_type::[# "static_member_fn_", 1 #]() { }
 
 void test() {
   container_type container;
@@ -72,19 +72,19 @@ namespace dependent_outofline_members {
 template<int T>
 class container_type {
 public:
-  void unqualid("member_fn_", T)();
+  void [# "member_fn_", T #]();
 
-  static int unqualid("static_data_member_", T);
-  static void unqualid("static_member_fn_", T)();
+  static int [# "static_data_member_", T #];
+  static void [# "static_member_fn_", T #]();
 };
 
 template<int T>
-void container_type<T>::unqualid("member_fn_", T)() { }
+void container_type<T>::[# "member_fn_", T #]() { }
 
 template<int T>
-int container_type<T>::unqualid("static_data_member_", T) = 0;
+int container_type<T>::[# "static_data_member_", T #] = 0;
 template<int T>
-void container_type<T>::unqualid("static_member_fn_", T)() { }
+void container_type<T>::[# "static_member_fn_", T #]() { }
 
 void test() {
   container_type<1> container;

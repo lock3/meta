@@ -288,24 +288,23 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
                                            T.getCloseLocation());
 }
 
-bool Parser::matchCXXSpliceBegin(tok::TokenKind T) {
-  if (Tok.isNot(tok::l_square))
+bool Parser::matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead) {
+  if (getRelativeToken(LookAhead).isNot(tok::l_square))
     return false;
-  if (NextToken().isNot(T))
-    return false;
-
-  return true;
-}
-
-bool Parser::matchCXXSpliceEnd(tok::TokenKind T) {
-  if (Tok.isNot(T))
-    return false;
-  if (NextToken().isNot(tok::r_square))
+  if (getRelativeToken(LookAhead + 1).isNot(T))
     return false;
 
   return true;
 }
 
+bool Parser::matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead) {
+  if (getRelativeToken(LookAhead).isNot(T))
+    return false;
+  if (getRelativeToken(LookAhead + 1).isNot(tok::r_square))
+    return false;
+
+  return true;
+}
 bool Parser::parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL) {
   if (!matchCXXSpliceBegin(T))
     return true;
@@ -424,7 +423,7 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 }
 
 bool Parser::AnnotateIdentifierSplice() {
-  assert(Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis));
+  assert(matchCXXSpliceBegin(tok::hash) && GetLookAheadToken(2).isNot(tok::ellipsis));
 
   // Attempt to reinterpret an identifier splice as a single annotated token.
   IdentifierInfo *II;
@@ -451,7 +450,7 @@ bool Parser::AnnotateIdentifierSplice() {
 }
 
 bool Parser::TryAnnotateIdentifierSplice() {
-  if (Tok.isNot(tok::kw_unqualid) || GetLookAheadToken(2).is(tok::ellipsis))
+  if (!matchCXXSpliceBegin(tok::hash) || GetLookAheadToken(2).is(tok::ellipsis))
     return false;
 
   return AnnotateIdentifierSplice();
@@ -463,43 +462,39 @@ bool Parser::ParseCXXIdentifierSplice(
   return ParseCXXIdentifierSplice(Id, IdBeginLoc, IdEndLoc);
 }
 
-/// Parse a reflected id
+/// Parse an identifier splice
 ///
-///   unqualified-id:
-///     'unqaulid' '(' reflection ')'
+///   identifier-splice:
+///     '[' '#' reflection '#' ']'
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseCXXIdentifierSplice(
     IdentifierInfo *&Id, SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc) {
-  assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
-  IdBeginLoc = ConsumeToken();
+  assert(matchCXXSpliceBegin(tok::hash) && "Not '[#'");
 
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
+  if (parseCXXSpliceBegin(tok::hash, IdBeginLoc))
     return true;
 
   SmallVector<Expr *, 4> Parts;
   while (true) {
     ExprResult Result = ParseConstantExpression();
     if (Result.isInvalid()) {
-      SkipUntil(tok::r_paren);
+      SkipUntil(tok::r_square);
       return true;
     }
 
     Parts.push_back(Result.get());
-    if (Tok.is(tok::r_paren))
+    if (matchCXXSpliceEnd(tok::hash))
       break;
 
     if (ExpectAndConsume(tok::comma)) {
-      SkipUntil(tok::r_paren);
+      SkipUntil(tok::r_square);
       return true;
     }
   }
 
-  if (T.consumeClose())
+  if (parseCXXSpliceEnd(tok::hash, IdEndLoc))
     return true;
-
-  IdEndLoc = T.getCloseLocation();
 
   ArrayRef<Expr *> FinalParts(Parts.data(), Parts.size());
   if (Actions.ActOnCXXIdentifierSplice(FinalParts, Id))
@@ -733,7 +728,6 @@ bool Parser::ParseTemplateReifier(TemplateArgList &Args) {
       return true;
     break;
   case tok::kw_valueof:
-  case tok::kw_unqualid:
     if (ParseNonTypeReifier(Args, KWLoc))
       return true;
     break;

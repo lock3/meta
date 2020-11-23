@@ -4,8 +4,8 @@
 namespace local_var {
 
 int foo() {
-  int unqualid("x", 1) = { };
-  int unqualid("x", 2) = { };
+  int [# "x", 1 #] = { };
+  int [# "x", 2 #] = { };
   return x1 + x2;
 }
 
@@ -19,9 +19,9 @@ namespace dependent_local_var {
 
 template<int T>
 int foo() {
-  int unqualid("x", T) = { };
-  int unqualid("x", T + 1) = { };
-  return unqualid("x", T) + unqualid("x", T + 1);
+  int [# "x", T #] = { };
+  int [# "x", T + 1 #] = { };
+  return [# "x", T #] + [# "x", T + 1 #];
 }
 
 void test() {
