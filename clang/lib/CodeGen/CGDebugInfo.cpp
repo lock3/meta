@@ -3087,8 +3087,8 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::Decltype:
       T = cast<DecltypeType>(T)->getUnderlyingType();
       break;
-    case Type::Reflected:
-      T = cast<ReflectedType>(T)->getUnderlyingType();
+    case Type::TypeSplice:
+      T = cast<TypeSpliceType>(T)->getUnderlyingType();
       break;
     case Type::UnaryTransform:
       T = cast<UnaryTransformType>(T)->getUnderlyingType();
@@ -3300,7 +3300,7 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
   case Type::UnaryTransform:
     break;
   }

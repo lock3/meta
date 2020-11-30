@@ -3167,20 +3167,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       }
 
-      // Handle the typename reifier. In this context, the reifier
-      // is always invalid as it shouldn't be preceded
-      // by a nested-name-specifier.
-      if (getLangOpts().Reflection && Next.is(tok::kw_typename) &&
-          GetLookAheadToken(2).is(tok::l_paren)) {
-        assert(SS.isNotEmpty());
-
-        PrevSpec = ""; // not actually used by the diagnostic
-        DiagID = diag::err_reify_typename_preceded;
-        isInvalid = true;
-
-        break;
-      }
-
       if (Next.is(tok::annot_typename)) {
         DS.getTypeSpecScope() = SS;
         ConsumeAnnotationToken(); // The C++ scope.
@@ -3251,7 +3237,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       continue;
     }
 
-    case tok::annot_refltype:
     case tok::annot_typename: {
       // If we've previously seen a tag definition, we were almost surely
       // missing a semicolon after it.
@@ -3971,6 +3956,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     case tok::annot_decltype:
       ParseDecltypeSpecifier(DS);
+      continue;
+
+    case tok::annot_type_splice:
+      ParseTypeSplice(DS);
       continue;
 
     case tok::annot_pragma_pack:
@@ -4931,10 +4920,6 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
     // typedef-name
   case tok::annot_typename:
     return true;
-
-    // [Meta] reflected-type-specifier
-  case tok::annot_refltype:
-    return true;
   }
 }
 
@@ -5024,10 +5009,6 @@ bool Parser::isTypeSpecifierQualifier() {
 
     // typedef-name
   case tok::annot_typename:
-    return true;
-
-    // [Meta] reflected-type-specifiers
-  case tok::annot_refltype:
     return true;
 
     // GNU ObjC bizarre protocol extension: <proto1,proto2> with implicit 'id'.
@@ -5214,8 +5195,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::annot_decltype:
   case tok::kw_constexpr:
 
-    // [Meta] reflected-type-specifier
-  case tok::annot_refltype:
+    // [Meta] type-splice
+  case tok::annot_type_splice:
 
     // C++20 consteval and constinit.
   case tok::kw_consteval:

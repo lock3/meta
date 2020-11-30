@@ -3169,8 +3169,10 @@ public:
   ExprResult ParseCXXDeclSpliceExpr();
   ExprResult ParseCXXMemberDeclSpliceExpr(Expr *Base);
   ExprResult ParseCXXValueOfExpression();
-  TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                         SourceLocation &EndLoc);
+  SourceLocation ParseTypeSplice(DeclSpec &DS);
+  void AnnotateExistingTypeSplice(const DeclSpec &DS,
+                                  SourceLocation StartLoc,
+                                  SourceLocation EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
   ExprResult ParseCXXConcatenateExpression();
 

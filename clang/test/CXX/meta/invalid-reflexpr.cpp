@@ -14,7 +14,7 @@ int identifier_splice_test() {
   return [# invalid_refl #]; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 }
 
-using ReflectedType = typename(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
+using ReflectedType = typename [<invalid_refl>]; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 
 template<typename T>
 constexpr int foo() {

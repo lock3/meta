@@ -1151,7 +1151,7 @@ public:
   SUGARED_TYPE_CLASS(TypeOfExpr)
   SUGARED_TYPE_CLASS(TypeOf)
   SUGARED_TYPE_CLASS(Decltype)
-  SUGARED_TYPE_CLASS(Reflected)
+  SUGARED_TYPE_CLASS(TypeSplice)
   SUGARED_TYPE_CLASS(UnaryTransform)
   TRIVIAL_TYPE_CLASS(Record)
   TRIVIAL_TYPE_CLASS(Enum)
@@ -3549,28 +3549,28 @@ void DependentIdentifierSpliceType::Profile(
   }
 }
 
-ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
-  : Type(Reflected, Can, toTypeDependence(E->getDependence()),
+TypeSpliceType::TypeSpliceType(Expr *E, QualType T, QualType Can)
+  : Type(TypeSplice, Can, toTypeDependence(E->getDependence()),
          T->isMetaType()),
     Reflection(E), UnderlyingType(T) {
 }
 
-bool ReflectedType::isSugared() const {
-  // A reflected type is sugared if it's non-dependent.
-  return !Reflection->isInstantiationDependent();
-}
-
-QualType ReflectedType::desugar() const {
+QualType TypeSpliceType::desugar() const {
   if (isSugared())
     return getUnderlyingType();
   else
     return QualType(this, 0);
 }
 
-DependentReflectedType::DependentReflectedType(const ASTContext &Cxt, Expr *E)
-  : ReflectedType(E, Cxt.DependentTy), Context(Cxt) { }
+bool TypeSpliceType::isSugared() const {
+  // A reflected type is sugared if it's non-dependent.
+  return !Reflection->isInstantiationDependent();
+}
 
-void DependentReflectedType::Profile(llvm::FoldingSetNodeID &ID,
+DependentTypeSpliceType::DependentTypeSpliceType(const ASTContext &Cxt, Expr *E)
+  : TypeSpliceType(E, Cxt.DependentTy), Context(Cxt) { }
+
+void DependentTypeSpliceType::Profile(llvm::FoldingSetNodeID &ID,
                                      const ASTContext& Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
@@ -4179,7 +4179,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:
   case Type::SubstTemplateTypeParmPack:

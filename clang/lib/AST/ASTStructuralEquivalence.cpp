@@ -961,10 +961,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::Reflected:
+  case Type::TypeSplice:
     if (!IsStructurallyEquivalent(Context,
-                                  cast<ReflectedType>(T1)->getReflection(),
-                                  cast<ReflectedType>(T2)->getReflection()))
+                                  cast<TypeSpliceType>(T1)->getReflection(),
+                                  cast<TypeSpliceType>(T2)->getReflection()))
       return false;
     break;
 

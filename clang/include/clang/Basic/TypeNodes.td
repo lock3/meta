@@ -86,7 +86,7 @@ def DecayedType : TypeNode<AdjustedType>, NeverCanonical;
 def TypeOfExprType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def TypeOfType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def DecltypeType : TypeNode<Type>, NeverCanonicalUnlessDependent;
-def ReflectedType : TypeNode<Type>, NeverCanonicalUnlessDependent;
+def TypeSpliceType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def DependentIdentifierSpliceType : TypeNode<Type>, MetaType;
 def UnaryTransformType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def TagType : TypeNode<Type, 1>;

@@ -212,7 +212,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::TypeOf:
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
-    case Type::Reflected:
+    case Type::TypeSplice:
     case Type::UnaryTransform:
     case Type::Record:
     case Type::Enum:
@@ -1109,20 +1109,20 @@ void TypePrinter::printDependentIdentifierSpliceBefore(
 void TypePrinter::printDependentIdentifierSpliceAfter(
     const DependentIdentifierSpliceType *T, raw_ostream &OS) { }
 
-void TypePrinter::printReflectedBefore(const ReflectedType *T,
-                                       raw_ostream &OS) {
+void TypePrinter::printTypeSpliceBefore(const TypeSpliceType *T,
+                                        raw_ostream &OS) {
   if (T->isDependentType()) {
-    OS << "typename(";
+    OS << "typename [<";
     if (T->getReflection())
       T->getReflection()->printPretty(OS, nullptr, Policy);
-    OS << ')';
+    OS << ">]";
   } else {
     print(T->getUnderlyingType(), OS, StringRef());
   }
   spaceBeforePlaceHolder(OS);
 }
-void TypePrinter::printReflectedAfter(const ReflectedType *T,
-                                      raw_ostream &OS) { }
+void TypePrinter::printTypeSpliceAfter(const TypeSpliceType *T,
+                                       raw_ostream &OS) { }
 
 void TypePrinter::printUnaryTransformBefore(const UnaryTransformType *T,
                                             raw_ostream &OS) {

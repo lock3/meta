@@ -6445,10 +6445,6 @@ public:
                                            const DeclSpec &DS,
                                            SourceLocation ColonColonLoc);
 
-  bool ActOnCXXNestedNameSpecifierReifTypename(CXXScopeSpec &SS,
-                                               SourceLocation TypenameLoc, ParsedType T,
-                                               SourceLocation ColonColonLoc);
-
   bool IsInvalidUnlessNestedName(Scope *S, CXXScopeSpec &SS,
                                  NestedNameSpecInfo &IdInfo,
                                  bool EnteringContext);
@@ -10367,8 +10363,16 @@ public:
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgs,
       SourceLocation RAngleLoc);
 
-  QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
-  TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
+  bool ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
+                                             const DeclSpec &DS,
+                                             SourceLocation ColonColonLoc);
+
+  QualType BuildTypeSpliceType(Expr *E);
+
+  void BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
+                              SourceLocation TypenameLoc,
+                              SourceLocation SBELoc,
+                              SourceLocation SEELoc);
 
   ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
                                                         Expr *E);

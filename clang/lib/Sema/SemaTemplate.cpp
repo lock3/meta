@@ -6121,7 +6121,7 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentIdentifierSpliceType(
   return false;
 }
 
-bool UnnamedLocalNoLinkageFinder::VisitReflectedType(const ReflectedType*) {
+bool UnnamedLocalNoLinkageFinder::VisitTypeSpliceType(const TypeSpliceType*) {
   return false;
 }
 

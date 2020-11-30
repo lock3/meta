@@ -2066,12 +2066,56 @@ private:
   }
 };
 
-// FIXME: location of the 'typename' and parens.
-class ReflectedTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
-                                                         ReflectedTypeLoc,
-                                                         ReflectedType> {
+struct TypeSpliceLocInfo {
+  SourceLocation TypenameKWLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class TypeSpliceTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                 TypeSpliceTypeLoc,
+                                                 TypeSpliceType,
+                                                 TypeSpliceLocInfo> {
 public:
-  Expr *getReflection() const { return getTypePtr()->getReflection(); }
+  Expr *getReflection() const {
+    return getTypePtr()->getReflection();
+  }
+
+  SourceLocation getTypenameKeywordLoc() const {
+    return getLocalData()->TypenameKWLoc;
+  }
+
+  void setTypenameKeywordLoc(SourceLocation Loc) {
+    this->getLocalData()->TypenameKWLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getTypenameKeywordLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getTypenameKeywordLoc(), getTypenameKeywordLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
 };
 
 struct UnaryTransformTypeLocInfo {

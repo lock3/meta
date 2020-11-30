@@ -3451,7 +3451,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -5429,33 +5429,34 @@ QualType ASTContext::getDependentIdentifierSpliceType(
   return QualType(T, 0);
 }
 
-QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
-  ReflectedType *RT;
+QualType ASTContext::getTypeSpliceType(Expr *E, QualType UnderlyingType) const {
+  TypeSpliceType *TST;
 
-  const Type *UnderlyingType = &(*T);
-  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingType)) {
-    T = LITy->getType();
-  }
+  // Unwrap any LocInfoType introduced via reflexpr(Ty)
+  const Type *UnderlyingTyPtr = UnderlyingType.getTypePtr();
+  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingTyPtr))
+    UnderlyingType = LITy->getType();
 
   if (E->isInstantiationDependent()) {
     llvm::FoldingSetNodeID ID;
-    DependentReflectedType::Profile(ID, *this, E);
+    DependentTypeSpliceType::Profile(ID, *this, E);
 
     void *InsertPos = nullptr;
-    DependentReflectedType *Canon
-      = DependentReflectedTypes.FindNodeOrInsertPos(ID, InsertPos);
+    DependentTypeSpliceType *Canon
+      = DependentTypeSpliceTypes.FindNodeOrInsertPos(ID, InsertPos);
     if (!Canon) {
-      // Build a new, canonical typename(E) type.
-      Canon = new (*this, TypeAlignment) DependentReflectedType(*this, E);
-      DependentReflectedTypes.InsertNode(Canon, InsertPos);
+      // Build a new, canonical typename [< E> ] type.
+      Canon = new (*this, TypeAlignment) DependentTypeSpliceType(*this, E);
+      DependentTypeSpliceTypes.InsertNode(Canon, InsertPos);
     }
-    RT = new (*this, TypeAlignment) ReflectedType(E, T, QualType(Canon, 0));
+    TST = new (*this, TypeAlignment) TypeSpliceType(E, UnderlyingType,
+                                                    QualType(Canon, 0));
   } else {
-    CanQualType Canon = getCanonicalType(T);
-    RT = new (*this, TypeAlignment) ReflectedType(E, T, Canon);
+    CanQualType Canon = getCanonicalType(UnderlyingType);
+    TST = new (*this, TypeAlignment) TypeSpliceType(E, UnderlyingType, Canon);
   }
-  Types.push_back(RT);
-  return QualType(RT, 0);
+  Types.push_back(TST);
+  return QualType(TST, 0);
 }
 
 

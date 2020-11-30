@@ -4649,40 +4649,40 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs);
 };
 
-/// \brief Representation of reflected types.
+/// Representation of spliced types.
 ///
-/// Reflected types have the form 'typename(x)' where x is a reflection.
-class ReflectedType : public Type {
-  friend class ASTContext;  // ASTContext creates these.
-
+/// Spliced types have the form 'typename [< x >]' where x is a reflection.
+class TypeSpliceType : public Type {
   Expr *Reflection;
   QualType UnderlyingType;
 
 protected:
-  ReflectedType(Expr *E, QualType T, QualType Can = QualType());
+  friend class ASTContext;  // ASTContext creates these.
+
+  TypeSpliceType(Expr *E, QualType T, QualType Can = QualType());
 
 public:
-  /// \brief Returns the reflection (expression) of the operator.
+  /// Returns the reflection (expression) of the operator.
   Expr *getReflection() const { return Reflection; }
 
-  /// \brief Returns the underlying type; the one reflected.
+  /// Returns the underlying type; the one spliced.
   QualType getUnderlyingType() const { return UnderlyingType; }
 
-  /// \brief Returns whether this type provides sugar.
-  bool isSugared() const;
-
-  /// \brief Removes one level of sugar.
+  /// Removes one level of sugar.
   QualType desugar() const;
 
-  static bool classof(const Type *T) { return T->getTypeClass() == Reflected; }
+  /// Returns whether this type provides sugar.
+  bool isSugared() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == TypeSplice; }
 };
 
-/// \brief Representation of dependent reflected types.
-class DependentReflectedType : public ReflectedType,
+/// Representation of dependent type splice types.
+class DependentTypeSpliceType : public TypeSpliceType,
                                public llvm::FoldingSetNode {
   const ASTContext &Context;
 public:
-  DependentReflectedType(const ASTContext &Context, Expr *E);
+  DependentTypeSpliceType(const ASTContext &Context, Expr *E);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, Context, getReflection());

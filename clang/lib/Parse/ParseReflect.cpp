@@ -503,29 +503,73 @@ bool Parser::ParseCXXIdentifierSplice(
   return false;
 }
 
-/// Parse a type reflection specifier.
+/// Parse a type splice
 ///
 /// \verbatim
-///   reflection-type-specifier:
-///     'typename' '(' reflection ')'
+///   type-splice:
+///     'typename' '[' '<' reflection '>' ']'
 /// \endverbatim
 ///
 /// The constant expression must be a reflection of a type.
-TypeResult Parser::ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                               SourceLocation &EndLoc) {
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
-    return TypeResult(true);
+SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
+  assert(Tok.is(tok::annot_type_splice) ||
+         (Tok.is(tok::kw_typename) &&
+          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
+         && "Not a type splice");
 
-  ExprResult Result = ParseConstantExpression();
-  if (T.consumeClose())
-    return TypeResult(true);
+  ExprResult Result;
+  SourceLocation StartLoc = Tok.getLocation();
+  SourceLocation EndLoc;
 
-  EndLoc = T.getCloseLocation();
-  if (Result.isInvalid())
-    return TypeResult(true);
+  if (Tok.is(tok::annot_type_splice)) {
+    Result = getExprAnnotation(Tok);
+    EndLoc = Tok.getAnnotationEndLoc();
+    ConsumeAnnotationToken();
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return EndLoc;
+    }
+  } else {
+    StartLoc = ConsumeToken();
 
-  return Actions.ActOnReflectedTypeSpecifier(TypenameLoc, Result.get());
+    SourceLocation SBELoc;
+    if (parseCXXSpliceBegin(tok::less, SBELoc))
+      return EndLoc;
+
+    Result = ParseConstantExpression();
+
+    if (parseCXXSpliceEnd(tok::greater, EndLoc))
+      return EndLoc;
+  }
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  const PrintingPolicy &Policy = Actions.getASTContext().getPrintingPolicy();
+
+  if (DS.SetTypeSpecType(DeclSpec::TST_type_splice, StartLoc, PrevSpec,
+                         DiagID, Result.get(), Policy)) {
+    Diag(StartLoc, DiagID) << PrevSpec;
+    DS.SetTypeSpecError();
+  }
+  return EndLoc;
+}
+
+void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
+                                        SourceLocation StartLoc,
+                                        SourceLocation EndLoc) {
+  // make sure we have a token we can turn into an annotation token
+  if (PP.isBacktrackEnabled())
+    PP.RevertCachedTokens(1);
+  else
+    PP.EnterToken(Tok, /*IsReinject*/true);
+
+  Tok.setKind(tok::annot_type_splice);
+  setExprAnnotation(Tok,
+                    DS.getTypeSpecType() == TST_type_splice ?
+                    DS.getRepAsExpr() : ExprError());
+  Tok.setAnnotationEndLoc(EndLoc);
+  Tok.setLocation(StartLoc);
+  PP.AnnotateCachedTokens(Tok);
 }
 
 /// Parse a template argument reflection.

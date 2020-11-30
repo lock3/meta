@@ -412,7 +412,7 @@ let Class = DecltypeType in {
   }]>;
 }
 
-let Class = ReflectedType in {
+let Class = TypeSpliceType in {
   def : Property<"underlyingType", QualType> {
     let Read = [{ node->getUnderlyingType() }];
   }
@@ -421,7 +421,7 @@ let Class = ReflectedType in {
   }
 
   def : Creator<[{
-    return ctx.getReflectedType(reflection, underlyingType);
+    return ctx.getTypeSpliceType(reflection, underlyingType);
   }]>;
 }
 

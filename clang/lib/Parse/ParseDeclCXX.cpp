@@ -1150,13 +1150,8 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
 ///         ::[opt] nested-name-specifier[opt] class-name
 TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                           SourceLocation &EndLocation) {
-  if (Tok.is(tok::kw_typename)) {
-    // This may be a typename reifier
-    if (getLangOpts().Reflection && NextToken().is(tok::l_paren)) {
-      BaseLoc = ConsumeToken();
-      return ParseReflectedTypeSpecifier(BaseLoc, EndLocation);
-    }
-
+  if (Tok.is(tok::kw_typename) &&
+      !matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
     // Ignore attempts to use typename
     Diag(Tok, diag::err_expected_class_name_not_template)
       << FixItHint::CreateRemoval(Tok.getLocation());
@@ -1183,6 +1178,18 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
     DeclSpec DS(AttrFactory);
 
     EndLocation = ParseDecltypeSpecifier(DS);
+
+    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeNameContext);
+    return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
+  }
+
+  if (Tok.is(tok::annot_type_splice) ||
+         (Tok.is(tok::kw_typename) &&
+          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))) {
+    // Fake up a Declarator to use with ActOnTypeName.
+    DeclSpec DS(AttrFactory);
+
+    EndLocation = ParseTypeSplice(DS);
 
     Declarator DeclaratorInfo(DS, DeclaratorContext::TypeNameContext);
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
@@ -3694,6 +3701,8 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     // ParseOptionalCXXScopeSpecifier at this point.
     // FIXME: Can we get here with a scope specifier?
     ParseDecltypeSpecifier(DS);
+  } else if (Tok.is(tok::annot_type_splice)) {
+    ParseTypeSplice(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
                                            ? takeTemplateIdAnnotation(Tok)

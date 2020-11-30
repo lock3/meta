@@ -2938,11 +2938,11 @@ void MicrosoftCXXNameMangler::mangleType(const DecltypeType *T, Qualifiers,
     << Range;
 }
 
-void MicrosoftCXXNameMangler::mangleType(const ReflectedType *T, Qualifiers,
+void MicrosoftCXXNameMangler::mangleType(const TypeSpliceType *T, Qualifiers,
                                          SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-    "cannot mangle this typename() yet");
+    "cannot mangle this typename [< >] yet");
   Diags.Report(Range.getBegin(), DiagID)
     << Range;
 }

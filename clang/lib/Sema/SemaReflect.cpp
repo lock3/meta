@@ -1094,7 +1094,7 @@ getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
 static QualType
 getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
 {
-  return SemaRef.BuildReflectedType(SourceLocation(), Expression);
+  return SemaRef.BuildTypeSpliceType(Expression);
 }
 
 bool Sema::ActOnVariadicReifier(
@@ -1610,10 +1610,37 @@ Sema::ActOnCXXDependentIdentifierSpliceType(
   return CreateParsedType(Result, Builder.getTypeSourceInfo(Context, Result));
 }
 
+bool Sema::ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
+                                                 const DeclSpec &DS,
+                                                 SourceLocation ColonColonLoc) {
+  if (SS.isInvalid() || DS.getTypeSpecType() == DeclSpec::TST_error)
+    return true;
+
+  assert(DS.getTypeSpecType() == DeclSpec::TST_type_splice);
+
+  QualType T = BuildTypeSpliceType(DS.getRepAsExpr());
+  if (T.isNull())
+    return true;
+
+  if (!T->isDependentType() && !T->getAs<TagType>()) {
+    Diag(DS.getTypeSpecTypeLoc(), diag::err_expected_class_or_namespace)
+      << T << getLangOpts().CPlusPlus;
+    return true;
+  }
+
+  TypeLocBuilder TLB;
+  // FIXME: Provide source location information for SBELoc and SEELoc
+  BuildTypeSpliceTypeLoc(TLB, T, DS.getTypeSpecTypeLoc(),
+                         SourceLocation(), SourceLocation());
+  SS.Extend(Context, SourceLocation(), TLB.getTypeLocInContext(Context, T),
+            ColonColonLoc);
+  return false;
+}
+
 /// Evaluates the given expression and yields the computed type.
-QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
+QualType Sema::BuildTypeSpliceType(Expr *E) {
   if (E->isTypeDependent() || E->isValueDependent())
-    return Context.getReflectedType(E, Context.DependentTy);
+    return Context.getTypeSpliceType(E, Context.DependentTy);
 
   // The operand must be a reflection.
   if (!CheckReflectionOperand(*this, E))
@@ -1636,22 +1663,17 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   // Get the type of the reflected entity.
   QualType Reflected = Refl.getAsType();
 
-  return Context.getReflectedType(E, Reflected);
+  return Context.getTypeSpliceType(E, Reflected);
 }
 
-/// Evaluates the given expression and yields the computed type.
-TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                             Expr *E) {
-  QualType T = BuildReflectedType(TypenameLoc, E);
-  if (T.isNull())
-    return TypeResult(true);
-
-  // FIXME: Add parens?
-  TypeLocBuilder TLB;
-  ReflectedTypeLoc TL = TLB.push<ReflectedTypeLoc>(T);
-  TL.setNameLoc(TypenameLoc);
-  TypeSourceInfo *TSI = TLB.getTypeSourceInfo(Context, T);
-  return CreateParsedType(T, TSI);
+void Sema::BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
+                                  SourceLocation TypenameLoc,
+                                  SourceLocation SBELoc,
+                                  SourceLocation SEELoc) {
+  TypeSpliceTypeLoc TL = TLB.push<TypeSpliceTypeLoc>(T);
+  TL.setTypenameKeywordLoc(TypenameLoc);
+  TL.setSBELoc(SBELoc);
+  TL.setSEELoc(SEELoc);
 }
 
 static ParsedTemplateArgument

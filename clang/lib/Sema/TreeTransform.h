@@ -6341,9 +6341,9 @@ QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
-                                                        ReflectedTypeLoc TL) {
-  const ReflectedType *T = TL.getTypePtr();
+QualType TreeTransform<Derived>::TransformTypeSpliceType(TypeLocBuilder &TLB,
+                                                         TypeSpliceTypeLoc TL) {
+  const TypeSpliceType *T = TL.getTypePtr();
 
   EnterExpressionEvaluationContext Unevaluated(
       SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
@@ -6352,13 +6352,12 @@ QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
   if (E.isInvalid())
     return QualType();
 
-  QualType Result = getSema().BuildReflectedType(TL.getNameLoc(), E.get());
+  QualType Result = getSema().BuildTypeSpliceType(E.get());
   if (Result.isNull())
     return QualType();
 
-  ReflectedTypeLoc NewTL = TLB.push<ReflectedTypeLoc>(Result);
-  NewTL.setNameLoc(TL.getNameLoc());
-
+  getSema().BuildTypeSpliceTypeLoc(TLB, Result, TL.getTypenameKeywordLoc(),
+                                   TL.getSBELoc(), TL.getSEELoc());
   return Result;
 }
 

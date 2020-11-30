@@ -1805,7 +1805,7 @@ bool CursorVisitor::VisitDependentIdentifierSpliceTypeLoc(
   return false;
 }
 
-bool CursorVisitor::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+bool CursorVisitor::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   if (Expr *E = TL.getReflection())
     return Visit(MakeCXCursor(E, StmtParent, TU));
 

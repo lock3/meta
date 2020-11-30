@@ -1523,6 +1523,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     LLVM_FALLTHROUGH;
 
   case tok::annot_decltype:
+  case tok::annot_type_splice:
   case tok::kw_char:
   case tok::kw_wchar_t:
   case tok::kw_char8_t:
@@ -1567,8 +1568,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
 
       // If TryAnnotateTypeOrScopeToken annotates the token, tail recurse.
       if (!Tok.is(tok::kw_typename))
-        return ParseCastExpression(ParseKind, isAddressOfOperand,
-                                   NotCastExpr, isTypeCast);
+        return ParseCastExpression(ParseKind, isAddressOfOperand, isTypeCast,
+                                   isVectorLiteral, NotPrimaryExpression);
 
       if (!Actions.isSimpleTypeSpecifier(Tok.getKind()))
         // We are trying to parse a simple-type-specifier but might not get such
@@ -1644,7 +1645,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     LLVM_FALLTHROUGH;
   }
 
-  // [Meta] id-expression: template unqualid ( reflection )
+  // [Meta] id-expression: template [# reflection #]
   case tok::kw_template: {
     if (Tok.is(tok::kw_template) &&
         !matchCXXSpliceBegin(tok::hash, /*LookAhead=*/1)) {

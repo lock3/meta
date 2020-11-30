@@ -213,7 +213,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
-  mutable llvm::FoldingSet<DependentReflectedType> DependentReflectedTypes;
+  mutable llvm::FoldingSet<DependentTypeSpliceType> DependentTypeSpliceTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
   mutable llvm::FoldingSet<SubstTemplateTypeParmType>
@@ -1567,7 +1567,7 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs) const;
 
   /// \brief Reflected types.
-  QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
+  QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,

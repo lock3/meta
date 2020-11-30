@@ -373,8 +373,10 @@ void TypeLocWriter::VisitDependentIdentifierSpliceTypeLoc(
 }
 
 
-void TypeLocWriter::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
-  Record.AddSourceLocation(TL.getNameLoc());
+void TypeLocWriter::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getTypenameKeywordLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
 }
 
 void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {

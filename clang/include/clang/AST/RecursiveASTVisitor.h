@@ -990,7 +990,7 @@ DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
                                    T->getNumArgs()));
 })
 
-DEF_TRAVERSE_TYPE(ReflectedType,
+DEF_TRAVERSE_TYPE(TypeSpliceType,
                   { TRY_TO(TraverseStmt(T->getReflection())); })
 
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
@@ -1277,7 +1277,7 @@ DEF_TRAVERSE_TYPELOC(DependentIdentifierSpliceType, {
   }
 })
 
-DEF_TRAVERSE_TYPELOC(ReflectedType, {
+DEF_TRAVERSE_TYPELOC(TypeSpliceType, {
   TRY_TO(TraverseStmt(TL.getTypePtr()->getReflection()));
 })
 

@@ -775,8 +775,8 @@ ANNOTATION(primary_expr) // annotation for a primary expression, used when
                          // message send
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
-ANNOTATION(refltype)     // annotation for a reflected type specifier of the
-                         // form "typename(reflection)".
+ANNOTATION(type_splice)  // annotation for a spliced type of the
+                         // form "typename [< reflection >]".
 ANNOTATION(identifier_splice) // annotation for an identifier splice.
                               // e.g. "[# "a", 1 #]"
 ANNOTATION(invalid_identifier_splice) // annotation for an
