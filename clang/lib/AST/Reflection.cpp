@@ -18,6 +18,8 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
+#include "clang/Sema/Sema.h"
+#include "clang/Sema/SemaDiagnostic.h"
 
 namespace clang {
   enum ReflectionQuery : unsigned {
@@ -3126,4 +3128,43 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
   default:
     return false;
   }
+}
+
+namespace clang {
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
+    S.Diag(E->getExprLoc(), diag::err_reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return true;
+  }
+
+  R = Reflection(S.Context, Result.Val);
+  return false;
+}
+
+void DiagnoseInvalidReflection(Sema &SemaRef, Expr *E, const Reflection &R) {
+  SemaRef.Diag(E->getExprLoc(), diag::err_reify_invalid_reflection);
+
+  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
+  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
+  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.c_str(), 1, Buf.size() - 2);
+
+  SemaRef.Diag(E->getExprLoc(), diag::note_user_defined_note) << NonQuote;
+}
+
 }

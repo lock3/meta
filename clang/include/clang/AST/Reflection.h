@@ -459,6 +459,10 @@ public:
   bool EvaluatePredicate(SmallVectorImpl<APValue> &Args, APValue &Result);
 };
 
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
+
+void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
+
 } // namespace clang
 
 #endif
