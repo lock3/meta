@@ -10279,18 +10279,18 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXDeclSpliceExpr(SourceLocation SBELoc,
+  ExprResult ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
                                     Expr *Reflection,
                                     SourceLocation SEELoc,
                                  SourceLocation EllipsisLoc = SourceLocation());
 
-  ExprResult ActOnCXXMemberDeclSpliceExpr(
+  ExprResult ActOnCXXMemberExprSpliceExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
       SourceLocation SBELoc,  SourceLocation SEELoc,
       const TemplateArgumentListInfo *TemplateArgs);
 
-  ExprResult ActOnCXXMemberDeclSpliceExpr(
+  ExprResult ActOnCXXMemberExprSpliceExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
       SourceLocation SBELoc,  SourceLocation SEELoc,
@@ -10312,13 +10312,6 @@ public:
                        SourceLocation LParenLoc,
                        SourceLocation EllipsisLoc,
                        SourceLocation RParenLoc);
-
-  ExprResult
-  ActOnCXXValueOfExpr(SourceLocation KwLoc,
-                      Expr *Refl,
-                      SourceLocation LParenLoc,
-                      SourceLocation RParenLoc,
-                      SourceLocation EllipsisLoc = SourceLocation());
 
   ExprResult
   ActOnCXXDependentVariadicReifierExpr(Expr *Range,

@@ -2504,13 +2504,13 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
+void StmtPrinter::VisitCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
   OS << "[<";
   PrintExpr(E->getReflection());
   OS << ">]";
 }
 
-void StmtPrinter::VisitCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
+void StmtPrinter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   PrintExpr(E->getBase());
 
   if (E->isArrow())
@@ -2525,10 +2525,6 @@ void StmtPrinter::VisitCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
 
 void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {
   OS << "(. " << Node->getNameInfo() << " .)";
-}
-
-void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
-  OS << "valueof(...)"; // TODO Finish this
 }
 
 void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
@@ -2546,9 +2542,6 @@ void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
   CXXDependentVariadicReifierExpr *E) {
   // TODO Finish this
   switch(E->getKeywordId()) {
-  case tok::kw_valueof:
-    OS << "valueof(...)";
-    break;
   case tok::kw_typename:
     OS << "typename(...)";
     break;

@@ -331,7 +331,7 @@ bool Parser::parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL) {
 ///   decl-splice:
 ///     '[' '<' constant-expression '>' ']'
 /// \endverbatim
-ExprResult Parser::ParseCXXDeclSpliceExpr() {
+ExprResult Parser::ParseCXXExprSpliceExpr() {
   assert(matchCXXSpliceBegin(tok::less) && "Not '[<'");
 
   SourceLocation SBELoc;
@@ -346,10 +346,10 @@ ExprResult Parser::ParseCXXDeclSpliceExpr() {
   if (parseCXXSpliceEnd(tok::greater, SEELoc))
     return ExprError();
 
-  return Actions.ActOnCXXDeclSpliceExpr(SBELoc, Expr.get(), SEELoc);
+  return Actions.ActOnCXXExprSpliceExpr(SBELoc, Expr.get(), SEELoc);
 }
 
-ExprResult Parser::ParseCXXMemberDeclSpliceExpr(Expr *Base) {
+ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base) {
   assert(Tok.isOneOf(tok::arrow, tok::period));
 
   bool IsArrow = Tok.getKind() == tok::arrow;
@@ -382,44 +382,14 @@ ExprResult Parser::ParseCXXMemberDeclSpliceExpr(Expr *Base) {
 
     ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
 
-    return Actions.ActOnCXXMemberDeclSpliceExpr(
+    return Actions.ActOnCXXMemberExprSpliceExpr(
         Base, Expr.get(), IsArrow, OperatorLoc, TemplateKWLoc,
         SBELoc, SEELoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
   }
 
-  return Actions.ActOnCXXMemberDeclSpliceExpr(
+  return Actions.ActOnCXXMemberExprSpliceExpr(
       Base, Expr.get(), IsArrow, OperatorLoc,
       TemplateKWLoc, SBELoc, SEELoc, /*TemplateArgs=*/nullptr);
-}
-
-/// Parse a valueof expression.
-///
-/// \verbatim
-///   primary-expression:
-///     valueof '(' constant-expression ')'
-/// \endverbatim
-ExprResult Parser::ParseCXXValueOfExpression() {
-  assert(Tok.is(tok::kw_valueof) && "Not valueof");
-  SourceLocation Loc = ConsumeToken();
-
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return ExprError();
-
-  ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid()) {
-    Parens.skipToEnd();
-    return ExprError();
-  }
-
-  if (Parens.consumeClose())
-    return ExprError();
-
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
-
-  return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
 }
 
 bool Parser::AnnotateIdentifierSplice() {
@@ -769,10 +739,6 @@ bool Parser::ParseTemplateReifier(TemplateArgList &Args) {
   switch (Tok.getIdentifierInfo()->getTokenID()) {
   case tok::kw_typename:
     if (ParseTypeReifier(Args, KWLoc))
-      return true;
-    break;
-  case tok::kw_valueof:
-    if (ParseNonTypeReifier(Args, KWLoc))
       return true;
     break;
   default:

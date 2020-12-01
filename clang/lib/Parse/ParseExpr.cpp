@@ -1487,10 +1487,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseCXXReflectExpression();
     break;
 
-  case tok::kw_valueof:
-    Res = ParseCXXValueOfExpression();
-    break;
-
   case tok::kw___select_member:
     Res = ParseCXXSelectMemberExpr();
     break;
@@ -1795,7 +1791,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     if (getLangOpts().CPlusPlus11) {
       if (getLangOpts().Reflection) {
         if (NextToken().is(tok::less)) {
-          Res = ParseCXXDeclSpliceExpr();
+          Res = ParseCXXExprSpliceExpr();
           break;
         }
 
@@ -2161,7 +2157,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         // if (LHS.isInvalid())
         //  break;
 
-        LHS = ParseCXXMemberDeclSpliceExpr(LHS.get());
+        LHS = ParseCXXMemberExprSpliceExpr(LHS.get());
         break;
       }
 

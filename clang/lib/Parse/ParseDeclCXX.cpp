@@ -2143,9 +2143,6 @@ MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
   switch (TK) {
   case tok::kw_typename:
     return;
-  case tok::kw_valueof:
-    diag_id = 0;
-    break;
   default:
     llvm_unreachable("Invalid reifier.");
   }

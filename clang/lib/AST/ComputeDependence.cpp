@@ -404,11 +404,11 @@ ExprDependence clang::computeDependence(CXXCompilerErrorExpr *E) {
   return D;
 }
 
-ExprDependence clang::computeDependence(CXXDeclSpliceExpr *E) {
+ExprDependence clang::computeDependence(CXXExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(CXXMemberDeclSpliceExpr *E) {
+ExprDependence clang::computeDependence(CXXMemberExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
@@ -423,10 +423,6 @@ ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
 }
 
 ExprDependence clang::computeDependence(CXXDependentSpliceIdExpr *E) {
-  return ExprDependence::TypeValueInstantiation;
-}
-
-ExprDependence clang::computeDependence(CXXValueOfExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 

@@ -2,7 +2,7 @@
 
 template<auto T, auto V>
 constexpr typename [<T>] test() {
-  typename [<T>] x = valueof(V);
+  typename [<T>] x = [<V>];
   return x;
 }
 

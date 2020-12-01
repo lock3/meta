@@ -7,7 +7,7 @@ namespace meta {
 namespace non_template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
 
-  int decl_splice_test() {
+  int expr_splice_test() {
     return [<invalid_refl>]; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
   }
 
@@ -23,15 +23,13 @@ namespace non_template_reflection {
   }
 
   constexpr int fcall_result = foo<templarg(invalid_refl)>(); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
-
-  constexpr int valueof_result = valueof(invalid_refl); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
 }
 
 namespace template_reflection {
   template<int V>
   constexpr meta::info invalid_refl = __invalid_reflection(__concatenate("Error code: ", V));
 
-  int decl_splice_test() {
+  int expr_splice_test() {
     return [<invalid_refl<1>>]; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
   }
 
@@ -47,6 +45,4 @@ namespace template_reflection {
   }
 
   constexpr int fcall_result = foo<templarg(invalid_refl<1>)>(); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
-
-  constexpr int valueof_result = valueof(invalid_refl<1>); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
 }

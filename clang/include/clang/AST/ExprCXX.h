@@ -5330,29 +5330,29 @@ public:
   child_range children() { return child_range(&Message, &Message + 1); }
 };
 
-class CXXDeclSpliceExpr : public Expr {
+class CXXExprSpliceExpr : public Expr {
   Expr *Reflection;
 
   SourceLocation SBELoc;
   SourceLocation SEELoc;
 
-  CXXDeclSpliceExpr(
+  CXXExprSpliceExpr(
       QualType T, Expr *Reflection,
       SourceLocation SBELoc, SourceLocation SEELoc)
-    : Expr(CXXDeclSpliceExprClass, T, VK_RValue, OK_Ordinary),
+    : Expr(CXXExprSpliceExprClass, T, VK_RValue, OK_Ordinary),
       Reflection(Reflection), SBELoc(SBELoc), SEELoc(SEELoc) {
     setDependence(computeDependence(this));
   }
 
-  CXXDeclSpliceExpr(EmptyShell Empty)
-    : Expr(CXXDeclSpliceExprClass, Empty) {}
+  CXXExprSpliceExpr(EmptyShell Empty)
+    : Expr(CXXExprSpliceExprClass, Empty) {}
 
 public:
-  static CXXDeclSpliceExpr *Create(
+  static CXXExprSpliceExpr *Create(
       const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
       SourceLocation SEELoc);
 
-  static CXXDeclSpliceExpr *CreateEmpty(const ASTContext &C);
+  static CXXExprSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the reflection operand.
   Expr *getReflection() const { return Reflection; }
@@ -5378,13 +5378,13 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXDeclSpliceExprClass;
+    return T->getStmtClass() == CXXExprSpliceExprClass;
   }
 };
 
-class CXXMemberDeclSpliceExpr final
+class CXXMemberExprSpliceExpr final
   : public Expr,
-    private llvm::TrailingObjects<CXXMemberDeclSpliceExpr,
+    private llvm::TrailingObjects<CXXMemberExprSpliceExpr,
                                   ASTTemplateKWAndArgsInfo,
                                   TemplateArgumentLoc> {
   friend TrailingObjects;
@@ -5400,14 +5400,14 @@ class CXXMemberDeclSpliceExpr final
   SourceLocation SBELoc;
   SourceLocation SEELoc;
 
-  CXXMemberDeclSpliceExpr(
+  CXXMemberExprSpliceExpr(
       QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
       SourceLocation OpLoc, SourceLocation TemplateKWLoc,
       SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *Args);
 
-  CXXMemberDeclSpliceExpr(EmptyShell Empty)
-    : Expr(CXXMemberDeclSpliceExprClass, Empty) {}
+  CXXMemberExprSpliceExpr(EmptyShell Empty)
+    : Expr(CXXMemberExprSpliceExprClass, Empty) {}
 
   size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
     return hasTemplateKWAndArgsInfo();
@@ -5417,14 +5417,14 @@ class CXXMemberDeclSpliceExpr final
     return HasTemplateKWAndArgsInfo;
   }
 public:
-  static CXXMemberDeclSpliceExpr *Create(
+  static CXXMemberExprSpliceExpr *Create(
       const ASTContext &C, Expr *Base, Expr *Reflection,
       bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
       SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *TemplateArgs);
 
-  static CXXMemberDeclSpliceExpr *CreateEmpty(const ASTContext &C);
+  static CXXMemberExprSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the base expression
   Expr *getBase() const { return cast<Expr>(Base); }
@@ -5510,7 +5510,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXMemberDeclSpliceExprClass;
+    return T->getStmtClass() == CXXMemberExprSpliceExprClass;
   }
 
   // Iterators
@@ -5856,58 +5856,6 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXDependentSpliceIdExprClass;
-  }
-};
-
-class CXXValueOfExpr : public Expr {
-  Expr *Reflection;
-
-  SourceLocation KeywordLoc;
-  SourceLocation LParenLoc;
-  SourceLocation EllipsisLoc;
-  SourceLocation RParenLoc;
-public:
-  CXXValueOfExpr(QualType T, Expr *Reflection,
-                 SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc,
-                 SourceLocation RParenLoc,
-                 SourceLocation EllipsisLoc = SourceLocation())
-    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary),
-      Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
-      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {
-    setDependence(computeDependence(this));
-  }
-
-  CXXValueOfExpr(EmptyShell Empty)
-    : Expr(CXXValueOfExprClass, Empty) {}
-
-  /// Returns the reflection operand.
-  Expr *getReflection() const { return Reflection; }
-
-  /// Returns the source code location of the trait keyword.
-  SourceLocation getKeywordLoc() const { return KeywordLoc; }
-
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
-
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
-
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-
-  SourceLocation getEndLoc() const { return RParenLoc; }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXValueOfExprClass;
   }
 };
 

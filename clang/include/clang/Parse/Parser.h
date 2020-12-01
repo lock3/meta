@@ -3166,9 +3166,8 @@ public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
-  ExprResult ParseCXXDeclSpliceExpr();
-  ExprResult ParseCXXMemberDeclSpliceExpr(Expr *Base);
-  ExprResult ParseCXXValueOfExpression();
+  ExprResult ParseCXXExprSpliceExpr();
+  ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base);
   SourceLocation ParseTypeSplice(DeclSpec &DS);
   void AnnotateExistingTypeSplice(const DeclSpec &DS,
                                   SourceLocation StartLoc,

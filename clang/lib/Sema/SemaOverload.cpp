@@ -5783,11 +5783,11 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
     if (Notes.empty()) {
       Expr *InitExpr = Result.get();
 
-      // The valueof operator creates a constant expression
-      // which can appear in template arguments (and presumably other
-      // present, and future callers of this function). Unwrap
-      // the constant expression so that we don't have nesting
-      // of constant expressions.
+      // The expression splicing when splicing a value, creates
+      // a constant expression which can appear in template arguments
+      // (and presumably other present, and future callers of this
+      // function). Unwrap the constant expression so that we don't
+      // have nesting of constant expressions.
       //
       // At the time of writing, nesting of constant expressions
       // is forbidden by the ConstantExpr::Create via assertion.

@@ -505,69 +505,58 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
-static bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
-  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
-    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      S.Diag(PD.first, PD.second);
-    return true;
-  }
-
-  R = Reflection(S.Context, Result.Val);
-  return false;
-}
-
-static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
-                                      const Reflection &R) {
-  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
-
-  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
-  if (!InvalidRefl)
-    return;
-
-  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
-  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
-
-  // Evaluate the message so that we can transform it into a string.
-  SmallString<256> Buf;
-  llvm::raw_svector_ostream OS(Buf);
-  Message->outputString(OS);
-  std::string NonQuote(Buf.c_str(), 1, Buf.size() - 2);
-
-  SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
-}
-
 static DeclRefExpr *DeclReflectionToDeclRefExpr(
     Sema &S, const Reflection &R, SourceLocation SL) {
   assert(R.isDeclaration());
 
-  // If this is a value declaration, then construct a DeclRefExpr.
-  if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+  Decl *D = const_cast<Decl *>(R.getAsDeclaration());
+
+  // If we have any other kind of value decl, build a decl reference.
+  if (auto *VD = dyn_cast<ValueDecl>(D)) {
+    // Add a CXXScopeSpec to fields so that we get the correct pointer
+    // types when addressing the spliced expression.
+    CXXScopeSpec SS;
+    if (auto *FD = dyn_cast<FieldDecl>(D)) {
+      QualType RecordType = S.Context.getRecordType(FD->getParent());
+      TypeSourceInfo *TSI = S.Context.getTrivialTypeSourceInfo(RecordType, SL);
+
+      SS.Extend(S.Context, SourceLocation(), TSI->getTypeLoc(), SL);
+    }
+
     QualType T = VD->getType();
     ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
     ExprValueKind VK = S.getValueKindForDeclReference(T, NCVD, SL);
-    return S.BuildDeclRefExpr(NCVD, T, VK, SL);
+    return S.BuildDeclRefExpr(NCVD, T, VK, SL, SS.isEmpty() ? nullptr : &SS);
   }
 
   return nullptr;
 }
 
-static DeclRefExpr *UseDeclRefExprForIdExpr(Sema &S, const DeclRefExpr *DRE) {
-  Decl *ReferencedDecl = const_cast<NamedDecl *>(DRE->getFoundDecl());
-  ReferencedDecl->markUsed(S.Context);
-  return const_cast<DeclRefExpr *>(DRE);
+static ConstantExpr *ReflectionToValueExpr(Sema &S, Expr *E) {
+  // Ensure the expression results in an rvalue.
+  ExprResult Res = S.DefaultFunctionArrayLvalueConversion(E);
+  if (Res.isInvalid())
+    return nullptr;
+  E = Res.get();
+
+  // Evaluate the resulting expression.
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
+    S.Diag(E->getExprLoc(), diag::reflection_reflects_non_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return nullptr;
+  }
+
+  return ConstantExpr::Create(S.Context, const_cast<Expr *>(E),
+                              std::move(Result.Val));
 }
 
-static UnresolvedLookupExpr *UseUnresolvedLookupExprForIdExpr(
-    Sema &S, const UnresolvedLookupExpr *ULE) {
-  return const_cast<UnresolvedLookupExpr *>(ULE);
-}
-
-static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl) {
+static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl,
+                                         bool AllowValue = false) {
   SourceLocation ReflLoc = Refl->getExprLoc();
 
   Reflection R;
@@ -579,17 +568,21 @@ static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl) {
     return ExprError();
   }
 
-  if (R.isDeclaration()) {
-    if (const DeclRefExpr *E = DeclReflectionToDeclRefExpr(SemaRef, R, ReflLoc))
-      return UseDeclRefExprForIdExpr(SemaRef, E);
-  }
+  if (R.isDeclaration())
+    if (auto *DRE = DeclReflectionToDeclRefExpr(SemaRef, R, ReflLoc))
+      return DRE;
 
   if (R.isExpression()) {
-    if (const auto *DRE = dyn_cast<DeclRefExpr>(R.getAsExpression()))
-      return UseDeclRefExprForIdExpr(SemaRef, DRE);
+    Expr *E = const_cast<Expr *>(R.getAsExpression());
 
-    if (const auto *ULE = dyn_cast<UnresolvedLookupExpr>(R.getAsExpression()))
-      return UseUnresolvedLookupExprForIdExpr(SemaRef, ULE);
+    if (isa<DeclRefExpr>(E))
+      return E;
+
+    if (isa<UnresolvedLookupExpr>(E))
+      return E;
+
+    if (ConstantExpr *CE = ReflectionToValueExpr(SemaRef, E))
+      return CE;
   }
 
   // FIXME: Emit a better error diagnostic.
@@ -597,23 +590,23 @@ static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl) {
   return ExprError();
 }
 
-ExprResult Sema::ActOnCXXDeclSpliceExpr(SourceLocation SBELoc,
+ExprResult Sema::ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
                                         Expr *Reflection,
                                         SourceLocation SEELoc,
                                         SourceLocation EllipsisLoc) {
   if (Reflection->isTypeDependent() || Reflection->isValueDependent())
-    return CXXDeclSpliceExpr::Create(Context, SBELoc, Reflection, SEELoc);
+    return CXXExprSpliceExpr::Create(Context, SBELoc, Reflection, SEELoc);
 
-  return getIdExprReflectedExpr(*this, Reflection);
+  return getIdExprReflectedExpr(*this, Reflection, /*AllowValue=*/true);
 }
 
-ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
+ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
     Expr *Base, Expr *Refl, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
     const TemplateArgumentListInfo *TemplateArgs) {
   if (Refl->isTypeDependent() || Refl->isValueDependent())
-    return CXXMemberDeclSpliceExpr::Create(
+    return CXXMemberExprSpliceExpr::Create(
         Context, Base, Refl, IsArrow, OpLoc, TemplateKWLoc,
         LParenLoc, LParenLoc, TemplateArgs);
 
@@ -675,7 +668,7 @@ ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
       TemplateArgs, ToDecls.begin(), ToDecls.end());
 }
 
-ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
+ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
     Expr *Base, Expr *Refl, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -684,68 +677,9 @@ ExprResult Sema::ActOnCXXMemberDeclSpliceExpr(
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
   translateTemplateArguments(TemplateArgsPtr, TemplateArgs);
 
-  return ActOnCXXMemberDeclSpliceExpr(
+  return ActOnCXXMemberExprSpliceExpr(
       Base, Refl, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, &TemplateArgs);
-}
-
-static Expr *ExprReflectionToValueExpr(Sema &S, const Reflection &R,
-                                       SourceLocation SL) {
-  assert(R.isExpression());
-
-  return const_cast<Expr *>(R.getAsExpression());
-}
-
-static Expr *BuildInitialReflectionToValueExpr(Sema &S, const Reflection &R,
-                                               SourceLocation SL) {
-  switch (R.getKind()) {
-  case RK_declaration:
-    return DeclReflectionToDeclRefExpr(S, R, SL);
-  case RK_expression:
-    return ExprReflectionToValueExpr(S, R, SL);
-  default:
-    return nullptr;
-  }
-}
-
-static Expr *DeclRefExprToValueExpr(Sema &S, DeclRefExpr *Ref) {
-  // If the expression we're going to evaluate is a reference to a field.
-  // Adjust this to be a pointer to that field.
-  if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
-    QualType Ty = F->getType();
-    const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
-    Ty = S.Context.getMemberPointerType(Ty, Cls);
-    return UnaryOperator::Create(
-        S.Context, Ref, UO_AddrOf, Ty, VK_RValue, OK_Ordinary,
-        Ref->getExprLoc(), /*CanOverflow=*/false, S.CurFPFeatureOverrides());
-  }
-
-  return Ref;
-}
-
-static Expr *CompleteReflectionToValueExpr(Sema &S, Expr *EvalExpr) {
-  if (DeclRefExpr *Ref = dyn_cast_or_null<DeclRefExpr>(EvalExpr))
-    return DeclRefExprToValueExpr(S, Ref);
-
-  return EvalExpr;
-}
-
-static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
-                                   SourceLocation SL) {
-  // Handle the initial transformation from reflection
-  // to expression.
-  Expr *EvalExpr = BuildInitialReflectionToValueExpr(S, R, SL);
-
-  // Modify the initial expression to be properly
-  // evaluable during constexpr eval.
-  EvalExpr = CompleteReflectionToValueExpr(S, EvalExpr);
-
-  // Ensure the expression results in an rvalue.
-  ExprResult Res = S.DefaultFunctionArrayLvalueConversion(EvalExpr);
-  if (Res.isInvalid())
-    return nullptr;
-
-  return Res.get();
 }
 
 enum RangeKind {
@@ -1080,17 +1014,6 @@ RangeTraverser::operator++()
   return *this;
 }
 
-static ExprResult
-getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
-                    SourceLocation EllipsisLoc = SourceLocation())
-{
-  // llvm::outs() << "The expression:\n";
-  // Expression->dump();
-  return SemaRef.ActOnCXXValueOfExpr (SourceLocation(), Expression,
-                                      SourceLocation(), SourceLocation(),
-                                      EllipsisLoc);
-}
-
 static QualType
 getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
 {
@@ -1125,9 +1048,6 @@ bool Sema::ActOnVariadicReifier(
 
   while (!Traverser) {
     switch (KW->getTokenID()) {
-    case tok::kw_valueof:
-      C = getAsCXXValueOfExpr(*this, *Traverser);
-      break;
     case tok::kw_typename:
       Diag(KWLoc, diag::err_invalid_reifier_context) << 3 << 0;
       return true;
@@ -1185,49 +1105,6 @@ bool Sema::ActOnVariadicReifier(
   }
 
   return false;
-}
-
-ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
-                                     Expr *Refl,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RParenLoc,
-                                     SourceLocation EllipsisLoc)
-{
-  if (Refl->isTypeDependent() || Refl->isValueDependent())
-    return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
-                                        LParenLoc, LParenLoc, EllipsisLoc);
-
-  if (!CheckReflectionOperand(*this, Refl))
-    return ExprError();
-
-  Reflection R;
-  if (EvaluateReflection(*this, Refl, R))
-    return ExprError();
-
-  if (R.isInvalid()) {
-    DiagnoseInvalidReflection(*this, Refl, R);
-    return ExprError();
-  }
-
-  Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
-  if (!Eval) {
-    Diag(Refl->getExprLoc(), diag::err_expression_not_value_reflection);
-    return ExprError();
-  }
-
-  // Evaluate the resulting expression.
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
-  if (!Eval->EvaluateAsRValue(Result, EvalCtx)) {
-    Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      Diag(PD.first, PD.second);
-    return ExprError();
-  }
-
-  return ConstantExpr::Create(Context, Eval, std::move(Result.Val));
 }
 
 ExprResult Sema::ActOnCXXDependentVariadicReifierExpr(Expr *Range,

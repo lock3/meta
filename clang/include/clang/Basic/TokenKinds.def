@@ -403,7 +403,6 @@ MODULES_KEYWORD(import)
 // C++ metaprogramming keywords
 KEYWORD(reflexpr                    , KEYREFLECT)
 KEYWORD(templarg                    , KEYREFLECT)
-KEYWORD(valueof                     , KEYREFLECT)
 KEYWORD(__reflect                   , KEYREFLECT)
 KEYWORD(__invalid_reflection        , KEYREFLECT)
 KEYWORD(__reflect_print             , KEYREFLECT)

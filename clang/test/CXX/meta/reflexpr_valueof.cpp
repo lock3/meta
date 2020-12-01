@@ -19,32 +19,29 @@ constexpr S s1;
 int f() { return 0; }
 
 template<meta::info refl, auto val>
-void check_valueof_dependent() {
-  static_assert(valueof(refl) == val);
+void check_value_expression_splice_dependent() {
+  static_assert([<refl>] == val);
 }
 
 int main() {
-  static_assert(valueof(reflexpr(42)) == 42);
-  check_valueof_dependent<reflexpr(42), 42>();
+  static_assert([<reflexpr(42)>] == 42);
+  check_value_expression_splice_dependent<reflexpr(42), 42>();
 
-  static_assert(valueof(reflexpr(global1)) == 75);
-  check_valueof_dependent<reflexpr(global1), 75>();
+  static_assert([<reflexpr(global1)>] == 75);
+  check_value_expression_splice_dependent<reflexpr(global1), 75>();
 
-  static_assert(valueof(reflexpr(global2)) == 76);
-  check_valueof_dependent<reflexpr(global2), 76>();
+  static_assert([<reflexpr(global2)>] == 76);
+  check_value_expression_splice_dependent<reflexpr(global2), 76>();
 
-  static_assert(valueof(reflexpr(A)) == 0);
-  check_valueof_dependent<reflexpr(A), 0>();
+  static_assert([<reflexpr(A)>] == 0);
+  check_value_expression_splice_dependent<reflexpr(A), 0>();
 
-  static_assert(valueof(reflexpr(S::value)) == 4);
-  check_valueof_dependent<reflexpr(S::value), 4>();
+  static_assert([<reflexpr(S::value)>] == 4);
+  check_value_expression_splice_dependent<reflexpr(S::value), 4>();
 
-  static_assert(valueof(reflexpr(s1.num)) == 12);
-  check_valueof_dependent<reflexpr(s1.num), 12>();
+  static_assert([<reflexpr(s1.num)>] == 12);
+  check_value_expression_splice_dependent<reflexpr(s1.num), 12>();
 
-  static_assert(valueof(reflexpr(f)) == &f);
-  check_valueof_dependent<reflexpr(f), &f>();
-
-  static_assert(valueof(reflexpr(S::num)) == &S::num);
-  check_valueof_dependent<reflexpr(S::num), &S::num>();
+  static_assert([<reflexpr(f)>] == &f);
+  check_value_expression_splice_dependent<reflexpr(f), &f>();
 }

@@ -1607,18 +1607,18 @@ public:
   }
 
   /// Build a new decl splice expression.
-  ExprResult RebuildCXXDeclSpliceExpr(
+  ExprResult RebuildCXXExprSpliceExpr(
       SourceLocation SBELoc, Expr *Reflection, SourceLocation SEELoc) {
-    return getSema().ActOnCXXDeclSpliceExpr(SBELoc, Reflection, SEELoc);
+    return getSema().ActOnCXXExprSpliceExpr(SBELoc, Reflection, SEELoc);
   }
 
-  /// Build a new member expression splice expression.
+  /// Build a new member declaration splice expression.
   ExprResult RebuildCXXMemberExprSpliceExpr(
       Expr *Base, Expr *Reflection, bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
       SourceLocation LParenLoc, SourceLocation RParenLoc,
       TemplateArgumentListInfo *TemplateArgs) {
-    return getSema().ActOnCXXMemberDeclSpliceExpr(
+    return getSema().ActOnCXXMemberExprSpliceExpr(
         Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
         LParenLoc, RParenLoc, TemplateArgs);
   }
@@ -8306,18 +8306,18 @@ TreeTransform<Derived>::TransformCXXReflectDumpReflectionExpr(
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXDeclSpliceExpr(CXXDeclSpliceExpr *E) {
+TreeTransform<Derived>::TransformCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
   ExprResult Refl = getDerived().TransformExpr(E->getReflection());
   if (Refl.isInvalid())
     return ExprError();
 
-  return getDerived().RebuildCXXDeclSpliceExpr(
+  return getDerived().RebuildCXXExprSpliceExpr(
       E->getSBELoc(), Refl.get(), E->getSEELoc());
 }
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr *E) {
+TreeTransform<Derived>::TransformCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   ExprResult Base = getDerived().TransformExpr(E->getBase());
   if (Base.isInvalid())
     return ExprError();
@@ -8342,7 +8342,7 @@ TreeTransform<Derived>::TransformCXXMemberDeclSpliceExpr(CXXMemberDeclSpliceExpr
     TemplateArgsPtr = &TemplateArgs;
   }
 
-  return getDerived().RebuildCXXMemberDeclSpliceExpr(
+  return getDerived().RebuildCXXMemberExprSpliceExpr(
       Base.get(), Refl.get(), E->isArrow(), E->getOperatorLoc(),
       TemplateKWLoc, E->getSBELoc(), E->getSEELoc(),
       TemplateArgsPtr);
@@ -8396,17 +8396,6 @@ TreeTransform<Derived>::TransformCXXDependentSpliceIdExpr(CXXDependentSpliceIdEx
                                      /*CCC=*/nullptr,
                                      /*IsInlineAsmIdentifier=*/false,
                                      /*KeywordReplacement=*/nullptr);
-}
-
-template <typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
-  ExprResult Refl = getDerived().TransformExpr(E->getReflection());
-  if (Refl.isInvalid())
-    return ExprError();
-
-  return getSema().ActOnCXXValueOfExpr(E->getKeywordLoc(), Refl.get(),
-                                       E->getLParenLoc(), E->getRParenLoc());
 }
 
 template <typename Derived>
@@ -8465,9 +8454,6 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 
   switch(DependentReifier->getKeywordId())
   {
-  case tok::kw_valueof:
-    Keyword = &(getSema().Context.Idents.get("valueof"));
-    break;
   case tok::kw_typename:
     getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
       << 3 << 0;

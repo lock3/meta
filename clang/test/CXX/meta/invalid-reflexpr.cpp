@@ -4,9 +4,9 @@ namespace meta {
   using info = decltype(reflexpr(void));
 }
 
-constexpr meta::info invalid_refl = reflexpr(); // expected-error {{expected expression}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}} expected-note {{declared here}}
+constexpr meta::info invalid_refl = reflexpr(); // expected-error {{expected expression}} expected-note+ {{declared here}}
 
-int decl_splice_test() {
+int expr_splice_test() {
   return [<invalid_refl>]; // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
 }
 
@@ -22,5 +22,3 @@ constexpr int foo() {
 }
 
 constexpr int fcall_result = foo<templarg(invalid_refl)>(); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
-
-constexpr int valueof_result = valueof(invalid_refl); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}

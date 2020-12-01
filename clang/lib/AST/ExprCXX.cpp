@@ -1910,22 +1910,22 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
   return new (C) CXXCompilerErrorExpr(Empty);
 }
 
-CXXDeclSpliceExpr *CXXDeclSpliceExpr::Create(
+CXXExprSpliceExpr *CXXExprSpliceExpr::Create(
     const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
     SourceLocation SEELoc) {
-  return new (C) CXXDeclSpliceExpr(C.DependentTy, Reflection, SBELoc, SEELoc);
+  return new (C) CXXExprSpliceExpr(C.DependentTy, Reflection, SBELoc, SEELoc);
 }
 
-CXXDeclSpliceExpr *CXXDeclSpliceExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXDeclSpliceExpr(EmptyShell());
+CXXExprSpliceExpr *CXXExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXExprSpliceExpr(EmptyShell());
 }
 
-CXXMemberDeclSpliceExpr::CXXMemberDeclSpliceExpr(
+CXXMemberExprSpliceExpr::CXXMemberExprSpliceExpr(
     QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation SBELoc, SourceLocation SEELoc,
     const TemplateArgumentListInfo *Args)
-    : Expr(CXXMemberDeclSpliceExprClass, T, VK_RValue, OK_Ordinary),
+    : Expr(CXXMemberExprSpliceExprClass, T, VK_RValue, OK_Ordinary),
       Base(Base), Reflection(Reflection), IsArrow(IsArrow),
       HasTemplateKWAndArgsInfo(Args != nullptr || TemplateKWLoc.isValid()),
       OpLoc(OpLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
@@ -1941,7 +1941,7 @@ CXXMemberDeclSpliceExpr::CXXMemberDeclSpliceExpr(
   setDependence(computeDependence(this));
 }
 
-CXXMemberDeclSpliceExpr *CXXMemberDeclSpliceExpr::Create(
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::Create(
     const ASTContext &C, Expr *Base, Expr *Reflection,
     bool IsArrow, SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -1951,13 +1951,13 @@ CXXMemberDeclSpliceExpr *CXXMemberDeclSpliceExpr::Create(
       totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
           HasTemplateKWAndArgsInfo, Args ? Args->size() : 0);
   void *Mem = C.Allocate(Size);
-  return new (Mem) CXXMemberDeclSpliceExpr(
+  return new (Mem) CXXMemberExprSpliceExpr(
       C.DependentTy, Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, Args);
 }
 
-CXXMemberDeclSpliceExpr *CXXMemberDeclSpliceExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXMemberDeclSpliceExpr(EmptyShell());
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXMemberExprSpliceExpr(EmptyShell());
 }
 
 // Assume that the name is an ordinary lvalue for now.

@@ -2122,20 +2122,16 @@ void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXDeclSpliceExpr(const CXXDeclSpliceExpr *E) {
+void StmtProfiler::VisitCXXExprSpliceExpr(const CXXExprSpliceExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXMemberDeclSpliceExpr(const CXXMemberDeclSpliceExpr *E) {
+void StmtProfiler::VisitCXXMemberExprSpliceExpr(const CXXMemberExprSpliceExpr *E) {
   VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXDependentSpliceIdExpr(const CXXDependentSpliceIdExpr *E) {
   VisitName(E->getNameInfo().getName());
-}
-
-void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
-  VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
