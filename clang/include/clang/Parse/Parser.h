@@ -3100,16 +3100,6 @@ private:
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
-  bool
-  ParseReifMemInitializer(Decl *ConstructorDecl,
-                          llvm::SmallVectorImpl<QualType> &Typenames,
-                          llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);
-  bool ParseMemInitExprList(Decl *ConstructorDecl,
-                            CXXScopeSpec &SS, IdentifierInfo *II,
-                            DeclSpec const &DS, TypeResult const &TemplateTypeTy,
-                            SourceLocation IdLoc, SourceLocation &LParen,
-                            ExprVector &ArgExprs,
-                            SourceLocation &RParen, SourceLocation &Ellipsis);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
                                       Decl *ThisDecl);
 
@@ -3118,9 +3108,7 @@ private:
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
-  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
-                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
-  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
+  BaseResult ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -3174,23 +3162,6 @@ public:
                                   SourceLocation EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
   ExprResult ParseCXXConcatenateExpression();
-
-  /// Returns true if reflection is enabled and the
-  /// current expression appears to be a variadic reifier.
-  bool isVariadicReifier() const;
-
-  /// Parse a variadic reifier. Returns true on error.
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);
-
-  /// Parse the two types of variadic reifiers that may appear in a template
-  /// argument list.
-  bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTemplateReifier(TemplateArgList &Args);
-
-  /// Parse a variadic reifier as a member/base initializer.
-  void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   /// Parse a __select expression
   ExprResult ParseCXXSelectMemberExpr();

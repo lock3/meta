@@ -3410,36 +3410,16 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     if (ExpressionStarts)
       ExpressionStarts();
 
-    ExprResult ArgExpr;
-    bool VariadicReifier = isVariadicReifier();
+    ExprResult Expr;
 
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-      ArgExpr = ParseBraceInitializer();
-    } else if (VariadicReifier) {
-      llvm::SmallVector<Expr *, 4> ExpandedExprs;
-
-      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
-      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SawError = ParseVariadicReifier(ExpandedExprs);
-
-      // We need to insert several fake commas to get around error checking.
-      // We only need size() - 1, since there is already a comma in front of
-      // the reifier parameter.
-      if (!ExpandedExprs.empty())
-        for (std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
-          CommaLocs.emplace_back();
-
-      if (SawError)
-        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
-
-      // Add our expanded expressions into the parameter list.
-      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
+      Expr = ParseBraceInitializer();
     } else
-      ArgExpr = ParseAssignmentExpression();
+      Expr = ParseAssignmentExpression();
 
     if (Tok.is(tok::ellipsis))
-      ArgExpr = Actions.ActOnPackExpansion(ArgExpr.get(), ConsumeToken());
+      Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());
     else if (Tok.is(tok::code_completion)) {
       // There's nothing to suggest in here as we parsed a full expression.
       // Instead fail and propogate the error since caller might have something
@@ -3450,11 +3430,11 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       cutOffParsing();
       break;
     }
-    if (ArgExpr.isInvalid() && !VariadicReifier) {
+    if (Expr.isInvalid()) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else if (!VariadicReifier) {
-      Exprs.push_back(ArgExpr.get());
+    } else {
+      Exprs.push_back(Expr.get());
     }
 
     if (Tok.isNot(tok::comma))
@@ -3473,7 +3453,6 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       if (Expr.isUsable()) E = Expr.get();
     }
   }
-
   return SawError;
 }
 

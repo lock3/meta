@@ -4274,7 +4274,6 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::Enum:
   case Type::InjectedClassName:
   case Type::PackExpansion:
-  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::Atomic:

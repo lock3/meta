@@ -1518,10 +1518,6 @@ public:
                                 Optional<unsigned> NumExpansions,
                                 bool ExpectPackInType = true);
 
-  QualType getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
-                                              SourceLocation EllipsisLoc,
-                                              SourceLocation RParenLoc);
-
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
 

@@ -980,25 +980,7 @@ bool Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
 
       TryConsumeToken(tok::ellipsis, EllipsisLocs[1]);
 
-      if (isVariadicReifier()) {
-        llvm::SmallVector<Expr *, 4> ExpandedExprs;
-        if (ParseVariadicReifier(ExpandedExprs))
-          return Invalid([&] {
-            Diag(Tok.getLocation(), diag::err_expected_capture);
-          });
-
-        for (auto E : ExpandedExprs) {
-          ParsedType InitCaptureType;
-          SourceLocation TempLoc = SourceLocation();
-          // This performs any lvalue-to-rvalue conversions if necessary, which
-          // can affect what gets captured in the containing decl-context.
-          InitCaptureType = Actions.actOnLambdaInitCaptureInitialization(
-              TempLoc, Kind == LCK_ByRef, EllipsisLocs[0], Id, InitKind, E);
-
-          Intro.addCapture(Kind, Loc, Id, EllipsisLocs[0], InitKind, Init,
-                           InitCaptureType, SourceRange(TempLoc, TempLoc));
-        }
-      } else if (isIdentifier()) {
+      if (isIdentifier()) {
         Id = Tok.getIdentifierInfo();
         Loc = ConsumeIdentifier();
       } else if (Tok.is(tok::kw_this)) {

@@ -456,10 +456,6 @@ TypeLoc TypeLoc::findExplicitQualifierLoc() const {
   return {};
 }
 
-QualType CXXDependentVariadicReifierTypeLoc::getInnerType() const {
-  return getTypePtr()->getRange()->getType();
-}
-
 void ObjCTypeParamTypeLoc::initializeLocal(ASTContext &Context,
                                            SourceLocation Loc) {
   setNameLoc(Loc);

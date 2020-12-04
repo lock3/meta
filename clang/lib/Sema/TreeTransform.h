@@ -726,19 +726,6 @@ public:
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
-  // Check if the current expression is a dependent C++ variadic reifier that
-  // still needs expansion. If so, transform and expand it.
-  bool MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
-
-  bool MaybeTransformVariadicReifier(Expr *E,
-                                     TemplateArgumentListInfo &Outputs);
-
-  bool MaybeTransformVariadicReifier(Type const *T,
-                                     SmallVectorImpl<QualType> &Outputs);
-
-  bool MaybeTransformVariadicReifier(Type const *T,
-                                     TemplateArgumentListInfo &Outputs);
-
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
 #define STMT(Node, Parent)                        \
@@ -4098,9 +4085,6 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       continue;
     }
 
-    if (!MaybeTransformVariadicReifier(Inputs[I], Outputs))
-      continue;
-
     ExprResult Result =
       IsCall ? getDerived().TransformInitializer(Inputs[I], /*DirectInit*/false)
              : getDerived().TransformExpr(Inputs[I]);
@@ -4731,24 +4715,6 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
       }
 
       continue;
-    }
-
-    // Test for both type and non-type kinds of variadic reifiers.
-    if (In.getArgument().getKind() == TemplateArgument::Expression) {
-      if (isa<CXXDependentVariadicReifierExpr>(In.getArgument().getAsExpr())) {
-        if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
-                                          Outputs))
-          return true;
-        continue;
-      }
-    } else if (In.getArgument().getKind() == TemplateArgument::Type) {
-      if (isa<CXXDependentVariadicReifierType>(
-            In.getArgument().getAsType().getTypePtr())) {
-        if (MaybeTransformVariadicReifier(
-              In.getArgument().getAsType().getTypePtr(), Outputs))
-          return true;
-        continue;
-      }
     }
 
     // The simple case:
@@ -7210,20 +7176,6 @@ QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
-(TypeLocBuilder &TLB, CXXDependentVariadicReifierTypeLoc TL) {
-  // ExprResult NewRange = getDerived().
-  //   TransformExpr(TL.getRange());
-
-  // if(NewRange.isInvalid())
-  //   return QualType();
-
-  // return
-  //   getDerived().RebuildCXXDependentVariadicReifierType(NewRange.get(), TL);
-  return QualType();
-}
-
-template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformObjCInterfaceType(TypeLocBuilder &TLB,
                                                    ObjCInterfaceTypeLoc TL) {
@@ -8422,128 +8374,6 @@ TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
     Parts.push_back(Part.get());
   }
   return RebuildCXXConcatenateExpr(E->getBeginLoc(), Parts);
-}
-
-template <typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformCXXDependentVariadicReifierExpr(
-  CXXDependentVariadicReifierExpr* E) {
-  return ExprError();
-}
-
-template <typename Derived>
-bool
-TreeTransform<Derived>::MaybeTransformVariadicReifier
-(Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
-  if (!isa<CXXDependentVariadicReifierExpr>(E))
-    return true;
-
-  EnterExpressionEvaluationContext EvalContext(
-    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
-  CXXDependentVariadicReifierExpr *DependentReifier =
-    cast<CXXDependentVariadicReifierExpr>(E);
-
-  Expr *OldRange = DependentReifier->getRange();
-  ExprResult NewRange = TransformExpr(OldRange);
-
-  if(NewRange.isInvalid())
-    return true;
-
-  llvm::SmallVector<Expr *, 8> ExpandedReifiers;
-  IdentifierInfo *Keyword;
-
-  switch(DependentReifier->getKeywordId())
-  {
-  case tok::kw_typename:
-    getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
-      << 3 << 0;
-    return true;
-  case tok::kw_namespace:
-    getSema().Diag(E->getBeginLoc(),
-                   diag::err_namespace_as_variadic_reifier);
-    return true;
-  default:
-    return true;
-  }
-
-  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
-                                 Keyword, NewRange.get(), SourceLocation(),
-                                 SourceLocation(), SourceLocation());
-
-  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
-  return false;
-}
-
-template <typename Derived>
-bool
-TreeTransform<Derived>::MaybeTransformVariadicReifier(Expr *E,
-                                                      TemplateArgumentListInfo
-                                                      &Outputs)
-{
-  llvm::SmallVector<Expr *, 4> ReifiedExprs;
-  if (MaybeTransformVariadicReifier(E, ReifiedExprs))
-    return true;
-
-  for (auto ReifiedExpr : ReifiedExprs) {
-    TemplateArgument Arg(ReifiedExpr, TemplateArgument::Expression);
-    TemplateArgumentLoc ArgLoc(Arg, ReifiedExpr);
-    Outputs.addArgument(ArgLoc);
-  }
-
-  return false;
-}
-
-template <typename Derived>
-bool
-TreeTransform<Derived>::MaybeTransformVariadicReifier
-(Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
-  if(!isa<CXXDependentVariadicReifierType>(T))
-    return false;
-
-  EnterExpressionEvaluationContext EvalContext(
-    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
-
-  CXXDependentVariadicReifierType const *DependentReifier =
-    cast<CXXDependentVariadicReifierType>(T);
-
-  // If this is a dependent variadic reifier, go ahead and transform it.
-  // if (DependentReifier->getEllipsisLoc().isValid())
-  Expr *OldRange = DependentReifier->getRange();
-  ExprResult NewRange = TransformExpr(OldRange);
-
-  if(NewRange.isInvalid())
-    return true;
-
-  llvm::SmallVector<QualType, 8> ExpandedReifiers;
-
-  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(), NewRange.get(),
-                                 SourceLocation(), SourceLocation(),
-                                 SourceLocation());
-
-  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
-  return false;
-}
-
-template <typename Derived>
-bool
-TreeTransform<Derived>::MaybeTransformVariadicReifier
-(Type const *T, TemplateArgumentListInfo &Outputs) {
-  CXXDependentVariadicReifierType const *Reifier =
-    cast<CXXDependentVariadicReifierType>(T);
-  llvm::SmallVector<QualType, 4> ReifiedTypes;
-  if (MaybeTransformVariadicReifier(T, ReifiedTypes))
-    return true;
-
-  for (auto ReifiedType : ReifiedTypes) {
-    TemplateArgument Arg(ReifiedType);
-    TypeSourceInfo *TSI =
-      getSema().Context.CreateTypeSourceInfo(ReifiedType);
-    TSI->getTypeLoc().initialize(getSema().Context, Reifier->getBeginLoc());
-    TemplateArgumentLoc ArgLoc(Arg, TSI);
-    Outputs.addArgument(ArgLoc);
-  }
-
-  return false;
 }
 
 // Objective-C Statements.

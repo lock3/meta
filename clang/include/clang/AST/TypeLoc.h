@@ -2588,39 +2588,6 @@ public:
   }
 };
 
-/// A dependent C++ variadic typename expression.
-struct CXXDependentVariadicReifierTypeLocInfo {
-  SourceLocation EllipsisLoc;
-};
-
-class CXXDependentVariadicReifierTypeLoc :
-    public ConcreteTypeLoc<UnqualTypeLoc, CXXDependentVariadicReifierTypeLoc,
-                           CXXDependentVariadicReifierType,
-                           CXXDependentVariadicReifierTypeLocInfo> {
-public:
-    SourceLocation getEllipsisLoc() const {
-    return this->getLocalData()->EllipsisLoc;
-  }
-
-  void setEllipsisLoc(SourceLocation Loc) {
-    this->getLocalData()->EllipsisLoc = Loc;
-  }
-
-  SourceRange getLocalSourceRange() const {
-    return SourceRange(getEllipsisLoc(), getEllipsisLoc());
-  }
-
-  void initializeLocal(ASTContext &Context, SourceLocation Loc) {
-    setEllipsisLoc(Loc);
-  }
-
-  TypeLoc getPatternLoc() const {
-    return getInnerTypeLoc();
-  }
-
-  QualType getInnerType() const;
-};
-
 struct AtomicTypeLocInfo {
   SourceLocation KWLoc, LParenLoc, RParenLoc;
 };

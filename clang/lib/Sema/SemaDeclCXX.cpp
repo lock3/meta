@@ -2454,8 +2454,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                          SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
                          TypeSourceInfo *TInfo,
-                         SourceLocation EllipsisLoc,
-                         bool VariadicReifier) {
+                         SourceLocation EllipsisLoc) {
   QualType BaseType = TInfo->getType();
   if (BaseType->containsErrors()) {
     // Already emitted a diagnostic when parsing the error type.
@@ -2469,7 +2468,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }
 
-  if (!VariadicReifier && EllipsisLoc.isValid() &&
+  if (EllipsisLoc.isValid() &&
       !TInfo->getType()->containsUnexpandedParameterPack()) {
     Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
       << TInfo->getTypeLoc().getSourceRange();
@@ -2599,8 +2598,7 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
                          ParsedAttributes &Attributes,
                          bool Virtual, AccessSpecifier Access,
                          ParsedType basetype, SourceLocation BaseLoc,
-                         SourceLocation EllipsisLoc,
-                         bool VariadicReifier) {
+                         SourceLocation EllipsisLoc) {
   if (!classdecl)
     return true;
 
@@ -2625,10 +2623,8 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
 
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(basetype, &TInfo);
-  if (VariadicReifier)
-    TInfo = Context.CreateTypeSourceInfo(basetype.get());
 
-  if (!VariadicReifier && EllipsisLoc.isInvalid() &&
+  if (EllipsisLoc.isInvalid() &&
       DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo,
                                       UPPC_BaseType))
     return true;
@@ -4059,8 +4055,8 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
-                             TemplateTypeTy, DS, IdLoc, InitList,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
+                             DS, IdLoc, InitList,
                              EllipsisLoc);
 }
 
@@ -4078,27 +4074,7 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation RParenLoc,
                           SourceLocation EllipsisLoc) {
   Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
-                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
-}
-
-/// Handle a C++ member initializer using a (dependent) variadic reifier.
-MemInitResult
-Sema::ActOnMemInitializer(Decl *ConstructorD,
-                          Scope *S,
-                          CXXScopeSpec &SS,
-                          IdentifierInfo *MemberOrBase,
-                          QualType ReifierType,
-                          ParsedType TemplateTypeTy,
-                          const DeclSpec &DS,
-                          SourceLocation IdLoc,
-                          SourceLocation LParenLoc,
-                          ArrayRef<Expr *> Args,
-                          SourceLocation RParenLoc,
-                          SourceLocation EllipsisLoc) {
-  Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase,
-                             ReifierType, TemplateTypeTy,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
                              DS, IdLoc, List, EllipsisLoc);
 }
 
@@ -4152,7 +4128,6 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
-                          QualType ReifierType,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -4214,16 +4189,6 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
   } else if (DS.getTypeSpecType() == TST_decltype_auto) {
     Diag(DS.getTypeSpecTypeLoc(), diag::err_decltype_auto_invalid);
     return true;
-  } else if (!ReifierType.isNull() &&
-             CXXDependentVariadicReifierType::
-             classof(ReifierType.getTypePtr())) {
-    TInfo = Context.getTrivialTypeSourceInfo(ReifierType, IdLoc);
-    CXXDependentVariadicReifierType const *Reifier =
-      cast<CXXDependentVariadicReifierType>(ReifierType.getTypePtr());
-    DeclRefExpr *RangeRef = cast<DeclRefExpr>(Reifier->getRange());
-    MarkAnyDeclReferenced(RangeRef->getLocation(), RangeRef->getFoundDecl(), /*OdrUse=*/false);
-    return BuildBaseInitializer(ReifierType, TInfo, Init,
-                                ClassDecl, EllipsisLoc);
   } else {
     LookupResult R(*this, MemberOrBase, IdLoc, LookupOrdinaryName);
     LookupParsedName(R, S, &SS);
@@ -4370,13 +4335,13 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
     // Initialize the member.
     InitializedEntity MemberEntity =
       DirectMember ? InitializedEntity::InitializeMember(DirectMember, nullptr)
-      : InitializedEntity::InitializeMember(IndirectMember,
-                                            nullptr);
+                   : InitializedEntity::InitializeMember(IndirectMember,
+                                                         nullptr);
     InitializationKind Kind =
-      InitList ? InitializationKind::CreateDirectList(
-        IdLoc, Init->getBeginLoc(), Init->getEndLoc())
-      : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
-                                         InitRange.getEnd());
+        InitList ? InitializationKind::CreateDirectList(
+                       IdLoc, Init->getBeginLoc(), Init->getEndLoc())
+                 : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
+                                                    InitRange.getEnd());
 
     InitializationSequence InitSeq(*this, MemberEntity, Kind, Args);
     ExprResult MemberInit = InitSeq.Perform(*this, MemberEntity, Kind, Args,

@@ -485,11 +485,6 @@ void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
 }
 
-void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
-(CXXDependentVariadicReifierTypeLoc TL) {
-  Record.AddSourceLocation(TL.getEllipsisLoc());
-}
-
 void TypeLocWriter::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }

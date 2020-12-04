@@ -277,9 +277,6 @@ public:
   /// Determine whether this template argument is a pack expansion.
   bool isPackExpansion() const;
 
-  /// Determine whether this template argument is a dependent variadic reifier.
-  bool isVariadicReifier() const;
-
   /// Determine whether this template argument is constexpr promoting.
   bool isConstexprPromoting() const;
 

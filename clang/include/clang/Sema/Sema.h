@@ -6923,24 +6923,10 @@ public:
                                     Expr *InitList,
                                     SourceLocation EllipsisLoc);
 
-  MemInitResult ActOnMemInitializer(Decl *ConstructorD,
-                                    Scope *S,
-                                    CXXScopeSpec &SS,
-                                    IdentifierInfo *MemberOrBase,
-                                    QualType BaseTy,
-                                    ParsedType TemplateTypeTy,
-                                    const DeclSpec &DS,
-                                    SourceLocation IdLoc,
-                                    SourceLocation LParenLoc,
-                                    ArrayRef<Expr *> Args,
-                                    SourceLocation RParenLoc,
-                                    SourceLocation EllipsisLoc);
-
   MemInitResult BuildMemInitializer(Decl *ConstructorD,
                                     Scope *S,
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
-                                    QualType ReifierType,
                                     ParsedType TemplateTypeTy,
                                     const DeclSpec &DS,
                                     SourceLocation IdLoc,
@@ -7143,8 +7129,7 @@ public:
                                        SourceRange SpecifierRange,
                                        bool Virtual, AccessSpecifier Access,
                                        TypeSourceInfo *TInfo,
-                                       SourceLocation EllipsisLoc,
-                                       bool VariadicReifier = false);
+                                       SourceLocation EllipsisLoc);
 
   BaseResult ActOnBaseSpecifier(Decl *classdecl,
                                 SourceRange SpecifierRange,
@@ -7152,8 +7137,7 @@ public:
                                 bool Virtual, AccessSpecifier Access,
                                 ParsedType basetype,
                                 SourceLocation BaseLoc,
-                                SourceLocation EllipsisLoc,
-                                bool VariadicReifier = false);
+                                SourceLocation EllipsisLoc);
 
   bool AttachBaseSpecifiers(CXXRecordDecl *Class,
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
@@ -10296,30 +10280,6 @@ public:
       SourceLocation SBELoc,  SourceLocation SEELoc,
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
       SourceLocation RAngleLoc);
-
-  bool
-  ActOnVariadicReifier(SmallVectorImpl<Expr *> &Expressions,
-                       SourceLocation KWLoc,
-                       IdentifierInfo *KW,
-                       Expr *Range,
-                       SourceLocation LParenLoc,
-                       SourceLocation EllipsisLoc,
-                       SourceLocation RParenLoc);
-  bool
-  ActOnVariadicReifier(SmallVectorImpl<QualType> &Types,
-                       SourceLocation KWLoc,
-                       Expr *Range,
-                       SourceLocation LParenLoc,
-                       SourceLocation EllipsisLoc,
-                       SourceLocation RParenLoc);
-
-  ExprResult
-  ActOnCXXDependentVariadicReifierExpr(Expr *Range,
-                                       SourceLocation KWLoc,
-                                       IdentifierInfo *KW,
-                                       SourceLocation LParenLoc,
-                                       SourceLocation EllipsisLoc,
-                                       SourceLocation RParenLoc);
 
   bool ActOnCXXIdentifierSplice(
       ArrayRef<Expr *> Parts, IdentifierInfo *&Result);

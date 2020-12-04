@@ -188,7 +188,6 @@ def CXXExprSpliceExpr : StmtNode<Expr>;
 def CXXMemberExprSpliceExpr : StmtNode<Expr>;
 def CXXDependentSpliceIdExpr : StmtNode<Expr>;
 def CXXConcatenateExpr : StmtNode<Expr>;
-def CXXDependentVariadicReifierExpr : StmtNode<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : StmtNode<Expr>;

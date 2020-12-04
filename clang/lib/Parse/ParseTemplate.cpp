@@ -1577,13 +1577,6 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-    if (isVariadicReifier()) {
-      if (ParseTemplateReifier(TemplateArgs))
-        return true;
-
-      continue;
-    }
-
     ParsedTemplateArgument Arg = ParseTemplateArgument();
     SourceLocation EllipsisLoc;
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))

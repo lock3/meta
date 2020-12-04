@@ -2856,13 +2856,6 @@ def err_constexpr_range_iteration_failed : Error<
 
 def err_meta_type_constexpr : Error<"meta type variables must be constexpr">;
 
-// variadic reifiers
-def err_namespace_as_variadic_reifier : Error<
-  "'namespace' cannot be used as a variadic reifier.">;
-def err_invalid_reifier_context : Error<
-  "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
-   "reifier in this context: %select{expression|typename}1 expected.">;
-
 // declaration names
 def err_reflected_id_with_integer_prefix : Error<
   "declaration name begins with an integer">;

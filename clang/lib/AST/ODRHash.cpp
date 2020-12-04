@@ -965,12 +965,6 @@ public:
     VisitType(T);
   }
 
-  void VisitCXXDependentVariadicReifierType
-  (const CXXDependentVariadicReifierType *T) {
-    AddQualType(T->getRange()->getType());
-    VisitType(T);
-  }
-
   void VisitParenType(const ParenType *T) {
     AddQualType(T->getInnerType());
     VisitType(T);

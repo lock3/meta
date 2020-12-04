@@ -1051,7 +1051,6 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
 })
 
 DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
-DEF_TRAVERSE_TYPE(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPE(ObjCTypeParamType, {})
 
@@ -1351,8 +1350,6 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPELOC(PackExpansionType,
                      { TRY_TO(TraverseTypeLoc(TL.getPatternLoc())); })
-
-DEF_TRAVERSE_TYPELOC(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPELOC(ObjCTypeParamType, {})
 
@@ -2741,7 +2738,6 @@ DEF_TRAVERSE_STMT(CXXExprSpliceExpr, {})
 DEF_TRAVERSE_STMT(CXXMemberExprSpliceExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentSpliceIdExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
-DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
 
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {
   if (S->getLifetimeExtendedTemporaryDecl()) {

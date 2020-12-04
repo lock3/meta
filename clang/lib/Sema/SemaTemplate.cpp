@@ -5768,15 +5768,6 @@ bool Sema::CheckTemplateArgumentList(
         return true;
       }
 
-      if (NewArgs[ArgIdx].getArgument().isVariadicReifier()) {
-        while (ArgIdx < NumArgs) {
-          Converted.push_back(NewArgs[ArgIdx].getArgument());
-          ++ArgIdx;
-        }
-
-        return false;
-      }
-
       // We're now done with this argument.
       ++ArgIdx;
 
@@ -6182,11 +6173,6 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentTemplateSpecializationType(
 bool UnnamedLocalNoLinkageFinder::VisitPackExpansionType(
                                                    const PackExpansionType* T) {
   return Visit(T->getPattern());
-}
-
-bool UnnamedLocalNoLinkageFinder::VisitCXXDependentVariadicReifierType
-(const CXXDependentVariadicReifierType* T) {
-  return Visit(T->getRange()->getType());
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitObjCObjectType(const ObjCObjectType *) {

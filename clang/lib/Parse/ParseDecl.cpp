@@ -2785,20 +2785,7 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
     return;
 
   SourceLocation EllipsisLoc;
-
-  ExprResult ArgExpr;
-  ArgsVector ArgExprs;
-
-  if (isVariadicReifier()) {
-    llvm::SmallVector<Expr*, 4> ExpandedAlignments;
-    if(ParseVariadicReifier(ExpandedAlignments)) {
-      T.skipToEnd();
-      return;
-    }
-
-    ArgExprs.append(ExpandedAlignments.begin(), ExpandedAlignments.end());
-  } else
-    ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
+  ExprResult ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
   if (ArgExpr.isInvalid()) {
     T.skipToEnd();
     return;
@@ -2808,6 +2795,7 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
   if (EndLoc)
     *EndLoc = T.getCloseLocation();
 
+  ArgsVector ArgExprs;
   ArgExprs.push_back(ArgExpr.get());
   Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
                ParsedAttr::AS_Keyword, EllipsisLoc);
@@ -4746,21 +4734,17 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
-    IdentifierInfo *Ident;
-    SourceLocation IdentLoc;
-
     // Parse enumerator. If failed, try skipping till the start of the next
     // enumerator definition.
-    if (isIdentifier()) {
-      Ident = Tok.getIdentifierInfo();
-      IdentLoc = ConsumeIdentifier();
-    } else {
+    if (!isIdentifier()) {
       Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
       if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
           TryConsumeToken(tok::comma))
         continue;
       break;
     }
+    IdentifierInfo *Ident = Tok.getIdentifierInfo();
+    SourceLocation IdentLoc = ConsumeIdentifier();
 
     // If attributes exist after the enumerator, parse them.
     ParsedAttributesWithRange attrs(AttrFactory);

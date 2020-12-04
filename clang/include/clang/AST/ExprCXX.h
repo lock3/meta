@@ -5520,57 +5520,6 @@ public:
   }
 };
 
-class CXXDependentVariadicReifierExpr : public Expr {
-
-  Expr *Range;
-
-  SourceLocation KeywordLoc;
-  IdentifierInfo *Keyword;
-
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
-  SourceLocation EllipsisLoc;
-public:
-  CXXDependentVariadicReifierExpr(QualType DependentTy,
-                                  Expr *Range,
-                                  SourceLocation KeywordLoc,
-                                  IdentifierInfo *Keyword,
-                                  SourceLocation LParenLoc,
-                                  SourceLocation RParenLoc,
-                                  SourceLocation EllipsisLoc)
-    : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
-           OK_Ordinary), Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
-      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {
-    setDependence(computeDependence(this));
-  }
-
-  CXXDependentVariadicReifierExpr(EmptyShell Empty)
-    : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
-
-  /// Returns the source code location of the (optional) ellipsis.
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
-
-  tok::TokenKind getKeywordId() const { return Keyword->getTokenID(); }
-
-  Expr *getRange() const { return Range; }
-
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-
-  SourceLocation getEndLoc() const { return RParenLoc; }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
-  }
-};
-
 /// Represents a C++11 selection that yields a single expression from
 /// a parameter pack or destructurable class.
 ///

@@ -2062,7 +2062,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::DependentIdentifierSplice:
-  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -3971,7 +3970,6 @@ recurse:
   case Expr::CXXMemberExprSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXConcatenateExprClass:
-  case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 

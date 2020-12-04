@@ -6360,8 +6360,7 @@ ExprResult Sema::BuildCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
 
     // Determine whether this is a dependent call inside a C++ template,
     // in which case we won't do any semantic analysis now.
-    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)
-        || Expr::hasDependentVariadicReifierArguments(ArgExprs)) {
+    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)) {
       if (ExecConfig) {
         return CUDAKernelCallExpr::Create(
             Context, Fn, cast<CallExpr>(ExecConfig), ArgExprs,

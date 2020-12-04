@@ -3464,7 +3464,6 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::PackExpansion:
   case Type::ExtInt:
   case Type::DependentExtInt:
-  case Type::CXXDependentVariadicReifier:
   case Type::DependentIdentifierSplice:
     llvm_unreachable("type should never be variably-modified");
 
@@ -4960,17 +4959,6 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
       PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
-  return QualType(T, 0);
-}
-
-QualType
-ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
-                                               SourceLocation EllipsisLoc,
-                                               SourceLocation RParenLoc) {
-  CXXDependentVariadicReifierType *T =
-    new (*this, TypeAlignment)
-    CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
-  Types.push_back(T);
   return QualType(T, 0);
 }
 

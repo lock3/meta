@@ -757,26 +757,6 @@ let Class = PackExpansionType in {
   }]>;
 }
 
-let Class = CXXDependentVariadicReifierType in {
-  def : Property<"range", ExprRef> {
-    let Read = [{ node->getRange() }];
-  }
-  def : Property<"keywordLoc", SourceLocation> {
-    let Read = [{ node->getBeginLoc() }];
-  }
-  def : Property<"ellipsisLoc", SourceLocation> {
-    let Read = [{ node->getEllipsisLoc() }];
-  }
-  def : Property<"rparenLoc", SourceLocation> {
-    let Read = [{ node->getEndLoc() }];
-  }
-
-  def : Creator<[{
-    return ctx.getCXXDependentVariadicReifierType(range, keywordLoc,
-                                                  ellipsisLoc, rparenLoc);
-  }]>;
-}
-
 let Class = SubstTemplateTypeParmPackType in {
   def : Property<"replacedParameter", QualType> {
     let Read = [{ QualType(node->getReplacedParameter(), 0) }];

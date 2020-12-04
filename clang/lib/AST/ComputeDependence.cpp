@@ -412,10 +412,6 @@ ExprDependence clang::computeDependence(CXXMemberExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(CXXDependentVariadicReifierExpr *E) {
-  return E->getRange()->getDependence() | ExprDependence::TypeValue;
-}
-
 ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
   auto D = E->getBase()->getDependence() | E->getSelector()->getDependence();
   D &= ~ExprDependence::UnexpandedPack;
