@@ -6994,6 +6994,19 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       }
     }
 
+    // Treat reflections in template arguments as RValue expressions.
+    // FIXME: This is a bit strange. TemplateArgument doesn't accept
+    // a reflection APValue like it accepts an integer. Instead, we
+    // store the template argument in a constant expression which
+    // holds its rvalue evaluation.
+    if (ParamType->isReflectionType()) {
+      ExprResult ConvertedArg = DefaultFunctionArrayLvalueConversion(Arg);
+      if (ConvertedArg.isInvalid())
+        return ExprError();
+
+      Arg = ConvertedArg.get();
+    }
+
     // C++17 [temp.arg.nontype]p1:
     //   A template-argument for a non-type template parameter shall be
     //   a converted constant expression of the type of the template-parameter.
@@ -7026,16 +7039,12 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     case APValue::Reflection: {
       assert(ParamType->isReflectionType());
 
-      // FIXME: This conversion seems wrong. However, without
-      // converting this expression, subsequent evaluations of the
-      // constant expression are lvalue evaluations -- incompatible
-      // with the value kind of the produced expression (rvalue), that
-      // we need for use of reflections as a template arguments.
-      ExprResult ConvertedArg = DefaultFunctionArrayLvalueConversion(Arg);
-      if (ConvertedArg.isInvalid())
-        return ExprError();
+      // Create a constant expression if one does not already exists
+      // to hold the computed value.
+      auto *CE = dyn_cast_or_null<ConstantExpr>(Arg);
+      if (!CE)
+        CE = ConstantExpr::Create(Context, Arg, Value);
 
-      auto *CE = ConstantExpr::Create(Context, ConvertedArg.get(), Value);
       Converted = TemplateArgument(CE, TemplateArgument::Expression);
       break;
     }

@@ -330,35 +330,35 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
 
     case TemplateArgument::Expression: {
       Expr *E = Arg.getAsExpr();
-      if (E->getType()->isReflectionType()) {
-        Expr::EvalResult Result;
-        Expr::EvalContext EvalCtx(Ctx, nullptr);
-        bool EvalStatus = E->EvaluateAsRValue(Result, EvalCtx);
-        assert(EvalStatus);
+      if (!E->getType()->isReflectionType())
+        continue;
 
-        Reflection Refl(Ctx, Result.Val);
-        switch (Refl.getKind()) {
-        case RK_type: {
-          QualType ReflTy = Refl.getAsType().getCanonicalType();
-          LV.merge(getLVForType(*ReflTy, computation));
-          continue;
-        }
-        case RK_declaration: {
-          const Decl *D = Refl.getAsDeclaration();
-          if (const auto *ND = dyn_cast<NamedDecl>(D)) {
-            LV.merge(getLVForDecl(ND, computation));
-            continue;
-          }
-          LLVM_FALLTHROUGH;
-        }
-        case RK_invalid:
-        case RK_expression:
-        case RK_base_specifier: {
-          LV.merge(LinkageInfo::internal());
-          continue;
-        }
-        }
+      auto *CE = cast<ConstantExpr>(E);
+      assert(CE->hasAPValueResult());
+
+      Reflection Refl(Ctx, CE->getAPValueResult());
+      switch (Refl.getKind()) {
+      case RK_type: {
+        QualType ReflTy = Refl.getAsType().getCanonicalType();
+        LV.merge(getLVForType(*ReflTy, computation));
+        continue;
       }
+      case RK_declaration: {
+        const Decl *D = Refl.getAsDeclaration();
+        if (const auto *ND = dyn_cast<NamedDecl>(D)) {
+          LV.merge(getLVForDecl(ND, computation));
+          continue;
+        }
+        LLVM_FALLTHROUGH;
+      }
+      case RK_invalid:
+      case RK_expression:
+      case RK_base_specifier: {
+        LV.merge(LinkageInfo::internal());
+        continue;
+      }
+      }
+
       continue;
     }
 
