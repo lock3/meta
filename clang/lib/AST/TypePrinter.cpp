@@ -213,6 +213,9 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
     case Type::TypeSplice:
+    case Type::DependentTypePackSplice:
+    case Type::TypePackSplice:
+    case Type::SubstTypePackSplice:
     case Type::UnaryTransform:
     case Type::Record:
     case Type::Enum:
@@ -1120,8 +1123,43 @@ void TypePrinter::printTypeSpliceBefore(const TypeSpliceType *T,
   }
   spaceBeforePlaceHolder(OS);
 }
+
 void TypePrinter::printTypeSpliceAfter(const TypeSpliceType *T,
                                        raw_ostream &OS) { }
+
+void TypePrinter::printDependentTypePackSpliceBefore(
+                        const DependentTypePackSpliceType *T, raw_ostream &OS) {
+  OS << "...[<";
+  T->getOperand()->printPretty(OS, nullptr, Policy);
+  OS << ">]";
+  spaceBeforePlaceHolder(OS);
+}
+
+void TypePrinter::printDependentTypePackSpliceAfter(
+                      const DependentTypePackSpliceType *T, raw_ostream &OS) { }
+
+void TypePrinter::printTypePackSpliceBefore(const TypePackSpliceType *T,
+                                            raw_ostream &OS) {
+  OS << "...[<";
+  T->getOperand()->printPretty(OS, nullptr, Policy);
+  OS << ">]";
+  spaceBeforePlaceHolder(OS);
+}
+
+void TypePrinter::printTypePackSpliceAfter(const TypePackSpliceType *T,
+                                           raw_ostream &OS) { }
+
+void TypePrinter::printSubstTypePackSpliceBefore(
+                            const SubstTypePackSpliceType *T, raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+  printBefore(T->getReplacementType(), OS);
+}
+
+void TypePrinter::printSubstTypePackSpliceAfter(
+                            const SubstTypePackSpliceType *T, raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+  printAfter(T->getReplacementType(), OS);
+}
 
 void TypePrinter::printUnaryTransformBefore(const UnaryTransformType *T,
                                             raw_ostream &OS) {

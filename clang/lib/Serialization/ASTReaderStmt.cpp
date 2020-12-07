@@ -523,6 +523,15 @@ void ASTStmtReader::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitCXXDependentPackSpliceExpr(
+                                                CXXDependentPackSpliceExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
+void ASTStmtReader::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtReader::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
   llvm_unreachable("unimplemented");
 }

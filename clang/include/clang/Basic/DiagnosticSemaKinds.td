@@ -2852,6 +2852,10 @@ def err_compiler_error_wrong_operand_type : Error<
   "expected a string operand">;
 def err_concatenate_wrong_operand_type : Error<
   "expected either integer or string operand">;
+def err_pack_splice_mismatch : Error<
+  "pack splice element %1 does not splice as an %select{expression|type}0">;
+def note_non_dependent_pack_splicing : Note<
+  "while splicing a non-dependent pack declared here">;
 
 def err_constexpr_range_iteration_failed : Error<
   "constexpr range iteration failed">;

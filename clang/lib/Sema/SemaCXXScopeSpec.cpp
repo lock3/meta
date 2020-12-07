@@ -901,7 +901,8 @@ bool Sema::ActOnCXXNestedNameSpecifier(Scope *S,
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return true;
 
   DependentTemplateName *DTN = Template.getAsDependentTemplateName();
   if (DTN && DTN->isIdentifier()) {

@@ -486,9 +486,9 @@ ExprResult Parser::ParseBraceInitializer() {
     SubElt = Actions.CorrectDelayedTyposInExpr(SubElt.get());
 
     // If we couldn't parse the subelement, bail out.
-    if (SubElt.isUsable()) {
-      InitExprs.push_back(SubElt.get());
-    } else {
+    if (!SubElt.isUsable() ||
+        Actions.tryExpandNonDependentPack(SubElt.get(), /*IsCall=*/false,
+                                          InitExprs)) {
       InitExprsOk = false;
 
       // We have two ways to try to recover from this error: if the code looks
@@ -574,9 +574,9 @@ bool Parser::ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
       SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
 
     // If we couldn't parse the subelement, bail out.
-    if (!SubElt.isInvalid())
-      InitExprs.push_back(SubElt.get());
-    else
+    if (SubElt.isInvalid() ||
+        Actions.tryExpandNonDependentPack(SubElt.get(), /*IsCall=*/false,
+                                          InitExprs))
       InitExprsOk = false;
 
     if (Tok.is(tok::comma)) {

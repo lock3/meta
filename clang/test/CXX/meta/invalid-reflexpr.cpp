@@ -21,4 +21,5 @@ constexpr int foo() {
   return T();
 }
 
-constexpr int fcall_result = foo<templarg(invalid_refl)>(); // expected-error {{reflection is not a constant expression}} expected-note {{initializer of 'invalid_refl' is unknown}}
+constexpr meta::info invalid_refl_arr [] = { reflexpr() }; // expected-error {{expected expression}}
+constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot expand expression}}

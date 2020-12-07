@@ -90,6 +90,7 @@ namespace clang {
     TST_typeofExpr,
     TST_decltype,         // C++11 decltype
     TST_type_splice,
+    TST_type_pack_splice,
     TST_underlyingType,   // __underlying_type for C++11
     TST_auto,             // C++11 auto
     TST_decltype_auto,    // C++1y decltype(auto)

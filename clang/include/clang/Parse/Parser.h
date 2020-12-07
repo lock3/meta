@@ -1892,6 +1892,7 @@ private:
   /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
   bool ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                            SmallVectorImpl<SourceLocation> &CommaLocs,
+                           bool IsCall,
                            llvm::function_ref<void()> ExpressionStarts =
                                llvm::function_ref<void()>());
 
@@ -3156,10 +3157,13 @@ public:
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
   ExprResult ParseCXXExprSpliceExpr();
   ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base);
+  ExprResult ParseCXXPackSpliceExpr();
   SourceLocation ParseTypeSplice(DeclSpec &DS);
   void AnnotateExistingTypeSplice(const DeclSpec &DS,
                                   SourceLocation StartLoc,
                                   SourceLocation EndLoc);
+  SourceLocation ParseTypePackSplice(DeclSpec &DS);
+  bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
   ExprResult ParseCXXConcatenateExpression();
 

@@ -309,8 +309,15 @@ ExprDependence clang::computeDependence(CXXNoexceptExpr *E, CanThrowResult CT) {
 }
 
 ExprDependence clang::computeDependence(PackExpansionExpr *E) {
-  return (E->getPattern()->getDependence() & ~ExprDependence::UnexpandedPack) |
-         ExprDependence::TypeValueInstantiation;
+  Expr *Pattern = E->getPattern();
+  auto D = Pattern->getDependence() & ~ExprDependence::UnexpandedPack;
+
+  // If a pack expansion is dependent in any way, its type, value, and
+  // instantiation dependent.
+  if (D)
+    D |= ExprDependence::TypeValueInstantiation;
+
+  return D;
 }
 
 ExprDependence clang::computeDependence(SubstNonTypeTemplateParmExpr *E) {
@@ -413,11 +420,27 @@ ExprDependence clang::computeDependence(CXXCompilerErrorExpr *E) {
 }
 
 ExprDependence clang::computeDependence(CXXExprSpliceExpr *E) {
-  return ExprDependence::TypeValueInstantiation;
+  auto D = ExprDependence::TypeValueInstantiation;
+  D |= E->getReflection()->getDependence() & ExprDependence::UnexpandedPack;
+  return D;
 }
 
 ExprDependence clang::computeDependence(CXXMemberExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
+}
+
+ExprDependence clang::computeDependence(CXXDependentPackSpliceExpr *E) {
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
+  Depends |= E->getOperand()->getDependence();
+  return Depends;
+}
+
+ExprDependence clang::computeDependence(CXXPackSpliceExpr *E) {
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
+  for (Expr *SE : E->expansions()) {
+    Depends |= SE->getDependence();
+  }
+  return Depends;
 }
 
 ExprDependence clang::computeDependence(CXXSelectionExpr *E) {

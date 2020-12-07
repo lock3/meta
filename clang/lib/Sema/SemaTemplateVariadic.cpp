@@ -57,7 +57,22 @@ namespace {
       if (T->getDepth() < DepthLimit)
         Unexpanded.push_back({T, Loc});
     }
-
+    void addUnexpanded(CXXPackSpliceExpr *E) {
+      Unexpanded.push_back({E, {E->getBeginLoc(), E->getEndLoc()}});
+    }
+    void addUnexpanded(CXXDependentPackSpliceExpr *E) {
+      Unexpanded.push_back({E, {E->getBeginLoc(), E->getEndLoc()}});
+    }
+    void addUnexpanded(const DependentTypePackSpliceType *T,
+                       SourceLocation SBE = SourceLocation(),
+                       SourceLocation SEE = SourceLocation()) {
+      Unexpanded.push_back({T, {SBE, SEE}});
+    }
+    void addUnexpanded(const TypePackSpliceType *T,
+                       SourceLocation SBE = SourceLocation(),
+                       SourceLocation SEE = SourceLocation()) {
+      Unexpanded.push_back({T, {SBE, SEE}});
+    }
   public:
     explicit CollectUnexpandedParameterPacksVisitor(
         SmallVectorImpl<UnexpandedParameterPack> &Unexpanded)
@@ -94,6 +109,37 @@ namespace {
       if (E->getDecl()->isParameterPack())
         addUnexpanded(E->getDecl(), E->getLocation());
 
+      return true;
+    }
+
+    bool VisitCXXDependentPackSpliceExpr(CXXDependentPackSpliceExpr *E) {
+      addUnexpanded(E);
+      return true;
+    }
+
+    bool VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+      addUnexpanded(E);
+      return true;
+    }
+
+    bool VisitDependentTypePackSpliceTypeLoc(
+                                            DependentTypePackSpliceTypeLoc TL) {
+      addUnexpanded(TL.getTypePtr(), TL.getSBELoc(), TL.getSEELoc());
+      return true;
+    }
+
+    bool VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+      addUnexpanded(TL.getTypePtr(), TL.getSBELoc(), TL.getSEELoc());
+      return true;
+    }
+
+    bool VisitDependentTypePackSpliceType(DependentTypePackSpliceType *T) {
+      addUnexpanded(T);
+      return true;
+    }
+
+    bool VisitTypePackSpliceType(TypePackSpliceType *T) {
+      addUnexpanded(T);
       return true;
     }
 
@@ -349,7 +395,7 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     }
   }
 
-  SmallVector<SourceLocation, 4> Locations;
+  SmallVector<SourceRange, 4> Locations;
   SmallVector<IdentifierInfo *, 4> Names;
   llvm::SmallPtrSet<IdentifierInfo *, 4> NamesKnown;
 
@@ -358,8 +404,15 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     if (const TemplateTypeParmType *TTP
           = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>())
       Name = TTP->getIdentifier();
+    else if (auto *ND = Unexpanded[I].first.dyn_cast<NamedDecl *>())
+      Name = ND->getIdentifier();
+#ifndef NDEBUG
     else
-      Name = Unexpanded[I].first.get<NamedDecl *>()->getIdentifier();
+      assert(Unexpanded[I].first.is<CXXPackSpliceExpr *>() ||
+             Unexpanded[I].first.is<CXXDependentPackSpliceExpr *>() ||
+             Unexpanded[I].first.is<const DependentTypePackSpliceType *>() ||
+             Unexpanded[I].first.is<const TypePackSpliceType *>());
+#endif
 
     if (Name && NamesKnown.insert(Name).second)
       Names.push_back(Name);
@@ -374,7 +427,7 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     DB << Names[I];
 
   for (unsigned I = 0, N = Locations.size(); I != N; ++I)
-    DB << SourceRange(Locations[I]);
+    DB << Locations[I];
   return true;
 }
 
@@ -673,14 +726,39 @@ bool Sema::CheckParameterPacksForExpansion(
     bool &RetainExpansion, Optional<unsigned> &NumExpansions) {
   ShouldExpand = true;
   RetainExpansion = false;
-  std::pair<IdentifierInfo *, SourceLocation> FirstPack;
+  std::pair<IdentifierInfo *, SourceRange> FirstPack;
   bool HaveFirstPack = false;
   Optional<unsigned> NumPartialExpansions;
-  SourceLocation PartiallySubstitutedPackLoc;
+  SourceRange PartiallySubstitutedPackLoc;
 
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
                                                   i != end; ++i) {
+    // If this is a dependent pack splice, we don't have what we need yet.
+    if (i->first.is<CXXDependentPackSpliceExpr *>() ||
+        i->first.is<const DependentTypePackSpliceType *>()) {
+      ShouldExpand = false;
+      continue;
+    }
+
+    // If this is a fully or partially resolved pack splice, we should
+    // be able to get some details about this expansion.
+    if (auto *SE = i->first.dyn_cast<CXXPackSpliceExpr *>()) {
+      if (CheckCXXPackSpliceForExpansion(SE, ShouldExpand, NumExpansions))
+        return true;
+
+      continue;
+    }
+
+    // If this is a fully or partially resolved pack splice, we should
+    // be able to get some details about this expansion.
+    if (auto *ST = i->first.dyn_cast<const TypePackSpliceType *>()) {
+      if (CheckCXXPackSpliceForExpansion(ST, ShouldExpand, NumExpansions))
+        return true;
+
+      continue;
+    }
+
     // Compute the depth and index for this parameter pack.
     unsigned Depth = 0, Index = 0;
     IdentifierInfo *Name;
@@ -769,7 +847,7 @@ bool Sema::CheckParameterPacksForExpansion(
       if (HaveFirstPack)
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict)
           << FirstPack.first << Name << *NumExpansions << NewPackSize
-          << SourceRange(FirstPack.second) << SourceRange(i->second);
+          << FirstPack.second << i->second;
       else
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict_multilevel)
           << Name << *NumExpansions << NewPackSize
@@ -793,7 +871,7 @@ bool Sema::CheckParameterPacksForExpansion(
           CurrentInstantiationScope->getPartiallySubstitutedPack();
       Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict_partial)
         << PartialPack << *NumPartialExpansions << *NumExpansions
-        << SourceRange(PartiallySubstitutedPackLoc);
+        << PartiallySubstitutedPackLoc;
       return true;
     }
 
@@ -808,26 +886,66 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(QualType T,
   QualType Pattern = cast<PackExpansionType>(T)->getPattern();
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseType(Pattern);
+  if (SubstPacks(Unexpanded, TemplateArgs))
+    return None;
 
   Optional<unsigned> Result;
-  for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
+  for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
+                                                 end = Unexpanded.end();
+                                                  i != end; ++i) {
+    // If this is a dependent pack splice, we don't have what we need yet.
+    if (i->first.is<CXXDependentPackSpliceExpr *>() ||
+        i->first.is<const DependentTypePackSpliceType *>()) {
+      return None;
+    }
+
+    // If this is a fully or partially resolved pack splice, we should
+    // be able to get some details about this expansion.
+    //
+    // FIXME: Do we need this?
+    if (auto *SE = i->first.dyn_cast<CXXPackSpliceExpr *>()) {
+      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(SE);
+      if (!NumExpansions)
+        return None;
+
+      assert((!Result || *Result == *NumExpansions) &&
+             "inconsistent pack sizes");
+      Result = NumExpansions;
+
+      continue;
+    }
+
+    // If this is a fully or partially resolved pack splice, we should
+    // be able to get some details about this expansion.
+    if (auto *ST = i->first.dyn_cast<const TypePackSpliceType *>()) {
+      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(ST);
+      if (!NumExpansions)
+        return None;
+
+      assert((!Result || *Result == *NumExpansions) &&
+             "inconsistent pack sizes");
+      Result = NumExpansions;
+
+      continue;
+    }
+
     // Compute the depth and index for this parameter pack.
     unsigned Depth;
     unsigned Index;
 
     if (const TemplateTypeParmType *TTP
-          = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>()) {
+          = i->first.dyn_cast<const TemplateTypeParmType *>()) {
       Depth = TTP->getDepth();
       Index = TTP->getIndex();
     } else {
-      NamedDecl *ND = Unexpanded[I].first.get<NamedDecl *>();
+      NamedDecl *ND = i->first.get<NamedDecl *>();
       if (isa<VarDecl>(ND)) {
         // Function parameter pack or init-capture pack.
         typedef LocalInstantiationScope::DeclArgumentPack DeclArgumentPack;
 
         llvm::PointerUnion<Decl *, DeclArgumentPack *> *Instantiation
           = CurrentInstantiationScope->findInstantiationOf(
-                                        Unexpanded[I].first.get<NamedDecl *>());
+                                        i->first.get<NamedDecl *>());
         if (Instantiation->is<Decl*>())
           // The pattern refers to an unexpanded pack. We're not ready to expand
           // this pack yet.
@@ -872,6 +990,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   case TST_typeofExpr:
   case TST_decltype:
   case TST_type_splice:
+  case TST_type_pack_splice:
   case TST_extint:
     if (DS.getRepAsExpr() &&
         DS.getRepAsExpr()->containsUnexpandedParameterPack())

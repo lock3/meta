@@ -1806,6 +1806,24 @@ bool CursorVisitor::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   return false;
 }
 
+bool CursorVisitor::VisitDependentTypePackSpliceTypeLoc(
+                                            DependentTypePackSpliceTypeLoc TL) {
+  if (Expr *E = TL.getOperand())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
+bool CursorVisitor::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  if (Expr *E = TL.getOperand())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  for (Expr *E : TL.expansions())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
 bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }
@@ -1841,6 +1859,7 @@ DEFAULT_TYPELOC_IMPL(Record, TagType)
 DEFAULT_TYPELOC_IMPL(Enum, TagType)
 DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParm, Type)
 DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParmPack, Type)
+DEFAULT_TYPELOC_IMPL(SubstTypePackSplice, Type)
 DEFAULT_TYPELOC_IMPL(Auto, Type)
 DEFAULT_TYPELOC_IMPL(ExtInt, Type)
 DEFAULT_TYPELOC_IMPL(DependentExtInt, Type)

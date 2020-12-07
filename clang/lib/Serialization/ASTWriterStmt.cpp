@@ -427,6 +427,15 @@ void ASTStmtWriter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXDependentPackSpliceExpr(
+                                                CXXDependentPackSpliceExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
+void ASTStmtWriter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
   llvm_unreachable("unimplemented");
 }

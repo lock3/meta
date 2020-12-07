@@ -1787,6 +1787,17 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     cutOffParsing();
     return ExprError();
   }
+  case tok::ellipsis:
+    if (getLangOpts().Reflection) {
+      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+        Res = ParseCXXPackSpliceExpr();
+      }
+      break;
+    }
+
+    // FIXME: duplication of the default case
+    NotCastExpr = true;
+    return ExprError();
   case tok::l_square:
     if (getLangOpts().CPlusPlus11) {
       if (getLangOpts().Reflection) {
@@ -2089,7 +2100,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       if (OpKind == tok::l_paren || !LHS.isInvalid()) {
         if (Tok.isNot(tok::r_paren)) {
           Sema::OverloadParseRAII ParsingOverloads(Actions);
-          if (ParseExpressionList(ArgExprs, CommaLocs, [&] {
+          if (ParseExpressionList(ArgExprs, CommaLocs, /*IsCall=*/true, [&] {
                 PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                     RunSignatureHelp);
               })) {
@@ -2127,9 +2138,6 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
           PT.consumeClose();
         LHS = ExprError();
       } else {
-        assert(
-            (ArgExprs.size() == 0 || ArgExprs.size() - 1 == CommaLocs.size()) &&
-            "Unexpected number of commas!");
         Expr *Fn = LHS.get();
         SourceLocation RParLoc = Tok.getLocation();
         LHS = Actions.ActOnCallExpr(getCurScope(), Fn, Loc, ArgExprs, RParLoc,
@@ -3404,6 +3412,7 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 /// \endverbatim
 bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                                  SmallVectorImpl<SourceLocation> &CommaLocs,
+                                 bool IsCall,
                                  llvm::function_ref<void()> ExpressionStarts) {
   bool SawError = false;
   while (1) {
@@ -3430,21 +3439,21 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       cutOffParsing();
       break;
     }
+
     if (Expr.isInvalid()) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else {
-      Exprs.push_back(Expr.get());
-    }
+    } else if (Actions.tryExpandNonDependentPack(Expr.get(), IsCall, Exprs))
+      return true;
 
     if (Tok.isNot(tok::comma))
       break;
     // Move to the next argument, remember where the comma was.
     Token Comma = Tok;
     CommaLocs.push_back(ConsumeToken());
-
     checkPotentialAngleBracketDelimiter(Comma);
   }
+
   if (SawError) {
     // Ensure typos get diagnosed when errors were encountered while parsing the
     // expression list.
@@ -3453,6 +3462,7 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       if (Expr.isUsable()) E = Expr.get();
     }
   }
+
   return SawError;
 }
 

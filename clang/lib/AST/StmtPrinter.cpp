@@ -2523,6 +2523,18 @@ void StmtPrinter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   OS << ">]";
 }
 
+void StmtPrinter::VisitCXXDependentPackSpliceExpr(CXXDependentPackSpliceExpr *E) {
+  OS << "...[<";
+  PrintExpr(E->getOperand());
+  OS << ">]";
+}
+
+void StmtPrinter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+  OS << "...[<";
+  PrintExpr(E->getOperand());
+  OS << ">]";
+}
+
 void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {
   OS << "(. " << Node->getNameInfo() << " .)";
 }

@@ -3296,6 +3296,7 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::Paren:
   case Type::MacroQualified:
   case Type::SubstTemplateTypeParm:
+  case Type::SubstTypePackSplice:
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:

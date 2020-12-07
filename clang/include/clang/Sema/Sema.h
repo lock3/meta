@@ -236,8 +236,12 @@ namespace threadSafety {
 
 // FIXME: No way to easily map from TemplateTypeParmTypes to
 // TemplateTypeParmDecls, so we have this horrible PointerUnion.
-typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*>,
-                  SourceLocation> UnexpandedParameterPack;
+typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*,
+                                     CXXDependentPackSpliceExpr*,
+                                     CXXPackSpliceExpr*,
+                                     const DependentTypePackSpliceType*,
+                                     const TypePackSpliceType*>,
+                  SourceRange> UnexpandedParameterPack;
 
 /// Describes whether we've seen any nullability information for the given
 /// file.
@@ -1291,8 +1295,8 @@ public:
   /// The number of SFINAE diagnostics that have been trapped.
   unsigned NumSFINAEErrors;
 
-  typedef llvm::DenseMap<ParmVarDecl *, llvm::TinyPtrVector<ParmVarDecl *>>
-    UnparsedDefaultArgInstantiationsMap;
+  using UnparsedDefaultArgInstantiationsMap =
+      llvm::DenseMap<ParmVarDecl *, llvm::TinyPtrVector<ParmVarDecl *>>;
 
   /// A mapping from parameters with unparsed default arguments to the
   /// set of instantiations of each parameter.
@@ -1302,6 +1306,36 @@ public:
   /// where we might end up instantiating an inner class before the
   /// default arguments of its methods have been parsed.
   UnparsedDefaultArgInstantiationsMap UnparsedDefaultArgInstantiations;
+
+  struct LateParsedMethodParameterInfo {
+    LocalInstantiationScope *OriginalScope;
+    LocalInstantiationScope *Scope;
+    llvm::TinyPtrVector<ParmVarDecl *> ExpandedDecls;
+
+    LateParsedMethodParameterInfo(LocalInstantiationScope *OriginalScope)
+        : OriginalScope(OriginalScope), Scope(nullptr), ExpandedDecls() { }
+    LateParsedMethodParameterInfo()
+        : LateParsedMethodParameterInfo(nullptr) { }
+  };
+  using LateParsedParameterMap =
+      llvm::DenseMap<Decl *, LateParsedMethodParameterInfo>;
+  LateParsedParameterMap LateMethodParameterInfo;
+
+  llvm::SmallVector<LateParsedMethodParameterInfo, 1>
+      LateMethodParameterInfoStack;
+
+  class LateParsedMethodParameterInfoRAII {
+    Sema &SemaRef;
+  public:
+    LateParsedMethodParameterInfoRAII(Sema &SemaRef) : SemaRef(SemaRef) {
+      LateParsedMethodParameterInfo Info(SemaRef.CurrentInstantiationScope);
+      SemaRef.LateMethodParameterInfoStack.push_back(Info);
+    }
+
+    ~LateParsedMethodParameterInfoRAII() {
+      SemaRef.LateMethodParameterInfoStack.pop_back();
+    }
+  };
 
   // Contains the locations of the beginning of unparsed default
   // argument locations.
@@ -5002,7 +5036,7 @@ public:
       CorrectionCandidateCallback *CCC = nullptr,
       bool IsInlineAsmIdentifier = false, Token *KeywordReplacement = nullptr);
 
-  void DecomposeUnqualifiedId(const UnqualifiedId &Id,
+  bool DecomposeUnqualifiedId(const UnqualifiedId &Id,
                               TemplateArgumentListInfo &Buffer,
                               DeclarationNameInfo &NameInfo,
                               const TemplateArgumentListInfo *&TemplateArgs);
@@ -7529,7 +7563,7 @@ public:
 
   TemplateArgumentLoc translateTemplateArgument(
                                              const ParsedTemplateArgument &Arg);
-  void translateTemplateArguments(const ASTTemplateArgsPtr &In,
+  bool translateTemplateArguments(const ASTTemplateArgsPtr &In,
                                   TemplateArgumentListInfo &Out);
 
   ParsedTemplateArgument ActOnTemplateTypeArgument(TypeResult ParsedType);
@@ -8628,7 +8662,10 @@ public:
       /// Memoization means we are _not_ instantiating a template because
       /// it is already instantiated (but we entered a context where we
       /// would have had to if it was not already instantiated).
-      Memoization
+      Memoization,
+
+      /// We are splicing a pack that was non-dependent as written.
+      NonDependentPackSplicing
     } Kind;
 
     /// Was the enclosing context a non-instantiation SFINAE context?
@@ -9300,10 +9337,10 @@ public:
                        const MultiLevelTemplateArgumentList &TemplateArgs,
                        bool CXXDirectInit);
 
-  bool
-  SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
-                      CXXRecordDecl *Pattern,
-                      const MultiLevelTemplateArgumentList &TemplateArgs);
+  bool SubstBaseSpecifiers(CXXRecordDecl *Class,
+                           CXXBaseSpecifier *Inputs, unsigned NumInputs,
+                           const MultiLevelTemplateArgumentList &TemplateArgs,
+                           SmallVectorImpl<CXXBaseSpecifier *> &Outputs);
 
   bool
   InstantiateClass(SourceLocation PointOfInstantiation,
@@ -9424,6 +9461,12 @@ public:
                                      VarDecl *Var, bool Recursive = false,
                                      bool DefinitionRequired = false,
                                      bool AtEndOfTU = false);
+
+  bool SubstMemInitializers(CXXConstructorDecl *DestCtor,
+                            CXXCtorInitializer *const *Inputs,
+                            unsigned NumInputs,
+                            const MultiLevelTemplateArgumentList &TemplateArgs,
+                            SmallVectorImpl<CXXCtorInitializer *> &Outputs);
 
   void InstantiateMemInitializers(CXXConstructorDecl *New,
                                   const CXXConstructorDecl *Tmpl,
@@ -10265,8 +10308,7 @@ public:
 
   ExprResult ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
                                     Expr *Reflection,
-                                    SourceLocation SEELoc,
-                                 SourceLocation EllipsisLoc = SourceLocation());
+                                    SourceLocation SEELoc);
 
   ExprResult ActOnCXXMemberExprSpliceExpr(
       Expr *Base, Expr *Refl, bool IsArrow, SourceLocation OpLoc,
@@ -10280,6 +10322,84 @@ public:
       SourceLocation SBELoc,  SourceLocation SEELoc,
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
       SourceLocation RAngleLoc);
+
+  ExprResult ActOnCXXPackSpliceExpr(SourceLocation EllipsisLoc,
+                                    SourceLocation SBELoc,
+                                    Expr *Operand,
+                                    SourceLocation SEELoc);
+  ExprResult BuildUnresolvedCXXPackSpliceExpr(Scope *S,
+                                              SourceLocation EllipsisLoc,
+                                              SourceLocation SBELoc,
+                                              Expr *Operand,
+                                              SourceLocation SEELoc);
+  ExprResult BuildResolvedCXXPackSpliceExpr(SourceLocation EllipsisLoc,
+                                            SourceLocation SBELoc,
+                                            Expr *Operand,
+                                            ArrayRef<Expr *> Expansions,
+                                            SourceLocation SEELoc);
+
+  bool CheckCXXPackSpliceForExpansion(CXXPackSpliceExpr *E,
+                                      bool &ShouldExpand,
+                                      Optional<unsigned> &NumExpansions);
+  bool CheckCXXPackSpliceForExpansion(const TypePackSpliceType *T,
+                                      bool &ShouldExpand,
+                                      Optional<unsigned> &NumExpansions);
+
+  Optional<unsigned> getNumArgumentsInExpansion(CXXPackSpliceExpr *E);
+  Optional<unsigned> getNumArgumentsInExpansion(const TypePackSpliceType *T);
+
+  // Unlike most reflection work, defined in
+  // SemaTemplateInstantiate.cpp as we need access to the
+  // TemplateInstantiator to do this cleanly.
+  bool SubstPacks(SmallVectorImpl<UnexpandedParameterPack> &Unexpanded,
+                  const MultiLevelTemplateArgumentList &TemplateArgs);
+
+  bool ExpandCXXPackSplice(CXXPackSpliceExpr *E, TemplateArgumentLoc &TemplArg);
+  ExprResult ExpandCXXPackSpliceAsExpr(CXXPackSpliceExpr *E);
+  QualType ExpandCXXPackSpliceAsType(const TypePackSpliceType *T,
+                                     SourceLocation EllipsisLoc,
+                                     SourceLocation SBELoc,
+                                     SourceLocation SEELoc);
+
+  bool ExpandNonDependentPacks(const TemplateArgumentLoc *Inputs,
+                               unsigned NumInputs,
+                               SourceLocation PointOfInstantiation,
+                               SourceRange InstantiationRange,
+                               TemplateArgumentListInfo &Outputs);
+  bool tryExpandNonDependentPack(const TemplateArgumentLoc &Input,
+                                 TemplateArgumentListInfo &Outputs);
+  bool ExpandNonDependentPacks(Expr *const *Inputs, unsigned NumInputs,
+                               bool IsCall,
+                               SourceLocation PointOfInstantiation,
+                               SourceRange InstantiationRange,
+                               SmallVectorImpl<Expr *> &Outputs);
+  bool tryExpandNonDependentPack(Expr *Input, bool IsCall,
+                                 SmallVectorImpl<Expr *> &Outputs);
+  bool ExpandNonDependentPacks(CXXRecordDecl *Class,
+                               CXXBaseSpecifier *Inputs, unsigned NumInputs,
+                               SourceLocation PointOfInstantiation,
+                               SourceRange InstantiationRange,
+                               SmallVectorImpl<CXXBaseSpecifier *> &Outputs);
+  bool tryExpandNonDependentPack(Decl *Class, CXXBaseSpecifier *Input,
+                                 SmallVectorImpl<CXXBaseSpecifier *> &Outputs);
+  bool ExpandNonDependentPacks(CXXConstructorDecl *Class,
+                               CXXCtorInitializer *const *Inputs,
+                               unsigned NumInputs,
+                               SourceLocation PointOfInstantiation,
+                               SourceRange InstantiationRange,
+                               SmallVectorImpl<CXXCtorInitializer *> &Outputs);
+  bool tryExpandNonDependentPack(Decl *Class, CXXCtorInitializer *Input,
+                                SmallVectorImpl<CXXCtorInitializer *> &Outputs);
+  bool ExpandNonDependentPacks(LateParsedMethodParameterInfo &ParamPack,
+                               ParmVarDecl *const *Inputs, unsigned NumInputs,
+                               SourceLocation PointOfInstantiation,
+                               SourceRange InstantiationRange,
+                               SmallVectorImpl<ParmVarDecl *> &Outputs);
+  bool tryExpandNonDependentPack(IdentifierInfo *ParamII,
+                                 SourceLocation ParamIILoc,
+                                 std::unique_ptr<CachedTokens> DefArgToks,
+                                 ParmVarDecl *Input,
+                          SmallVectorImpl<DeclaratorChunk::ParamInfo> &Outputs);
 
   bool ActOnCXXIdentifierSplice(
       ArrayRef<Expr *> Parts, IdentifierInfo *&Result);
@@ -10320,6 +10440,7 @@ public:
                                              const DeclSpec &DS,
                                              SourceLocation ColonColonLoc);
 
+  QualType ActOnTypeSpliceType(Expr *E);
   QualType BuildTypeSpliceType(Expr *E);
 
   void BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
@@ -10327,8 +10448,10 @@ public:
                               SourceLocation SBELoc,
                               SourceLocation SEELoc);
 
-  ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
-                                                        Expr *E);
+  QualType ActOnTypePackSpliceType(Scope *S, Expr *Operand);
+  QualType BuildUnresolvedTypePackSpliceType(Scope *S, Expr *Operand);
+  QualType BuildResolvedTypePackSpliceType(Expr *Operand,
+                                           ArrayRef<Expr *> Expansions);
 
   ExprResult ActOnMemberAccessExpr(Expr *Base,
                                    SourceLocation OpLoc,

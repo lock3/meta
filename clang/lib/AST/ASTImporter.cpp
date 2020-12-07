@@ -211,7 +211,7 @@ namespace clang {
 
     // Always use these functions to create a Decl during import. There are
     // certain tasks which must be done after the Decl was created, e.g. we
-    // must immediatey register that as an imported Decl.  The parameter `ToD`
+    // must immediately register that as an imported Decl.  The parameter `ToD`
     // will be set to the newly created Decl or if had been imported before
     // then to the already imported Decl.  Returns a bool value set to true if
     // the `FromD` had been imported before.

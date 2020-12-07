@@ -1562,9 +1562,14 @@ public:
       NestedNameSpecifier *NNS, IdentifierInfo *II,
       ArrayRef<TemplateArgument> TemplateArgs) const;
 
-  /// \brief Reflected types.
+  /// Reflection splice types.
   QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
+  QualType getDependentTypePackSpliceType(Expr *Operand) const;
+  QualType getTypePackSpliceType(Expr *Operand,
+                                 ArrayRef<Expr *> Expansions) const;
+  QualType getSubstTypePackSpliceType(Expr *ExpansionExpr,
+                                      QualType Replacement) const;
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
                                  UnaryTransformType::UTTKind UKind) const;

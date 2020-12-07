@@ -5432,15 +5432,17 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   GlobalInstantiations.perform();
 }
 
-void
-Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
-                                 const CXXConstructorDecl *Tmpl,
-                           const MultiLevelTemplateArgumentList &TemplateArgs) {
-  SmallVector<CXXCtorInitializer*, 4> NewInits;
-  bool AnyErrors = Tmpl->isInvalidDecl();
+bool Sema::SubstMemInitializers(CXXConstructorDecl *DestCtor,
+                                CXXCtorInitializer *const *Inputs,
+                                unsigned NumInputs,
+                             const MultiLevelTemplateArgumentList &TemplateArgs,
+                               SmallVectorImpl<CXXCtorInitializer *> &Outputs) {
+  bool AnyErrors = false;
 
   // Instantiate all the initializers.
-  for (const auto *Init : Tmpl->inits()) {
+  for (unsigned I = 0; I != NumInputs; ++I) {
+    CXXCtorInitializer *Init = Inputs[I];
+
     // Only instantiate written initializers, let Sema re-construct implicit
     // ones.
     if (!Init->isWritten())
@@ -5455,6 +5457,13 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
       collectUnexpandedParameterPacks(
           TemplateArgument(Init->getInit()), Unexpanded);
+
+      if (SubstPacks(Unexpanded, TemplateArgs)) {
+        AnyErrors = true;
+        DestCtor->setInvalidDecl();
+        continue;
+      }
+
       bool ShouldExpand = false;
       bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;
@@ -5465,7 +5474,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                           RetainExpansion,
                                           NumExpansions)) {
         AnyErrors = true;
-        New->setInvalidDecl();
+        DestCtor->setInvalidDecl();
         continue;
       }
       assert(ShouldExpand && "Partial instantiation of base initializer?");
@@ -5486,7 +5495,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         TypeSourceInfo *BaseTInfo = SubstType(Init->getTypeSourceInfo(),
                                               TemplateArgs,
                                               Init->getSourceLocation(),
-                                              New->getDeclName());
+                                              DestCtor->getDeclName());
         if (!BaseTInfo) {
           AnyErrors = true;
           break;
@@ -5495,14 +5504,14 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         // Build the initializer.
         MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(),
                                                      BaseTInfo, TempInit.get(),
-                                                     New->getParent(),
+                                                     DestCtor->getParent(),
                                                      SourceLocation());
         if (NewInit.isInvalid()) {
           AnyErrors = true;
           break;
         }
 
-        NewInits.push_back(NewInit.get());
+        Outputs.push_back(NewInit.get());
       }
 
       continue;
@@ -5521,16 +5530,16 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       TypeSourceInfo *TInfo = SubstType(Init->getTypeSourceInfo(),
                                         TemplateArgs,
                                         Init->getSourceLocation(),
-                                        New->getDeclName());
+                                        DestCtor->getDeclName());
       if (!TInfo) {
         AnyErrors = true;
-        New->setInvalidDecl();
+        DestCtor->setInvalidDecl();
         continue;
       }
 
       if (Init->isBaseInitializer())
         NewInit = BuildBaseInitializer(TInfo->getType(), TInfo, TempInit.get(),
-                                       New->getParent(), EllipsisLoc);
+                                       DestCtor->getParent(), EllipsisLoc);
       else
         NewInit = BuildDelegatingInitializer(TInfo, TempInit.get(),
                                   cast<CXXRecordDecl>(CurContext->getParent()));
@@ -5541,7 +5550,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                                      TemplateArgs));
       if (!Member) {
         AnyErrors = true;
-        New->setInvalidDecl();
+        DestCtor->setInvalidDecl();
         continue;
       }
 
@@ -5555,7 +5564,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
 
       if (!IndirectMember) {
         AnyErrors = true;
-        New->setInvalidDecl();
+        DestCtor->setInvalidDecl();
         continue;
       }
 
@@ -5565,11 +5574,25 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
 
     if (NewInit.isInvalid()) {
       AnyErrors = true;
-      New->setInvalidDecl();
+      DestCtor->setInvalidDecl();
     } else {
-      NewInits.push_back(NewInit.get());
+      Outputs.push_back(NewInit.get());
     }
   }
+
+  return AnyErrors;
+}
+
+void
+Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
+                                 const CXXConstructorDecl *Tmpl,
+                           const MultiLevelTemplateArgumentList &TemplateArgs) {
+  SmallVector<CXXCtorInitializer*, 4> NewInits;
+
+  bool AnyErrors = SubstMemInitializers(New, Tmpl->init_begin(),
+                                        Tmpl->getNumCtorInitializers(),
+                                        TemplateArgs, NewInits);
+  AnyErrors |= Tmpl->isInvalidDecl();
 
   // Assign all the initializers to the new constructor.
   ActOnMemInitializers(New,

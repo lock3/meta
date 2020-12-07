@@ -951,10 +951,15 @@ TemplateArgumentLoc Sema::translateTemplateArgument(
 
 /// Translates template arguments as provided by the parser
 /// into template arguments used by semantic analysis.
-void Sema::translateTemplateArguments(const ASTTemplateArgsPtr &TemplateArgsIn,
+bool Sema::translateTemplateArguments(const ASTTemplateArgsPtr &TemplateArgsIn,
                                       TemplateArgumentListInfo &TemplateArgs) {
- for (unsigned I = 0, Last = TemplateArgsIn.size(); I != Last; ++I)
-   TemplateArgs.addArgument(translateTemplateArgument(TemplateArgsIn[I]));
+  for (unsigned I = 0, Last = TemplateArgsIn.size(); I != Last; ++I) {
+    TemplateArgumentLoc ArgLoc = translateTemplateArgument(TemplateArgsIn[I]);
+    if (tryExpandNonDependentPack(ArgLoc, TemplateArgs))
+      return true;
+  }
+
+  return false;
 }
 
 static void maybeDiagnoseTemplateParameterShadow(Sema &SemaRef, Scope *S,
@@ -1090,14 +1095,18 @@ NamedDecl *Sema::ActOnTypeParameter(Scope *S, bool Typename,
 }
 
 /// Convert the parser's template argument list representation into our form.
-static TemplateArgumentListInfo
-makeTemplateArgumentListInfo(Sema &S, TemplateIdAnnotation &TemplateId) {
+static
+bool makeTemplateArgumentListInfo(Sema &S, TemplateIdAnnotation &TemplateId,
+                                  TemplateArgumentListInfo &Result) {
   TemplateArgumentListInfo TemplateArgs(TemplateId.LAngleLoc,
                                         TemplateId.RAngleLoc);
   ASTTemplateArgsPtr TemplateArgsPtr(TemplateId.getTemplateArgs(),
                                      TemplateId.NumArgs);
-  S.translateTemplateArguments(TemplateArgsPtr, TemplateArgs);
-  return TemplateArgs;
+  if (S.translateTemplateArguments(TemplateArgsPtr, TemplateArgs))
+    return true;
+
+  Result = TemplateArgs;
+  return false;
 }
 
 bool Sema::ActOnTypeConstraint(const CXXScopeSpec &SS,
@@ -1127,8 +1136,8 @@ bool Sema::ActOnTypeConstraint(const CXXScopeSpec &SS,
 
   TemplateArgumentListInfo TemplateArgs;
   if (TypeConstr->LAngleLoc.isValid()) {
-    TemplateArgs =
-        makeTemplateArgumentListInfo(*this, *TypeConstr);
+    if (makeTemplateArgumentListInfo(*this, *TypeConstr, TemplateArgs))
+      return true;
   }
   return AttachTypeConstraint(
       SS.isSet() ? SS.getWithLocInContext(Context) : NestedNameSpecifierLoc(),
@@ -3927,7 +3936,8 @@ TypeResult Sema::ActOnTemplateIdType(
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return true;
 
   if (DependentTemplateName *DTN = Template.getAsDependentTemplateName()) {
     QualType T
@@ -3996,7 +4006,8 @@ TypeResult Sema::ActOnTagTemplateIdType(TagUseKind TUK,
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return TypeResult(true);
 
   // Determine the tag kind
   TagTypeKind TagKind = TypeWithKeyword::getTagTypeKindForTypeSpec(TagSpec);
@@ -4270,8 +4281,10 @@ DeclResult Sema::ActOnVarTemplateSpecialization(
          "Variable template specialization is declared with a template it.");
 
   TemplateIdAnnotation *TemplateId = D.getName().TemplateId;
-  TemplateArgumentListInfo TemplateArgs =
-      makeTemplateArgumentListInfo(*this, *TemplateId);
+  TemplateArgumentListInfo TemplateArgs;
+  if (makeTemplateArgumentListInfo(*this, *TemplateId, TemplateArgs))
+    return true;
+
   SourceLocation TemplateNameLoc = D.getIdentifierLoc();
   SourceLocation LAngleLoc = TemplateId->LAngleLoc;
   SourceLocation RAngleLoc = TemplateId->RAngleLoc;
@@ -6094,6 +6107,16 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentIdentifierSpliceType(
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitTypeSpliceType(const TypeSpliceType*) {
+  return false;
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitDependentTypePackSpliceType(
+                                           const DependentTypePackSpliceType*) {
+  return false;
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitTypePackSpliceType(
+                                                    const TypePackSpliceType*) {
   return false;
 }
 
@@ -8391,8 +8414,9 @@ DeclResult Sema::ActOnClassTemplateSpecialization(
   }
 
   // Translate the parser's template argument list in our AST format.
-  TemplateArgumentListInfo TemplateArgs =
-      makeTemplateArgumentListInfo(*this, TemplateId);
+  TemplateArgumentListInfo TemplateArgs;
+  if (makeTemplateArgumentListInfo(*this, TemplateId, TemplateArgs))
+    return true;
 
   // Check for unexpanded parameter packs in any of the template arguments.
   for (unsigned I = 0, N = TemplateArgs.size(); I != N; ++I)
@@ -9651,7 +9675,8 @@ DeclResult Sema::ActOnExplicitInstantiation(
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return true;
 
   // Check that the template argument list is well-formed for this
   // template.
@@ -10118,8 +10143,10 @@ DeclResult Sema::ActOnExplicitInstantiation(Scope *S,
       }
 
       // Translate the parser's template argument list into our AST format.
-      TemplateArgumentListInfo TemplateArgs =
-          makeTemplateArgumentListInfo(*this, *D.getName().TemplateId);
+      TemplateArgumentListInfo TemplateArgs;
+      if (makeTemplateArgumentListInfo(*this, *D.getName().TemplateId,
+                                       TemplateArgs))
+        return true;
 
       DeclResult Res = CheckVarTemplateId(PrevTemplate, TemplateLoc,
                                           D.getIdentifierLoc(), TemplateArgs);
@@ -10192,7 +10219,10 @@ DeclResult Sema::ActOnExplicitInstantiation(Scope *S,
   bool HasExplicitTemplateArgs = false;
   TemplateArgumentListInfo TemplateArgs;
   if (D.getName().getKind() == UnqualifiedIdKind::IK_TemplateId) {
-    TemplateArgs = makeTemplateArgumentListInfo(*this, *D.getName().TemplateId);
+    if (makeTemplateArgumentListInfo(*this, *D.getName().TemplateId,
+                                     TemplateArgs))
+      return true;
+
     HasExplicitTemplateArgs = true;
   }
 
@@ -10475,7 +10505,8 @@ Sema::ActOnTypenameType(Scope *S,
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return TypeResult(true);
 
   TemplateName Template = TemplateIn.get();
   if (DependentTemplateName *DTN = Template.getAsDependentTemplateName()) {

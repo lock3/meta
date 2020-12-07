@@ -2130,6 +2130,14 @@ void StmtProfiler::VisitCXXMemberExprSpliceExpr(const CXXMemberExprSpliceExpr *E
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXDependentPackSpliceExpr(const CXXDependentPackSpliceExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXPackSpliceExpr(const CXXPackSpliceExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitCXXDependentSpliceIdExpr(const CXXDependentSpliceIdExpr *E) {
   VisitName(E->getNameInfo().getName());
 }

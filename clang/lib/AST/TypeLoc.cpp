@@ -529,6 +529,27 @@ void TypeSpliceTypeLoc::initializeLocal(ASTContext &Context,
   setSEELoc(Loc);
 }
 
+void DependentTypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                                     SourceLocation Loc) {
+  setEllipsisLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
+void TypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                            SourceLocation Loc) {
+  setEllipsisLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
+void SubstTypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                                 SourceLocation Loc) {
+  setEllipsisLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
 void UnaryTransformTypeLoc::initializeLocal(ASTContext &Context,
                                        SourceLocation Loc) {
     setKWLoc(Loc);

@@ -2501,6 +2501,13 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                                           Access, TInfo, EllipsisLoc);
   }
 
+  // Base is non-dependent and a pack splice.
+  if (isa<TypePackSpliceType>(BaseType.getTypePtr())) {
+    return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
+                                          Class->getTagKind() == TTK_Class,
+                                          Access, TInfo, EllipsisLoc);
+  }
+
   // Base specifiers must be record types.
   if (!BaseType->isRecordType()) {
     Diag(BaseLoc, diag::err_base_must_be_class) << SpecifierRange;
@@ -4186,6 +4193,8 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
       return true;
   } else if (DS.getTypeSpecType() == TST_decltype) {
     BaseType = BuildDecltypeType(DS.getRepAsExpr(), DS.getTypeSpecTypeLoc());
+  } else if (DS.getTypeSpecType() == TST_type_pack_splice) {
+    BaseType = ActOnTypePackSpliceType(S, DS.getRepAsExpr());
   } else if (DS.getTypeSpecType() == TST_decltype_auto) {
     Diag(DS.getTypeSpecTypeLoc(), diag::err_decltype_auto_invalid);
     return true;
@@ -4432,10 +4441,18 @@ MemInitResult
 Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                            Expr *Init, CXXRecordDecl *ClassDecl,
                            SourceLocation EllipsisLoc) {
+  // TypePackSpliceType being dependent is only an approximation of
+  // the truth. i.e. BaseDependent and its sister variable Dependent,
+  // might not be the best names, this really determines whether or
+  // not we're ready to check the base -- which we're not if we're
+  // still seeing a pack splice type.
+  bool BaseDependent = BaseType->isDependentType() ||
+      BaseType->isTypePackSpliceType();
+
   SourceLocation BaseLoc
     = BaseTInfo->getTypeLoc().getLocalSourceRange().getBegin();
 
-  if (!BaseType->isDependentType() && !BaseType->isRecordType())
+  if (!BaseDependent && !BaseType->isRecordType())
     return Diag(BaseLoc, diag::err_base_init_does_not_name_class)
              << BaseType << BaseTInfo->getTypeLoc().getLocalSourceRange();
 
@@ -4445,7 +4462,7 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
   //   of that class, the mem-initializer is ill-formed. A
   //   mem-initializer-list can initialize a base class using any
   //   name that denotes that base class type.
-  bool Dependent = BaseType->isDependentType() || Init->isTypeDependent();
+  bool Dependent = BaseDependent || Init->isTypeDependent();
 
   SourceRange InitRange = Init->getSourceRange();
   if (EllipsisLoc.isValid()) {
@@ -13416,6 +13433,9 @@ void Sema::ActOnFinishCXXNonNestedClass() {
         ActOnFinishInlineFunctionDef(M);
     }
   }
+
+  assert(LateMethodParameterInfo.empty() && "keyed parameter info not cleaned up");
+  assert(LateMethodParameterInfoStack.empty() && "parameter info not cleaned up");
 }
 
 void Sema::referenceDLLExportedClassMethods() {

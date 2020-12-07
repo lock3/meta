@@ -2089,6 +2089,9 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
+  case Type::DependentTypePackSplice:
+  case Type::TypePackSplice:
+  case Type::SubstTypePackSplice:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -3968,6 +3971,8 @@ recurse:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXExprSpliceExprClass:
   case Expr::CXXMemberExprSpliceExprClass:
+  case Expr::CXXDependentPackSpliceExprClass:
+  case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXCompilerErrorExprClass:
