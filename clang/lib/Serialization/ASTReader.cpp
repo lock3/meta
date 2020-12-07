@@ -6643,6 +6643,26 @@ void TypeLocReader::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   TL.setSEELoc(readSourceLocation());
 }
 
+void TypeLocReader::VisitDependentTypePackSpliceTypeLoc(
+                                            DependentTypePackSpliceTypeLoc TL) {
+  TL.setEllipsisLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  TL.setEllipsisLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitSubstTypePackSpliceTypeLoc(
+                                                SubstTypePackSpliceTypeLoc TL) {
+  TL.setEllipsisLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
 void TypeLocReader::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   TL.setKWLoc(readSourceLocation());
   TL.setLParenLoc(readSourceLocation());

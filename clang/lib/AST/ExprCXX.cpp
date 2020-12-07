@@ -1960,6 +1960,43 @@ CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::CreateEmpty(const ASTContext &
   return new (C) CXXMemberExprSpliceExpr(EmptyShell());
 }
 
+CXXDependentPackSpliceExpr *CXXDependentPackSpliceExpr::Create(
+    const ASTContext &C, SourceLocation EllipsisLoc,
+    SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc) {
+  return new (C) CXXDependentPackSpliceExpr(C.DependentTy, Operand,
+                                            EllipsisLoc, SBELoc, SEELoc);
+}
+
+CXXDependentPackSpliceExpr *CXXDependentPackSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXDependentPackSpliceExpr(EmptyShell());
+}
+
+CXXPackSpliceExpr::CXXPackSpliceExpr(
+    QualType T, Expr *Operand, unsigned NumExpansions, Expr *const *Expansions,
+    SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc)
+  : Expr(CXXPackSpliceExprClass, T, VK_RValue, OK_Ordinary),
+    Operand(Operand), NumExpansions(NumExpansions),
+    EllipsisLoc(EllipsisLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
+  if (Expansions)
+    std::uninitialized_copy(Expansions, Expansions + NumExpansions,
+                            getTrailingObjects<Expr *>());
+  setDependence(computeDependence(this));
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::Create(
+    const ASTContext &C, SourceLocation EllipsisLoc,
+    SourceLocation SBELoc, Expr *Operand,
+    ArrayRef<Expr *> Expansions, SourceLocation SEELoc) {
+  return new (C.Allocate(totalSizeToAlloc<Expr *>(Expansions.size())))
+      CXXPackSpliceExpr(C.DependentTy, Operand,
+                        Expansions.size(), Expansions.data(),
+                        EllipsisLoc, SBELoc, SEELoc);
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXPackSpliceExpr(EmptyShell());
+}
+
 // Assume that the name is an ordinary lvalue for now.
 CXXDependentSpliceIdExpr::CXXDependentSpliceIdExpr(
     DeclarationNameInfo DNI, QualType T, const CXXScopeSpec &SS,

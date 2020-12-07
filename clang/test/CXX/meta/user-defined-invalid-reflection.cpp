@@ -8,14 +8,20 @@ namespace non_template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
 
   int expr_splice_test() {
-    return [<invalid_refl>]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
+    return [<invalid_refl>];
+    // expected-error@-1 {{cannot splice invalid reflection}}
+    // expected-note@-2 {{custom error message}}
   }
 
   int identifier_splice_test() {
-    return [# invalid_refl #]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
+    return [# invalid_refl #];
+    // expected-error@-1 {{cannot splice invalid reflection}}
+    // expected-note@-2 {{custom error message}}
   }
 
-  using ReflectedType = typename [<invalid_refl>]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
+  using ReflectedType = typename [<invalid_refl>];
+  // expected-error@-1 {{cannot splice invalid reflection}}
+  // expected-note@-2 {{custom error message}}
 
   template<typename T>
   constexpr int foo() {
@@ -23,7 +29,10 @@ namespace non_template_reflection {
   }
 
   constexpr meta::info invalid_refl_arr [] = { invalid_refl };
-  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
+  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>();
+  // expected-error@-1 {{cannot splice invalid reflection}}
+  // expected-note@-2 {{custom error message}}
+  // expected-note@-3 {{while splicing a non-dependent pack declared here}}
 }
 
 namespace template_reflection {
@@ -31,14 +40,20 @@ namespace template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection(__concatenate("Error code: ", V));
 
   int expr_splice_test() {
-    return [<invalid_refl<1>>]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
+    return [<invalid_refl<1>>];
+    // expected-error@-1 {{cannot splice invalid reflection}}
+    // expected-note@-2 {{Error code: 1}}
   }
 
   int identifier_splice_test() {
-    return [# invalid_refl<1> #]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
+    return [# invalid_refl<1> #];
+    // expected-error@-1 {{cannot splice invalid reflection}}
+    // expected-note@-2 {{Error code: 1}}
   }
 
-  using ReflectedType = typename [<invalid_refl<1>>]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
+  using ReflectedType = typename [<invalid_refl<1>>];
+  // expected-error@-1 {{cannot splice invalid reflection}}
+  // expected-note@-2 {{Error code: 1}}
 
   template<typename T>
   constexpr int foo() {
@@ -46,5 +61,8 @@ namespace template_reflection {
   }
 
   constexpr meta::info invalid_refl_arr [] = { invalid_refl<1> };
-  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
+  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>();
+  // expected-error@-1 {{cannot splice invalid reflection}}
+  // expected-note@-2 {{Error code: 1}}
+  // expected-note@-3 {{while splicing a non-dependent pack declared here}}
 }

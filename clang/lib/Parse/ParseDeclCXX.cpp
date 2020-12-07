@@ -1195,6 +1195,17 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
   }
 
+  if (Tok.is(tok::ellipsis) &&
+      matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+    // Fake up a Declarator to use with ActOnTypeName.
+    DeclSpec DS(AttrFactory);
+
+    EndLocation = ParseTypePackSplice(DS);
+
+    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeNameContext);
+    return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
+  }
+
   // Check whether we have a template-id that names a type.
   if (Tok.is(tok::annot_template_id)) {
     TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
@@ -2102,10 +2113,9 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
       // Skip the rest of this base specifier, up until the comma or
       // opening brace.
       SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-    } else {
-      // Add this to our array of base specifiers.
-      BaseInfo.push_back(Result.get());
-    }
+    } else if (Actions.tryExpandNonDependentPack(ClassDecl, Result.get(),
+                                                 BaseInfo))
+      break;
 
     // If the next token is a comma, consume it and keep reading
     // base-specifiers.
@@ -2747,6 +2757,8 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   ExprResult BitfieldSize;
   ExprResult TrailingRequiresClause;
   bool ExpectSemi = true;
+
+  Sema::LateParsedMethodParameterInfoRAII LateParsedParamInfo(Actions);
 
   // Parse the first declarator.
   if (ParseCXXMemberDeclaratorBeforeInitializer(
@@ -3551,9 +3563,9 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
     }
 
     MemInitResult MemInit = ParseMemInitializer(ConstructorDecl);
-    if (!MemInit.isInvalid())
-      MemInitializers.push_back(MemInit.get());
-    else
+    if (MemInit.isInvalid() ||
+        Actions.tryExpandNonDependentPack(ConstructorDecl, MemInit.get(),
+                                          MemInitializers))
       AnyErrors = true;
 
     if (Tok.is(tok::comma))
@@ -3624,6 +3636,9 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ParseDecltypeSpecifier(DS);
   } else if (Tok.is(tok::annot_type_splice)) {
     ParseTypeSplice(DS);
+  } else if (Tok.is(tok::ellipsis) &&
+             matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+    ParseTypePackSplice(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
                                            ? takeTemplateIdAnnotation(Tok)
@@ -3673,7 +3688,7 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
       return PreferredType;
     };
     if (Tok.isNot(tok::r_paren) &&
-        ParseExpressionList(ArgExprs, CommaLocs, [&] {
+        ParseExpressionList(ArgExprs, CommaLocs, /*IsCall=*/true, [&] {
           PreferredType.enterFunctionArgument(Tok.getLocation(),
                                               RunSignatureHelp);
         })) {

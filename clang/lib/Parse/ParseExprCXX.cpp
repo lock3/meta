@@ -1007,7 +1007,7 @@ bool Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
         if (Tentative) {
           Parens.skipToEnd();
           *Tentative = LambdaIntroducerTentativeParse::Incomplete;
-        } else if (ParseExpressionList(Exprs, Commas)) {
+        } else if (ParseExpressionList(Exprs, Commas, /*IsCall=*/true)) {
           Parens.skipToEnd();
           Init = ExprError();
         } else {
@@ -1960,7 +1960,7 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
 
     if (Tok.isNot(tok::r_paren)) {
       Sema::OverloadParseRAII ParsingOverloads(Actions);
-      if (ParseExpressionList(Exprs, CommaLocs, [&] {
+      if (ParseExpressionList(Exprs, CommaLocs, /*IsCall=*/true, [&] {
             PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                 RunSignatureHelp);
           })) {
@@ -1978,8 +1978,6 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
     if (!TypeRep)
       return ExprError();
 
-    assert((Exprs.size() == 0 || Exprs.size()-1 == CommaLocs.size())&&
-           "Unexpected number of commas!");
     return Actions.ActOnCXXTypeConstructExpr(TypeRep, T.getOpenLocation(),
                                              Exprs, T.getCloseLocation(),
                                              /*ListInitialization=*/false);
@@ -3222,7 +3220,7 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
         CalledSignatureHelp = true;
         return PreferredType;
       };
-      if (ParseExpressionList(ConstructorArgs, CommaLocs, [&] {
+      if (ParseExpressionList(ConstructorArgs, CommaLocs, /*IsCall=*/true, [&] {
             PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                 RunSignatureHelp);
           })) {
@@ -3323,7 +3321,7 @@ bool Parser::ParseExpressionListOrTypeId(
   // It's not a type, it has to be an expression list.
   // Discard the comma locations - ActOnCXXNew has enough parameters.
   CommaLocsTy CommaLocs;
-  return ParseExpressionList(PlacementArgs, CommaLocs);
+  return ParseExpressionList(PlacementArgs, CommaLocs, /*IsCall=*/true);
 }
 
 /// ParseCXXDeleteExpression - Parse a C++ delete-expression. Delete is used
@@ -4097,7 +4095,7 @@ Parser::ParseCXXSelectMemberExpr() {
     return ExprError();
   llvm::SmallVector<Expr *, 2> Exprs;
   llvm::SmallVector<SourceLocation, 1> CommaLocs;
-  ParseExpressionList(Exprs, CommaLocs, llvm::function_ref<void()>(nullptr));
+  ParseSimpleExpressionList(Exprs, CommaLocs);
 
   if (Parens.consumeClose())
     return ExprError();

@@ -2351,7 +2351,8 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
       // ProduceConstructorSignatureHelp only on VarDecls.
       ExpressionStarts = SetPreferredType;
     }
-    if (ParseExpressionList(Exprs, CommaLocs, ExpressionStarts)) {
+    if (ParseExpressionList(Exprs, CommaLocs, /*IsCall=*/true,
+                            ExpressionStarts)) {
       if (ThisVarDecl && PP.isCodeCompletionReached() && !CalledSignatureHelp) {
         Actions.ProduceConstructorSignatureHelp(
             getCurScope(), ThisVarDecl->getType()->getCanonicalTypeInternal(),
@@ -3936,6 +3937,14 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       if (!Tok.is(tok::kw_typename))
         continue;
       break;
+
+    // C++ pack type splice, which doesn't begin with typename
+    case tok::ellipsis:
+      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+        ParseTypePackSplice(DS);
+        continue;
+      }
+      goto DoneWithDeclSpec;
 
     // GNU typeof support.
     case tok::kw_typeof:
@@ -6899,9 +6908,10 @@ void Parser::ParseParameterDeclarationClause(
         }
       }
 
-      ParamInfo.push_back(DeclaratorChunk::ParamInfo(ParmII,
-                                          ParmDeclarator.getIdentifierLoc(),
-                                          Param, std::move(DefArgToks)));
+      Actions.tryExpandNonDependentPack(ParmII,
+                                        ParmDeclarator.getIdentifierLoc(),
+                                        std::move(DefArgToks),
+                                        cast<ParmVarDecl>(Param), ParamInfo);
     }
 
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {

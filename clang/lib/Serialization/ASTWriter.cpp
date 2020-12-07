@@ -379,6 +379,26 @@ void TypeLocWriter::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   Record.AddSourceLocation(TL.getSEELoc());
 }
 
+void TypeLocWriter::VisitDependentTypePackSpliceTypeLoc(
+                                            DependentTypePackSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
+
+void TypeLocWriter::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
+
+void TypeLocWriter::VisitSubstTypePackSpliceTypeLoc(
+                                                SubstTypePackSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
+
 void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   Record.AddSourceLocation(TL.getKWLoc());
   Record.AddSourceLocation(TL.getLParenLoc());

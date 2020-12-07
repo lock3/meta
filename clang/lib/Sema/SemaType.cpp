@@ -1630,7 +1630,18 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     Expr *E = DS.getRepAsExpr();
     assert(E && "Didn't get an expression for type-splice?");
     // TypeQuals handled by caller.
-    Result = S.BuildTypeSpliceType(E);
+    Result = S.ActOnTypeSpliceType(E);
+    if (Result.isNull()) {
+      Result = Context.IntTy;
+      declarator.setInvalidType(true);
+    }
+    break;
+  }
+  case DeclSpec::TST_type_pack_splice: {
+    Expr *E = DS.getRepAsExpr();
+    assert(E && "Didn't get an expression for type-pack-splice?");
+    // TypeQuals handled by caller.
+    Result = S.ActOnTypePackSpliceType(nullptr, E);
     if (Result.isNull()) {
       Result = Context.IntTy;
       declarator.setInvalidType(true);

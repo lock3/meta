@@ -992,6 +992,22 @@ DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
 DEF_TRAVERSE_TYPE(TypeSpliceType,
                   { TRY_TO(TraverseStmt(T->getReflection())); })
 
+DEF_TRAVERSE_TYPE(DependentTypePackSpliceType, {
+  TRY_TO(TraverseStmt(T->getOperand()));
+})
+
+DEF_TRAVERSE_TYPE(TypePackSpliceType, {
+  TRY_TO(TraverseStmt(T->getOperand()));
+
+  for (Expr *SE : T->expansions())
+    TRY_TO(TraverseStmt(SE));
+})
+
+DEF_TRAVERSE_TYPE(SubstTypePackSpliceType, {
+  TRY_TO(TraverseStmt(T->getExpansionExpr()));
+  TRY_TO(TraverseType(T->getReplacementType()));
+})
+
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
   TRY_TO(TraverseType(T->getBaseType()));
   TRY_TO(TraverseType(T->getUnderlyingType()));
@@ -1276,7 +1292,23 @@ DEF_TRAVERSE_TYPELOC(DependentIdentifierSpliceType, {
 })
 
 DEF_TRAVERSE_TYPELOC(TypeSpliceType, {
-  TRY_TO(TraverseStmt(TL.getTypePtr()->getReflection()));
+  TRY_TO(TraverseStmt(TL.getReflection()));
+})
+
+DEF_TRAVERSE_TYPELOC(DependentTypePackSpliceType, {
+  TRY_TO(TraverseStmt(TL.getOperand()));
+})
+
+DEF_TRAVERSE_TYPELOC(TypePackSpliceType, {
+  TRY_TO(TraverseStmt(TL.getOperand()));
+
+  for (Expr *SE : TL.expansions())
+    TRY_TO(TraverseStmt(SE));
+})
+
+DEF_TRAVERSE_TYPELOC(SubstTypePackSpliceType, {
+  TRY_TO(TraverseStmt(TL.getExpansionExpr()));
+  TRY_TO(TraverseType(TL.getReplacementType()));
 })
 
 DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
@@ -2753,8 +2785,14 @@ DEF_TRAVERSE_STMT(CXXReflectPrintLiteralExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectDumpReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXCompilerErrorExpr, {})
-DEF_TRAVERSE_STMT(CXXExprSpliceExpr, {})
+DEF_TRAVERSE_STMT(CXXExprSpliceExpr, {
+    TRY_TO(TraverseStmt(S->getReflection()));
+})
 DEF_TRAVERSE_STMT(CXXMemberExprSpliceExpr, {})
+DEF_TRAVERSE_STMT(CXXDependentPackSpliceExpr, {
+    TRY_TO(TraverseStmt(S->getOperand()));
+})
+DEF_TRAVERSE_STMT(CXXPackSpliceExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentSpliceIdExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 

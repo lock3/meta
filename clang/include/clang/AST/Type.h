@@ -2100,6 +2100,8 @@ public:
   bool isObjCObjectOrInterfaceType() const;
   bool isObjCIdType() const;                    // id
   bool isDecltypeType() const;
+  bool isTypePackSpliceType() const;
+
   /// Was this type written with the special inert-in-ARC __unsafe_unretained
   /// qualifier?
   ///
@@ -4686,6 +4688,99 @@ public:
                       Expr *E);
 };
 
+class DependentTypePackSpliceType : public Type,
+                                    public llvm::FoldingSetNode {
+  friend class ASTContext; // ASTContext creates these.
+
+  Expr *Operand;
+
+  DependentTypePackSpliceType(const ASTContext &Context, Expr *Operand);
+public:
+  Expr *getOperand() const { return Operand; }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == DependentTypePackSplice;
+  }
+};
+
+class TypePackSpliceType final
+    : public Type,
+      public llvm::FoldingSetNode,
+      private llvm::TrailingObjects<TypePackSpliceType, Expr *> {
+  friend class ASTContext; // ASTContext creates these.
+  friend TrailingObjects;
+
+  Expr *Operand;
+
+  unsigned NumExpansions;
+
+  TypePackSpliceType(const ASTContext &Ctx, Expr *Operand,
+                     unsigned NumExpansions, Expr *const *Expansions);
+public:
+  bool isExpandable() const {
+    return !(getDependence() & ~TypeDependence::UnexpandedPack);
+  }
+
+  Expr *getOperand() const { return Operand; }
+
+  unsigned getNumExpansions() const { return NumExpansions; }
+
+  Expr *getExpansion(unsigned I) {
+    return getExpansions()[I];
+  }
+
+  const Expr *getExpansion(unsigned I) const {
+    return const_cast<TypePackSpliceType *>(this)->getExpansion(I);
+  }
+
+  Expr *const *getExpansions() const {
+    return reinterpret_cast<Expr *const *>(getTrailingObjects<Expr *>());
+  }
+
+  ArrayRef<Expr *> expansions() const {
+    return llvm::makeArrayRef(getExpansions(), getNumExpansions());
+  }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypePackSplice;
+  }
+};
+
+/// Represents the result of substituting a type for a pack splice.
+class SubstTypePackSpliceType : public Type, public llvm::FoldingSetNode {
+  friend class ASTContext;
+
+  Expr *ExpansionExpr;
+
+  SubstTypePackSpliceType(Expr *ExpansionExpr, QualType Canon);
+public:
+  /// Returns the expression which was spliced to form this type
+  Expr *getExpansionExpr() const { return ExpansionExpr; }
+
+  QualType getReplacementType() const {
+    return getCanonicalTypeInternal();
+  }
+
+  bool isSugared() const { return true; }
+  QualType desugar() const { return getReplacementType(); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == SubstTypePackSplice;
+  }
+};
+
 /// A unary type transform, which is a type constructed from another.
 class UnaryTransformType : public Type {
 public:
@@ -5777,15 +5872,7 @@ class PackExpansionType : public Type, public llvm::FoldingSetNode {
   QualType Pattern;
 
   PackExpansionType(QualType Pattern, QualType Canon,
-                    Optional<unsigned> NumExpansions)
-      : Type(PackExpansion, Canon,
-             (Pattern->getDependence() | TypeDependence::Dependent |
-              TypeDependence::Instantiation) &
-                 ~TypeDependence::UnexpandedPack, /*MetaType=*/false),
-        Pattern(Pattern) {
-    PackExpansionTypeBits.NumExpansions =
-        NumExpansions ? *NumExpansions + 1 : 0;
-  }
+                    Optional<unsigned> NumExpansions);
 
 public:
   /// Retrieve the pattern of this pack expansion, which is the
@@ -6993,6 +7080,11 @@ inline bool Type::isObjCBuiltinType() const {
 
 inline bool Type::isDecltypeType() const {
   return isa<DecltypeType>(this);
+}
+
+inline bool Type::isTypePackSpliceType() const {
+  return isa<TypePackSpliceType>(this) ||
+    isa<DependentTypePackSpliceType>(this);
 }
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \

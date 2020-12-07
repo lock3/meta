@@ -373,6 +373,7 @@ bool Declarator::isDeclarationOfFunction() const {
     case TST_wchar:
     case TST_BFloat16:
     case TST_type_splice:
+    case TST_type_pack_splice:
 #define GENERIC_IMAGE_TYPE(ImgType, Id) case TST_##ImgType##_t:
 #include "clang/Basic/OpenCLImageTypes.def"
       return false;
@@ -569,6 +570,7 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T,
   case DeclSpec::TST_decltype:    return "(decltype)";
   case DeclSpec::TST_decltype_auto: return "decltype(auto)";
   case DeclSpec::TST_type_splice: return "(type-splice)";
+  case DeclSpec::TST_type_pack_splice: return "(type-pack-splice)";
   case DeclSpec::TST_underlyingType: return "__underlying_type";
   case DeclSpec::TST_unknown_anytype: return "__unknown_anytype";
   case DeclSpec::TST_atomic: return "_Atomic";

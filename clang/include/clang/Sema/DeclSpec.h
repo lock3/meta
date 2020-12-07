@@ -130,6 +130,7 @@ public:
   static const TST TST_decltype = clang::TST_decltype;
   static const TST TST_decltype_auto = clang::TST_decltype_auto;
   static const TST TST_type_splice = clang::TST_type_splice;
+  static const TST TST_type_pack_splice = clang::TST_type_pack_splice;
   static const TST TST_underlyingType = clang::TST_underlyingType;
   static const TST TST_auto = clang::TST_auto;
   static const TST TST_auto_type = clang::TST_auto_type;
@@ -245,7 +246,8 @@ private:
   }
   static bool isExprRep(TST T) {
     return (T == TST_typeofExpr || T == TST_decltype ||
-            T == TST_type_splice || T == TST_extint);
+            T == TST_type_splice || T == TST_type_pack_splice ||
+            T == TST_extint);
   }
   static bool isTemplateIdRep(TST T) {
     return (T == TST_auto || T == TST_decltype_auto);

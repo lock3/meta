@@ -960,13 +960,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::TypeSplice:
-    if (!IsStructurallyEquivalent(Context,
-                                  cast<TypeSpliceType>(T1)->getReflection(),
-                                  cast<TypeSpliceType>(T2)->getReflection()))
-      return false;
-    break;
-
   case Type::DependentIdentifierSplice:
     if (!IsStructurallyEquivalent(
         Context,
@@ -974,6 +967,36 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         cast<DependentIdentifierSpliceType>(T2)->getIdentifierInfo()))
       return false;
     break;
+
+  case Type::TypeSplice:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<TypeSpliceType>(T1)->getReflection(),
+                                  cast<TypeSpliceType>(T2)->getReflection()))
+      return false;
+    break;
+
+  case Type::DependentTypePackSplice:
+    if (!IsStructurallyEquivalent(Context,
+                           cast<DependentTypePackSpliceType>(T1)->getOperand(),
+                           cast<DependentTypePackSpliceType>(T2)->getOperand()))
+      return false;
+    break;
+
+  case Type::TypePackSplice:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<TypePackSpliceType>(T1)->getOperand(),
+                                  cast<TypePackSpliceType>(T2)->getOperand()))
+      return false;
+    break;
+
+  case Type::SubstTypePackSplice: {
+    const auto *Subst1 = cast<SubstTypePackSpliceType>(T1);
+    const auto *Subst2 = cast<SubstTypePackSpliceType>(T2);
+    if (!IsStructurallyEquivalent(Context, Subst1->getReplacementType(),
+                                  Subst2->getReplacementType()))
+      return false;
+    break;
+  }
 
   case Type::Auto: {
     auto *Auto1 = cast<AutoType>(T1);

@@ -2118,6 +2118,176 @@ public:
   void initializeLocal(ASTContext &Context, SourceLocation Loc);
 };
 
+struct DependentTypePackSpliceLocInfo {
+  SourceLocation EllipsisLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class DependentTypePackSpliceTypeLoc
+    : public ConcreteTypeLoc<UnqualTypeLoc,
+                             DependentTypePackSpliceTypeLoc,
+                             DependentTypePackSpliceType,
+                             DependentTypePackSpliceLocInfo> {
+public:
+  Expr *getOperand() const {
+    return getTypePtr()->getOperand();
+  }
+
+  SourceLocation getEllipsisLoc() const {
+    return getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getEllipsisLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
+struct TypePackSpliceLocInfo {
+  SourceLocation EllipsisLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class TypePackSpliceTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                     TypePackSpliceTypeLoc,
+                                                     TypePackSpliceType,
+                                                     TypePackSpliceLocInfo> {
+public:
+  Expr *getOperand() const {
+    return getTypePtr()->getOperand();
+  }
+
+  unsigned getNumExpansions() const {
+    return getTypePtr()->getNumExpansions();
+  }
+
+  ArrayRef<Expr *> expansions() const {
+    return getTypePtr()->expansions();
+  }
+
+  SourceLocation getEllipsisLoc() const {
+    return getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getEllipsisLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
+struct SubstTypePackSpliceLocInfo {
+  SourceLocation EllipsisLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class SubstTypePackSpliceTypeLoc
+    : public ConcreteTypeLoc<UnqualTypeLoc,
+                             SubstTypePackSpliceTypeLoc,
+                             SubstTypePackSpliceType,
+                             SubstTypePackSpliceLocInfo> {
+public:
+  Expr *getExpansionExpr() const {
+    return getTypePtr()->getExpansionExpr();
+  }
+
+  QualType getReplacementType() const {
+    return getTypePtr()->getReplacementType();
+  }
+
+  SourceLocation getEllipsisLoc() const {
+    return getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getEllipsisLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
 struct UnaryTransformTypeLocInfo {
   // FIXME: While there's only one unary transform right now, future ones may
   // need different representations

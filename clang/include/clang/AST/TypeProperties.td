@@ -399,6 +399,23 @@ let Class = TypeOfType in {
   }]>;
 }
 
+let Class = DependentIdentifierSpliceType in {
+  def : Property<"qualifier", NestedNameSpecifier> {
+    let Read = [{ node->getQualifier() }];
+  }
+  def : Property<"identifier", Identifier> {
+    let Read = [{ node->getIdentifierInfo() }];
+  }
+  def : Property<"templateArguments", Array<TemplateArgument>> {
+    let Read = [{ node->template_arguments() }];
+  }
+
+  def : Creator<[{
+    return ctx.getDependentIdentifierSpliceType(qualifier, identifier,
+                                                templateArguments);
+  }]>;
+}
+
 let Class = DecltypeType in {
   def : Property<"underlyingType", QualType> {
     let Read = [{ node->getUnderlyingType() }];
@@ -425,20 +442,39 @@ let Class = TypeSpliceType in {
   }]>;
 }
 
-let Class = DependentIdentifierSpliceType in {
-  def : Property<"qualifier", NestedNameSpecifier> {
-    let Read = [{ node->getQualifier() }];
-  }
-  def : Property<"identifier", Identifier> {
-    let Read = [{ node->getIdentifierInfo() }];
-  }
-  def : Property<"templateArguments", Array<TemplateArgument>> {
-    let Read = [{ node->template_arguments() }];
+let Class = DependentTypePackSpliceType in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node->getOperand() }];
   }
 
   def : Creator<[{
-    return ctx.getDependentIdentifierSpliceType(qualifier, identifier,
-                                                templateArguments);
+    return ctx.getDependentTypePackSpliceType(operand);
+  }]>;
+}
+
+let Class = TypePackSpliceType in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node->getOperand() }];
+  }
+  def : Property<"expansions", Array<ExprRef>> {
+    let Read = [{ node->expansions() }];
+  }
+
+  def : Creator<[{
+    return ctx.getTypePackSpliceType(operand, expansions);
+  }]>;
+}
+
+let Class = SubstTypePackSpliceType in {
+  def : Property<"expansionExpr", ExprRef> {
+    let Read = [{ node->getExpansionExpr() }];
+  }
+  def : Property<"replacementType", QualType> {
+    let Read = [{ node->getReplacementType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getSubstTypePackSpliceType(expansionExpr, replacementType);
   }]>;
 }
 

@@ -936,6 +936,19 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         return true;
       }
     }
+
+    if (Tok.is(tok::ellipsis) &&
+        matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      // Use the location of the '[' token
+      SourceLocation OpenLoc = NextToken().getLocation();
+
+      if (!ConsumeAndStoreTypePackSplice(Toks)) {
+        Diag(Tok.getLocation(), diag::err_expected_end_of_splice);
+        Diag(OpenLoc, diag::note_matching);
+        return true;
+      }
+    }
+
     do {
       // Walk over a component of a nested-name-specifier.
       if (Tok.is(tok::coloncolon)) {

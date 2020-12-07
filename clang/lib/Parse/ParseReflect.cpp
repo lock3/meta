@@ -392,6 +392,33 @@ ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base) {
       TemplateKWLoc, SBELoc, SEELoc, /*TemplateArgs=*/nullptr);
 }
 
+/// Parse pack splice expression.
+///
+/// \verbatim
+///   pack-splice:
+///     '...' '[' '<' constant-expression '>' ']'
+/// \endverbatim
+ExprResult Parser::ParseCXXPackSpliceExpr() {
+  assert(Tok.is(tok::ellipsis) &&
+         matchCXXSpliceBegin(tok::less, /*LookAhead=*/1) && "Not '[<'");
+  SourceLocation EllipsisLoc = ConsumeToken();
+
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::less, SBELoc))
+    return ExprError();
+
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid())
+    return ExprError();
+
+  SourceLocation SEELoc;
+  if (parseCXXSpliceEnd(tok::greater, SEELoc))
+    return ExprError();
+
+  return Actions.ActOnCXXPackSpliceExpr(EllipsisLoc, SBELoc,
+                                        Expr.get(), SEELoc);
+}
+
 bool Parser::AnnotateIdentifierSplice() {
   assert(matchCXXSpliceBegin(tok::hash) && GetLookAheadToken(2).isNot(tok::ellipsis));
 
@@ -497,19 +524,23 @@ SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
     ConsumeAnnotationToken();
     if (Result.isInvalid()) {
       DS.SetTypeSpecError();
-      return EndLoc;
+      return SourceLocation();
     }
   } else {
     StartLoc = ConsumeToken();
 
     SourceLocation SBELoc;
     if (parseCXXSpliceBegin(tok::less, SBELoc))
-      return EndLoc;
+      return SourceLocation();
 
     Result = ParseConstantExpression();
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return SourceLocation();
+    }
 
     if (parseCXXSpliceEnd(tok::greater, EndLoc))
-      return EndLoc;
+      return SourceLocation();
   }
 
   const char *PrevSpec = nullptr;
@@ -540,6 +571,116 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
   Tok.setAnnotationEndLoc(EndLoc);
   Tok.setLocation(StartLoc);
   PP.AnnotateCachedTokens(Tok);
+}
+
+/// Parse a type pack splice
+///
+/// \verbatim
+///   type-pack-splice:
+///     '...' '[' '<' reflection '>' ']'
+/// \endverbatim
+///
+/// The constant expression must be a reflection of a type.
+SourceLocation Parser::ParseTypePackSplice(DeclSpec &DS) {
+  assert((Tok.is(tok::ellipsis) &&
+          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
+         && "Not a type pack splice");
+
+  SourceLocation StartLoc = ConsumeToken();
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::less, SBELoc))
+    return SourceLocation();
+
+  ExprResult Result = ParseConstantExpression();
+  if (Result.isInvalid()) {
+    DS.SetTypeSpecError();
+    return SourceLocation();
+  }
+
+  SourceLocation EndLoc;
+  if (parseCXXSpliceEnd(tok::greater, EndLoc))
+    return SourceLocation();
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  const PrintingPolicy &Policy = Actions.getASTContext().getPrintingPolicy();
+
+  if (DS.SetTypeSpecType(DeclSpec::TST_type_pack_splice, StartLoc, PrevSpec,
+                         DiagID, Result.get(), Policy)) {
+    Diag(StartLoc, DiagID) << PrevSpec;
+    DS.SetTypeSpecError();
+  }
+  return EndLoc;
+}
+
+// This is a custom method for storing the type pack splice tokens as
+// the existing methods for doing so (e.g. ConsumeAndStoreUntil) don't
+// work with our use of introductory and ending token sequences
+// (i.e. '[' '<' and '>' ']').
+//
+// As a reminder, these cannot be combined by the lexer per cases like:
+//   b[x<a>]
+bool Parser::ConsumeAndStoreTypePackSplice(CachedTokens &Toks) {
+  assert((Tok.is(tok::ellipsis) &&
+          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
+         && "Not a type pack splice");
+
+  // Store the one off introductory '...'
+  Toks.push_back(Tok);
+  ConsumeToken();
+
+  unsigned OpenTokenCount = 0;
+  while (true) {
+    if (matchCXXSpliceBegin(tok::less)) {
+      // Store the possibly nested introductory tokens
+
+      // [
+      Toks.push_back(Tok);
+      ConsumeBracket();
+
+      // <
+      Toks.push_back(Tok);
+      ConsumeToken();
+
+      ++OpenTokenCount;
+
+      continue;
+    }
+
+    if (matchCXXSpliceEnd(tok::greater)) {
+      // Store the possibly nested ending tokens
+
+      // >
+      Toks.push_back(Tok);
+      ConsumeToken();
+
+      // ]
+      Toks.push_back(Tok);
+      ConsumeBracket();
+
+      // If we've hit the matching end of this splice,
+      // finish storing tokens
+      if (--OpenTokenCount == 0)
+        break;
+
+      continue;
+    }
+
+    switch (Tok.getKind()) {
+    case tok::eof:
+    case tok::annot_module_begin:
+    case tok::annot_module_end:
+    case tok::annot_module_include:
+      // Ran out of tokens.
+      return false;
+    default:
+      Toks.push_back(Tok);
+      ConsumeAnyToken();
+      break;
+    }
+  }
+
+  return true;
 }
 
 /// Parse a concatenation expression.

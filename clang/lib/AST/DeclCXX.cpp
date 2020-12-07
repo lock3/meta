@@ -222,6 +222,10 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     // Skip dependent types; we can't do any checking on them now.
     if (BaseType->isDependentType())
       continue;
+    const Type *BaseTypePtr = BaseType.getTypePtr();
+    if (isa<DependentTypePackSpliceType>(BaseTypePtr) ||
+        isa<TypePackSpliceType>(BaseTypePtr))
+      continue;
     auto *BaseClassDecl =
         cast<CXXRecordDecl>(BaseType->castAs<RecordType>()->getDecl());
 

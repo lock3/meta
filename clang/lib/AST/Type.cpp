@@ -2958,6 +2958,29 @@ DependentTemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
     Arg.Profile(ID, Context);
 }
 
+static TypeDependence computePackExpansionDependence(QualType Pattern) {
+  auto D = Pattern->getDependence() & ~TypeDependence::UnexpandedPack;
+
+  // If a pack expansion is dependent in any way, its type, and
+  // instantiation dependent.
+  //
+  // Additionally, if we have a pattern with no UnexpandedPack dependence,
+  // assume it's type and instantiation dependent.
+  if (D || !(Pattern->getDependence() & TypeDependence::UnexpandedPack))
+    D |= TypeDependence::DependentInstantiation;
+
+  return D;
+}
+
+PackExpansionType::PackExpansionType(QualType Pattern, QualType Canon,
+                                     Optional<unsigned> NumExpansions)
+    : Type(PackExpansion, Canon,
+           computePackExpansionDependence(Pattern), /*MetaType=*/false),
+      Pattern(Pattern) {
+  PackExpansionTypeBits.NumExpansions =
+      NumExpansions ? *NumExpansions + 1 : 0;
+}
+
 bool Type::isElaboratedTypeSpecifier() const {
   ElaboratedTypeKeyword Keyword;
   if (const auto *Elab = dyn_cast<ElaboratedType>(this))
@@ -3567,13 +3590,44 @@ bool TypeSpliceType::isSugared() const {
   return !Reflection->isInstantiationDependent();
 }
 
-DependentTypeSpliceType::DependentTypeSpliceType(const ASTContext &Cxt, Expr *E)
-  : TypeSpliceType(E, Cxt.DependentTy), Context(Cxt) { }
+DependentTypeSpliceType::DependentTypeSpliceType(const ASTContext &Ctx, Expr *E)
+  : TypeSpliceType(E, Ctx.DependentTy), Context(Ctx) { }
 
 void DependentTypeSpliceType::Profile(llvm::FoldingSetNodeID &ID,
                                      const ASTContext& Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
+
+DependentTypePackSpliceType::DependentTypePackSpliceType(
+                                           const ASTContext &Ctx, Expr *Operand)
+    : Type(DependentTypePackSplice, Ctx.DependentTy,
+           toTypeDependence(Operand->getDependence()) |
+               TypeDependence::UnexpandedPack,
+           /*MetaType=*/false), Operand(Operand) { }
+
+static TypeDependence computePackSpliceDependence(unsigned NumExpansions,
+                                                  Expr *const *Expansions) {
+  TypeDependence Depends = TypeDependence::UnexpandedPack;
+  for (unsigned I = 0; I < NumExpansions; ++I) {
+    Depends |= toTypeDependence(Expansions[I]->getDependence());
+  }
+  return Depends;
+}
+
+TypePackSpliceType::TypePackSpliceType(const ASTContext &Ctx, Expr *Operand,
+                                       unsigned NumExpansions,
+                                       Expr *const *Expansions)
+    : Type(TypePackSplice, Ctx.DependentTy,
+           computePackSpliceDependence(NumExpansions, Expansions),
+           /*MetaType=*/false), Operand(Operand), NumExpansions(NumExpansions) {
+  if (Expansions)
+    std::uninitialized_copy(Expansions, Expansions + NumExpansions,
+                            getTrailingObjects<Expr *>());
+}
+
+SubstTypePackSpliceType::SubstTypePackSpliceType(Expr *ExpansionExpr, QualType Canon)
+    : Type(SubstTypePackSplice, Canon, Canon->getDependence(),
+           Canon->isMetaType()), ExpansionExpr(ExpansionExpr) { }
 
 UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        QualType UnderlyingType, UTTKind UKind,
@@ -4180,6 +4234,8 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
+  case Type::DependentTypePackSplice:
+  case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:
   case Type::SubstTemplateTypeParmPack:

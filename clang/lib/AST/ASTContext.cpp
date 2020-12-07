@@ -2267,6 +2267,10 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
     return getTypeInfo(cast<SubstTemplateTypeParmType>(T)->
                        getReplacementType().getTypePtr());
 
+  case Type::SubstTypePackSplice:
+    return getTypeInfo(cast<SubstTypePackSpliceType>(T)->
+                       getReplacementType().getTypePtr());
+
   case Type::Auto:
   case Type::DeducedTemplateSpecialization: {
     const auto *A = cast<DeducedType>(T);
@@ -3452,6 +3456,8 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
+  case Type::DependentTypePackSplice:
+  case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -5447,6 +5453,33 @@ QualType ASTContext::getTypeSpliceType(Expr *E, QualType UnderlyingType) const {
   return QualType(TST, 0);
 }
 
+QualType ASTContext::getDependentTypePackSpliceType(Expr *Operand) const {
+  auto *Ty = new (*this, TypeAlignment)
+      DependentTypePackSpliceType(*this, Operand);
+  Types.push_back(Ty);
+  return QualType(Ty, 0);
+}
+
+QualType ASTContext::getTypePackSpliceType(Expr *Operand,
+                                           ArrayRef<Expr *> Expansions) const {
+  size_t Size = sizeof(TypePackSpliceType) + sizeof(Expr *) * Expansions.size();
+  auto *Buffer = (TypePackSpliceType *)Allocate(Size, TypeAlignment);
+
+  auto *Ty = new (Buffer)
+      TypePackSpliceType(*this, Operand, Expansions.size(), Expansions.data());
+  Types.push_back(Ty);
+  return QualType(Ty, 0);
+}
+
+QualType ASTContext::getSubstTypePackSpliceType(Expr *ExpansionExpr,
+                                                QualType Replacement) const {
+  QualType CanReplacement = getCanonicalType(Replacement);
+
+  auto *Ty = new (*this, TypeAlignment)
+      SubstTypePackSpliceType(ExpansionExpr, CanReplacement);
+  Types.push_back(Ty);
+  return QualType(Ty, 0);
+}
 
 /// getUnaryTransformationType - We don't unique these, since the memory
 /// savings are minimal and these are rare.

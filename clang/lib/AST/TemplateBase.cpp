@@ -147,9 +147,6 @@ TemplateArgumentDependence TemplateArgument::getDependence() const {
 
   case Expression:
     Deps = toTemplateArgumentDependence(getAsExpr()->getDependence());
-    if (isa<PackExpansionExpr>(getAsExpr()))
-      Deps |= TemplateArgumentDependence::Dependent |
-              TemplateArgumentDependence::Instantiation;
     return Deps;
 
   case Pack:
