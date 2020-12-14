@@ -3499,8 +3499,8 @@ void CXXNameMangler::mangleType(const DependentSizedMatrixType *T) {
   // U<Len>matrix_type<row expr><column expr><element type>
   StringRef VendorQualifier = "matrix_type";
   Out << "U" << VendorQualifier.size() << VendorQualifier;
-  mangleTemplateArg({T->getRowExpr(), TemplateArgument::Expression});
-  mangleTemplateArg({T->getColumnExpr(), TemplateArgument::Expression});
+  mangleTemplateArg(TemplateArgument(T->getRowExpr()));
+  mangleTemplateArg(TemplateArgument(T->getColumnExpr()));
   mangleType(T->getElementType());
 }
 
@@ -3740,7 +3740,7 @@ void CXXNameMangler::mangleType(const ExtIntType *T) {
 
 void CXXNameMangler::mangleType(const DependentExtIntType *T) {
   Out << "U7_ExtInt";
-  TemplateArgument TA(T->getNumBitsExpr(), TemplateArgument::Expression);
+  TemplateArgument TA(T->getNumBitsExpr());
   mangleTemplateArgs(&TA, 1);
   if (T->isUnsigned())
     Out << "j";
@@ -5000,8 +5000,6 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     Out << 'E';
     break;
   }
-  case TemplateArgument::Reflected:
-    llvm_unreachable("This should not exist at codegen");
   }
 }
 

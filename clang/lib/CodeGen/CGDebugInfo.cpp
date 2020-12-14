@@ -1959,7 +1959,6 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
           TheCU, Name, nullptr,
           CollectTemplateParams(nullptr, TA.getPackAsArray(), Unit)));
       break;
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       const Expr *E = TA.getAsExpr();
       QualType T = E->getType();

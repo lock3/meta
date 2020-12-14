@@ -542,31 +542,6 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
   PP.AnnotateCachedTokens(Tok);
 }
 
-/// Parse a template argument reflection.
-///
-/// \verbatim
-///   reflection-template-argument:
-///     'templarg' '(' reflection ')'
-/// \endverbatim
-///
-/// The constant expression must be a reflection of a type.
-ParsedTemplateArgument
-Parser::ParseReflectedTemplateArgument() {
-  assert(Tok.is(tok::kw_templarg) && "expected 'templarg'");
-  SourceLocation Loc = ConsumeToken();
-
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "templarg"))
-    return ParsedTemplateArgument();
-  ExprResult Result = ParseConstantExpression();
-  if (T.consumeClose())
-    return ParsedTemplateArgument();
-  if (Result.isInvalid())
-    return ParsedTemplateArgument();
-
-  return Actions.ActOnReflectedTemplateArgument(Loc, Result.get());
-}
-
 /// Parse a concatenation expression.
 ///
 ///   primary-expression:

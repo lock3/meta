@@ -872,8 +872,7 @@ void JSONNodeDumper::VisitNonTypeTemplateParmDecl(
 
   if (D->hasDefaultArgument())
     JOS.attributeObject("defaultArg", [=] {
-      TemplateArgument Arg(D->getDefaultArgument(),
-                           TemplateArgument::Expression);
+      TemplateArgument Arg(D->getDefaultArgument());
       Visit(Arg, SourceRange(),
             D->getDefaultArgStorage().getInheritedFrom(),
             D->defaultArgumentWasInherited() ? "inherited from" : "previous");

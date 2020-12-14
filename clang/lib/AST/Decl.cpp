@@ -325,7 +325,6 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
     switch (Arg.getKind()) {
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflected:
       continue;
 
     case TemplateArgument::Expression: {

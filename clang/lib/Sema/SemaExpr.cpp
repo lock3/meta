@@ -1879,7 +1879,7 @@ Sema::ActOnStringLiteral(ArrayRef<Token> StringToks, Scope *UDLScope) {
 
   case LOLR_Template: {
     TemplateArgumentListInfo ExplicitArgs;
-    TemplateArgument Arg(Lit, TemplateArgument::Expression);
+    TemplateArgument Arg(Lit);
     TemplateArgumentLocInfo ArgInfo(Lit);
     ExplicitArgs.addArgument(TemplateArgumentLoc(Arg, ArgInfo));
     return BuildLiteralOperatorCall(R, OpNameInfo, None, StringTokLocs.back(),

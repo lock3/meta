@@ -7113,7 +7113,6 @@ ASTReader::getGlobalTypeID(ModuleFile &F, unsigned LocalID) const {
 TemplateArgumentLocInfo
 ASTRecordReader::readTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind) {
   switch (Kind) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return readExpr();
   case TemplateArgument::Type:

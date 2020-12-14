@@ -375,10 +375,6 @@ checkDeducedTemplateArguments(ASTContext &Context,
         TemplateArgument::CreatePackCopy(Context, NewPack),
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
-
-  case TemplateArgument::Reflected:
-    llvm_unreachable("You cannot deduce a reflected template argument");
-
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -464,10 +460,10 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
                               S.Context.NullPtrTy, NTTP->getLocation()),
                           NullPtrType, CK_NullToPointer)
           .get();
+  TemplateArgument New(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-      DeducedTemplateArgument(
-          TemplateArgument(Value, TemplateArgument::Expression)),
-      Value->getType(), Info, Deduced);
+                                       DeducedTemplateArgument(New),
+                                       Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -478,10 +474,10 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
     const NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+  TemplateArgument New(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-      DeducedTemplateArgument(
-          TemplateArgument(Value, TemplateArgument::Expression)),
-      Value->getType(), Info, Deduced);
+                                       DeducedTemplateArgument(New),
+                                       Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -2441,9 +2437,6 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
 
-  case TemplateArgument::Reflected:
-    llvm_unreachable("You cannot deduce a reflected template argument");
-
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -2624,7 +2617,6 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
       X.getAsExpr()->Profile(XID, Context, true);
@@ -2678,8 +2670,7 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
       NTTPType = Arg.getParamTypeForDecl();
     Expr *E = BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
                   .getAs<Expr>();
-    return TemplateArgumentLoc(
-        TemplateArgument(E, TemplateArgument::Expression), E);
+    return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
   case TemplateArgument::NullPtr: {
@@ -2694,8 +2685,7 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
   case TemplateArgument::Integral: {
     Expr *E =
         BuildExpressionFromIntegralTemplateArgument(Arg, Loc).getAs<Expr>();
-    return TemplateArgumentLoc(
-        TemplateArgument(E, TemplateArgument::Expression), E);
+    return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
   case TemplateArgument::Template:
@@ -2716,7 +2706,6 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
         Context, Arg, Builder.getWithLocInContext(Context), Loc, Loc);
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
 
@@ -6178,7 +6167,6 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
                                OnlyDeduced, Depth, Used);
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     MarkUsedTemplateParameters(Ctx, TemplateArg.getAsExpr(), OnlyDeduced,
                                Depth, Used);

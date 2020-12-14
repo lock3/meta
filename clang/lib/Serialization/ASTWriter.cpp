@@ -5353,7 +5353,6 @@ void ASTRecordWriter::AddCXXTemporary(const CXXTemporary *Temp) {
 void ASTRecordWriter::AddTemplateArgumentLocInfo(
     TemplateArgument::ArgKind Kind, const TemplateArgumentLocInfo &Arg) {
   switch (Kind) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
     break;

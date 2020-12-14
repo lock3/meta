@@ -94,19 +94,11 @@ public:
     /// of the other forms yet, either because it's dependent or because we're
     /// representing a non-canonical template argument (for instance, in a
     /// TemplateSpecializationType).
-    ///
-    /// Also used to represent:
-    /// - a non-dependent reflection expression (C++ Reflection).
     Expression,
 
     /// The template argument is actually a parameter pack. Arguments are stored
     /// in the Args struct.
-    Pack,
-
-    /// The template argument is an expression, representing a reflection,
-    /// and we've not resolved it to one of the other forms yet, because
-    /// it's dependent.
-    Reflected
+    Pack
   };
 
 private:
@@ -225,12 +217,8 @@ public:
   /// This form of template argument only occurs in template argument
   /// lists used for dependent types and for expression; it will not
   /// occur in a non-dependent, canonical template argument list.
-  TemplateArgument(Expr *E, ArgKind ExpressionKind) {
-    assert((ExpressionKind == Expression
-            || ExpressionKind == Reflected)
-           && "For expressions the only valid ArgKinds are "
-              "Expression and Reflected");
-    TypeOrValue.Kind = ExpressionKind;
+  explicit TemplateArgument(Expr *E) {
+    TypeOrValue.Kind = Expression;
     TypeOrValue.V = reinterpret_cast<uintptr_t>(E);
   }
 
@@ -355,8 +343,7 @@ public:
 
   /// Retrieve the template argument as an expression.
   Expr *getAsExpr() const {
-    assert((getKind() == Expression || getKind() == Reflected)
-           && "Unexpected kind");
+    assert(getKind() == Expression && "Unexpected kind");
     return reinterpret_cast<Expr *>(TypeOrValue.V);
   }
 
@@ -494,8 +481,7 @@ public:
     assert(Argument.getKind() == TemplateArgument::NullPtr ||
            Argument.getKind() == TemplateArgument::Integral ||
            Argument.getKind() == TemplateArgument::Declaration ||
-           Argument.getKind() == TemplateArgument::Expression ||
-           Argument.getKind() == TemplateArgument::Reflected);
+           Argument.getKind() == TemplateArgument::Expression);
   }
 
   TemplateArgumentLoc(ASTContext &Ctx, const TemplateArgument &Argument,
@@ -534,8 +520,7 @@ public:
   }
 
   Expr *getSourceExpression() const {
-    assert(Argument.getKind() == TemplateArgument::Expression
-           || Argument.getKind() == TemplateArgument::Reflected);
+    assert(Argument.getKind() == TemplateArgument::Expression);
     return LocInfo.getAsExpr();
   }
 

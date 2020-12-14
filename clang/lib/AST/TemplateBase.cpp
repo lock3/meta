@@ -145,7 +145,6 @@ TemplateArgumentDependence TemplateArgument::getDependence() const {
   case Integral:
     return TemplateArgumentDependence::None;
 
-  case Reflected:
   case Expression:
     Deps = toTemplateArgumentDependence(getAsExpr()->getDependence());
     if (isa<PackExpansionExpr>(getAsExpr()))
@@ -185,7 +184,6 @@ bool TemplateArgument::isPackExpansion() const {
   case Type:
     return isa<PackExpansionType>(getAsType());
 
-  case Reflected:
   case Expression:
     return isa<PackExpansionExpr>(getAsExpr());
   }
@@ -224,7 +222,6 @@ QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
   case TemplateArgument::Integral:
     return getIntegralType();
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getAsExpr()->getType();
 
@@ -280,7 +277,6 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     getIntegralType().Profile(ID);
     break;
 
-  case Reflected:
   case Expression:
     getAsExpr()->Profile(ID, Context, true);
     break;
@@ -298,7 +294,6 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
   switch (getKind()) {
   case Null:
   case Type:
-  case Reflected:
   case Expression:
   case Template:
   case TemplateExpansion:
@@ -331,10 +326,8 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case Type:
     return getAsType()->castAs<PackExpansionType>()->getPattern();
 
-  case Reflected:
   case Expression:
-    return TemplateArgument(cast<PackExpansionExpr>(getAsExpr())->getPattern(),
-                            TemplateArgKind);
+    return TemplateArgument(cast<PackExpansionExpr>(getAsExpr())->getPattern());
 
   case TemplateExpansion:
     return TemplateArgument(getAsTemplateOrTemplatePattern());
@@ -397,7 +390,6 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
     printIntegral(*this, Out, Policy);
     break;
 
-  case Reflected:
   case Expression:
     getAsExpr()->printPretty(Out, nullptr, Policy);
     break;
@@ -433,7 +425,6 @@ LLVM_DUMP_METHOD void TemplateArgument::dump() const { dump(llvm::errs()); }
 
 SourceRange TemplateArgumentLoc::getSourceRange() const {
   switch (Argument.getKind()) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getSourceExpression()->getSourceRange();
 
@@ -498,7 +489,6 @@ static const T &DiagTemplateArg(const T &DB, const TemplateArgument &Arg) {
   case TemplateArgument::TemplateExpansion:
     return DB << Arg.getAsTemplateOrTemplatePattern() << "...";
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
     return DB << Arg.getAsExpr();
   }

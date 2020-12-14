@@ -829,10 +829,9 @@ ASTNodeImporter::import(const TemplateArgument &From) {
         *ToTemplateOrErr, From.getNumTemplateExpansions());
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (ExpectedExpr ToExpr = import(From.getAsExpr()))
-      return TemplateArgument(*ToExpr, From.getKind());
+      return TemplateArgument(*ToExpr);
     else
       return ToExpr.takeError();
 

@@ -584,9 +584,6 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
     }
 
     return Arg.getTemplatePackExpansion(EllipsisLoc);
-  case ParsedTemplateArgument::Dependent:
-    llvm_unreachable("Pack expansion is not valid for "
-                     "dependent template arguments");
   }
   llvm_unreachable("Unhandled template argument kind?");
 }
@@ -1088,15 +1085,13 @@ Sema::getTemplateArgumentPackExpansionPattern(
                                PatternTSInfo);
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
     PackExpansionExpr *Expansion
       = cast<PackExpansionExpr>(Argument.getAsExpr());
     Expr *Pattern = Expansion->getPattern();
     Ellipsis = Expansion->getEllipsisLoc();
     NumExpansions = Expansion->getNumExpansions();
-    return TemplateArgumentLoc(TemplateArgument(Pattern, TemplateArgKind),
-                               Pattern);
+    return TemplateArgumentLoc(TemplateArgument(Pattern), Pattern);
   }
 
   case TemplateArgument::TemplateExpansion:
@@ -1135,7 +1130,6 @@ Optional<unsigned> Sema::getFullyPackExpandedSize(TemplateArgument Arg) {
       return None;
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (auto *Subst =
             dyn_cast<SubstNonTypeTemplateParmPackExpr>(Arg.getAsExpr()))

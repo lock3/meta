@@ -591,7 +591,6 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
 
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       ArgInfos[i] = TemplateArgumentLocInfo(Args[i].getAsExpr());
       break;

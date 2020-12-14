@@ -4907,7 +4907,7 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
     if (NTTP->isParameterPack())
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
                                         None);
-    Arg = TemplateArgument(E, TemplateArgument::Expression);
+    Arg = TemplateArgument(E);
   } else {
     auto *TTP = cast<TemplateTemplateParmDecl>(Param);
     if (TTP->isParameterPack())
@@ -5958,7 +5958,6 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::Null:
       return Arg;
 
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       return Arg;
 
