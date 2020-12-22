@@ -2842,8 +2842,10 @@ def err_reflect_print_literal_wrong_operand_type : Error<
   "expected either integer or string operand">;
 def err_invalid_reflection_wrong_operand_type : Error<
   "expected a string operand">;
-def err_reify_invalid_reflection : Error<
-  "cannot reify invalid reflection">;
+def err_splice_invalid_reflection : Error<
+  "cannot splice invalid reflection">;
+def err_expression_unexpandable : Error<
+  "cannot expand expression">;
 def note_user_defined_note : Note<
   "%0">;
 def err_compiler_error_wrong_operand_type : Error<

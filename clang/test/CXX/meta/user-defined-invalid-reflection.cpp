@@ -8,21 +8,22 @@ namespace non_template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
 
   int expr_splice_test() {
-    return [<invalid_refl>]; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+    return [<invalid_refl>]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
   }
 
   int identifier_splice_test() {
-    return [# invalid_refl #]; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+    return [# invalid_refl #]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
   }
 
-  using ReflectedType = typename [<invalid_refl>]; // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+  using ReflectedType = typename [<invalid_refl>]; // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
 
   template<typename T>
   constexpr int foo() {
     return T();
   }
 
-  constexpr int fcall_result = foo<templarg(invalid_refl)>(); // expected-error {{cannot reify invalid reflection}} expected-note {{custom error message}}
+  constexpr meta::info invalid_refl_arr [] = { invalid_refl };
+  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot splice invalid reflection}} expected-note {{custom error message}}
 }
 
 namespace template_reflection {
@@ -30,19 +31,20 @@ namespace template_reflection {
   constexpr meta::info invalid_refl = __invalid_reflection(__concatenate("Error code: ", V));
 
   int expr_splice_test() {
-    return [<invalid_refl<1>>]; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+    return [<invalid_refl<1>>]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
   }
 
   int identifier_splice_test() {
-    return [# invalid_refl<1> #]; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+    return [# invalid_refl<1> #]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
   }
 
-  using ReflectedType = typename [<invalid_refl<1>>]; // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+  using ReflectedType = typename [<invalid_refl<1>>]; // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
 
   template<typename T>
   constexpr int foo() {
     return T();
   }
 
-  constexpr int fcall_result = foo<templarg(invalid_refl<1>)>(); // expected-error {{cannot reify invalid reflection}} expected-note {{Error code: 1}}
+  constexpr meta::info invalid_refl_arr [] = { invalid_refl<1> };
+  constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot splice invalid reflection}} expected-note {{Error code: 1}}
 }

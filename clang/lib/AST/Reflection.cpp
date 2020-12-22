@@ -3149,7 +3149,7 @@ bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
 }
 
 void DiagnoseInvalidReflection(Sema &SemaRef, Expr *E, const Reflection &R) {
-  SemaRef.Diag(E->getExprLoc(), diag::err_reify_invalid_reflection);
+  SemaRef.Diag(E->getExprLoc(), diag::err_splice_invalid_reflection);
 
   const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
   if (!InvalidRefl)
