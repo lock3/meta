@@ -28,6 +28,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/LambdaCapture.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
 #include "clang/AST/Stmt.h"
@@ -2725,7 +2726,27 @@ DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, {})
 DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
-DEF_TRAVERSE_STMT(CXXReflectExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectExpr, {
+  const ReflectionOperand &Op = S->getOperand();
+  switch (Op.getKind()) {
+  case ReflectionOperand::Type: {
+    QualType T = Op.getAsType();
+    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+      T = LIT->getType();
+    TRY_TO(TraverseType(T));
+    break;
+  }
+  case ReflectionOperand::Expression:
+    TRY_TO(TraverseStmt(Op.getAsExpression()));
+    break;
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Template:
+  case ReflectionOperand::Namespace:
+  case ReflectionOperand::BaseSpecifier:
+  case ReflectionOperand::Declaration:
+    break;
+  }
+})
 DEF_TRAVERSE_STMT(CXXInvalidReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectionReadQueryExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintLiteralExpr, {})

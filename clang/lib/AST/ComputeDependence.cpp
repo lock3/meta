@@ -336,10 +336,14 @@ ExprDependence clang::computeDependence(CXXReflectExpr *E) {
   switch (Operand.getKind()) {
   case ReflectionOperand::Type: {
     QualType T = Operand.getAsType();
-    if (T->isDependentType())
-      return ExprDependence::ValueInstantiation;
 
-    return ExprDependence::None;
+    ExprDependence D = ExprDependence::None;
+    if (T->isDependentType())
+      D |= ExprDependence::ValueInstantiation;
+    if (T->containsUnexpandedParameterPack())
+      D |= ExprDependence::UnexpandedPack;
+
+    return D;
   }
   case ReflectionOperand::Template: {
     TemplateName T = Operand.getAsTemplate();
@@ -350,10 +354,14 @@ ExprDependence clang::computeDependence(CXXReflectExpr *E) {
   }
   case ReflectionOperand::Expression: {
     Expr *E = Operand.getAsExpression();
-    if (E->isTypeDependent() || E->isValueDependent())
-      return ExprDependence::ValueInstantiation;
 
-    return ExprDependence::None;
+    ExprDependence D = ExprDependence::None;
+    if (E->isTypeDependent() || E->isValueDependent())
+      D |= ExprDependence::ValueInstantiation;
+    if (E->containsUnexpandedParameterPack())
+      D |= ExprDependence::UnexpandedPack;
+
+    return D;
   }
   case ReflectionOperand::Invalid:
   case ReflectionOperand::Namespace:
