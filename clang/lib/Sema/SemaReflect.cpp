@@ -557,6 +557,10 @@ static ConstantExpr *ReflectionToValueExpr(Sema &S, Expr *E) {
 
 static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl,
                                          bool AllowValue = false) {
+  // The operand must be a reflection.
+  if (!CheckReflectionOperand(SemaRef, Refl))
+    return ExprError();
+
   SourceLocation ReflLoc = Refl->getExprLoc();
 
   Reflection R;
