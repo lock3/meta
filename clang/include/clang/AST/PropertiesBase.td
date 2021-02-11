@@ -125,6 +125,8 @@ def TemplateArgument : PropertyType;
 def TemplateArgumentKind : EnumPropertyType<"TemplateArgument::ArgKind">;
 def TemplateName : DefaultValuePropertyType;
 def TemplateNameKind : EnumPropertyType<"TemplateName::NameKind">;
+def PackSplice : PropertyType;
+def PackSpliceKind : EnumPropertyType<"PackSplice::SpliceKind">;
 def UInt32 : CountPropertyType<"uint32_t">;
 def UInt64 : CountPropertyType<"uint64_t">;
 def UnaryTypeTransformKind : EnumPropertyType<"UnaryTransformType::UTTKind">;
@@ -404,6 +406,29 @@ let Class = PropertyTypeCase<TemplateName, "SubstTemplateTemplateParmPack"> in {
   }]>;
 }
 
+// Type cases for PackSplice.
+// FIXME: Maybe this should integrate at a lower level
+def : PropertyTypeKind<PackSplice, PackSpliceKind, "node.getKind()">;
+let Class = PropertyTypeCase<PackSplice, "Unexpanded"> in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node.getOperand() }];
+  }
+  def : Creator<[{
+    return *PackSplice::Create(ctx, operand);
+  }]>;
+}
+let Class = PropertyTypeCase<PackSplice, "Expanded"> in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node.getOperand() }];
+  }
+  def : Property<"expansions", Array<ExprRef>> {
+    let Read = [{ node.getExpansions() }];
+  }
+  def : Creator<[{
+    return *PackSplice::Create(ctx, operand, expansions);
+  }]>;
+}
+
 // Type cases for TemplateArgument.
 def : PropertyTypeKind<TemplateArgument, TemplateArgumentKind,
                        "node.getKind()">;
@@ -493,5 +518,13 @@ let Class = PropertyTypeCase<TemplateArgument, "Pack"> in {
     for (size_t i = 0, e = elements.size(); i != e; ++i)
       ctxElements[i] = elements[i];
     return TemplateArgument(llvm::makeArrayRef(ctxElements, elements.size()));
+  }]>;
+}
+let Class = PropertyTypeCase<TemplateArgument, "PackSplice"> in {
+  def : Property<"packSplice", PackSplice> {
+    let Read = [{ *node.getPackSplice() }];
+  }
+  def : Creator<[{
+    return TemplateArgument(&packSplice);
   }]>;
 }

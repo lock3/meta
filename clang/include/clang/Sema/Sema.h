@@ -30,6 +30,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/MangleNumberingContext.h"
 #include "clang/AST/NSAPI.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
@@ -237,10 +238,7 @@ namespace threadSafety {
 // FIXME: No way to easily map from TemplateTypeParmTypes to
 // TemplateTypeParmDecls, so we have this horrible PointerUnion.
 typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*,
-                                     CXXDependentPackSpliceExpr*,
-                                     CXXPackSpliceExpr*,
-                                     const DependentTypePackSpliceType*,
-                                     const TypePackSpliceType*>,
+                                     const PackSplice*>,
                   SourceRange> UnexpandedParameterPack;
 
 /// Describes whether we've seen any nullability information for the given
@@ -10327,26 +10325,26 @@ public:
                                     SourceLocation SBELoc,
                                     Expr *Operand,
                                     SourceLocation SEELoc);
-  ExprResult BuildUnresolvedCXXPackSpliceExpr(Scope *S,
-                                              SourceLocation EllipsisLoc,
-                                              SourceLocation SBELoc,
-                                              Expr *Operand,
-                                              SourceLocation SEELoc);
-  ExprResult BuildResolvedCXXPackSpliceExpr(SourceLocation EllipsisLoc,
-                                            SourceLocation SBELoc,
-                                            Expr *Operand,
-                                            ArrayRef<Expr *> Expansions,
-                                            SourceLocation SEELoc);
+  ExprResult BuildCXXPackSpliceExpr(const PackSplice *PS,
+                                    SourceLocation EllipsisLoc,
+                                    SourceLocation SBELoc,
+                                    SourceLocation SEELoc);
 
-  bool CheckCXXPackSpliceForExpansion(CXXPackSpliceExpr *E,
+  TemplateArgumentLoc ActOnCXXPackSpliceTemplateArgument(
+      Expr *Operand, SourceLocation ExpansionEllipsisLoc);
+  TemplateArgumentLoc BuildCXXPackSpliceTemplateArgument(
+      PackSplice *PS, SourceLocation ExpansionEllipsisLoc);
+
+  PackSplice *ActOnCXXPackSplice(Scope *S, Expr *Operand);
+  PackSplice *BuildUnresolvedCXXPackSplice(Scope *S, Expr *Operand);
+  PackSplice *BuildResolvedCXXPackSplice(Expr *Operand,
+                                         ArrayRef<Expr *> Expansions);
+
+  bool CheckCXXPackSpliceForExpansion(const PackSplice *PS,
                                       bool &ShouldExpand,
                                       Optional<unsigned> &NumExpansions);
-  bool CheckCXXPackSpliceForExpansion(const TypePackSpliceType *T,
-                                      bool &ShouldExpand,
-                                      Optional<unsigned> &NumExpansions);
 
-  Optional<unsigned> getNumArgumentsInExpansion(CXXPackSpliceExpr *E);
-  Optional<unsigned> getNumArgumentsInExpansion(const TypePackSpliceType *T);
+  Optional<unsigned> getNumArgumentsInExpansion(const PackSplice *PS);
 
   // Unlike most reflection work, defined in
   // SemaTemplateInstantiate.cpp as we need access to the
@@ -10354,6 +10352,8 @@ public:
   bool SubstPacks(SmallVectorImpl<UnexpandedParameterPack> &Unexpanded,
                   const MultiLevelTemplateArgumentList &TemplateArgs);
 
+  bool ExpandCXXPackSplice(const TemplateArgumentLoc &Input,
+                           TemplateArgumentLoc &Output);
   bool ExpandCXXPackSplice(CXXPackSpliceExpr *E, TemplateArgumentLoc &TemplArg);
   ExprResult ExpandCXXPackSpliceAsExpr(CXXPackSpliceExpr *E);
   QualType ExpandCXXPackSpliceAsType(const TypePackSpliceType *T,
@@ -10449,9 +10449,7 @@ public:
                               SourceLocation SEELoc);
 
   QualType ActOnTypePackSpliceType(Scope *S, Expr *Operand);
-  QualType BuildUnresolvedTypePackSpliceType(Scope *S, Expr *Operand);
-  QualType BuildResolvedTypePackSpliceType(Expr *Operand,
-                                           ArrayRef<Expr *> Expansions);
+  QualType BuildTypePackSpliceType(const PackSplice *PS);
 
   ExprResult ActOnMemberAccessExpr(Expr *Base,
                                    SourceLocation OpLoc,

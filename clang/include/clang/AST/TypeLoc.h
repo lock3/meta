@@ -2118,59 +2118,6 @@ public:
   void initializeLocal(ASTContext &Context, SourceLocation Loc);
 };
 
-struct DependentTypePackSpliceLocInfo {
-  SourceLocation EllipsisLoc;
-
-  SourceLocation SBELoc;
-  SourceLocation SEELoc;
-};
-
-class DependentTypePackSpliceTypeLoc
-    : public ConcreteTypeLoc<UnqualTypeLoc,
-                             DependentTypePackSpliceTypeLoc,
-                             DependentTypePackSpliceType,
-                             DependentTypePackSpliceLocInfo> {
-public:
-  Expr *getOperand() const {
-    return getTypePtr()->getOperand();
-  }
-
-  SourceLocation getEllipsisLoc() const {
-    return getLocalData()->EllipsisLoc;
-  }
-
-  void setEllipsisLoc(SourceLocation Loc) {
-    this->getLocalData()->EllipsisLoc = Loc;
-  }
-
-  SourceLocation getSBELoc() const {
-    return this->getLocalData()->SBELoc;
-  }
-
-  void setSBELoc(SourceLocation Loc) {
-    this->getLocalData()->SBELoc = Loc;
-  }
-
-  SourceLocation getSEELoc() const {
-    return this->getLocalData()->SEELoc;
-  }
-
-  void setSEELoc(SourceLocation Loc) {
-    this->getLocalData()->SEELoc = Loc;
-  }
-
-  SourceRange getLocalSourceRange() const {
-    if (getSEELoc().isValid())
-      return SourceRange(getEllipsisLoc(), getSEELoc());
-    else
-      // FIXME: We should be able to do better than this with better
-      // identifier location info in the future.
-      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
-  }
-
-  void initializeLocal(ASTContext &Context, SourceLocation Loc);
-};
-
 struct TypePackSpliceLocInfo {
   SourceLocation EllipsisLoc;
 
@@ -2183,16 +2130,8 @@ class TypePackSpliceTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
                                                      TypePackSpliceType,
                                                      TypePackSpliceLocInfo> {
 public:
-  Expr *getOperand() const {
-    return getTypePtr()->getOperand();
-  }
-
-  unsigned getNumExpansions() const {
-    return getTypePtr()->getNumExpansions();
-  }
-
-  ArrayRef<Expr *> expansions() const {
-    return getTypePtr()->expansions();
+  const PackSplice *getPackSplice() const {
+    return getTypePtr()->getPackSplice();
   }
 
   SourceLocation getEllipsisLoc() const {
@@ -2217,6 +2156,10 @@ public:
 
   void setSEELoc(SourceLocation Loc) {
     this->getLocalData()->SEELoc = Loc;
+  }
+
+  PackSpliceLoc getAsPackSpliceLoc() const {
+    return { getPackSplice(), getEllipsisLoc(), getSBELoc(), getSEELoc() };
   }
 
   SourceRange getLocalSourceRange() const {
@@ -2274,6 +2217,12 @@ public:
 
   void setSEELoc(SourceLocation Loc) {
     this->getLocalData()->SEELoc = Loc;
+  }
+
+  void setFromPackSpliceLoc(PackSpliceLoc Loc) {
+    setEllipsisLoc(Loc.getEllipsisLoc());
+    setSBELoc(Loc.getSBELoc());
+    setSEELoc(Loc.getSEELoc());
   }
 
   SourceRange getLocalSourceRange() const {

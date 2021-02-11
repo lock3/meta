@@ -1344,6 +1344,11 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
       return TPResult::Error;
     return isCXXDeclarationSpecifier(BracedCastResult, InvalidAsDeclSpec);
 
+  case tok::ellipsis:
+    if (isCXXPackSpliceBegin())
+      return TPResult::True;
+    return TPResult::False;
+
     // decl-specifier:
     //   storage-class-specifier
     //   type-specifier

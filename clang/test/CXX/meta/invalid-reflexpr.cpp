@@ -18,8 +18,11 @@ using ReflectedType = typename [<invalid_refl>]; // expected-error {{reflection 
 
 template<typename T>
 constexpr int foo() {
+// expected-note@-1 {{candidate template ignored}}
   return T();
 }
 
 constexpr meta::info invalid_refl_arr [] = { reflexpr() }; // expected-error {{expected expression}}
-constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>(); // expected-error {{cannot expand expression}}
+constexpr int fcall_result = foo<...[< invalid_refl_arr >]...>();
+// expected-error@-1 {{cannot expand expression}}
+// expected-error@-2 {{no matching function for call to 'foo'}}

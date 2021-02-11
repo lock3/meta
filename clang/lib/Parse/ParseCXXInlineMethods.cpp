@@ -937,8 +937,7 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
       }
     }
 
-    if (Tok.is(tok::ellipsis) &&
-        matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+    if (isCXXPackSpliceBegin()) {
       // Use the location of the '[' token
       SourceLocation OpenLoc = NextToken().getLocation();
 

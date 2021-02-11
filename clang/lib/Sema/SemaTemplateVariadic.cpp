@@ -57,21 +57,9 @@ namespace {
       if (T->getDepth() < DepthLimit)
         Unexpanded.push_back({T, Loc});
     }
-    void addUnexpanded(CXXPackSpliceExpr *E) {
-      Unexpanded.push_back({E, {E->getBeginLoc(), E->getEndLoc()}});
-    }
-    void addUnexpanded(CXXDependentPackSpliceExpr *E) {
-      Unexpanded.push_back({E, {E->getBeginLoc(), E->getEndLoc()}});
-    }
-    void addUnexpanded(const DependentTypePackSpliceType *T,
-                       SourceLocation SBE = SourceLocation(),
-                       SourceLocation SEE = SourceLocation()) {
-      Unexpanded.push_back({T, {SBE, SEE}});
-    }
-    void addUnexpanded(const TypePackSpliceType *T,
-                       SourceLocation SBE = SourceLocation(),
-                       SourceLocation SEE = SourceLocation()) {
-      Unexpanded.push_back({T, {SBE, SEE}});
+    void addUnexpanded(const PackSplice *PS,
+                       SourceRange Range = {}) {
+      Unexpanded.push_back({PS, Range});
     }
   public:
     explicit CollectUnexpandedParameterPacksVisitor(
@@ -112,34 +100,13 @@ namespace {
       return true;
     }
 
-    bool VisitCXXDependentPackSpliceExpr(CXXDependentPackSpliceExpr *E) {
-      addUnexpanded(E);
+    bool TraversePackSplice(const PackSplice *PS) {
+      addUnexpanded(PS);
       return true;
     }
 
-    bool VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
-      addUnexpanded(E);
-      return true;
-    }
-
-    bool VisitDependentTypePackSpliceTypeLoc(
-                                            DependentTypePackSpliceTypeLoc TL) {
-      addUnexpanded(TL.getTypePtr(), TL.getSBELoc(), TL.getSEELoc());
-      return true;
-    }
-
-    bool VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
-      addUnexpanded(TL.getTypePtr(), TL.getSBELoc(), TL.getSEELoc());
-      return true;
-    }
-
-    bool VisitDependentTypePackSpliceType(DependentTypePackSpliceType *T) {
-      addUnexpanded(T);
-      return true;
-    }
-
-    bool VisitTypePackSpliceType(TypePackSpliceType *T) {
-      addUnexpanded(T);
+    bool TraversePackSpliceLoc(PackSpliceLoc PSLoc) {
+      addUnexpanded(PSLoc.getPackSplice(), PSLoc.getSourceRange());
       return true;
     }
 
@@ -408,10 +375,7 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
       Name = ND->getIdentifier();
 #ifndef NDEBUG
     else
-      assert(Unexpanded[I].first.is<CXXPackSpliceExpr *>() ||
-             Unexpanded[I].first.is<CXXDependentPackSpliceExpr *>() ||
-             Unexpanded[I].first.is<const DependentTypePackSpliceType *>() ||
-             Unexpanded[I].first.is<const TypePackSpliceType *>());
+      assert(Unexpanded[I].first.is<const PackSplice *>());
 #endif
 
     if (Name && NamesKnown.insert(Name).second)
@@ -637,6 +601,25 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
     }
 
     return Arg.getTemplatePackExpansion(EllipsisLoc);
+
+  case ParsedTemplateArgument::PackSplice: {
+    // FIXME: We could conceivably check to see if a non-dependent operand
+    // is expandable at this point and diagnose early if it isn't.
+    //
+    // Given that the "machinery" to check this currently generates
+    // the logic for expansion, and we'll still get a diagnostic, with
+    // adequate information very shortly when we try to expand any
+    // non-dependent TemplateArguments, we probably don't want to do
+    // that here (yet?).
+    //
+    // Performing the actual expansion here in non-dependent contexts
+    // also seems far too heavy handed, and will necessarily pull in a
+    // lot of semantic detail into what really is more of a parsing
+    // structure.
+    return ParsedTemplateArgument(Arg.getPackSpliceOperand(), Arg.getLocation(),
+                                  EllipsisLoc);
+  }
+
   }
   llvm_unreachable("Unhandled template argument kind?");
 }
@@ -734,26 +717,17 @@ bool Sema::CheckParameterPacksForExpansion(
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
                                                   i != end; ++i) {
-    // If this is a dependent pack splice, we don't have what we need yet.
-    if (i->first.is<CXXDependentPackSpliceExpr *>() ||
-        i->first.is<const DependentTypePackSpliceType *>()) {
-      ShouldExpand = false;
-      continue;
-    }
+    if (auto *PS = i->first.dyn_cast<const PackSplice *>()) {
+      // If this is a dependent pack splice, we don't have what we
+      // need yet.
+      if (!PS->isExpanded()) {
+        ShouldExpand = false;
+        continue;
+      }
 
-    // If this is a fully or partially resolved pack splice, we should
-    // be able to get some details about this expansion.
-    if (auto *SE = i->first.dyn_cast<CXXPackSpliceExpr *>()) {
-      if (CheckCXXPackSpliceForExpansion(SE, ShouldExpand, NumExpansions))
-        return true;
-
-      continue;
-    }
-
-    // If this is a fully or partially resolved pack splice, we should
-    // be able to get some details about this expansion.
-    if (auto *ST = i->first.dyn_cast<const TypePackSpliceType *>()) {
-      if (CheckCXXPackSpliceForExpansion(ST, ShouldExpand, NumExpansions))
+      // If this is a fully or partially resolved pack splice, we
+      // should be able to get some details about this expansion.
+      if (CheckCXXPackSpliceForExpansion(PS, ShouldExpand, NumExpansions))
         return true;
 
       continue;
@@ -893,32 +867,13 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(QualType T,
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
                                                   i != end; ++i) {
-    // If this is a dependent pack splice, we don't have what we need yet.
-    if (i->first.is<CXXDependentPackSpliceExpr *>() ||
-        i->first.is<const DependentTypePackSpliceType *>()) {
-      return None;
-    }
-
-    // If this is a fully or partially resolved pack splice, we should
-    // be able to get some details about this expansion.
-    //
-    // FIXME: Do we need this?
-    if (auto *SE = i->first.dyn_cast<CXXPackSpliceExpr *>()) {
-      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(SE);
-      if (!NumExpansions)
+    if (auto *PS = i->first.dyn_cast<const PackSplice *>()) {
+      // If this is a dependent pack splice, we don't have what we need yet.
+      if (!PS->isExpanded()) {
         return None;
+      }
 
-      assert((!Result || *Result == *NumExpansions) &&
-             "inconsistent pack sizes");
-      Result = NumExpansions;
-
-      continue;
-    }
-
-    // If this is a fully or partially resolved pack splice, we should
-    // be able to get some details about this expansion.
-    if (auto *ST = i->first.dyn_cast<const TypePackSpliceType *>()) {
-      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(ST);
+      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(PS);
       if (!NumExpansions)
         return None;
 
@@ -1220,6 +1175,18 @@ Sema::getTemplateArgumentPackExpansionPattern(
                                OrigLoc.getTemplateQualifierLoc(),
                                OrigLoc.getTemplateNameLoc());
 
+  case TemplateArgument::PackSplice: {
+    TemplateArgumentLocInfo LocInfo = OrigLoc.getLocInfo();
+
+    Ellipsis = LocInfo.getPackSpliceExpansionEllipsisLoc();
+    // FIXME: Should we try to set NumExpansions here?
+    return TemplateArgumentLoc(Context, Argument.getPackExpansionPattern(),
+                               LocInfo.getPackSpliceIntroductionEllipsisLoc(),
+                               LocInfo.getPackSpliceSBELoc(),
+                               LocInfo.getPackSpliceSEELoc(),
+                               LocInfo.getPackSpliceExpansionEllipsisLoc());
+  }
+
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Template:
@@ -1276,6 +1243,7 @@ Optional<unsigned> Sema::getFullyPackExpandedSize(TemplateArgument Arg) {
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
   case TemplateArgument::Null:
+  case TemplateArgument::PackSplice:
     return None;
   }
 

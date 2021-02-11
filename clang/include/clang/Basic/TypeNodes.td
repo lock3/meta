@@ -88,7 +88,6 @@ def TypeOfType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def DecltypeType : TypeNode<Type>, NeverCanonicalUnlessDependent;
 def DependentIdentifierSpliceType : TypeNode<Type>, MetaType;
 def TypeSpliceType : TypeNode<Type>, NeverCanonicalUnlessDependent;
-def DependentTypePackSpliceType : TypeNode<Type>, MetaType;
 def TypePackSpliceType : TypeNode<Type>, MetaType;
 def SubstTypePackSpliceType : TypeNode<Type>, NeverCanonical;
 def UnaryTransformType : TypeNode<Type>, NeverCanonicalUnlessDependent;

@@ -3456,7 +3456,6 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
-  case Type::DependentTypePackSplice:
   case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::DependentName:
@@ -5453,20 +5452,8 @@ QualType ASTContext::getTypeSpliceType(Expr *E, QualType UnderlyingType) const {
   return QualType(TST, 0);
 }
 
-QualType ASTContext::getDependentTypePackSpliceType(Expr *Operand) const {
-  auto *Ty = new (*this, TypeAlignment)
-      DependentTypePackSpliceType(*this, Operand);
-  Types.push_back(Ty);
-  return QualType(Ty, 0);
-}
-
-QualType ASTContext::getTypePackSpliceType(Expr *Operand,
-                                           ArrayRef<Expr *> Expansions) const {
-  size_t Size = sizeof(TypePackSpliceType) + sizeof(Expr *) * Expansions.size();
-  auto *Buffer = (TypePackSpliceType *)Allocate(Size, TypeAlignment);
-
-  auto *Ty = new (Buffer)
-      TypePackSpliceType(*this, Operand, Expansions.size(), Expansions.data());
+QualType ASTContext::getTypePackSpliceType(const PackSplice *PS) const {
+  auto *Ty = new (*this, TypeAlignment) TypePackSpliceType(*this, PS);
   Types.push_back(Ty);
   return QualType(Ty, 0);
 }
@@ -5989,9 +5976,8 @@ TemplateArgument
 ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
-      return Arg;
-
     case TemplateArgument::Expression:
+    case TemplateArgument::PackSplice:
       return Arg;
 
     case TemplateArgument::Declaration: {

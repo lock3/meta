@@ -1443,6 +1443,8 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     llvm_unreachable("Can't mangle null template arguments!");
   case TemplateArgument::TemplateExpansion:
     llvm_unreachable("Can't mangle template expansion arguments!");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
   case TemplateArgument::Type: {
     QualType T = TA.getAsType();
     mangleType(T, SourceRange(), QMM_Escape);

@@ -322,7 +322,6 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXReflectDumpReflectionExprClass:
   case Stmt::CXXExprSpliceExprClass:
   case Stmt::CXXMemberExprSpliceExprClass:
-  case Stmt::CXXDependentPackSpliceExprClass:
   case Stmt::CXXPackSpliceExprClass:
   case Stmt::CXXDependentSpliceIdExprClass:
   case Stmt::CXXConcatenateExprClass:
@@ -1404,6 +1403,8 @@ enum CXTemplateArgumentKind clang_Cursor_getTemplateArgumentKind(CXCursor C,
     return CXTemplateArgumentKind_Expression;
   case TemplateArgument::Pack:
     return CXTemplateArgumentKind_Pack;
+  case TemplateArgument::PackSplice:
+    return CXTemplateArgumentKind_PackSplice;
   }
 
   return CXTemplateArgumentKind_Invalid;

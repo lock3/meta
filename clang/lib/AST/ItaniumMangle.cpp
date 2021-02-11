@@ -2089,7 +2089,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
-  case Type::DependentTypePackSplice:
   case Type::TypePackSplice:
   case Type::SubstTypePackSplice:
   case Type::TemplateTypeParm:
@@ -3971,7 +3970,6 @@ recurse:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXExprSpliceExprClass:
   case Expr::CXXMemberExprSpliceExprClass:
-  case Expr::CXXDependentPackSpliceExprClass:
   case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXConcatenateExprClass:
@@ -4931,6 +4929,8 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   switch (A.getKind()) {
   case TemplateArgument::Null:
     llvm_unreachable("Cannot mangle NULL template argument");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
 
   case TemplateArgument::Type:
     mangleType(A.getAsType());

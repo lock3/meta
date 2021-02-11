@@ -19,6 +19,7 @@
 
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/AttrKinds.h"
@@ -4675,7 +4676,7 @@ public:
 
 /// Representation of dependent type splice types.
 class DependentTypeSpliceType : public TypeSpliceType,
-                               public llvm::FoldingSetNode {
+                                public llvm::FoldingSetNode {
   const ASTContext &Context;
 public:
   DependentTypeSpliceType(const ASTContext &Context, Expr *E);
@@ -4688,64 +4689,15 @@ public:
                       Expr *E);
 };
 
-class DependentTypePackSpliceType : public Type,
-                                    public llvm::FoldingSetNode {
+/// Represents pack splice types.
+class TypePackSpliceType : public Type, public llvm::FoldingSetNode {
   friend class ASTContext; // ASTContext creates these.
 
-  Expr *Operand;
+  const PackSplice *PS;
 
-  DependentTypePackSpliceType(const ASTContext &Context, Expr *Operand);
+  TypePackSpliceType(const ASTContext &Ctx, const PackSplice *PS);
 public:
-  Expr *getOperand() const { return Operand; }
-
-  /// Remove a single level of sugar.
-  QualType desugar() const { return QualType(this, 0); }
-
-  /// Returns whether this type directly provides sugar.
-  bool isSugared() const { return false; }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == DependentTypePackSplice;
-  }
-};
-
-class TypePackSpliceType final
-    : public Type,
-      public llvm::FoldingSetNode,
-      private llvm::TrailingObjects<TypePackSpliceType, Expr *> {
-  friend class ASTContext; // ASTContext creates these.
-  friend TrailingObjects;
-
-  Expr *Operand;
-
-  unsigned NumExpansions;
-
-  TypePackSpliceType(const ASTContext &Ctx, Expr *Operand,
-                     unsigned NumExpansions, Expr *const *Expansions);
-public:
-  bool isExpandable() const {
-    return !(getDependence() & ~TypeDependence::UnexpandedPack);
-  }
-
-  Expr *getOperand() const { return Operand; }
-
-  unsigned getNumExpansions() const { return NumExpansions; }
-
-  Expr *getExpansion(unsigned I) {
-    return getExpansions()[I];
-  }
-
-  const Expr *getExpansion(unsigned I) const {
-    return const_cast<TypePackSpliceType *>(this)->getExpansion(I);
-  }
-
-  Expr *const *getExpansions() const {
-    return reinterpret_cast<Expr *const *>(getTrailingObjects<Expr *>());
-  }
-
-  ArrayRef<Expr *> expansions() const {
-    return llvm::makeArrayRef(getExpansions(), getNumExpansions());
-  }
+  const PackSplice *getPackSplice() const { return PS; }
 
   /// Remove a single level of sugar.
   QualType desugar() const { return QualType(this, 0); }
@@ -7083,8 +7035,7 @@ inline bool Type::isDecltypeType() const {
 }
 
 inline bool Type::isTypePackSpliceType() const {
-  return isa<TypePackSpliceType>(this) ||
-    isa<DependentTypePackSpliceType>(this);
+  return isa<TypePackSpliceType>(this);
 }
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \

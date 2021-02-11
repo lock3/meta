@@ -1408,7 +1408,6 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXExprSpliceExprClass:
   case Expr::CXXMemberExprSpliceExprClass:
-  case Expr::CXXDependentPackSpliceExprClass:
   case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
   case Expr::CXXConcatenateExprClass:

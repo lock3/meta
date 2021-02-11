@@ -19,6 +19,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -213,7 +214,6 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
     case Type::TypeSplice:
-    case Type::DependentTypePackSplice:
     case Type::TypePackSplice:
     case Type::SubstTypePackSplice:
     case Type::UnaryTransform:
@@ -1127,21 +1127,10 @@ void TypePrinter::printTypeSpliceBefore(const TypeSpliceType *T,
 void TypePrinter::printTypeSpliceAfter(const TypeSpliceType *T,
                                        raw_ostream &OS) { }
 
-void TypePrinter::printDependentTypePackSpliceBefore(
-                        const DependentTypePackSpliceType *T, raw_ostream &OS) {
-  OS << "...[<";
-  T->getOperand()->printPretty(OS, nullptr, Policy);
-  OS << ">]";
-  spaceBeforePlaceHolder(OS);
-}
-
-void TypePrinter::printDependentTypePackSpliceAfter(
-                      const DependentTypePackSpliceType *T, raw_ostream &OS) { }
-
 void TypePrinter::printTypePackSpliceBefore(const TypePackSpliceType *T,
                                             raw_ostream &OS) {
   OS << "...[<";
-  T->getOperand()->printPretty(OS, nullptr, Policy);
+  T->getPackSplice()->getOperand()->printPretty(OS, nullptr, Policy);
   OS << ">]";
   spaceBeforePlaceHolder(OS);
 }

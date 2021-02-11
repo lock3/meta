@@ -1565,9 +1565,7 @@ public:
   /// Reflection splice types.
   QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
-  QualType getDependentTypePackSpliceType(Expr *Operand) const;
-  QualType getTypePackSpliceType(Expr *Operand,
-                                 ArrayRef<Expr *> Expansions) const;
+  QualType getTypePackSpliceType(const PackSplice *PS) const;
   QualType getSubstTypePackSpliceType(Expr *ExpansionExpr,
                                       QualType Replacement) const;
   /// Unary type transforms

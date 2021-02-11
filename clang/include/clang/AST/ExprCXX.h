@@ -25,6 +25,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/Reflection.h"
@@ -5521,62 +5522,6 @@ public:
   }
 };
 
-class CXXDependentPackSpliceExpr : public Expr {
-  Expr *Operand;
-
-  SourceLocation EllipsisLoc;
-  SourceLocation SBELoc;
-  SourceLocation SEELoc;
-
-  CXXDependentPackSpliceExpr(
-      QualType T, Expr *Operand,
-      SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc)
-    : Expr(CXXDependentPackSpliceExprClass, T, VK_RValue, OK_Ordinary),
-      Operand(Operand), EllipsisLoc(EllipsisLoc),
-      SBELoc(SBELoc), SEELoc(SEELoc) {
-    setDependence(computeDependence(this));
-  }
-
-  CXXDependentPackSpliceExpr(EmptyShell Empty)
-    : Expr(CXXExprSpliceExprClass, Empty) {}
-
-public:
-  static CXXDependentPackSpliceExpr *Create(
-      const ASTContext &C, SourceLocation EllipsisLoc,
-      SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc);
-
-  static CXXDependentPackSpliceExpr *CreateEmpty(const ASTContext &C);
-
-  /// Returns the reflection operand.
-  Expr *getOperand() const { return Operand; }
-
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
-
-  /// Returns the source code location of the left token
-  /// introducing the expression operand.
-  SourceLocation getSBELoc() const { return SBELoc; }
-
-  /// Returns the source code location of the right token
-  /// terminating the expression operand.
-  SourceLocation getSEELoc() const { return SEELoc; }
-
-  SourceLocation getBeginLoc() const { return getEllipsisLoc(); }
-
-  SourceLocation getEndLoc() const { return getSEELoc(); }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXDependentPackSpliceExprClass;
-  }
-};
-
 // Represents a pack splice which has been expanded from its initial
 // operand.
 //
@@ -5584,24 +5529,18 @@ public:
 // be dependent, as there are cases where the operand is expandable
 // but the expanded elements themselves are still dependent, and thus
 // cannot yet be spliced.
-class CXXPackSpliceExpr final
-    : public Expr,
-      private llvm::TrailingObjects<CXXPackSpliceExpr, Expr *> {
+class CXXPackSpliceExpr : public Expr {
   friend class ASTReader;
   friend class ASTStmtReader;
-  friend TrailingObjects;
 
-  Expr *Operand;
-
-  unsigned NumExpansions;
+  const PackSplice *PS;
 
   SourceLocation EllipsisLoc;
   SourceLocation SBELoc;
   SourceLocation SEELoc;
 
   CXXPackSpliceExpr(
-      QualType T, Expr *Operand,
-      unsigned NumExpansions, Expr *const *Expansions,
+      QualType T, const PackSplice *PS,
       SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc);
 
   CXXPackSpliceExpr(EmptyShell Empty)
@@ -5609,35 +5548,12 @@ class CXXPackSpliceExpr final
 
 public:
   static CXXPackSpliceExpr *Create(
-      const ASTContext &C, SourceLocation EllipsisLoc,
-      SourceLocation SBELoc, Expr *Operand,
-      ArrayRef<Expr *> Expansions, SourceLocation SEELoc);
+      const ASTContext &C, const PackSplice *PS, SourceLocation EllipsisLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc);
 
   static CXXPackSpliceExpr *CreateEmpty(const ASTContext &C);
 
-  bool isExpandable() const {
-    return !(getDependence() & ~ExprDependence::UnexpandedPack);
-  }
-
-  Expr *getOperand() const { return Operand; }
-
-  unsigned getNumExpansions() const { return NumExpansions; }
-
-  Expr *getExpansion(unsigned I) {
-    return getExpansions()[I];
-  }
-
-  const Expr *getExpansion(unsigned I) const {
-    return const_cast<CXXPackSpliceExpr *>(this)->getExpansion(I);
-  }
-
-  Expr **getExpansions() {
-    return reinterpret_cast<Expr **>(getTrailingObjects<Expr *>());
-  }
-
-  ArrayRef<Expr *> expansions() {
-    return llvm::makeArrayRef(getExpansions(), getNumExpansions());
-  }
+  const PackSplice *getPackSplice() const { return PS; }
 
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
 
@@ -5649,9 +5565,17 @@ public:
   /// terminating the expression operand.
   SourceLocation getSEELoc() const { return SEELoc; }
 
+  PackSpliceLoc getAsPackSpliceLoc() const {
+    return { getPackSplice(), getEllipsisLoc(), getSBELoc(), getSEELoc() };
+  }
+
   SourceLocation getBeginLoc() const { return getEllipsisLoc(); }
 
   SourceLocation getEndLoc() const { return getSEELoc(); }
+
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(getBeginLoc(), getEndLoc());
+  }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());

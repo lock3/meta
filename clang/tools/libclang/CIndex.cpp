@@ -25,6 +25,7 @@
 #include "clang/AST/DeclObjCCommon.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCategories.h"
@@ -1510,9 +1511,27 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
 
     return VisitTemplateName(TAL.getArgument().getAsTemplateOrTemplatePattern(),
                              TAL.getTemplateNameLoc());
+
+  case TemplateArgument::PackSplice:
+    return VisitPackSplice(TAL.getArgument().getPackSplice());
   }
 
   llvm_unreachable("Invalid TemplateArgument::Kind!");
+}
+
+bool CursorVisitor::VisitPackSplice(const PackSplice *PS) {
+  if (Visit(PS->getOperand()))
+    return true;
+
+  if (!PS->isExpanded())
+    return false;
+
+  for (Expr *E : PS->getExpansions()) {
+    if (Visit(MakeCXCursor(E, StmtParent, TU)))
+      return true;
+  }
+
+  return false;
 }
 
 bool CursorVisitor::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
@@ -1806,22 +1825,8 @@ bool CursorVisitor::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   return false;
 }
 
-bool CursorVisitor::VisitDependentTypePackSpliceTypeLoc(
-                                            DependentTypePackSpliceTypeLoc TL) {
-  if (Expr *E = TL.getOperand())
-    return Visit(MakeCXCursor(E, StmtParent, TU));
-
-  return false;
-}
-
 bool CursorVisitor::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
-  if (Expr *E = TL.getOperand())
-    return Visit(MakeCXCursor(E, StmtParent, TU));
-
-  for (Expr *E : TL.expansions())
-    return Visit(MakeCXCursor(E, StmtParent, TU));
-
-  return false;
+  return VisitPackSplice(TL.getPackSplice());
 }
 
 bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {

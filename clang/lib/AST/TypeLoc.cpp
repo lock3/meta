@@ -529,13 +529,6 @@ void TypeSpliceTypeLoc::initializeLocal(ASTContext &Context,
   setSEELoc(Loc);
 }
 
-void DependentTypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
-                                                     SourceLocation Loc) {
-  setEllipsisLoc(Loc);
-  setSBELoc(Loc);
-  setSEELoc(Loc);
-}
-
 void TypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
                                             SourceLocation Loc) {
   setEllipsisLoc(Loc);
@@ -639,6 +632,10 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
     }
 
     case TemplateArgument::Pack:
+      ArgInfos[i] = TemplateArgumentLocInfo();
+      break;
+
+    case TemplateArgument::PackSplice:
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
     }

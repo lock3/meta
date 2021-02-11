@@ -3145,9 +3145,10 @@ private:
   bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
   bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
 
+  bool isCXXPackSpliceBegin(unsigned LookAhead = 0);
+
   bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
   bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);
-
 public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
@@ -3164,7 +3165,7 @@ public:
                                   SourceLocation EndLoc);
   SourceLocation ParseTypePackSplice(DeclSpec &DS);
   bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
-  ParsedTemplateArgument ParseReflectedTemplateArgument();
+  ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
 
   /// Parse a __select expression

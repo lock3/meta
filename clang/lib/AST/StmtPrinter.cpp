@@ -25,6 +25,7 @@
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
@@ -2523,15 +2524,9 @@ void StmtPrinter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   OS << ">]";
 }
 
-void StmtPrinter::VisitCXXDependentPackSpliceExpr(CXXDependentPackSpliceExpr *E) {
-  OS << "...[<";
-  PrintExpr(E->getOperand());
-  OS << ">]";
-}
-
 void StmtPrinter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
   OS << "...[<";
-  PrintExpr(E->getOperand());
+  PrintExpr(E->getPackSplice()->getOperand());
   OS << ">]";
 }
 

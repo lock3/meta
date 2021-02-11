@@ -630,6 +630,8 @@ public:
                                   TemplateArgumentListInfo &Outputs,
                                   bool Uneval = false);
 
+  PackSplice *TransformPackSplice(const PackSplice *Input);
+
   /// Fakes up a TemplateArgumentLoc for a given TemplateArgument.
   void InventTemplateArgumentLoc(const TemplateArgument &Arg,
                                  TemplateArgumentLoc &ArgLoc);
@@ -1005,12 +1007,8 @@ public:
   /// Build a new type splice type
   QualType RebuildTypeSpliceType(Expr *E);
 
-  /// Build a new dependent type pack splice type
-  QualType RebuildDependentTypePackSpliceType(Expr *Operand);
-
   /// Build a new type pack splice type
-  QualType RebuildTypePackSpliceType(Expr *Operand,
-                                     ArrayRef<Expr *> Expansions);
+  QualType RebuildTypePackSpliceType(const PackSplice *PS);
 
   /// Build a new C++11 auto type.
   ///
@@ -1286,6 +1284,18 @@ public:
   TemplateName RebuildTemplateName(TemplateTemplateParmDecl *Param,
                                    const TemplateArgument &ArgPack) {
     return getSema().Context.getSubstTemplateTemplateParmPack(Param, ArgPack);
+  }
+
+  // FIXME: Move these
+
+  /// Build a new dependent pack splice.
+  PackSplice *RebuildDependentPackSplice(Expr *Operand) {
+    return getSema().BuildUnresolvedCXXPackSplice(/*Scope=*/nullptr, Operand);
+  }
+
+  /// Build a new pack splice.
+  PackSplice *RebuildPackSplice(Expr *Operand, ArrayRef<Expr *> Expansions) {
+    return getSema().BuildResolvedCXXPackSplice(Operand, Expansions);
   }
 
   /// Build a new compound statement.
@@ -1620,25 +1630,12 @@ public:
         LParenLoc, RParenLoc, TemplateArgs);
   }
 
-  /// Build a new dependent pack splice expression.
-  ExprResult RebuildCXXDependentPackSpliceExpr(SourceLocation EllipsisLoc,
-                                               SourceLocation SBELoc,
-                                               Expr *Operand,
-                                               SourceLocation SEELoc) {
-    return getSema().BuildUnresolvedCXXPackSpliceExpr(/*Scope=*/nullptr,
-                                                      EllipsisLoc, SBELoc,
-                                                      Operand, SEELoc);
-  }
-
   /// Build a new pack splice expression.
-  ExprResult RebuildCXXPackSpliceExpr(SourceLocation EllipsisLoc,
+  ExprResult RebuildCXXPackSpliceExpr(const PackSplice *PS,
+                                      SourceLocation EllipsisLoc,
                                       SourceLocation SBELoc,
-                                      Expr *Operand,
-                                      ArrayRef<Expr *> Expansions,
                                       SourceLocation SEELoc) {
-    return getSema().BuildResolvedCXXPackSpliceExpr(EllipsisLoc, SBELoc,
-                                                    Operand, Expansions,
-                                                    SEELoc);
+    return getSema().BuildCXXPackSpliceExpr(PS, EllipsisLoc, SBELoc, SEELoc);
   }
 
   /// Build a new concatenation expression.
@@ -3780,6 +3777,18 @@ public:
         return TemplateArgumentLoc(TemplateArgument(Expansion->getType()),
                                    Expansion);
       break;
+
+    case TemplateArgument::PackSplice: {
+      TemplateArgument Argument = Pattern.getArgument();
+      TemplateArgumentLocInfo LocInfo = Pattern.getLocInfo();
+      return TemplateArgumentLoc(SemaRef.Context,
+                                 TemplateArgument(Argument.getPackSplice()),
+                                 LocInfo.getPackSpliceIntroductionEllipsisLoc(),
+                                 LocInfo.getPackSpliceSBELoc(),
+                                 LocInfo.getPackSpliceSEELoc(),
+                                 EllipsisLoc);
+    }
+
     }
 
     return TemplateArgumentLoc();
@@ -3857,15 +3866,8 @@ private:
                                       DependentNameTypeLoc TL,
                                       bool DeducibleTSTContext);
 
-  UnexpandedParameterPack TransformExprPack(UnexpandedParameterPack SrcPack,
-                                            Expr *Input, bool &Error);
-
-  UnexpandedParameterPack TransformTypePack(UnexpandedParameterPack SrcPack,
-                                            QualType Input, bool &Error);
-
-  UnexpandedParameterPack TransformTypePack(UnexpandedParameterPack SrcPack,
-                                            const Type *Input, bool &Error);
-
+  UnexpandedParameterPack TransformPackSplice(UnexpandedParameterPack SrcPack,
+                                         const PackSplice *Input, bool &Error);
 protected:
   // The longer explanation of the issue:
   //
@@ -3895,9 +3897,13 @@ protected:
   // actually expand it.
   //
   // Specifically, at the time of writing, this includes:
-  // - TransformCXXDependentPackSpliceExpr
-  // - TransformCXXPackSpliceExpr,
-  // - The TemplateArgument::Expression case of TransformTemplateArgument
+  // - TransformCXXPackSpliceExpr
+  // - TransformTypePackSpliceType
+  // - The TemplateArgument::PackSplice case of TransformTemplateArgument
+  //
+  // If this was fixed, we could simply check for the
+  // ArgumentPackSubstitutionIndex at the beginning of the respective
+  // functions, rather than at the end after retransforming.
   //
   // The simpler, shorter explanation:
   //
@@ -4608,51 +4614,38 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
     Expr *InputExpr = Input.getSourceExpression();
     if (!InputExpr) InputExpr = Input.getArgument().getAsExpr();
 
-    ExprResult E;
-    {
-      // FIXME: Because the pattern is not transformed prior to
-      // expansion for pack splices, when expanding
-      // CXXDependentPackSpliceExpr and CXXPackSpliceExpr expressions
-      // we must transform prior to calling ExpandCXXPackSplice to
-      // ensure that all resolvable dependent portions of the
-      // expression are resolved so that the expansion can be
-      // performed.
-      //
-      // Since this function is called with
-      // ArgumentPackSubstitutionIndex present, we must subsequently,
-      // temporarily revert the ArgumentPackSubstitutionIndex so that
-      // we do not end up trying to expand this as an expression
-      // splice, rather than a template argument splice.
-      //
-      // If the pattern is transformed prior to performing pack
-      // expansion, this specialized logic can disappear, and the
-      // branch calling ExpandCXXPackSplice precedes this expression
-      // transform (which would then be irrelevant). See
-      // TransformPacks for more information.
-      bool IsAPackSplice = isa<CXXDependentPackSpliceExpr>(InputExpr) ||
-          isa<CXXPackSpliceExpr>(InputExpr);
-      unsigned TmpDepth = IsAPackSplice ? -1
-                                        : SemaRef.ArgumentPackSubstitutionIndex;
-      Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), TmpDepth);
-      E = getDerived().TransformExpr(InputExpr);
-      E = SemaRef.ActOnConstantExpression(E);
-      if (E.isInvalid()) return true;
-    }
-
-    // If we have a top level CXXPackSpliceExpr, and we're expanding
-    // parameter packs, use special logic which allows this template
-    // argument to be written into other types of template arguments.
-    if (SemaRef.ArgumentPackSubstitutionIndex != -1) {
-      if (auto *PackSpliceExpr = dyn_cast<CXXPackSpliceExpr>(E.get())) {
-        if (SemaRef.ExpandCXXPackSplice(PackSpliceExpr, Output))
-          return true;
-        return false;
-      }
-    }
+    ExprResult E = getDerived().TransformExpr(InputExpr);
+    E = SemaRef.ActOnConstantExpression(E);
+    if (E.isInvalid()) return true;
 
     Output = TemplateArgumentLoc(TemplateArgument(E.get()), E.get());
     return false;
   }
+
+  case TemplateArgument::PackSplice: {
+    const TemplateArgument &Arg = Input.getArgument();
+
+    PackSplice *NewPS = getDerived().TransformPackSplice(Arg.getPackSplice());
+    if (!NewPS)
+      return true;
+
+    TemplateArgumentLocInfo LocInfo = Input.getLocInfo();
+
+    // Rebuild the TemplateArgumentLoc
+    TemplateArgument NewArg(NewPS, /*IsPattern=*/!Arg.isPackExpansion());
+    TemplateArgumentLoc TmpOutput(SemaRef.Context, NewArg,
+                                 LocInfo.getPackSpliceIntroductionEllipsisLoc(),
+                                  LocInfo.getPackSpliceSBELoc(),
+                                  LocInfo.getPackSpliceSEELoc(),
+                                  LocInfo.getPackSpliceExpansionEllipsisLoc());
+
+    if (SemaRef.ArgumentPackSubstitutionIndex != -1)
+      return getSema().ExpandCXXPackSplice(TmpOutput, Output);
+
+    Output = TmpOutput;
+    return false;
+  }
+
   }
 
   // Work around bogus GCC warning
@@ -4839,6 +4832,29 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
   return false;
 
+}
+
+template<typename Derived>
+PackSplice *
+TreeTransform<Derived>::TransformPackSplice(const PackSplice *Input) {
+  ExprResult Op = getDerived().TransformExpr(Input->getOperand());
+  if (Op.isInvalid())
+    return nullptr;
+
+  if (!Input->isExpanded())
+    return getDerived().RebuildDependentPackSplice(Op.get());
+
+  SmallVector<Expr *, 8> SubOperands;
+  SubOperands.reserve(Input->getNumExpansions());
+  for (Expr *SubOperand : Input->getExpansions()) {
+    ExprResult TSE = getDerived().TransformExpr(SubOperand);
+    if (TSE.isInvalid())
+      return nullptr;
+
+    SubOperands.push_back(TSE.get());
+  }
+
+  return getDerived().RebuildPackSplice(Op.get(), SubOperands);
 }
 
 //===----------------------------------------------------------------------===//
@@ -6444,71 +6460,19 @@ QualType TreeTransform<Derived>::TransformTypeSpliceType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::TransformDependentTypePackSpliceType(
-                                                            TypeLocBuilder &TLB,
-                                            DependentTypePackSpliceTypeLoc TL) {
-  ExprResult Op = getDerived().TransformExpr(TL.getOperand());
-  if (Op.isInvalid())
-    return QualType();
-
-  QualType Result = getDerived().RebuildDependentTypePackSpliceType(Op.get());
-  if (Result.isNull())
-    return QualType();
-
-  if (isa<TypePackSpliceType>(Result.getTypePtr())) {
-    if (getSema().ArgumentPackSubstitutionIndex != -1) {
-      Result = SemaRef.ExpandCXXPackSpliceAsType(
-          cast<TypePackSpliceType>(Result.getTypePtr()),
-          TL.getEllipsisLoc(), TL.getSBELoc(), TL.getSEELoc());
-      if (Result.isNull())
-        return QualType();
-
-      auto NewTL = TLB.push<SubstTypePackSpliceTypeLoc>(Result);
-      NewTL.setEllipsisLoc(TL.getEllipsisLoc());
-      NewTL.setSBELoc(TL.getSBELoc());
-      NewTL.setSEELoc(TL.getSEELoc());
-      return Result;
-    }
-
-    TypePackSpliceTypeLoc NewTL = TLB.push<TypePackSpliceTypeLoc>(Result);
-    NewTL.setEllipsisLoc(TL.getEllipsisLoc());
-    NewTL.setSBELoc(TL.getSBELoc());
-    NewTL.setSEELoc(TL.getSEELoc());
-  } else {
-    DependentTypePackSpliceTypeLoc NewTL = TLB.push<DependentTypePackSpliceTypeLoc>(Result);
-    NewTL.setEllipsisLoc(TL.getEllipsisLoc());
-    NewTL.setSBELoc(TL.getSBELoc());
-    NewTL.setSEELoc(TL.getSEELoc());
-  }
-
-  return Result;
-}
-
-template<typename Derived>
 QualType TreeTransform<Derived>::TransformTypePackSpliceType(
                                                             TypeLocBuilder &TLB,
                                                      TypePackSpliceTypeLoc TL) {
-  ExprResult Op = getDerived().TransformExpr(TL.getOperand());
-  if (Op.isInvalid())
+  PackSplice *NewPS = getDerived().TransformPackSplice(TL.getPackSplice());
+  if (!NewPS)
     return QualType();
 
-  // Transform each of the parameter expansions into the corresponding
-  // parameters in the instantiation of the function decl.
-  SmallVector<Expr *, 8> Exprs;
-  Exprs.reserve(TL.getNumExpansions());
-  for (Expr *SE : TL.expansions()) {
-    ExprResult TSE = getDerived().TransformExpr(SE);
-    if (TSE.isInvalid())
-      return QualType();
-
-    Exprs.push_back(TSE.get());
-  }
-
-  QualType Result = getDerived().RebuildTypePackSpliceType(Op.get(), Exprs);
+  QualType Result = getDerived().RebuildTypePackSpliceType(NewPS);
   if (Result.isNull())
     return QualType();
 
   if (getSema().ArgumentPackSubstitutionIndex != -1) {
+    // Expand and rebuild with a containing TypeLoc
     Result = SemaRef.ExpandCXXPackSpliceAsType(
         cast<TypePackSpliceType>(Result.getTypePtr()),
         TL.getEllipsisLoc(), TL.getSBELoc(), TL.getSEELoc());
@@ -7294,67 +7258,16 @@ QualType TreeTransform<Derived>::TransformDependentNameType(
 }
 
 template<typename Derived>
-UnexpandedParameterPack TreeTransform<Derived>::TransformExprPack(
+UnexpandedParameterPack TreeTransform<Derived>::TransformPackSplice(
                                                 UnexpandedParameterPack SrcPack,
-                                                     Expr *Input, bool &Error) {
-  ExprResult ER = getDerived().TransformExpr(Input);
-  if (ER.isInvalid()) {
+                                         const PackSplice *Input, bool &Error) {
+  PackSplice *PS = getDerived().TransformPackSplice(Input);
+  if (!PS) {
     Error = true;
     return SrcPack;
   }
 
-  // Return the expression as an UnexpandedParameterPack
-  // or error if we see something unexpected/incompatible.
-  Expr *E = ER.get();
-  switch (E->getStmtClass()) {
-  case Expr::CXXDependentPackSpliceExprClass:
-    return UnexpandedParameterPack(
-      { cast<CXXDependentPackSpliceExpr>(E) },
-      SrcPack.second
-    );
-  case Expr::CXXPackSpliceExprClass:
-    return UnexpandedParameterPack(
-      { cast<CXXPackSpliceExpr>(E) },
-      SrcPack.second
-    );
-  default:
-    llvm_unreachable("unsupported kind");
-  }
-}
-
-template<typename Derived>
-UnexpandedParameterPack TreeTransform<Derived>::TransformTypePack(
-                                                UnexpandedParameterPack SrcPack,
-                                                  QualType Input, bool &Error) {
-  QualType Ty = getDerived().TransformType(Input);
-  if (Ty.isNull()) {
-    Error = true;
-    return SrcPack;
-  }
-
-  // Return the type as an UnexpandedParameterPack
-  // or error if we see something unexpected/incompatible.
-  switch (Ty->getTypeClass()) {
-  case Type::DependentTypePackSplice:
-    return UnexpandedParameterPack(
-      { cast<DependentTypePackSpliceType>(Ty.getTypePtr()) },
-      SrcPack.second
-    );
-  case Type::TypePackSplice:
-    return UnexpandedParameterPack(
-      { cast<TypePackSpliceType>(Ty.getTypePtr()) },
-      SrcPack.second
-    );
-  default:
-    llvm_unreachable("unsupported kind");
-  }
-}
-
-template<typename Derived>
-UnexpandedParameterPack TreeTransform<Derived>::TransformTypePack(
-                                                UnexpandedParameterPack SrcPack,
-                                               const Type *Input, bool &Error) {
-  return TransformTypePack(SrcPack, QualType(Input, 0), Error);
+  return UnexpandedParameterPack(PS, SrcPack.second);
 }
 
 template<typename Derived>
@@ -7365,14 +7278,8 @@ bool TreeTransform<Derived>::TransformPacks(
       [this, &Error](UnexpandedParameterPack Pack) -> UnexpandedParameterPack {
         // Transform the pack splice if present, otherwise, return the
         // existing pack object.
-        if (auto *SE = Pack.first.dyn_cast<CXXDependentPackSpliceExpr *>())
-          return TransformExprPack(Pack, SE, Error);
-        else if (auto *SE = Pack.first.dyn_cast<CXXPackSpliceExpr *>())
-          return TransformExprPack(Pack, SE, Error);
-        else if (auto *ST = Pack.first.dyn_cast<const DependentTypePackSpliceType *>())
-          return TransformTypePack(Pack, ST, Error);
-        else if (auto *ST = Pack.first.dyn_cast<const TypePackSpliceType *>())
-          return TransformTypePack(Pack, ST, Error);
+        if (auto *PS = Pack.first.dyn_cast<const PackSplice *>())
+          return TransformPackSplice(Pack, PS, Error);
         else
           return Pack;
       });
@@ -8612,56 +8519,20 @@ TreeTransform<Derived>::TransformCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXDependentPackSpliceExpr(CXXDependentPackSpliceExpr *E) {
-  ExprResult Op = getDerived().TransformExpr(E->getOperand());
-  if (Op.isInvalid())
-    return ExprError();
-
-  // FIXME: This shouldn't be so complicated, but because we can't
-  // transform the pack prior to pack expansion in the current design,
-  // we're forced into this hack.
-  ExprResult New = getDerived().RebuildCXXDependentPackSpliceExpr(
-      E->getEllipsisLoc(), E->getSBELoc(), Op.get(), E->getSEELoc());
-  if (New.isInvalid())
-    return ExprError();
-
-  if (isa<CXXPackSpliceExpr>(New.get()) &&
-      getSema().ArgumentPackSubstitutionIndex != -1) {
-    return SemaRef.ExpandCXXPackSpliceAsExpr(
-        cast<CXXPackSpliceExpr>(New.get()));
-  }
-
-  return New.get();
-}
-
-template <typename Derived>
-ExprResult
 TreeTransform<Derived>::TransformCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
-  ExprResult Op = getDerived().TransformExpr(E->getOperand());
-  if (Op.isInvalid())
-    return ExprError();
-
-  // Transform each of the parameter expansions into the corresponding
-  // parameters in the instantiation of the function decl.
-  SmallVector<Expr *, 8> Exprs;
-  Exprs.reserve(E->getNumExpansions());
-  for (Expr *SE : E->expansions()) {
-    ExprResult TSE = getDerived().TransformExpr(SE);
-    if (TSE.isInvalid())
-      return ExprError();
-
-    Exprs.push_back(TSE.get());
-  }
-
   // FIXME: This shouldn't be so complicated, but because we can't
   // transform the pack prior to pack expansion in the current design,
   // we're forced into this hack.
+  PackSplice *NewPS = getDerived().TransformPackSplice(E->getPackSplice());
+  if (!NewPS)
+    return ExprError();
+
   ExprResult New = getDerived().RebuildCXXPackSpliceExpr(
-      E->getEllipsisLoc(), E->getSBELoc(), Op.get(), Exprs, E->getSEELoc());
+      NewPS, E->getEllipsisLoc(), E->getSBELoc(), E->getSEELoc());
   if (New.isInvalid())
     return ExprError();
 
-  if (getSema().ArgumentPackSubstitutionIndex != -1)
+  if (SemaRef.ArgumentPackSubstitutionIndex != -1)
     return SemaRef.ExpandCXXPackSpliceAsExpr(
         cast<CXXPackSpliceExpr>(New.get()));
 
@@ -15238,15 +15109,9 @@ QualType TreeTransform<Derived>::RebuildTypeSpliceType(Expr *E) {
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::RebuildDependentTypePackSpliceType(
-                                                                Expr *Operand) {
-  return SemaRef.BuildUnresolvedTypePackSpliceType(/*Scope=*/nullptr, Operand);
-}
-
-template<typename Derived>
-QualType TreeTransform<Derived>::RebuildTypePackSpliceType(Expr *Operand,
-                                                  ArrayRef<Expr *> Expansions) {
-  return SemaRef.BuildResolvedTypePackSpliceType(Operand, Expansions);
+QualType TreeTransform<Derived>::RebuildTypePackSpliceType(
+                                                         const PackSplice *PS) {
+  return SemaRef.BuildTypePackSpliceType(PS);
 }
 
 template<typename Derived>

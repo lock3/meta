@@ -31,6 +31,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
@@ -290,6 +291,18 @@ public:
   // FIXME: take a TemplateArgumentLoc* (or TemplateArgumentListInfo) instead.
   bool TraverseTemplateArguments(const TemplateArgument *Args,
                                  unsigned NumArgs);
+
+  /// Recursively visit a pack splice and dispatch to the
+  /// appropriate method for the operand(s).
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraversePackSplice(const PackSplice *PS);
+
+  /// Recursively visit a pack splice with location information and dispatch
+  /// to the appropriate method for the operand(s).
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraversePackSpliceLoc(PackSpliceLoc PSLoc);
 
   /// Recursively visit a base specifier. This can be overridden by a
   /// subclass.
@@ -783,6 +796,9 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::PackSplice:
+    return getDerived().TraversePackSplice(Arg.getPackSplice());
+
   }
 
   return true;
@@ -824,6 +840,10 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::PackSplice: {
+    return getDerived().TraversePackSpliceLoc(ArgLoc.getAsPackSpliceLoc());
+  }
+
   }
 
   return true;
@@ -989,18 +1009,12 @@ DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
                                    T->getNumArgs()));
 })
 
-DEF_TRAVERSE_TYPE(TypeSpliceType,
-                  { TRY_TO(TraverseStmt(T->getReflection())); })
-
-DEF_TRAVERSE_TYPE(DependentTypePackSpliceType, {
-  TRY_TO(TraverseStmt(T->getOperand()));
+DEF_TRAVERSE_TYPE(TypeSpliceType, {
+  TRY_TO(TraverseStmt(T->getReflection()));
 })
 
 DEF_TRAVERSE_TYPE(TypePackSpliceType, {
-  TRY_TO(TraverseStmt(T->getOperand()));
-
-  for (Expr *SE : T->expansions())
-    TRY_TO(TraverseStmt(SE));
+  TRY_TO(TraversePackSplice(T->getPackSplice()));
 })
 
 DEF_TRAVERSE_TYPE(SubstTypePackSpliceType, {
@@ -1295,15 +1309,8 @@ DEF_TRAVERSE_TYPELOC(TypeSpliceType, {
   TRY_TO(TraverseStmt(TL.getReflection()));
 })
 
-DEF_TRAVERSE_TYPELOC(DependentTypePackSpliceType, {
-  TRY_TO(TraverseStmt(TL.getOperand()));
-})
-
 DEF_TRAVERSE_TYPELOC(TypePackSpliceType, {
-  TRY_TO(TraverseStmt(TL.getOperand()));
-
-  for (Expr *SE : TL.expansions())
-    TRY_TO(TraverseStmt(SE));
+  TRY_TO(TraversePackSpliceLoc(TL.getAsPackSpliceLoc()));
 })
 
 DEF_TRAVERSE_TYPELOC(SubstTypePackSpliceType, {
@@ -1901,6 +1908,24 @@ bool RecursiveASTVisitor<Derived>::TraverseRecordHelper(RecordDecl *D) {
   TRY_TO(TraverseDeclTemplateParameterLists(D));
   TRY_TO(TraverseNestedNameSpecifierLoc(D->getQualifierLoc()));
   return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraversePackSplice(const PackSplice *PS) {
+  TRY_TO(TraverseStmt(PS->getOperand()));
+
+  if (!PS->isExpanded())
+    return true;
+
+  for (Expr *E : PS->getExpansions())
+    TRY_TO(TraverseStmt(E));
+
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraversePackSpliceLoc(PackSpliceLoc PSLoc) {
+  return TraversePackSplice(PSLoc.getPackSplice());
 }
 
 template <typename Derived>
@@ -2789,10 +2814,9 @@ DEF_TRAVERSE_STMT(CXXExprSpliceExpr, {
     TRY_TO(TraverseStmt(S->getReflection()));
 })
 DEF_TRAVERSE_STMT(CXXMemberExprSpliceExpr, {})
-DEF_TRAVERSE_STMT(CXXDependentPackSpliceExpr, {
-    TRY_TO(TraverseStmt(S->getOperand()));
+DEF_TRAVERSE_STMT(CXXPackSpliceExpr, {
+  TRY_TO(TraversePackSpliceLoc(S->getAsPackSpliceLoc()));
 })
-DEF_TRAVERSE_STMT(CXXPackSpliceExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentSpliceIdExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 

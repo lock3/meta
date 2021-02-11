@@ -442,26 +442,12 @@ let Class = TypeSpliceType in {
   }]>;
 }
 
-let Class = DependentTypePackSpliceType in {
-  def : Property<"operand", ExprRef> {
-    let Read = [{ node->getOperand() }];
-  }
-
-  def : Creator<[{
-    return ctx.getDependentTypePackSpliceType(operand);
-  }]>;
-}
-
 let Class = TypePackSpliceType in {
-  def : Property<"operand", ExprRef> {
-    let Read = [{ node->getOperand() }];
+  def : Property<"packSplice", PackSplice> {
+    let Read = [{ *node->getPackSplice() }];
   }
-  def : Property<"expansions", Array<ExprRef>> {
-    let Read = [{ node->expansions() }];
-  }
-
   def : Creator<[{
-    return ctx.getTypePackSpliceType(operand, expansions);
+    return ctx.getTypePackSpliceType(&packSplice);
   }]>;
 }
 

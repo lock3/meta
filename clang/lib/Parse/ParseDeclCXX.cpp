@@ -1195,8 +1195,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
   }
 
-  if (Tok.is(tok::ellipsis) &&
-      matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+  if (isCXXPackSpliceBegin()) {
     // Fake up a Declarator to use with ActOnTypeName.
     DeclSpec DS(AttrFactory);
 
@@ -3636,8 +3635,7 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ParseDecltypeSpecifier(DS);
   } else if (Tok.is(tok::annot_type_splice)) {
     ParseTypeSplice(DS);
-  } else if (Tok.is(tok::ellipsis) &&
-             matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+  } else if (isCXXPackSpliceBegin()) {
     ParseTypePackSplice(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)

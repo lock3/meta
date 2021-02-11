@@ -11,7 +11,7 @@ void bar() { }
 void foo() {
   constexpr info els [] = { reflexpr(int), reflexpr(int) };
   bar<...[< els >]>();
-// expected-error@-1 {{expression contains an unexpanded parameter pack}}
+// expected-error@-1 {{template argument contains an unexpanded pack splice}}
 // expected-error@-2 {{no matching function for call to 'bar'}}
 }
 

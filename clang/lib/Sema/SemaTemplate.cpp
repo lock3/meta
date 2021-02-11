@@ -944,6 +944,11 @@ TemplateArgumentLoc Sema::translateTemplateArgument(
         Arg.getScopeSpec().getWithLocInContext(Context),
         Arg.getLocation(), Arg.getEllipsisLoc());
   }
+
+  case ParsedTemplateArgument::PackSplice: {
+    return ActOnCXXPackSpliceTemplateArgument(Arg.getPackSpliceOperand(),
+                                              Arg.getEllipsisLoc());
+  }
   }
 
   llvm_unreachable("Unhandled parsed template argument");
@@ -4102,6 +4107,7 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::PackSplice: // FIXME: Is this right?
     return false;
 
   case TemplateArgument::Type: {
@@ -5524,6 +5530,10 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
     case TemplateArgument::Pack:
       llvm_unreachable("Caller must expand template argument packs");
+
+    case TemplateArgument::PackSplice: // FIXME: Is this right?
+      llvm_unreachable("Caller must expand template argument splices");
+
     }
 
     return false;
@@ -5598,6 +5608,10 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
   case TemplateArgument::Pack:
     llvm_unreachable("Caller must expand template argument packs");
+
+  case TemplateArgument::PackSplice: // FIXME: Is this right?
+    llvm_unreachable("Caller must expand template argument splices");
+
   }
 
   return false;
@@ -6107,11 +6121,6 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentIdentifierSpliceType(
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitTypeSpliceType(const TypeSpliceType*) {
-  return false;
-}
-
-bool UnnamedLocalNoLinkageFinder::VisitDependentTypePackSpliceType(
-                                           const DependentTypePackSpliceType*) {
   return false;
 }
 

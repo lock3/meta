@@ -1028,24 +1028,62 @@ ExprResult Sema::ActOnCXXPackSpliceExpr(SourceLocation EllipsisLoc,
                                         SourceLocation SBELoc,
                                         Expr *Operand,
                                         SourceLocation SEELoc) {
-  return BuildUnresolvedCXXPackSpliceExpr(getCurScope(), EllipsisLoc, SBELoc,
-                                          Operand, SEELoc);
+  PackSplice *PS = ActOnCXXPackSplice(getCurScope(), Operand);
+  if (!PS)
+    return ExprError();
+
+  return BuildCXXPackSpliceExpr(PS, EllipsisLoc, SBELoc, SEELoc);
 }
 
-ExprResult Sema::BuildUnresolvedCXXPackSpliceExpr(Scope *S,
-                                                  SourceLocation EllipsisLoc,
-                                                  SourceLocation SBELoc,
-                                                  Expr *Operand,
-                                                  SourceLocation SEELoc) {
+ExprResult Sema::BuildCXXPackSpliceExpr(const PackSplice *PS,
+                                        SourceLocation EllipsisLoc,
+                                        SourceLocation SBELoc,
+                                        SourceLocation SEELoc) {
+  return CXXPackSpliceExpr::Create(Context, PS, EllipsisLoc, SBELoc, SEELoc);
+}
+
+TemplateArgumentLoc Sema::ActOnCXXPackSpliceTemplateArgument(
+                           Expr *Operand, SourceLocation ExpansionEllipsisLoc) {
+  PackSplice *PS = ActOnCXXPackSplice(getCurScope(), Operand);
+  if (!PS)
+    return TemplateArgumentLoc();
+
+  if (ExpansionEllipsisLoc.isInvalid()) {
+    // FIXME: Should this be part of a more general mechanism?
+    //
+    // We can get away with doing this here as this is a rather
+    // special case, and we don't need to worry about a template
+    // argument pack splice being expanded at a later point.
+    Diag(Operand->getBeginLoc(), diag::err_unexpanded_pack_splice);
+    return TemplateArgumentLoc();
+  }
+
+  return BuildCXXPackSpliceTemplateArgument(PS, ExpansionEllipsisLoc);
+}
+
+TemplateArgumentLoc Sema::BuildCXXPackSpliceTemplateArgument(
+                          PackSplice *PS, SourceLocation ExpansionEllipsisLoc) {
+  TemplateArgument TArg(PS, /*IsPattern=*/ExpansionEllipsisLoc.isInvalid());
+  return TemplateArgumentLoc(Context, TArg,
+                             /*IntroEllipsisLoc=*/SourceLocation(),
+                             /*SBELoc=*/SourceLocation(),
+                             /*SEELoc=*/SourceLocation(),
+                             ExpansionEllipsisLoc);
+}
+
+PackSplice *Sema::ActOnCXXPackSplice(Scope *S, Expr *Operand) {
+  return BuildUnresolvedCXXPackSplice(S, Operand);
+}
+
+PackSplice *Sema::BuildUnresolvedCXXPackSplice(Scope *S, Expr *Operand) {
   ExpansionContextBuilder CtxBldr(*this, S, Operand);
   if (CtxBldr.BuildCalls()) {
     Diag(Operand->getBeginLoc(), diag::err_expression_unexpandable);
-    return ExprError();
+    return nullptr;
   }
 
   if (CtxBldr.getKind() == RK_Unknown)
-    return CXXDependentPackSpliceExpr::Create(Context, EllipsisLoc, SBELoc,
-                                              Operand, SEELoc);
+    return PackSplice::Create(Context, Operand);
 
   SmallVector<Expr *, 8> Exprs;
 
@@ -1056,47 +1094,52 @@ ExprResult Sema::BuildUnresolvedCXXPackSpliceExpr(Scope *S,
     ++RT;
   }
 
-  return BuildResolvedCXXPackSpliceExpr(EllipsisLoc, SBELoc, Operand,
-                                        Exprs, SEELoc);
+  return BuildResolvedCXXPackSplice(Operand, Exprs);
 }
 
-ExprResult Sema::BuildResolvedCXXPackSpliceExpr(SourceLocation EllipsisLoc,
-                                                SourceLocation SBELoc,
-                                                Expr *Operand,
-                                                ArrayRef<Expr *> Expansions,
-                                                SourceLocation SEELoc) {
-  return CXXPackSpliceExpr::Create(Context, EllipsisLoc, SBELoc,
-                                   Operand, Expansions, SEELoc);
+PackSplice *Sema::BuildResolvedCXXPackSplice(Expr *Operand,
+                                             ArrayRef<Expr *> Expansions) {
+  return PackSplice::Create(Context, Operand, Expansions);
 }
 
-bool Sema::CheckCXXPackSpliceForExpansion(CXXPackSpliceExpr *E,
+bool Sema::CheckCXXPackSpliceForExpansion(const PackSplice *PS,
                                           bool &ShouldExpand,
                                           Optional<unsigned> &NumExpansions) {
-  if (!E->isExpandable()) {
+  assert(PS->isExpanded() && "the splice must first be expanded");
+
+  if (PS->hasDependentOperands()) {
     ShouldExpand = false;
     return false;
   }
 
-  NumExpansions = E->getNumExpansions();
+  NumExpansions = PS->getNumExpansions();
 
   return false;
 }
 
-template<typename T>
-static bool ExpandCXXPackSpliceInternal(Sema &SemaRef, T *V,
-                                        SourceLocation EllipsisLoc,
-                                        SourceLocation SBELoc,
-                                        SourceLocation SEELoc,
-                                        TemplateArgumentLoc &TemplArg) {
+Optional<unsigned> Sema::getNumArgumentsInExpansion(const PackSplice *PS) {
+  bool IgnoredShouldExpand = true;
+
+  Optional<unsigned> NumExpansions;
+  if (CheckCXXPackSpliceForExpansion(PS, IgnoredShouldExpand, NumExpansions))
+    return {};
+
+  return NumExpansions;
+}
+
+static bool ExpandCXXPackSplice(Sema &SemaRef, PackSpliceLoc PSLoc,
+                                TemplateArgumentLoc &TemplArg) {
   assert(SemaRef.ArgumentPackSubstitutionIndex != -1);
+
+  const PackSplice *PS = PSLoc.getPackSplice();
+  assert(PS->isExpanded());
 
   ASTContext &Ctx = SemaRef.getASTContext();
 
   // FIXME: We have to evaluate the reflection expression twice,
   // once to figure out which splice to direct to, and once for the
   // actual splice expression.
-  Expr *RTE = const_cast<Expr *>(V->getExpansion(
-      SemaRef.ArgumentPackSubstitutionIndex));
+  Expr *RTE = PS->getExpansion(SemaRef.ArgumentPackSubstitutionIndex);
   Reflection Refl;
   if (EvaluateReflection(SemaRef, RTE, Refl))
     return true;
@@ -1116,15 +1159,16 @@ static bool ExpandCXXPackSpliceInternal(Sema &SemaRef, T *V,
     // in the transform function.
     TypeLocBuilder TLB;
     auto NewTL = TLB.push<SubstTypePackSpliceTypeLoc>(Res);
-    NewTL.setEllipsisLoc(EllipsisLoc);
-    NewTL.setSBELoc(SBELoc);
-    NewTL.setSEELoc(SEELoc);
+    NewTL.setFromPackSpliceLoc(PSLoc);
 
     TemplArg = TemplateArgumentLoc(TemplateArgument(Res),
                                    TLB.getTypeSourceInfo(Ctx, Res));
     return false;
   }
   default: {
+    SourceLocation SBELoc = PSLoc.getSBELoc();
+    SourceLocation SEELoc = PSLoc.getSEELoc();
+
     ExprResult Res = SemaRef.ActOnCXXExprSpliceExpr(SBELoc, RTE, SEELoc);
     if (Res.isInvalid())
       return true;
@@ -1136,16 +1180,15 @@ static bool ExpandCXXPackSpliceInternal(Sema &SemaRef, T *V,
   }
 }
 
-bool Sema::ExpandCXXPackSplice(CXXPackSpliceExpr *E,
-                               TemplateArgumentLoc &TemplArg) {
-  return ExpandCXXPackSpliceInternal(*this, E, E->getEllipsisLoc(),
-                                     E->getSBELoc(), E->getSEELoc(), TemplArg);
+bool Sema::ExpandCXXPackSplice(const TemplateArgumentLoc &Input,
+                               TemplateArgumentLoc &Output) {
+  assert(Input.getArgument().isPackSplice() && "Unexpected kind");
+  return ::ExpandCXXPackSplice(*this, Input.getAsPackSpliceLoc(), Output);
 }
 
 ExprResult Sema::ExpandCXXPackSpliceAsExpr(CXXPackSpliceExpr *E) {
   TemplateArgumentLoc TemplArg;
-  if (ExpandCXXPackSpliceInternal(*this, E, E->getEllipsisLoc(),
-                                  E->getSBELoc(), E->getSEELoc(), TemplArg))
+  if (::ExpandCXXPackSplice(*this, E->getAsPackSpliceLoc(), TemplArg))
     return ExprError();
 
   TemplateArgument RawArg = TemplArg.getArgument();
@@ -1158,13 +1201,16 @@ ExprResult Sema::ExpandCXXPackSpliceAsExpr(CXXPackSpliceExpr *E) {
   return RawArg.getAsExpr();
 }
 
+// This method unlike the previous expansion methods takes locations
+// directly, then forms the PackSpliceLoc itself, as this prevents us
+// from needing to setup and build a TypePackSpliceTypeLoc.
 QualType Sema::ExpandCXXPackSpliceAsType(const TypePackSpliceType *T,
                                          SourceLocation EllipsisLoc,
                                          SourceLocation SBELoc,
                                          SourceLocation SEELoc) {
   TemplateArgumentLoc TemplArg;
-  if (ExpandCXXPackSpliceInternal(*this, T, EllipsisLoc, SBELoc,
-                                  SEELoc, TemplArg))
+  PackSpliceLoc PSLoc(T->getPackSplice(), EllipsisLoc, SBELoc, SEELoc);
+  if (::ExpandCXXPackSplice(*this, PSLoc, TemplArg))
     return QualType();
 
   TemplateArgument RawArg = TemplArg.getArgument();
@@ -1175,39 +1221,6 @@ QualType Sema::ExpandCXXPackSpliceAsType(const TypePackSpliceType *T,
   }
 
   return RawArg.getAsType();
-}
-
-bool Sema::CheckCXXPackSpliceForExpansion(const TypePackSpliceType *T,
-                                          bool &ShouldExpand,
-                                          Optional<unsigned> &NumExpansions) {
-  if (!T->isExpandable()) {
-    ShouldExpand = false;
-    return false;
-  }
-
-  NumExpansions = T->getNumExpansions();
-
-  return false;
-}
-
-Optional<unsigned> Sema::getNumArgumentsInExpansion(CXXPackSpliceExpr *E) {
-  bool IgnoredShouldExpand = true;
-
-  Optional<unsigned> NumExpansions;
-  if (CheckCXXPackSpliceForExpansion(E, IgnoredShouldExpand, NumExpansions))
-    return {};
-
-  return NumExpansions;
-}
-
-Optional<unsigned> Sema::getNumArgumentsInExpansion(const TypePackSpliceType *T) {
-  bool IgnoredShouldExpand = true;
-
-  Optional<unsigned> NumExpansions;
-  if (CheckCXXPackSpliceForExpansion(T, IgnoredShouldExpand, NumExpansions))
-    return {};
-
-  return NumExpansions;
 }
 
 namespace {
@@ -1253,11 +1266,9 @@ bool Sema::tryExpandNonDependentPack(const TemplateArgumentLoc &Input,
     return false;
   }
 
-  auto *PE = cast<PackExpansionExpr>(Arg.getAsExpr());
-
   return ExpandNonDependentPacks(&Input, /*NumInputs=*/1,
-        /*PointOfInstantiation=*/PE->getEllipsisLoc(),
-          /*InstantiationRange=*/PE->getSourceRange(), Outputs);
+        /*PointOfInstantiation=*/Input.getExpansionEllipsisLoc(),
+          /*InstantiationRange=*/Input.getSourceRange(), Outputs);
 }
 
 bool Sema::ExpandNonDependentPacks(Expr *const *Inputs, unsigned NumInputs,
@@ -1890,34 +1901,15 @@ void Sema::BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
 }
 
 QualType Sema::ActOnTypePackSpliceType(Scope *S, Expr *Operand) {
-  return BuildUnresolvedTypePackSpliceType(S, Operand);
-}
-
-QualType Sema::BuildUnresolvedTypePackSpliceType(Scope *S, Expr *Operand) {
-  ExpansionContextBuilder CtxBldr(*this, S, Operand);
-  if (CtxBldr.BuildCalls()) {
-    Diag(Operand->getBeginLoc(), diag::err_expression_unexpandable);
+  PackSplice *PS = ActOnCXXPackSplice(getCurScope(), Operand);
+  if (!PS)
     return QualType();
-  }
 
-  if (CtxBldr.getKind() == RK_Unknown)
-    return Context.getDependentTypePackSpliceType(Operand);
-
-  SmallVector<Expr *, 8> Exprs;
-
-  RangeTraverser RT(*this, CtxBldr.getKind(),
-                    CtxBldr.getRangeBeginCall(), CtxBldr.getRangeEndCall());
-  while (!RT) {
-    Exprs.push_back(*RT);
-    ++RT;
-  }
-
-  return BuildResolvedTypePackSpliceType(Operand, Exprs);
+  return BuildTypePackSpliceType(PS);
 }
 
-QualType Sema::BuildResolvedTypePackSpliceType(Expr *Operand,
-                                               ArrayRef<Expr *> Expansions) {
-  return Context.getTypePackSpliceType(Operand, Expansions);
+QualType Sema::BuildTypePackSpliceType(const PackSplice *PS) {
+  return Context.getTypePackSpliceType(PS);
 }
 
 ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,

@@ -2634,7 +2634,8 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
   //   -- [...] ;
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
-      break;
+    case TemplateArgument::PackSplice:
+      llvm_unreachable("these shouldn't be present during ADL");
 
     case TemplateArgument::Type:
       // [...] the namespaces and classes associated with the types of the

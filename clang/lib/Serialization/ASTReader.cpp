@@ -6643,13 +6643,6 @@ void TypeLocReader::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   TL.setSEELoc(readSourceLocation());
 }
 
-void TypeLocReader::VisitDependentTypePackSpliceTypeLoc(
-                                            DependentTypePackSpliceTypeLoc TL) {
-  TL.setEllipsisLoc(readSourceLocation());
-  TL.setSBELoc(readSourceLocation());
-  TL.setSEELoc(readSourceLocation());
-}
-
 void TypeLocReader::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
   TL.setEllipsisLoc(readSourceLocation());
   TL.setSBELoc(readSourceLocation());
@@ -7150,6 +7143,14 @@ ASTRecordReader::readTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind) {
     SourceLocation EllipsisLoc = readSourceLocation();
     return TemplateArgumentLocInfo(getASTContext(), QualifierLoc,
                                    TemplateNameLoc, EllipsisLoc);
+  }
+  case TemplateArgument::PackSplice: {
+    SourceLocation IntroductionEllipsisLoc = readSourceLocation();
+    SourceLocation SBELoc = readSourceLocation();
+    SourceLocation SEELoc = readSourceLocation();
+    SourceLocation ExpansionEllipsisLoc = readSourceLocation();
+    return TemplateArgumentLocInfo(getASTContext(), IntroductionEllipsisLoc,
+                                   SBELoc, SEELoc, ExpansionEllipsisLoc);
   }
   case TemplateArgument::Null:
   case TemplateArgument::Integral:

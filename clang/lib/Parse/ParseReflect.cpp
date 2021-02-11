@@ -289,6 +289,9 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
 }
 
 bool Parser::matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead) {
+  if (!getLangOpts().Reflection)
+    return false;
+
   if (getRelativeToken(LookAhead).isNot(tok::l_square))
     return false;
   if (getRelativeToken(LookAhead + 1).isNot(T))
@@ -305,6 +308,14 @@ bool Parser::matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead) {
 
   return true;
 }
+
+bool Parser::isCXXPackSpliceBegin(unsigned LookAhead) {
+  if (getRelativeToken(LookAhead).isNot(tok::ellipsis))
+    return false;
+
+  return matchCXXSpliceBegin(tok::less, LookAhead + 1);
+}
+
 bool Parser::parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL) {
   if (!matchCXXSpliceBegin(T))
     return true;
@@ -399,8 +410,7 @@ ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base) {
 ///     '...' '[' '<' constant-expression '>' ']'
 /// \endverbatim
 ExprResult Parser::ParseCXXPackSpliceExpr() {
-  assert(Tok.is(tok::ellipsis) &&
-         matchCXXSpliceBegin(tok::less, /*LookAhead=*/1) && "Not '[<'");
+  assert(isCXXPackSpliceBegin() && "Not '[<'");
   SourceLocation EllipsisLoc = ConsumeToken();
 
   SourceLocation SBELoc;
@@ -506,8 +516,6 @@ bool Parser::ParseCXXIdentifierSplice(
 ///   type-splice:
 ///     'typename' '[' '<' reflection '>' ']'
 /// \endverbatim
-///
-/// The constant expression must be a reflection of a type.
 SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
   assert(Tok.is(tok::annot_type_splice) ||
          (Tok.is(tok::kw_typename) &&
@@ -582,9 +590,7 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
 ///
 /// The constant expression must be a reflection of a type.
 SourceLocation Parser::ParseTypePackSplice(DeclSpec &DS) {
-  assert((Tok.is(tok::ellipsis) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
-         && "Not a type pack splice");
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
 
   SourceLocation StartLoc = ConsumeToken();
   SourceLocation SBELoc;
@@ -621,9 +627,7 @@ SourceLocation Parser::ParseTypePackSplice(DeclSpec &DS) {
 // As a reminder, these cannot be combined by the lexer per cases like:
 //   b[x<a>]
 bool Parser::ConsumeAndStoreTypePackSplice(CachedTokens &Toks) {
-  assert((Tok.is(tok::ellipsis) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
-         && "Not a type pack splice");
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
 
   // Store the one off introductory '...'
   Toks.push_back(Tok);
@@ -681,6 +685,41 @@ bool Parser::ConsumeAndStoreTypePackSplice(CachedTokens &Toks) {
   }
 
   return true;
+}
+
+/// Parse a type pack splice
+///
+/// \verbatim
+///   type-pack-splice:
+///     '...' '[' '<' reflection '>' ']'
+/// \endverbatim
+ParsedTemplateArgument Parser::ParseCXXTemplateArgumentPackSplice() {
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
+
+  SourceLocation StartLoc = ConsumeToken();
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::less, SBELoc))
+    return ParsedTemplateArgument();
+
+  ExprResult Result = ParseConstantExpression();
+  if (Result.isInvalid())
+    return ParsedTemplateArgument();
+
+  SourceLocation EndLoc;
+  if (parseCXXSpliceEnd(tok::greater, EndLoc))
+    return ParsedTemplateArgument();
+
+  // We could just handle the ellipsis here, but to integrate better
+  // with existing control flow, allow ActOnPackExpansion to rebuild
+  // the ParsedTemplateArgument with the ellipsis loc.
+  if (!Tok.isOneOf(tok::ellipsis, tok::comma, tok::greater, tok::greatergreater,
+                   tok::greatergreatergreater)) {
+    // The next token does not end this pack splice
+    return ParsedTemplateArgument();
+  }
+
+  return ParsedTemplateArgument(Result.get(), StartLoc,
+                                /*EllipsisLoc=*/SourceLocation());
 }
 
 /// Parse a concatenation expression.

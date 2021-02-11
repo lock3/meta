@@ -253,6 +253,8 @@ public:
   bool VisitTemplateName(TemplateName Name, SourceLocation Loc);
   bool VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL);
 
+  bool VisitPackSplice(const PackSplice *PS);
+
   // Type visitors
 #define ABSTRACT_TYPELOC(CLASS, PARENT)
 #define TYPELOC(CLASS, PARENT) bool Visit##CLASS##TypeLoc(CLASS##TypeLoc TyLoc);

@@ -1511,10 +1511,31 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).
 ///
 ///       template-argument: [C++ 14.2]
+///         pack-splice
 ///         constant-expression
 ///         type-id
 ///         id-expression
 ParsedTemplateArgument Parser::ParseTemplateArgument() {
+  EnterExpressionEvaluationContext EnterConstantEvaluated(
+    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
+    /*LambdaContextDecl=*/nullptr,
+    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
+
+  // Pack splices have a special template argument kind that can
+  // become either a type or non-type template argument when expanded.
+  if (isCXXPackSpliceBegin()) {
+    TentativeParsingAction TPA(*this);
+
+    ParsedTemplateArgument PackSpliceTemplateArgument
+      = ParseCXXTemplateArgumentPackSplice();
+    if (!PackSpliceTemplateArgument.isInvalid()) {
+      TPA.Commit();
+      return PackSpliceTemplateArgument;
+    }
+
+    TPA.Revert();
+  }
+
   // C++ [temp.arg]p2:
   //   In a template-argument, an ambiguity between a type-id and an
   //   expression is resolved to a type-id, regardless of the form of
@@ -1524,11 +1545,6 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
   // up and annotate an identifier as an id-expression during disambiguation,
   // so enter the appropriate context for a constant expression template
   // argument before trying to disambiguate.
-
-  EnterExpressionEvaluationContext EnterConstantEvaluated(
-    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
-    /*LambdaContextDecl=*/nullptr,
-    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     TypeResult TypeArg = ParseTypeName(
         /*Range=*/nullptr, DeclaratorContext::TemplateArgContext);

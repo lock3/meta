@@ -16,6 +16,7 @@
 #include "clang/AST/ExprConcepts.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
 #include "llvm/ADT/ArrayRef.h"
 
@@ -429,17 +430,20 @@ ExprDependence clang::computeDependence(CXXMemberExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(CXXDependentPackSpliceExpr *E) {
-  ExprDependence Depends = ExprDependence::UnexpandedPack;
-  Depends |= E->getOperand()->getDependence();
-  return Depends;
-}
-
 ExprDependence clang::computeDependence(CXXPackSpliceExpr *E) {
+  // FIXME: Duplicated by the computePackSpliceDependence function in
+  // Type.cpp
+
   ExprDependence Depends = ExprDependence::UnexpandedPack;
-  for (Expr *SE : E->expansions()) {
-    Depends |= SE->getDependence();
+
+  const PackSplice *PS = E->getPackSplice();
+  if (PS->isExpanded()) {
+    for (Expr *SE : PS->getExpansions())
+      Depends |= SE->getDependence();
+  } else {
+    Depends |= PS->getOperand()->getDependence();
   }
+
   return Depends;
 }
 

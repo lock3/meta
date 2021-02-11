@@ -85,6 +85,7 @@ public:
   void AddDeclarationName(DeclarationName Name, bool TreatAsDecl = false);
   void AddTemplateArgument(TemplateArgument TA);
   void AddTemplateParameterList(const TemplateParameterList *TPL);
+  void AddPackSplice(const PackSplice *PS);
 
   // Save booleans until the end to lower the size of data to process.
   void AddBoolean(bool value);

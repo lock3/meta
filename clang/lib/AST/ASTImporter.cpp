@@ -34,6 +34,7 @@
 #include "clang/AST/LambdaCapture.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
@@ -432,6 +433,7 @@ namespace clang {
     Error ImportDefinition(
         ObjCProtocolDecl *From, ObjCProtocolDecl *To,
         ImportDefinitionKind Kind = IDK_Default);
+
     Error ImportTemplateArguments(
         const TemplateArgument *FromArgs, unsigned NumFromArgs,
         SmallVectorImpl<TemplateArgument> &ToArgs);
@@ -845,6 +847,15 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     return TemplateArgument(
         llvm::makeArrayRef(ToPack).copy(Importer.getToContext()));
   }
+
+  case TemplateArgument::PackSplice: {
+    Expected<PackSplice *> ToSplice = import(From.getPackSplice());
+    if (!ToSplice)
+      return ToSplice.takeError();
+
+    return TemplateArgument(*ToSplice);
+  }
+
   }
 
   llvm_unreachable("Invalid template argument kind");
@@ -8599,6 +8610,25 @@ Expected<TemplateName> ASTImporter::Import(TemplateName From) {
   }
 
   llvm_unreachable("Invalid template name kind");
+}
+
+Expected<PackSplice *> ASTImporter::Import(const PackSplice *From) {
+  ExpectedExpr ToExpr = Import(From->getOperand());
+  if (!ToExpr)
+    return ToExpr.takeError();
+
+  if (!From->isExpanded())
+    return PackSplice::Create(getToContext(), *ToExpr);
+
+  // Import the expansion operands
+  ASTNodeImporter Importer(*this);
+  ArrayRef<Expr *> FromExpansions = From->getExpansions();
+  SmallVector<Expr *, 4> ToExpansions;
+  ToExpansions.reserve(From->getNumExpansions());
+  if (Error Err = Importer.ImportContainerChecked(FromExpansions, ToExpansions))
+    return std::move(Err);
+
+  return PackSplice::Create(getToContext(), *ToExpr, ToExpansions);
 }
 
 Expected<SourceLocation> ASTImporter::Import(SourceLocation FromLoc) {

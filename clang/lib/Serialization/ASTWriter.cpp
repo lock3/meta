@@ -379,13 +379,6 @@ void TypeLocWriter::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   Record.AddSourceLocation(TL.getSEELoc());
 }
 
-void TypeLocWriter::VisitDependentTypePackSpliceTypeLoc(
-                                            DependentTypePackSpliceTypeLoc TL) {
-  Record.AddSourceLocation(TL.getEllipsisLoc());
-  Record.AddSourceLocation(TL.getSBELoc());
-  Record.AddSourceLocation(TL.getSEELoc());
-}
-
 void TypeLocWriter::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
   Record.AddSourceLocation(TL.getSBELoc());
@@ -5387,6 +5380,12 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
     AddNestedNameSpecifierLoc(Arg.getTemplateQualifierLoc());
     AddSourceLocation(Arg.getTemplateNameLoc());
     AddSourceLocation(Arg.getTemplateEllipsisLoc());
+    break;
+  case TemplateArgument::PackSplice:
+    AddSourceLocation(Arg.getPackSpliceIntroductionEllipsisLoc());
+    AddSourceLocation(Arg.getPackSpliceSBELoc());
+    AddSourceLocation(Arg.getPackSpliceSEELoc());
+    AddSourceLocation(Arg.getPackSpliceExpansionEllipsisLoc());
     break;
   case TemplateArgument::Null:
   case TemplateArgument::Integral:

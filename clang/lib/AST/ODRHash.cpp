@@ -16,6 +16,7 @@
 
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/TypeVisitor.h"
 
@@ -184,7 +185,21 @@ void ODRHash::AddTemplateArgument(TemplateArgument TA) {
         AddTemplateArgument(SubTA);
       }
       break;
+    case TemplateArgument::PackSplice:
+      AddPackSplice(TA.getPackSplice());
+      break;
   }
+}
+
+void ODRHash::AddPackSplice(const PackSplice *PS) {
+  AddStmt(PS->getOperand());
+
+  if (!PS->isExpanded())
+    return;
+
+  ID.AddInteger(PS->getNumExpansions());
+  for (auto *SubOperand : PS->getExpansions())
+    AddStmt(SubOperand);
 }
 
 void ODRHash::AddTemplateParameterList(const TemplateParameterList *TPL) {

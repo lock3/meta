@@ -1788,10 +1788,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     return ExprError();
   }
   case tok::ellipsis:
-    if (getLangOpts().Reflection) {
-      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
-        Res = ParseCXXPackSpliceExpr();
-      }
+    if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      Res = ParseCXXPackSpliceExpr();
       break;
     }
 

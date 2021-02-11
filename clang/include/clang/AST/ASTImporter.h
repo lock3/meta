@@ -448,6 +448,10 @@ class TypeSourceInfo;
     /// "to" context, or the import error.
     llvm::Expected<TemplateName> Import(TemplateName From);
 
+    /// Import the given pack splice from the "from" context into the
+    /// "to" context, or the import error.
+    llvm::Expected<PackSplice *> Import(const PackSplice *From);
+
     /// Import the given source location from the "from" context into
     /// the "to" context.
     ///

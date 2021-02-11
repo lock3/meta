@@ -387,6 +387,10 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
       LV.merge(getLVForTemplateArgumentList(Ctx, Arg.getPackAsArray(),
                                             computation));
       continue;
+
+    case TemplateArgument::PackSplice:
+      llvm_unreachable("should have been expanded away");
+
     }
     llvm_unreachable("bad template argument kind");
   }

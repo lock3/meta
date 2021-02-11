@@ -25,6 +25,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
@@ -3598,34 +3599,28 @@ void DependentTypeSpliceType::Profile(llvm::FoldingSetNodeID &ID,
   E->Profile(ID, Context, true);
 }
 
-DependentTypePackSpliceType::DependentTypePackSpliceType(
-                                           const ASTContext &Ctx, Expr *Operand)
-    : Type(DependentTypePackSplice, Ctx.DependentTy,
-           toTypeDependence(Operand->getDependence()) |
-               TypeDependence::UnexpandedPack,
-           /*MetaType=*/false), Operand(Operand) { }
+static TypeDependence computePackSpliceDependence(const PackSplice *PS) {
+  // FIXME: Duplicated by the computeDependence function for
+  // CXXPackSpliceExpr
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
 
-static TypeDependence computePackSpliceDependence(unsigned NumExpansions,
-                                                  Expr *const *Expansions) {
-  TypeDependence Depends = TypeDependence::UnexpandedPack;
-  for (unsigned I = 0; I < NumExpansions; ++I) {
-    Depends |= toTypeDependence(Expansions[I]->getDependence());
+  if (PS->isExpanded()) {
+    for (Expr *SE : PS->getExpansions())
+      Depends |= SE->getDependence();
+  } else {
+    Depends |= PS->getOperand()->getDependence();
   }
-  return Depends;
+
+  return toTypeDependence(Depends);
 }
 
-TypePackSpliceType::TypePackSpliceType(const ASTContext &Ctx, Expr *Operand,
-                                       unsigned NumExpansions,
-                                       Expr *const *Expansions)
-    : Type(TypePackSplice, Ctx.DependentTy,
-           computePackSpliceDependence(NumExpansions, Expansions),
-           /*MetaType=*/false), Operand(Operand), NumExpansions(NumExpansions) {
-  if (Expansions)
-    std::uninitialized_copy(Expansions, Expansions + NumExpansions,
-                            getTrailingObjects<Expr *>());
-}
+TypePackSpliceType::TypePackSpliceType(const ASTContext &Ctx,
+                                       const PackSplice *PS)
+    : Type(TypePackSplice, Ctx.DependentTy, computePackSpliceDependence(PS),
+           /*MetaType=*/false), PS(PS) { }
 
-SubstTypePackSpliceType::SubstTypePackSpliceType(Expr *ExpansionExpr, QualType Canon)
+SubstTypePackSpliceType::SubstTypePackSpliceType(Expr *ExpansionExpr,
+                                                 QualType Canon)
     : Type(SubstTypePackSplice, Canon, Canon->getDependence(),
            Canon->isMetaType()), ExpansionExpr(ExpansionExpr) { }
 
@@ -4234,7 +4229,6 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOf:
   case Type::Decltype:
   case Type::TypeSplice:
-  case Type::DependentTypePackSplice:
   case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:

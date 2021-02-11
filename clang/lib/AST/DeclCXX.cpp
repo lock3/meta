@@ -223,8 +223,7 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     if (BaseType->isDependentType())
       continue;
     const Type *BaseTypePtr = BaseType.getTypePtr();
-    if (isa<DependentTypePackSpliceType>(BaseTypePtr) ||
-        isa<TypePackSpliceType>(BaseTypePtr))
+    if (isa<TypePackSpliceType>(BaseTypePtr))
       continue;
     auto *BaseClassDecl =
         cast<CXXRecordDecl>(BaseType->castAs<RecordType>()->getDecl());

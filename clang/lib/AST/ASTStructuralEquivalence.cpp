@@ -73,6 +73,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/TemplateBase.h"
@@ -506,6 +507,34 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return true;
 }
 
+/// Determine whether two pack splices are equivalent.
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     const PackSplice *Splice1,
+                                     const PackSplice *Splice2) {
+  if (Splice1->isExpanded() != Splice2->isExpanded())
+    return false;
+
+  if (Splice1->isExpanded()) {
+    return IsStructurallyEquivalent(Context,
+                                    Splice1->getOperand(),
+                                    Splice2->getOperand());
+  } else {
+    unsigned SpliceExpansions1 = Splice1->getNumExpansions();
+    unsigned SpliceExpansions2 = Splice2->getNumExpansions();
+
+    if (SpliceExpansions1 != SpliceExpansions2)
+      return false;
+
+    for (unsigned I = 0; I < SpliceExpansions1; ++I)
+      if (!IsStructurallyEquivalent(Context,
+                                    Splice1->getExpansion(I),
+                                    Splice2->getExpansion(I)))
+        return false;
+
+    return true;
+  }
+}
+
 /// Determine whether two template arguments are equivalent.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      const TemplateArgument &Arg1,
@@ -557,6 +586,12 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         return false;
 
     return true;
+
+  case TemplateArgument::PackSplice: {
+    return IsStructurallyEquivalent(Context, Arg1.getPackSplice(),
+                                    Arg2.getPackSplice());
+  }
+
   }
 
   llvm_unreachable("Invalid template argument kind");
@@ -975,17 +1010,11 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::DependentTypePackSplice:
-    if (!IsStructurallyEquivalent(Context,
-                           cast<DependentTypePackSpliceType>(T1)->getOperand(),
-                           cast<DependentTypePackSpliceType>(T2)->getOperand()))
-      return false;
-    break;
-
   case Type::TypePackSplice:
-    if (!IsStructurallyEquivalent(Context,
-                                  cast<TypePackSpliceType>(T1)->getOperand(),
-                                  cast<TypePackSpliceType>(T2)->getOperand()))
+    if (!IsStructurallyEquivalent(
+        Context,
+        cast<TypePackSpliceType>(T1)->getPackSplice(),
+        cast<TypePackSpliceType>(T2)->getPackSplice()))
       return false;
     break;
 
