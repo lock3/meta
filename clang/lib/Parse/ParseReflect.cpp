@@ -80,6 +80,87 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
   return Actions.ActOnReflectedExpression(E.get());
 }
 
+// Assuming the current token is '::' returns true if the next tokens would
+// start a nested-name-specifier (i.e., the next token is an identifier or
+// (invalidly) the 'template' keyword).
+static bool startsNestedNameSpecifier(Parser& P) {
+  return P.NextToken().is(tok::identifier) ||
+         P.NextToken().is(tok::kw_template);
+}
+
+ParsedReflectionOperand Parser::ParseCXXReflectionOperand() {
+  // Prevent diagnostics in this context.
+  Sema::CXXReflectionScopeRAII ReflectionScope(Actions);
+
+  // The operand is unevaluated.
+  EnterExpressionEvaluationContext Unevaluated(
+      Actions, Sema::ExpressionEvaluationContext::Unevaluated);
+
+  // Perform the tentative parses first since isCXXTypeId tends to rewrite
+  // tokens, which can make subsequent parses a bit wonky.
+
+  // Match '^::'. Note that '::' could start a nested-name-specifier, so if the
+  // next token is an identifier or 'template', then this is not a reflection of
+  // the global scope.
+  if (Tok.is(tok::coloncolon) && !startsNestedNameSpecifier(*this)) {
+    SourceLocation ColonColonLoc = ConsumeToken();
+    return Actions.ActOnReflectedNamespace(ColonColonLoc);
+  }
+  
+  // Tentatively parse a template-name.
+  {
+    TentativeParsingAction TPA(*this);
+    ParsedTemplateArgument T = ParseTemplateTemplateArgument();
+    if (!T.isInvalid()) {
+      TPA.Commit();
+      return Actions.ActOnReflectedTemplate(T);
+    }
+    TPA.Revert();
+  }
+
+  // Otherwise, tentatively parse a namespace-name.
+  {
+    TentativeParsingAction TPA(*this);
+    CXXScopeSpec SS;
+    SourceLocation IdLoc;
+    Decl *D = ParseNamespaceName(SS, IdLoc);
+    if (D) {
+      TPA.Commit();
+      return Actions.ActOnReflectedNamespace(SS, IdLoc, D);
+    }
+    TPA.Revert();
+  }
+
+  // Otherwise, try parsing this as type-id.
+  if (isCXXTypeId(TypeIdAsTemplateArgument)) {
+    // FIXME: Create a new DeclaratorContext?
+    TypeResult T =
+      ParseTypeName(nullptr, DeclaratorContext::TemplateArgContext);
+    if (T.isInvalid()) {
+      return ParsedReflectionOperand();
+    }
+    return Actions.ActOnReflectedType(T.get());
+  }
+
+  // Parse an expression. template argument.
+  ExprResult E = ParseCastExpression(AnyCastExpr);
+  if (E.isInvalid() || !E.get())
+    return ParsedReflectionOperand();
+
+  return Actions.ActOnReflectedExpression(E.get());
+}
+
+ExprResult Parser::ParseCXXReflectionExpression() {
+  assert(Tok.is(tok::caret) && "expected '^'");
+  SourceLocation Loc = ConsumeToken();
+
+  ParsedReflectionOperand PR = ParseCXXReflectionOperand();
+  if (PR.isInvalid())
+    return ExprError();
+
+  // FIXME: The source locations are wrong.
+  return Actions.ActOnCXXReflectExpr(Loc, PR, Loc, Loc);
+}
 
 /// Parse a reflect-expression.
 ///
@@ -509,9 +590,9 @@ bool Parser::ParseCXXIdentifierSplice(
 ///
 /// The constant expression must be a reflection of a type.
 SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
-  assert(Tok.is(tok::annot_type_splice) ||
-         (Tok.is(tok::kw_typename) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
+  assert((Tok.is(tok::annot_type_splice) ||
+          (Tok.is(tok::kw_typename) &&
+           matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)))
          && "Not a type splice");
 
   ExprResult Result;

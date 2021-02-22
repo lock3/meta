@@ -10242,11 +10242,12 @@ public:
   ParsedReflectionOperand ActOnReflectedNamespace(SourceLocation Loc);
   ParsedReflectionOperand ActOnReflectedExpression(Expr *E);
 
+  // TODO: [P2320] Reflection-expressions are not enclosed in parentheses.
+  // Clean up parens and AST.
   ExprResult ActOnCXXReflectExpr(SourceLocation KWLoc,
                                  ParsedReflectionOperand Ref,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
-
   ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, InvalidReflection *IR,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);

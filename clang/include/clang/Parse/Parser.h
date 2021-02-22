@@ -3141,6 +3141,11 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 
+  // P2320.
+  // TODO: This should replace the functions above.
+  ParsedReflectionOperand ParseCXXReflectionOperand();
+  ExprResult ParseCXXReflectionExpression();
+
 private:
   bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
   bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
