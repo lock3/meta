@@ -10,14 +10,14 @@ void bar() { }
 
 void foo() {
   constexpr info els [] = { ^int, ^int };
-  bar<...[< els >]>();
+  bar<...[: els :]>();
 // expected-error@-1 {{template argument contains an unexpanded pack splice}}
 // expected-error@-2 {{no matching function for call to 'bar'}}
 }
 
 void baz() {
   constexpr info els [] = { ^int, ^int };
-  using X = ...[< els >];
+  using X = ...[: els :];
 // expected-error@-1 {{declaration type contains an unexpanded parameter pack}}
 }
 
@@ -55,31 +55,31 @@ namespace dependent {
 template<int I>
 void template_argument_list() {
   constexpr info els [] = { ^I, ^1, ^0 };
-  static_assert(total<...[< els >]...>() == 2);
+  static_assert(total<...[: els :]...>() == 2);
 }
 
 template<int I>
 void function_call() {
   constexpr info els [] = { ^I, ^1, ^0 };
-  static_assert(tri_construct(...[< els >]...).total == 2);
+  static_assert(tri_construct(...[: els :]...).total == 2);
 }
 
 template<int I>
 void initializer_list() {
   constexpr info els [] = { ^I, ^1, ^0 };
 
-  constexpr tri_construct init_list = { ...[< els >]... };
+  constexpr tri_construct init_list = { ...[: els :]... };
   static_assert(init_list.total == 2);
 }
 
 template<int I>
 void mixed_pack() {
   constexpr info construct_args [] = { ^int, ^I };
-  static_assert(construct_the_thing<...[< construct_args >]...>() == 1);
+  static_assert(construct_the_thing<...[: construct_args :]...>() == 1);
 }
 
 template<info X>
-struct base_class : public ...[< [< X >] >]... { };
+struct base_class : public ...[: [: X :] :]... { };
 
 template<int I>
 void base_splice() {
@@ -89,9 +89,9 @@ void base_splice() {
 }
 
 template<info X>
-struct constructed_base_class : public ...[< [< X >] >]... {
-  constructed_base_class(const ...[< [< X >] >]&... args)
-    : ...[< [< X >] >](args)... {
+struct constructed_base_class : public ...[: [: X :] :]... {
+  constructed_base_class(const ...[: [: X :] :]&... args)
+    : ...[: [: X :] :](args)... {
   }
 };
 
@@ -117,27 +117,27 @@ namespace non_dependent {
 
 void template_argument_list() {
   constexpr info els [] = { ^1, ^1, ^0 };
-  static_assert(total<...[< els >]...>() == 2);
+  static_assert(total<...[: els :]...>() == 2);
 }
 
 void function_call() {
   constexpr info els [] = { ^1, ^1, ^0 };
-  static_assert(tri_construct(...[< els >]...).total == 2);
+  static_assert(tri_construct(...[: els :]...).total == 2);
 }
 
 void initializer_list() {
   constexpr info els [] = { ^1, ^1, ^0 };
 
-  constexpr tri_construct init_list = { ...[< els >]... };
+  constexpr tri_construct init_list = { ...[: els :]... };
   static_assert(init_list.total == 2);
 }
 
 void mixed_pack() {
   constexpr info construct_args [] = { ^int, ^1 };
-  static_assert(construct_the_thing<...[< construct_args >]...>() == 1);
+  static_assert(construct_the_thing<...[: construct_args :]...>() == 1);
 }
 
-struct base_class : public ...[< base_types >]... { };
+struct base_class : public ...[: base_types :]... { };
 
 void base_splice() {
   base_class base_inst;
@@ -145,9 +145,9 @@ void base_splice() {
   static_assert(base_inst.base_b_is_present());
 }
 
-struct constructed_base_class : public ...[< base_types >]... {
-  constructed_base_class(const ...[< base_types >]&... args)
-    : ...[< base_types >](args)... {
+struct constructed_base_class : public ...[: base_types :]... {
+  constructed_base_class(const ...[: base_types :]&... args)
+    : ...[: base_types :](args)... {
   }
 };
 

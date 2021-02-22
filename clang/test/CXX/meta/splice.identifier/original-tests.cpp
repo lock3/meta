@@ -84,7 +84,7 @@ struct S : public SBase {
 
 void test_non_template() {
   constexpr auto int_reflexpr = ^int;
-  S [# "foo_", ^bar), "_", ^bar::fin) #] = S();
+  S [# "foo_", ^bar, "_", ^bar::fin #] = S();
 
   int int_x = foo_bar_fin.[# "get_", [# "int_reflexpr" #] #]();
   int int_y = [# "foo_bar_fin" #].get_int();

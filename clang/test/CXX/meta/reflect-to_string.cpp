@@ -18,7 +18,7 @@ template<typename T> // requires Enum<T>
 char const* to_string(T val) {
   static constexpr auto range = meta::range(^T);
   template for (constexpr meta::info member : range) {
-    if ([<member>] == val)
+    if ([:member:] == val)
       return name_of(member);
   }
   return "<unknown>";

@@ -40,7 +40,7 @@ template<meta::info X, typename T>
 bool compare(const T& a, const T& b) {
   if constexpr (!meta::is_invalid(X)) {
     if constexpr (meta::is_data_member(X)) {
-      auto p = &[<X>];
+      auto p = &[:X:];
       if (a.*p != b.*p)
         return false;
     }

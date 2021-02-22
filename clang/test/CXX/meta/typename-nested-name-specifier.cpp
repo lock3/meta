@@ -6,4 +6,4 @@ namespace foo_ns {
   };
 }
 
-auto y = foo_ns::typename [<^foo_ns::foo>]::i; // expected-error {{expected unqualified-id}}
+auto y = foo_ns::typename [:^foo_ns::foo:]::i; // expected-error {{expected unqualified-id}}

@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -emit-llvm -triple %itanium_abi_triple -o - %s | FileCheck %s
 
 template<typename T>
-auto get_typename_t(T t) -> typename [<^T>] { return T(); }
+auto get_typename_t(T t) -> typename [:^T:] { return T(); }
 
 void test1() {
   get_typename_t(1);
@@ -19,7 +19,7 @@ void test1() {
 
 
 // CHECK: define i32 @_Z7get_numv() #0 {
-typename [< ^int >] get_num() { return 1; }
+typename [: ^int :] get_num() { return 1; }
 
 struct Foo {
   int x = 0;
@@ -27,4 +27,4 @@ struct Foo {
 };
 
 // CHECK: define linkonce_odr void @_ZN3FooC2Ev(%struct.Foo* %this)
-typename [< ^Foo >] get_foo() { return Foo(); }
+typename [: ^Foo :] get_foo() { return Foo(); }

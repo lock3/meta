@@ -1151,7 +1151,7 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
 TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                           SourceLocation &EndLocation) {
   if (Tok.is(tok::kw_typename) &&
-      !matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      !matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
     // Ignore attempts to use typename
     Diag(Tok, diag::err_expected_class_name_not_template)
       << FixItHint::CreateRemoval(Tok.getLocation());
@@ -1185,7 +1185,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
 
   if (Tok.is(tok::annot_type_splice) ||
          (Tok.is(tok::kw_typename) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))) {
+          matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1))) {
     // Fake up a Declarator to use with ActOnTypeName.
     DeclSpec DS(AttrFactory);
 

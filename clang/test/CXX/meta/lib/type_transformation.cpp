@@ -18,7 +18,7 @@ constexpr info remove_volatile = __reflect(query_remove_volatile, add_volatile);
 static_assert(!__reflect(query_is_volatile_type, remove_volatile));
 
 // remove_extent
-constexpr info array_type = ^int[0);
+constexpr info array_type = ^int[0];
 static_assert(__reflect(query_remove_extent, array_type) == ^int);
 
 // add_pointer, remove_pointer

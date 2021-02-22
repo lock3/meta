@@ -3,7 +3,7 @@
 using info = decltype(^void);
 
 template<typename ...T> constexpr auto dc_add() { return (... + T(1)); }
-template<info ...T> constexpr auto dc_refl_add() { return (... + typename [<T>](1)); }
+template<info ...T> constexpr auto dc_refl_add() { return (... + typename [:T:](1)); }
 
 struct tri_construct {
   int total;
@@ -12,8 +12,8 @@ struct tri_construct {
 };
 
 template<typename ...T> constexpr auto tri_size() { return tri_construct(T(1)...).total; }
-template<info ...T> constexpr auto tri_refl_ty_size() { return tri_construct(typename [<T>](1)...).total; }
-template<info ...T> constexpr auto tri_refl_expr_size() { return tri_construct([<T>]...).total; }
+template<info ...T> constexpr auto tri_refl_ty_size() { return tri_construct(typename [:T:](1)...).total; }
+template<info ...T> constexpr auto tri_refl_expr_size() { return tri_construct([:T:]...).total; }
 
 template<int ...T> constexpr auto tri_refl_expr_size() { return tri_construct(T...).total; }
 

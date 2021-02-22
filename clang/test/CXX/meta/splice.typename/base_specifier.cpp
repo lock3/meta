@@ -3,7 +3,7 @@
 using info = decltype(^void);
 
 template <info R>
-struct inner : public typename [<R>] { // expected-error {{base specifier must name a class}}
+struct inner : public typename [:R:] { // expected-error {{base specifier must name a class}}
 };
 
 struct base { };

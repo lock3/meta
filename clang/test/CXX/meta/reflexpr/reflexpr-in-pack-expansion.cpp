@@ -15,7 +15,7 @@ consteval auto collect_types() {
 }
 
 int main() {
-  static_assert([< collect_exprs<1, 1, 2, 3>() >] == 2);
+  static_assert([: collect_exprs<1, 1, 2, 3>() :] == 2);
   static_assert(collect_types<1, int, float, double>() == ^float);
 
   return 0;

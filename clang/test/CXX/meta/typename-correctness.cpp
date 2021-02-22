@@ -39,10 +39,10 @@ consteval info get_type(info x) {
 template<typename T>
 void foo() {
   constexpr auto type = ^T;
-  static_assert(std::is_same_v<typename [<type>], T>);
+  static_assert(std::is_same_v<typename [:type:], T>);
 
-  typename [<type>] x = 0;
-  static_assert(std::is_same_v<typename [<type>], int>);
+  typename [:type:] x = 0;
+  static_assert(std::is_same_v<typename [:type:], int>);
 }
 
 struct S { };
@@ -56,7 +56,7 @@ constexpr int test() {
     constexpr meta::info t = meta::get_type(x);
 
     static_assert(t == ^int);
-    static_assert(std::is_same_v<typename [<t>], int>);
+    static_assert(std::is_same_v<typename [:t:], int>);
   }
 
   {
@@ -65,7 +65,7 @@ constexpr int test() {
     constexpr meta::info t = meta::get_type(x);
 
     static_assert(t == ^S);
-    static_assert(std::is_same_v<typename [<t>], S>);
+    static_assert(std::is_same_v<typename [:t:], S>);
   }
 
   return 0;
@@ -77,11 +77,11 @@ constexpr meta::info get_type() {
 
 template<typename T, meta::info X = ^T>
 constexpr T check() {
-  typename [<X>] var = 0;
+  typename [:X:] var = 0;
   return var + 42;
 }
 
-typename [<get_type()>] global;
+typename [:get_type():] global;
 
 int main(int argc, const char* argv[]) {
   constexpr int n = test();

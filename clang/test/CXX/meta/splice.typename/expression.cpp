@@ -5,7 +5,7 @@ using info = decltype(^void);
 
 template<info T>
 constexpr auto refl_add() {
-  return 1 + typename [<T>](1);
+  return 1 + typename [:T:](1);
 }
 
 auto y = refl_add<^int>();

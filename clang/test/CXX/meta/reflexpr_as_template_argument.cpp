@@ -1,8 +1,8 @@
 // RUN: %clang_cc1 -std=c++1z -freflection %s
 
 template<auto T, auto V>
-constexpr typename [<T>] test() {
-  typename [<T>] x = [<V>];
+constexpr typename [:T:] test() {
+  typename [:T:] x = [:V:];
   return x;
 }
 
