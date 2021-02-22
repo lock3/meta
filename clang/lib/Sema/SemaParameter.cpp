@@ -27,8 +27,30 @@
 using namespace clang;
 using namespace sema;
 
+static bool isForwardParameter(QualType T) {
+  // If this looks like T&& and was instantiated, then it could be a
+  // forwarding parameter.
+  if (const auto* RT = dyn_cast<ReferenceType>(T)) {
+    T = RT->getPointeeType();
+    if (const auto *ST = dyn_cast<SubstTemplateTypeParmType>(T)) {
+      const auto *P = ST->getReplacedParameter()->getDecl();
+      llvm::outs() << "IS FORWARD: " << P->hasExpectedDeduction() << "\n";
+      ST->dump();
+      return P->hasExpectedDeduction();
+    }
+  }
+
+  return false;
+}
+
 bool Sema::isMovableParameter(const ParmVarDecl *D) {
   QualType T = D->getType();
+
+  // Dependent types are never movable.
+  if (T->isDependentType())
+    return false;
+
+  // In parameters and move parameters are moved on their last use.
   if (const auto *PT = dyn_cast<ParameterType>(T)) {
     T = PT->getParameterType();
     if (PT->isInParameter())
@@ -36,6 +58,11 @@ bool Sema::isMovableParameter(const ParmVarDecl *D) {
     if (PT->isMoveParameter())
       return MoveParameterType::isPassByReference(Context, T);
   }
+
+  // Forwarding parameters are forwarded on their last use.
+  if (isForwardParameter(T))
+    return true;
+
   return false;
 }
 
@@ -592,8 +619,8 @@ struct Rewriter : TreeTransform<Rewriter> {
     : BaseType(SemaRef), LU(LU) {}
 
   ExprResult TransformReferenceToMove(DeclRefExpr *E) {
-    SourceLocation Loc = E->getExprLoc();
     ASTContext &Ctx = getSema().Context;
+    SourceLocation Loc = E->getExprLoc();
 
     auto *ParmDecl = cast<ParmVarDecl>(E->getDecl());
     auto *ParmType = cast<ParameterType>(ParmDecl->getType());
@@ -618,16 +645,73 @@ struct Rewriter : TreeTransform<Rewriter> {
                                        SourceRange(Loc, Loc));
   }
 
+  ExprResult TransformReferenceToForward(DeclRefExpr *E) {
+    // Cast to T&&, preserving any const qualfiers.
+    ASTContext &Ctx = getSema().Context;
+    SourceLocation Loc = E->getExprLoc();
+
+    // The type of the parameter is T&&, possibly const.
+    auto *ParmDecl = cast<ParmVarDecl>(E->getDecl());
+    QualType ParmType = ParmDecl->getType().getNonReferenceType();
+
+    // Figure out what the corresponding template argument is. It would
+    // probably be better to go get the actual template argument from the
+    // specialization rather than try to figure out what we're doing here.
+    QualType T;
+    if (isa<LValueReferenceType>(ParmType))
+      T = ParmType;
+    else if (isa<RValueReferenceType>(ParmType))
+      T = ParmType.getNonReferenceType();
+    else {
+      llvm::outs() << "EAT A MASSIVE DICK\n";
+      ParmType->dump();
+      llvm_unreachable("FUCK OFF\n");
+    }
+
+    QualType X = E->getType();
+    llvm::outs() << "HERE 1: " << X.isConstQualified() << '\n';
+    X->dump();
+    llvm::outs() << "HERE 2: " << X.isConstQualified() << '\n';
+    T->dump();
+    // ParmType->dump();
+    // T->dump();
+
+    return ExprResult(E);
+
+    // T = Ctx.getRValueReferenceType(T);
+    // TypeSourceInfo *TI = Ctx.getTrivialTypeSourceInfo(T, Loc);
+    // return getSema().BuildCXXNamedCast(Loc, tok::kw_static_cast, TI,
+    //                                    E, SourceRange(Loc, Loc),
+    //                                    SourceRange(Loc, Loc));
+  }
+
   /// Returns true if E is a last use.
   bool isLastUse(DeclRefExpr *E) {
     return LU.LastUses.find(E) != LU.LastUses.end();
   }
 
-  /// Returns true if we should transform E into a move.
+  /// Returns true if we should transform E into a move for in or move
+  /// parameters (but not forward parameters).
   bool shouldMove(DeclRefExpr *E) {
     if (isLastUse(E)) {
       const ValueDecl *D = E->getDecl();
-      return CurrentParms.find(D) != CurrentParms.end();
+      if (CurrentParms.find(D) != CurrentParms.end()) {
+        QualType T = D->getType();
+        return isa<InParameterType>(T) || isa<MoveParameterType>(T);
+      }
+    }
+    return false;
+  }
+
+  /// Reurns true if we should transform E into a forward for forward
+  /// parameters.
+  bool shouldForward(DeclRefExpr *E) {
+    if (isLastUse(E)) {
+      const ValueDecl *D = E->getDecl();
+      if (CurrentParms.find(D) != CurrentParms.end()) {
+        QualType T = D->getType();
+        return isForwardParameter(T);
+      }
     }
     return false;
   }
@@ -638,6 +722,8 @@ struct Rewriter : TreeTransform<Rewriter> {
     // along. Otherwise, leave it as it is.
     if (shouldMove(E))
       return TransformReferenceToMove(E);
+    if (shouldForward(E))
+      return TransformReferenceToForward(E);
     return ExprResult(E);
   }
 
@@ -735,11 +821,11 @@ struct Rewriter : TreeTransform<Rewriter> {
     // If this is the last of the parameters, then we transform the statement
     // in the "normal" way, albeit with the current set of substitutions.
     const auto *D = cast<ParmVarDecl>(*Iter);
-    const auto *T = cast<ParameterType>(D->getType());
+    QualType T = D->getType();
 
-    // For in parameters, we need to build two branches, one where the current
-    // parameter is moved and one where it isn't.
-    if (T->isInParameter()) {
+    if (isa<InParameterType>(T)) {
+      // For in parameters, we need to build two branches, one where the current
+      // parameter is moved and one where it isn't.
       if (std::next(Iter) == Last) {
         // Build an if/else around the original statement, moving the current
         // set of parameters. 
@@ -757,10 +843,9 @@ struct Rewriter : TreeTransform<Rewriter> {
         StmtResult S1 = RewriteStmt(S, Iter, Last, Cleanups);
         return BuildConditionedStmt(D, S0.get(), S1.get());
       }
-    }
-
-    // Always rewrite last uses for move parameters.
-    if (T->isMoveParameter()) {
+    } else if (isa<MoveParameterType>(T) || isForwardParameter(T)) {
+      // For move and forward parameters, there's no condition, but we
+      // have to transorm the statementn all the same.
       CurrentParms.insert(D);
       StmtResult R = (std::next(Iter) == Last) ?
           RewriteInnermostStmt(S, Cleanups) :
@@ -827,10 +912,6 @@ struct Rewriter : TreeTransform<Rewriter> {
 } // namespace
 
 void Sema::computeMoveOnLastUse(FunctionDecl *D) {
-  // Don't process function templates.
-  if (D->getType()->isDependentType())
-    return;
-
   // Construct the analysis context with the default CFG build options.
   AnalysisDeclContext AC(nullptr, D);
   AC.getCFGBuildOptions().setAllAlwaysAdd();
@@ -838,9 +919,9 @@ void Sema::computeMoveOnLastUse(FunctionDecl *D) {
   CFG *G = AC.getCFG();
   if (!G)
     return;
-  // D->dump();
-  // G->dump(Context.getLangOpts(), true);
-  // llvm::outs() << "****************\n";
+  D->dump();
+  G->dump(Context.getLangOpts(), true);
+  llvm::outs() << "****************\n";
 
   LastUseSearch LU(*this, D, G);
   LU.computeLastUses();

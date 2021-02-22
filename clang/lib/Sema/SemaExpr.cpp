@@ -3312,6 +3312,16 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
       type = cast<ParameterType>(type)->getParameterType();
       break;
 
+    case Type::SubstTemplateTypeParm: {
+      // If this was originally aut&& with a deduction constraint, then this
+      // is really a forwarded parameter. Adjust the type to const T.
+      const auto *T = cast<SubstTemplateTypeParmType>(type)->getReplacedParameter();
+      const auto *Param = T->getDecl();
+      if (Param->hasExpectedDeduction())
+        type = Context.getConstType(type);
+      break;
+    }
+
     default:
       break;
     }

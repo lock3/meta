@@ -14312,8 +14312,11 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     FD->setBody(Body);
     FD->setWillHaveBody(false);
 
-    if (hasMovableParameters(*this, FD))
+    // If the function is non-dependent and has "last use" parameters,
+    // potentially rewrite the function body.
+    if (!FD->getType()->isDependentType() && hasMovableParameters(*this, FD))
       computeMoveOnLastUse(FD);
+    FD->print(llvm::outs());
 
     if (getLangOpts().CPlusPlus14) {
       if (!FD->isInvalidDecl() && Body && !FD->isDependentContext() &&
