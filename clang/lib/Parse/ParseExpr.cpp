@@ -402,7 +402,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
   // Check to see if this is a valid splice ending token sequence. If
   // so, this isn't a binary expression at all, this is the end of a
   // splice.
-  if (matchCXXSpliceEnd(tok::greater))
+  if (matchCXXSpliceEnd(tok::colon))
     return LHS;
 
   prec::Level NextTokPrec = getBinOpPrecedence(Tok.getKind(),
@@ -1796,7 +1796,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   }
   case tok::ellipsis:
     if (getLangOpts().Reflection) {
-      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
         Res = ParseCXXPackSpliceExpr();
       }
       break;
@@ -1808,7 +1808,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::l_square:
     if (getLangOpts().CPlusPlus11) {
       if (getLangOpts().Reflection) {
-        if (NextToken().is(tok::less)) {
+        if (NextToken().is(tok::colon)) {
           Res = ParseCXXExprSpliceExpr();
           break;
         }
@@ -2162,7 +2162,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
     case tok::arrow:
     case tok::period: {
       // postfix-expression: p-e '->' decl-splice
-      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
         // The template case isn't in p1240, leave it off for now.
         //
         // (NextToken().is(tok::kw_template) &&

@@ -3940,7 +3940,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     // C++ pack type splice, which doesn't begin with typename
     case tok::ellipsis:
-      if (matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
         ParseTypePackSplice(DS);
         continue;
       }

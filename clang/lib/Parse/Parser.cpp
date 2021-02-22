@@ -1846,7 +1846,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
          "Cannot be a type or scope token!");
 
   if (Tok.is(tok::kw_typename) &&
-      !matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      !matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
     // MSVC lets you do stuff like:
     //   typename typedef T_::D D;
     //

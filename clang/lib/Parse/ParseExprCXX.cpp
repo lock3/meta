@@ -231,7 +231,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
   }
 
   if (!HasScopeSpecifier && Tok.is(tok::kw_typename) &&
-      matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)) {
+      matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
     DeclSpec DS(AttrFactory);
     SourceLocation DeclLoc = Tok.getLocation();
     SourceLocation EndLoc  = ParseTypeSplice(DS);
@@ -1804,7 +1804,7 @@ Parser::ParseCXXPseudoDestructor(Expr *Base, SourceLocation OpLoc,
 
   if (Tok.is(tok::annot_type_splice) ||
          (Tok.is(tok::kw_typename) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))) {
+          matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1))) {
     DeclSpec DS(AttrFactory);
     ParseTypeSplice(DS);
     if (DS.getTypeSpecType() == TST_error)
@@ -2297,7 +2297,7 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
 
   // [Meta] type-splice
   case tok::kw_typename:
-    assert(matchCXXSpliceBegin(tok::less, /*LookAhead=*/1));
+    assert(matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1));
     LLVM_FALLTHROUGH;
   case tok::annot_type_splice:
     DS.SetRangeEnd(ParseTypeSplice(DS));
@@ -3013,7 +3013,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, ParsedType ObjectType,
     }
 
     // if (SS.isEmpty() && (Tok.is(tok::kw_typename) &&
-    //                      matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))) {
+    //                      matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1))) {
     //   DeclSpec DS(AttrFactory);
     //   SourceLocation EndLoc = ParseTypeSplice(DS);
     //   if (ParsedType Type =
