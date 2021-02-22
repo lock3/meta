@@ -4,7 +4,7 @@
 #include "reflection_query.h"
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 template<meta::info refl>
@@ -28,17 +28,17 @@ namespace type_reflection {
 
 void test1() {
   // CHECK: define linkonce_odr i32 @_Z3fooIXReTy7PubTypeEEDav(
-  foo<reflexpr(PubType)>();
+  foo<^PubType>();
 }
 
 void test2() {
   // CHECK: define internal i32 @_Z3fooIXReTyN12_GLOBAL__N_18PrivTypeEEEDav(
-  foo<reflexpr(PrivType)>();
+  foo<^PrivType>();
 }
 
 void test3() {
   // CHECK: define linkonce_odr i32 @_Z3fooIXReTy3barILi1EEEEDav(
-  foo<reflexpr(bar<1>)>();
+  foo<^bar<1>>();
 }
 
 }
@@ -47,7 +47,7 @@ namespace template_reflection {
 
 void test3() {
   // CHECK: define linkonce_odr i32 @_Z3fooIXRe3barEEDav(
-  foo<reflexpr(bar)>();
+  foo<^bar>();
 }
 
 }
@@ -56,12 +56,12 @@ namespace namespace_reflection {
 
 void test1() {
   // CHECK: define internal i32 @_Z3fooIXReTuEEDav(
-  foo<reflexpr(::)>();
+  foo<^::>();
 }
 
 void test2() {
   // CHECK: define linkonce_odr i32 @_Z3fooIXRe20namespace_reflectionEEDav(
-  foo<reflexpr(::namespace_reflection)>();
+  foo<^::namespace_reflection>();
 }
 
 }
@@ -70,7 +70,7 @@ namespace expr_reflection {
 
 void test1() {
   // CHECK: define internal i32 @_Z3fooIXRe{{[0-9]+}}EEDav(
-  foo<reflexpr(1 + 2)>();
+  foo<^(1 + 2)>();
 }
 
 }

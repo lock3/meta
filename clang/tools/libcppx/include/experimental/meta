@@ -14,7 +14,7 @@ namespace meta {
 inline namespace v1 {
 
 // An opaque handle to a reflected entity.
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 // Placeholder for constexpr string.
 using string_type = const char*;
@@ -526,7 +526,7 @@ constexpr struct has_automatic_storage_duration_fn
 // -------------------------------------------------------------------------- //
 // Functions
 
-// Equivalent to std::is_function<T>::value where reflection is reflexpr(T).
+// Equivalent to std::is_function<T>::value where reflection is ^T.
 //
 // Returns true if the reflected entity is a function.
 constexpr struct is_function_fn
@@ -577,7 +577,7 @@ constexpr struct is_deleted_fn
 // Equivalent to std::is_class<T>::value.
 //
 // Returns true if the reflected entity is a class or struct
-// where reflection is reflexpr(T).
+// where reflection is ^T.
 constexpr struct is_class_fn
 {
   consteval bool operator()(info reflection) const
@@ -586,7 +586,7 @@ constexpr struct is_class_fn
   }
 } is_class;
 
-// Equivalent to std::is_union<T>::value where reflection is reflexpr(T).
+// Equivalent to std::is_union<T>::value where reflection is ^T.
 //
 // Returns true if the reflected entity is a union.
 constexpr struct is_union_fn
@@ -600,7 +600,7 @@ constexpr struct is_union_fn
 // Requires: is_class(class_type)
 //
 // Equivalent to std::has_virtual_destructor<T>::value where class_type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is a class or struct tag
 // declaration (“class type”) and has a virtual destructor,
@@ -1014,8 +1014,8 @@ constexpr struct is_private_fn
 //     int y;
 //   };
 //
-//   has_default_access(reflexpr(T::x));  // true
-//   has_default_access(reflexpr(U::y));  // false
+//   has_default_access(^T::x);  // true
+//   has_default_access(^U::y);  // false
 constexpr struct has_default_access_fn
 {
   consteval bool operator()(info base_or_mem) const
@@ -1239,7 +1239,7 @@ constexpr struct is_scoped_enum_fn
   return is_scoped_enum(reflection);
 }
 
-// Equivalent to std::is_enum<T> where reflection is reflexpr(T).
+// Equivalent to std::is_enum<T> where reflection is ^T.
 //
 // Returns true if the reflected entity is an enumeration, scoped or unscoped.
 constexpr struct is_enum_fn
@@ -1520,7 +1520,7 @@ constexpr struct is_type_fn
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_fundamental<T>::value when type is reflexpr(T).
+// Equivalent to std::is_fundamental<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a fundamental type.
 constexpr struct is_fundamental_type_fn
@@ -1543,7 +1543,7 @@ constexpr struct has_fundamental_type_fn
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_arithmetic<T>::value when type is reflexpr(T).
+// Equivalent to std::is_arithmetic<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an arithmetic type.
 constexpr struct is_arithmetic_type_fn
@@ -1562,7 +1562,7 @@ consteval bool has_arithmetic_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_scalar<T>::value when type is reflexpr(T).
+// Equivalent to std::is_scalar<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a scalar type.
 constexpr struct is_scalar_type_fn
@@ -1581,7 +1581,7 @@ consteval bool has_scalar_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_object<T>::value when type is reflexpr(T).
+// Equivalent to std::is_object<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an object type.
 constexpr struct is_object_type_fn
@@ -1600,7 +1600,7 @@ consteval bool has_object_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_compound<T>::value when type is reflexpr(T).
+// Equivalent to std::is_compound<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a compound type.
 constexpr struct is_compound_type_fn
@@ -1619,7 +1619,7 @@ consteval bool has_compound_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_function<T>::value when type is reflexpr(T).
+// Equivalent to std::is_function<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a function type.
 constexpr struct is_function_type_fn
@@ -1638,7 +1638,7 @@ consteval bool has_function_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_class<T>::value when type is reflexpr(T).
+// Equivalent to std::is_class<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a class type.
 constexpr struct is_class_type_fn
@@ -1657,7 +1657,7 @@ consteval bool has_class_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_union<T>::value when type is reflexpr(T).
+// Equivalent to std::is_union<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a union type.
 constexpr struct is_union_type_fn
@@ -1676,7 +1676,7 @@ consteval bool has_union_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_unscoped_enum<T>::value where type is reflexpr(T).
+// Equivalent to std::is_unscoped_enum<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an unscoped enum type.
 consteval bool is_unscoped_enum_type(info type) {
@@ -1691,7 +1691,7 @@ consteval bool has_unscoped_enum_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_scoped_enum<T>::value where type is reflexpr(T).
+// Equivalent to std::is_scoped_enum<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a type that is a scoped enum.
 consteval bool is_scoped_enum_type(info type) {
@@ -1706,7 +1706,7 @@ consteval bool has_scoped_enum_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_enum<T>::value where type is reflexpr(T).
+// Equivalent to std::is_enum<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an enum type.
 consteval bool is_enum_type(info type) {
@@ -1720,7 +1720,7 @@ consteval bool has_enum_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_void<T>::value when type is reflexpr(T).
+// Equivalent to std::is_void<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a void type.
 constexpr struct is_void_type_fn
@@ -1739,7 +1739,7 @@ consteval bool has_void_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_nullptr<T>::value when type is reflexpr(T).
+// Equivalent to std::is_nullptr<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a null pointer type.
 constexpr struct is_null_pointer_type_fn
@@ -1758,7 +1758,7 @@ consteval bool has_null_pointer_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_integral<T>::value when type is reflexpr(T).
+// Equivalent to std::is_integral<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an integral type.
 constexpr struct is_integral_type_fn
@@ -1777,7 +1777,7 @@ consteval bool has_integeral_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_floating_point<T>::value when type is reflexpr(T).
+// Equivalent to std::is_floating_point<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a floating point type.
 constexpr struct is_floating_point_type_fn
@@ -1796,7 +1796,7 @@ consteval bool has_floating_point_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_array<T>::value when type is reflexpr(T).
+// Equivalent to std::is_array<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an array type.
 constexpr struct is_array_type_fn
@@ -1815,7 +1815,7 @@ consteval bool has_array_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_pointer<T>::value when type is reflexpr(T).
+// Equivalent to std::is_pointer<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a pointer type.
 constexpr struct is_pointer_type_fn
@@ -1834,7 +1834,7 @@ consteval bool has_pointer_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_lvalue_reference<T>::value when type is reflexpr(T).
+// Equivalent to std::is_lvalue_reference<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an lvalue reference type.
 constexpr struct is_lvalue_reference_type_fn
@@ -1853,7 +1853,7 @@ consteval bool has_lvalue_reference_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_rvalue_reference<T>::value when type is reflexpr(T).
+// Equivalent to std::is_rvalue_reference<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is an rvalue reference type.
 constexpr struct is_rvalue_reference_type_fn
@@ -1872,7 +1872,7 @@ consteval bool has_rvalue_reference_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_reference<T>::value when type is reflexpr(T).
+// Equivalent to std::is_reference<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a reference type.
 constexpr struct is_reference_type_fn
@@ -1892,7 +1892,7 @@ consteval bool has_reference_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_member_object_pointer<T>::value when
-// type is reflexpr(T).
+// type is ^T.
 //
 // Returns true if the reflected entity is a member object pointer type.
 constexpr struct is_member_object_pointer_type_fn
@@ -1912,7 +1912,7 @@ consteval bool has_member_object_pointer_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_member_function_pointer<T>::value when
-// type is reflexpr(T).
+// type is ^T.
 //
 // Returns true if the reflected entity is a member function pointer type.
 constexpr struct is_member_function_pointer_type_fn
@@ -1931,7 +1931,7 @@ consteval bool has_member_function_pointer_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_member_pointer<T>::value when type is reflexpr(T).
+// Equivalent to std::is_member_pointer<T>::value when type is ^T.
 //
 // Returns true if the reflected entity is a member pointer type.
 constexpr struct is_member_pointer_type_fn
@@ -1988,7 +1988,7 @@ consteval bool has_incomplete_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_const<T>::value where type is reflexpr(T).
+// Equivalent to std::is_const<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a const qualified type.
 constexpr struct is_const_type_fn
@@ -2007,7 +2007,7 @@ consteval bool has_const_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_volatile<T>::value where type is reflexpr(T).
+// Equivalent to std::is_volatile<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a volatile qualified type.
 constexpr struct is_volatile_type_fn
@@ -2026,7 +2026,7 @@ consteval bool has_volatile_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_trivial<T>::value where type is reflexpr(T).
+// Equivalent to std::is_trivial<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a trivial type.
 constexpr struct is_trivial_type_fn
@@ -2045,7 +2045,7 @@ consteval bool has_trivial_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_trivially_copyable<T>::value where type is reflexpr(T).
+// Equivalent to std::is_trivially_copyable<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a trivially copyable type.
 constexpr struct is_trivially_copyable_type_fn
@@ -2064,7 +2064,7 @@ consteval bool has_trivially_copyable_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_standard_layout<T>::value where type is reflexpr(T).
+// Equivalent to std::is_standard_layout<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a standard layout type.
 constexpr struct is_standard_layout_type_fn
@@ -2083,7 +2083,7 @@ consteval bool has_standard_layout_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_pod<T>::value where type is reflexpr(T).
+// Equivalent to std::is_pod<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a pod type.
 constexpr struct is_pod_type_fn
@@ -2102,7 +2102,7 @@ consteval bool has_pod_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_literal<T>::value where type is reflexpr(T).
+// Equivalent to std::is_literal<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a literal type.
 constexpr struct is_literal_type_fn
@@ -2121,7 +2121,7 @@ consteval bool has_literal_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_empty<T>::value where type is reflexpr(T).
+// Equivalent to std::is_empty<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an empty type.
 constexpr struct is_empty_type_fn
@@ -2140,7 +2140,7 @@ consteval bool has_empty_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_polymorphic<T>::value where type is reflexpr(T).
+// Equivalent to std::is_polymorphic<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a polymorphic type.
 constexpr struct is_polymorphic_type_fn
@@ -2159,7 +2159,7 @@ consteval bool has_polymorphic_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_abstract<T>::value where type is reflexpr(T).
+// Equivalent to std::is_abstract<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an abstract type.
 constexpr struct is_abstract_type_fn
@@ -2178,7 +2178,7 @@ consteval bool has_abstract_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_final<T>::value where type is reflexpr(T).
+// Equivalent to std::is_final<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a final type.
 constexpr struct is_final_type_fn
@@ -2197,7 +2197,7 @@ consteval bool has_final_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_aggregate<T>::value where type is reflexpr(T).
+// Equivalent to std::is_aggregate<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an aggregate type.
 constexpr struct is_aggregate_type_fn
@@ -2216,7 +2216,7 @@ consteval bool has_aggregate_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_signed<T>::value where type is reflexpr(T).
+// Equivalent to std::is_signed<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is a signed type.
 constexpr struct is_signed_type_fn
@@ -2235,7 +2235,7 @@ consteval bool has_signed_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_unsigned<T>::value where type is reflexpr(T).
+// Equivalent to std::is_unsigned<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is an unsigned type.
 constexpr struct is_unsigned_type_fn
@@ -2255,7 +2255,7 @@ consteval bool has_unsigned_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::has_unique_object_representations<T>::value
-// where type is reflexpr(T).
+// where type is ^T.
 //
 // Returns true if the reflected entity is a type with unique object
 // representations.
@@ -2280,7 +2280,7 @@ consteval bool has_type_with_unique_object_representations(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_default_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is default constructible.
 constexpr struct is_default_constructible_type_fn
@@ -2300,8 +2300,8 @@ consteval bool has_default_constructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_trivially_default_constructible<T>::value where type
-// is reflexpr(T).
+// Equivalent to std::is_trivially_default_constructible<T>::value
+// where type is ^T.
 //
 // Returns true if the reflected entity is trivially default constructible.
 constexpr struct is_trivially_default_constructible_type_fn
@@ -2322,7 +2322,7 @@ consteval bool has_trivially_default_constructible_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_nothrow_default_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is nothrow default constructible.
 constexpr struct is_nothrow_default_constructible_type_fn
@@ -2343,7 +2343,7 @@ consteval bool has_nothrow_default_constructible_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_copy_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is copy constructible.
 constexpr struct is_copy_constructible_type_fn
@@ -2365,7 +2365,7 @@ consteval bool has_copy_constructible_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_trivially_copy_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is trivially copy constructible.
 constexpr struct is_trivially_copy_constructible_type_fn
@@ -2387,7 +2387,7 @@ consteval bool has_trivially_copy_constructible_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_nothrow_copy_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is nothrow copy constructible.
 constexpr struct is_nothrow_copy_constructible_type_fn
@@ -2409,7 +2409,7 @@ consteval bool has_nothrow_copy_constructible_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_move_constructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is move constructible.
 constexpr struct is_move_constructible_type_fn
@@ -2430,8 +2430,8 @@ consteval bool has_move_constructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_trivially_move_constructible<T>::value where type
-// is reflexpr(T).
+// Equivalent to std::is_trivially_move_constructible<T>::value where
+// type is ^T.
 //
 // Returns true if the reflected entity is trivially move constructible.
 constexpr struct is_trivially_move_constructible_type_fn
@@ -2452,8 +2452,8 @@ consteval bool has_trivially_move_constructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_nothrow_move_constructible<T>::value where type
-// is reflexpr(T).
+// Equivalent to std::is_nothrow_move_constructible<T>::value where
+// type is ^T.
 //
 // Returns true if the reflected entity is nothrow move constructible.
 constexpr struct is_nothrow_move_constructible_type_fn
@@ -2475,7 +2475,7 @@ consteval bool has_nothrow_move_constructible_type(info reflection) {
 // Requires: is_type(type) and is_type(assigned_type)
 //
 // Equivalent to std::is_assignable<T, U>::value where type
-// is reflexpr(T), and assigned_type is reflexpr(U).
+// is ^T, and assigned_type is ^U.
 //
 // Returns true if the reflected entity of assigned_type is
 // assignable to the reflected entity of type.
@@ -2489,7 +2489,7 @@ consteval bool is_assignable_type(info type, info assigned_type) {
 // Requires: is_type(type) and is_type(assigned_type)
 //
 // Equivalent to std::is_trivially_assignable<T, U>::value where type
-// is reflexpr(T), and assigned_type is reflexpr(U).
+// is ^T, and assigned_type is ^U.
 //
 // Returns true if the reflected entity of assigned_type is
 // trivially assignable to the reflected entity of type.
@@ -2504,7 +2504,7 @@ consteval bool is_trivially_assignable_type(info type,
 // Requires: is_type(type) and is_type(assigned_type)
 //
 // Equivalent to std::is_nothrow_assignable<T, U>::value where type
-// is reflexpr(T), and assigned_type is reflexpr(U).
+// is ^T, and assigned_type is ^U.
 //
 // Returns true if the reflected entity of assigned_type is
 // nothrow assignable to the reflected entity of type.
@@ -2519,7 +2519,7 @@ consteval bool is_nothrow_assignable_type(info type,
 // Requires: is_type(type)
 //
 // Equivalent to std::is_copy_assignable<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is copy assignable.
 consteval bool is_copy_assignable_type(info type) {
@@ -2536,7 +2536,7 @@ consteval bool has_copy_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_trivially_copy_assignable<T>::value
-// where type is reflexpr(T).
+// where type is ^T.
 //
 // Returns true if the reflected entity is trivially copy assignable.
 consteval bool is_trivially_copy_assignable_type(info type) {
@@ -2554,7 +2554,7 @@ consteval bool has_trivially_copy_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_nothrow_copy_assignable<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is nothrow copy assignable.
 consteval bool is_nothrow_copy_assignable_type(info type) {
@@ -2572,7 +2572,7 @@ consteval bool has_nothrow_copy_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_move_assignable<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is move assignable.
 consteval bool is_move_assignable_type(info type) {
@@ -2590,7 +2590,7 @@ consteval bool has_move_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_trivially_move_assignable<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is trivially move assignable.
 consteval bool is_trivially_move_assignable_type(info type) {
@@ -2608,7 +2608,7 @@ consteval bool has_trivially_move_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_nothrow_move_assignable<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is nothrow move assignable.
 consteval bool is_nothrow_move_assignable_type(info type) {
@@ -2626,7 +2626,7 @@ consteval bool has_nothrow_move_assignable_type(info reflection) {
 // Requires: is_type(type)
 //
 // Equivalent to std::is_destructible<T>::value where type
-// is reflexpr(T).
+// is ^T.
 //
 // Returns true if the reflected entity is destructible.
 constexpr struct is_destructible_type_fn
@@ -2646,7 +2646,7 @@ consteval bool has_destructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_trivially_destructible<T>::value where type is reflexpr(T).
+// Equivalent to std::is_trivially_destructible<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is trivially destructible.
 constexpr struct is_trivially_destructible_type_fn
@@ -2666,7 +2666,7 @@ consteval bool has_trivially_destructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to std::is_nothrow_destructible<T>::value where type is reflexpr(T).
+// Equivalent to std::is_nothrow_destructible<T>::value where type is ^T.
 //
 // Returns true if the reflected entity is nothrow destructible.
 constexpr struct is_nothrow_destructible_type_fn
@@ -2689,8 +2689,8 @@ consteval bool has_nothrow_destructible_type(info reflection) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_const<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_const<T>::type where type
+// is ^T.
 //
 // Returns a new type reflection with the const qualifier removed, if present.
 consteval info remove_const(info type) {
@@ -2700,8 +2700,7 @@ consteval info remove_const(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_volatile<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_volatile<T>::type where type is ^T.
 //
 // Returns a new type reflection with volatile qualifier removed, if present.
 consteval info remove_volatile(info type) {
@@ -2711,8 +2710,7 @@ consteval info remove_volatile(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_cv<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_cv<T>::type where type is ^T.
 //
 // Shorthand returning the result of remove_volatile(remove_const(type)).
 consteval info remove_cv(info type) {
@@ -2722,8 +2720,7 @@ consteval info remove_cv(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::add_const<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::add_const<T>::type where type is ^T.
 //
 // Returns a new type reflection with const qualifier added,
 // if not already present.
@@ -2734,8 +2731,7 @@ consteval info add_const(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::add_volatile<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::add_volatile<T>::type where type is ^T.
 //
 // Returns a new type reflection with volatile qualifier added,
 // if not already present.
@@ -2746,8 +2742,7 @@ consteval info add_volatile(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::add_cv<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::add_cv<T>::type where type is ^T.
 //
 // Shorthand returning the result of add_const(add_volatile(type)).
 consteval info add_cv(info type) {
@@ -2757,8 +2752,7 @@ consteval info add_cv(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_reference<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_reference<T>::type where type is ^T.
 //
 // Returns a new type reflection which reflects the type referred to
 // by the reference type. If the provided type reflection does not
@@ -2771,13 +2765,13 @@ consteval info remove_reference(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_lvalue_reference<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_lvalue_reference<T>::type where
+// type is ^T.
 //
-// Returns a new type reflection of an lvalue reference type to the type
-// reflected by the provided type reflection. If the provided type
-// reflection does not reflected a referenceable type, returns a new type
-// reflection of equivalent type.
+// Returns a new type reflection of an lvalue reference type to the
+// type reflected by the provided type reflection. If the provided
+// type reflection does not reflected a referenceable type, returns a
+// new type reflection of equivalent type.
 consteval info add_lvalue_reference(info type) {
   detail::require_type(type);
   return __reflect(detail::query_add_lvalue_reference, type);
@@ -2785,13 +2779,13 @@ consteval info add_lvalue_reference(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_rvalue_reference<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_rvalue_reference<T>::type where
+// type is ^T.
 //
-// Returns a new type reflection of an rvalue reference type to the type
-// reflected by the provided type reflection. If the provided type
-// reflection does not reflected a referenceable type, returns a new type
-// reflection of equivalent type.
+// Returns a new type reflection of an rvalue reference type to the
+// type reflected by the provided type reflection. If the provided
+// type reflection does not reflected a referenceable type, returns a
+// new type reflection of equivalent type.
 consteval info add_rvalue_reference(info type) {
   detail::require_type(type);
   return __reflect(detail::query_add_rvalue_reference, type);
@@ -2799,8 +2793,7 @@ consteval info add_rvalue_reference(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_extent<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_extent<T>::type where type is ^T.
 //
 // If the provided type reflection reflects an array type, returns
 // a new type reflection of the underlying (i.e. element) type.
@@ -2813,8 +2806,7 @@ consteval info remove_extent(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_pointer<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_pointer<T>::type where type is ^T.
 //
 // Returns a new type reflection of the type pointed to by the type
 // reflected by the provided type reflection. If the provided type
@@ -2827,8 +2819,7 @@ consteval info remove_pointer(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::add_pointer<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::add_pointer<T>::type where type is ^T.
 //
 // Returns a new type reflection of a pointer type pointing to the type
 // reflected by the provided type reflection. If the provided type
@@ -2841,8 +2832,7 @@ consteval info add_pointer(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::remove_cvref<T>::type) where type
-// is reflexpr(T).
+// Equivalent to ^std::remove_cvref<T>::type where type is ^T.
 //
 // Shorthand returning the result of remove_cv(remove_reference(type)).
 consteval info remove_cvref(info type) {
@@ -2852,9 +2842,9 @@ consteval info remove_cvref(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::decay<T>::type) where type is reflexpr(T).
+// Equivalent to ^std::decay<T>::type where type is ^T.
 //
-// Let U be remove_reference(reflexpr(T)).
+// Let U be remove_reference(^T).
 //
 // If U is an array type, equivalent to add_pointer(remove_extent(U)).
 //
@@ -2877,8 +2867,8 @@ consteval info decay(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::make_signed<T>::type) where type is reflexpr(T)
-// without undefined behavior.
+// Equivalent to ^std::make_signed<T>::type where type is ^T without
+// undefined behavior.
 //
 // If type is a type reflection of an integral (except bool) or enumeration
 // type, returns a new type reflection of the signed integer type
@@ -2895,8 +2885,8 @@ consteval info make_signed(info type) {
 
 // Requires: is_type(type)
 //
-// Equivalent to reflexpr(std::make_unsigned<T>::type) where type is reflexpr(T)
-// without undefined behavior.
+// Equivalent to ^std::make_unsigned<T>::type where type is ^T without
+// undefined behavior.
 //
 // If type is a type reflection of an integral (except bool) or enumeration
 // type, returns a new type reflection of the unsigned integer type
@@ -2931,7 +2921,7 @@ consteval info this_ref_type_of(info mem_function) {
 // Example:
 //
 //   enum byte : unsigned char {};
-//   constexpr info r = underlying_type(reflexpr(byte));
+//   constexpr info r = underlying_type(^byte);
 //   typename(r); // unsigned char
 //
 consteval info underlying_type_of(info reflection) {
@@ -2983,7 +2973,7 @@ consteval info entity_of(info reflection) {
 //     struct T {};
 //   };
 //
-//   parent_of(reflexpr(S::T)); // reflexpr(S)
+//   parent_of(^S::T); // ^S
 //
 consteval info parent_of(info reflection) {
   return __reflect(detail::query_get_parent, reflection);

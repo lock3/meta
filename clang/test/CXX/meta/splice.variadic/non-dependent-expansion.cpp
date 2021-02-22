@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 template<typename ...T> constexpr auto dc_add() { return (... + T(1)); }
 template<info ...T> constexpr auto dc_refl_add() { return (... + typename [<T>](1)); }
@@ -19,10 +19,10 @@ template<int ...T> constexpr auto tri_refl_expr_size() { return tri_construct(T.
 
 int main() {
   static_assert(dc_add<int, int, int>() == 3);
-  static_assert(dc_refl_add<reflexpr(int), reflexpr(int), reflexpr(int)>() == 3);
+  static_assert(dc_refl_add<^int, ^int, ^int>() == 3);
 
   static_assert(tri_size<int, int, int>() == 3);
-  static_assert(tri_refl_ty_size<reflexpr(int), reflexpr(int), reflexpr(int)>() == 3);
-  static_assert(tri_refl_expr_size<reflexpr(1), reflexpr(1), reflexpr(1)>() == 3);
+  static_assert(tri_refl_ty_size<^int, ^int, ^int>() == 3);
+  static_assert(tri_refl_expr_size<^1, ^1, ^1>() == 3);
   return 0;
 }

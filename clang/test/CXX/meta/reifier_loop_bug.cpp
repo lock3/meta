@@ -3,7 +3,7 @@
 #include "reflection_iterator.h"
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 namespace n {
@@ -18,8 +18,8 @@ constexpr void do_thing() {
 }
 
 int main() {
-  do_thing<reflexpr(n::f)>();
-  static constexpr auto r = meta::range(reflexpr(n));
+  do_thing<^n::f>();
+  static constexpr auto r = meta::range(^n);
   template for (constexpr auto member : r) {
     do_thing<member>();
   }

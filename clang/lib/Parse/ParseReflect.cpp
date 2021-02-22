@@ -18,10 +18,16 @@
 #include "clang/Sema/ParsedReflection.h"
 using namespace clang;
 
-/// Parse the operand of a reflexpr expression. This is almost exactly like
-/// parsing a template argument, except that we also allow namespace-names
-/// in this context.
-ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
+// Assuming the current token is '::' returns true if the next tokens would
+// start a nested-name-specifier (i.e., the next token is an identifier or
+// (invalidly) the 'template' keyword).
+static bool startsNestedNameSpecifier(Parser& P) {
+  return P.NextToken().is(tok::identifier) ||
+         P.NextToken().is(tok::kw_template);
+}
+
+ParsedReflectionOperand Parser::ParseCXXReflectionOperand() {
+  // Prevent diagnostics in this context.
   Sema::CXXReflectionScopeRAII ReflectionScope(Actions);
 
   // The operand is unevaluated.
@@ -29,7 +35,15 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
       Actions, Sema::ExpressionEvaluationContext::Unevaluated);
 
   // Perform the tentative parses first since isCXXTypeId tends to rewrite
-  // tokens, which can subsequent parses a bit wonky.
+  // tokens, which can make subsequent parses a bit wonky.
+
+  // Match '^::'. Note that '::' could start a nested-name-specifier, so if the
+  // next token is an identifier or 'template', then this is not a reflection of
+  // the global scope.
+  if (Tok.is(tok::coloncolon) && !startsNestedNameSpecifier(*this)) {
+    SourceLocation ColonColonLoc = ConsumeToken();
+    return Actions.ActOnReflectedNamespace(ColonColonLoc);
+  }
 
   // Tentatively parse a template-name.
   {
@@ -40,12 +54,6 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
       return Actions.ActOnReflectedTemplate(T);
     }
     TPA.Revert();
-  }
-
-  // Otherwise, check for the global namespace
-  if (Tok.is(tok::coloncolon) && NextToken().is(tok::r_paren)) {
-    SourceLocation ColonColonLoc = ConsumeToken();
-    return Actions.ActOnReflectedNamespace(ColonColonLoc);
   }
 
   // Otherwise, tentatively parse a namespace-name.
@@ -73,41 +81,23 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
   }
 
   // Parse an expression. template argument.
-  ExprResult E = ParseExpression(NotTypeCast);
+  ExprResult E = ParseCastExpression(AnyCastExpr);
   if (E.isInvalid() || !E.get())
     return ParsedReflectionOperand();
 
   return Actions.ActOnReflectedExpression(E.get());
 }
 
+ExprResult Parser::ParseCXXReflectionExpression() {
+  assert(Tok.is(tok::caret) && "expected '^'");
+  SourceLocation Loc = ConsumeToken();
 
-/// Parse a reflect-expression.
-///
-/// \verbatim
-///       reflect-expression:
-///         'reflexpr' '(' type-id ')'
-///         'reflexpr' '(' template-name ')'
-///         'reflexpr' '(' namespace-name ')'
-///         'reflexpr' '(' id-expression ')'
-/// \endverbatim
-ExprResult Parser::ParseCXXReflectExpression() {
-  assert(Tok.is(tok::kw_reflexpr) && "expected 'reflexpr'");
-  SourceLocation KWLoc = ConsumeToken();
-
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
-    return ExprError();
-
-  ParsedReflectionOperand PR = ParseCXXReflectOperand();
+  ParsedReflectionOperand PR = ParseCXXReflectionOperand();
   if (PR.isInvalid())
     return ExprError();
 
-  if (T.consumeClose())
-    return ExprError();
-
-  return Actions.ActOnCXXReflectExpr(KWLoc, PR,
-                                     T.getOpenLocation(),
-                                     T.getCloseLocation());
+  // FIXME: The source locations are wrong.
+  return Actions.ActOnCXXReflectExpr(Loc, PR, Loc, Loc);
 }
 
 /// Parse an invalid reflection.
@@ -517,9 +507,9 @@ bool Parser::ParseCXXIdentifierSplice(
 ///     'typename' '[' '<' reflection '>' ']'
 /// \endverbatim
 SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
-  assert(Tok.is(tok::annot_type_splice) ||
-         (Tok.is(tok::kw_typename) &&
-          matchCXXSpliceBegin(tok::less, /*LookAhead=*/1))
+  assert((Tok.is(tok::annot_type_splice) ||
+          (Tok.is(tok::kw_typename) &&
+           matchCXXSpliceBegin(tok::less, /*LookAhead=*/1)))
          && "Not a type splice");
 
   ExprResult Result;

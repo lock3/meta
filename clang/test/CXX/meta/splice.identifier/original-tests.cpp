@@ -9,28 +9,28 @@ using namespace bar::fin;
 
 template<typename T>
 void test_template() {
-  constexpr auto int_reflexpr = reflexpr(int);
-  T [# "foo_", reflexpr(bar), "_", reflexpr(bar::fin) #] = T();
+  constexpr auto int_reflexpr = ^int;
+  T [# "foo_", ^bar, "_", ^bar::fin #] = T();
 
   int int_x = foo_bar_fin.[# "get_", [# "int_reflexpr" #] #]();
   int int_y = [# "foo_bar_fin" #].get_int();
   int int_z = [# "foo_bar_fin" #].[# "get_int" #]();
 
-  static constexpr auto r = reflexpr(T::field_1);
+  static constexpr auto r = ^T::field_1;
   static_assert(T::[# r #] == 0);
 }
 
 template<typename T>
 struct TemplateS {
-  T [# "val_", reflexpr(T) #];
-  T [# "get_", reflexpr(T) #]() { return T(); }
+  T [# "val_", ^T #];
+  T [# "get_", ^T #]() { return T(); }
 };
 
 template<typename T>
 void test_template_class_attribute() {
   TemplateS<T> s;
-  T res_val = s.[# "val_", reflexpr(T) #];
-  T res_get = s.[# "get_", reflexpr(T) #]();
+  T res_val = s.[# "val_", ^T #];
+  T res_get = s.[# "get_", ^T #]();
 }
 
 template<int y>
@@ -83,8 +83,8 @@ struct S : public SBase {
 };
 
 void test_non_template() {
-  constexpr auto int_reflexpr = reflexpr(int);
-  S [# "foo_", reflexpr(bar), "_", reflexpr(bar::fin) #] = S();
+  constexpr auto int_reflexpr = ^int;
+  S [# "foo_", ^bar), "_", ^bar::fin) #] = S();
 
   int int_x = foo_bar_fin.[# "get_", [# "int_reflexpr" #] #]();
   int int_y = [# "foo_bar_fin" #].get_int();

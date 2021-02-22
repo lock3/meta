@@ -49,7 +49,7 @@ class tuple {
 } // namespace std
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 // Dummy to satisfy lookup requirements of

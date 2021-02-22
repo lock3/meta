@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -freflection -verify -std=c++1z %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 namespace non_template_reflection {

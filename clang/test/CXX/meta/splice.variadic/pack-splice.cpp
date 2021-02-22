@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 namespace unexpanded {
 
@@ -9,14 +9,14 @@ void bar() { }
 // expected-note@-1 {{candidate template ignored: invalid explicitly-specified argument for template parameter 'Ts'}}
 
 void foo() {
-  constexpr info els [] = { reflexpr(int), reflexpr(int) };
+  constexpr info els [] = { ^int, ^int };
   bar<...[< els >]>();
 // expected-error@-1 {{template argument contains an unexpanded pack splice}}
 // expected-error@-2 {{no matching function for call to 'bar'}}
 }
 
 void baz() {
-  constexpr info els [] = { reflexpr(int), reflexpr(int) };
+  constexpr info els [] = { ^int, ^int };
   using X = ...[< els >];
 // expected-error@-1 {{declaration type contains an unexpanded parameter pack}}
 }
@@ -48,25 +48,25 @@ struct base_b_base {
   constexpr bool base_b_is_present() { return true; }
 };
 
-constexpr info base_types [] = { reflexpr(base_a_base), reflexpr(base_b_base) };
+constexpr info base_types [] = { ^base_a_base, ^base_b_base };
 
 namespace dependent {
 
 template<int I>
 void template_argument_list() {
-  constexpr info els [] = { reflexpr(I), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^I, ^1, ^0 };
   static_assert(total<...[< els >]...>() == 2);
 }
 
 template<int I>
 void function_call() {
-  constexpr info els [] = { reflexpr(I), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^I, ^1, ^0 };
   static_assert(tri_construct(...[< els >]...).total == 2);
 }
 
 template<int I>
 void initializer_list() {
-  constexpr info els [] = { reflexpr(I), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^I, ^1, ^0 };
 
   constexpr tri_construct init_list = { ...[< els >]... };
   static_assert(init_list.total == 2);
@@ -74,7 +74,7 @@ void initializer_list() {
 
 template<int I>
 void mixed_pack() {
-  constexpr info construct_args [] = { reflexpr(int), reflexpr(I) };
+  constexpr info construct_args [] = { ^int, ^I };
   static_assert(construct_the_thing<...[< construct_args >]...>() == 1);
 }
 
@@ -83,7 +83,7 @@ struct base_class : public ...[< [< X >] >]... { };
 
 template<int I>
 void base_splice() {
-  base_class<reflexpr(base_types)> base_inst;
+  base_class<^base_types> base_inst;
   static_assert(base_inst.base_a_is_present());
   static_assert(base_inst.base_b_is_present());
 }
@@ -97,7 +97,7 @@ struct constructed_base_class : public ...[< [< X >] >]... {
 
 template<int I>
 void constructed_base_splice() {
-  constructed_base_class<reflexpr(base_types)> base_inst {
+  constructed_base_class<^base_types> base_inst {
       base_a_base(), base_b_base()
   };
 }
@@ -116,24 +116,24 @@ void instantiate() {
 namespace non_dependent {
 
 void template_argument_list() {
-  constexpr info els [] = { reflexpr(1), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^1, ^1, ^0 };
   static_assert(total<...[< els >]...>() == 2);
 }
 
 void function_call() {
-  constexpr info els [] = { reflexpr(1), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^1, ^1, ^0 };
   static_assert(tri_construct(...[< els >]...).total == 2);
 }
 
 void initializer_list() {
-  constexpr info els [] = { reflexpr(1), reflexpr(1), reflexpr(0) };
+  constexpr info els [] = { ^1, ^1, ^0 };
 
   constexpr tri_construct init_list = { ...[< els >]... };
   static_assert(init_list.total == 2);
 }
 
 void mixed_pack() {
-  constexpr info construct_args [] = { reflexpr(int), reflexpr(1) };
+  constexpr info construct_args [] = { ^int, ^1 };
   static_assert(construct_the_thing<...[< construct_args >]...>() == 1);
 }
 

@@ -13,8 +13,8 @@ struct S {
 };
 
 int main() {
-  constexpr int i = test<reflexpr(int), reflexpr(4)>();
-  constexpr S s = test<reflexpr(S), reflexpr(S(2))>();
+  constexpr int i = test<^int, ^4>();
+  constexpr S s = test<^S, ^S(2)>();
 
   static_assert(i == 4);
   static_assert(s.i == 2);

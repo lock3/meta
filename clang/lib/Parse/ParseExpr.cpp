@@ -1483,10 +1483,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseCXXThis();
     break;
 
-  case tok::kw_reflexpr:
-    Res = ParseCXXReflectExpression();
-    break;
-
   case tok::kw___select_member:
     Res = ParseCXXSelectMemberExpr();
     break;
@@ -1779,8 +1775,15 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     return ParseObjCAtExpression(AtLoc);
   }
   case tok::caret:
+    // FIXME: Actually disambiguate these cases. Not sure how hard this
+    // will be in practice. Could just do a tentative parse of the reflection
+    // operator, falling back to blocks.
+    if (getLangOpts().Reflection)
+      return ParseCXXReflectionExpression();
+
     Res = ParseBlockLiteralExpression();
     break;
+
   case tok::code_completion: {
     Actions.CodeCompleteExpression(getCurScope(),
                                    PreferredType.get(Tok.getLocation()));
@@ -2423,6 +2426,7 @@ Parser::ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
 /// [GNU]   '__alignof' '(' type-name ')'
 /// [C11]   '_Alignof' '(' type-name ')'
 /// [C++11] 'alignof' '(' type-id ')'
+/// [meta]  reflection-expression
 /// \endverbatim
 ExprResult Parser::ParseUnaryExprOrTypeTraitExpression() {
   assert(Tok.isOneOf(tok::kw_sizeof, tok::kw___alignof, tok::kw_alignof,

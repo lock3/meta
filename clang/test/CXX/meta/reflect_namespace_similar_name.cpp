@@ -7,6 +7,6 @@ namespace parent_ns {
 }
 
 int main() {
-  constexpr auto reflection = reflexpr(parent_ns::parent_ns_foo);
+  constexpr auto reflection = ^parent_ns::parent_ns_foo;
   return 0;
 }

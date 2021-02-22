@@ -2,7 +2,7 @@
 #define REFLECTION_QUERY_H
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 enum reflection_query {

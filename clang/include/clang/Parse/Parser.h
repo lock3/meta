@@ -3132,15 +3132,14 @@ private:
   // C++ 14.3: Template arguments [temp.arg]
   typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
-  ParsedReflectionOperand ParseCXXReflectOperand();
-  ExprResult ParseCXXReflectExpression();
+  ParsedReflectionOperand ParseCXXReflectionOperand();
+  ExprResult ParseCXXReflectionExpression();
   ExprResult ParseCXXInvalidReflectionExpression();
   ExprResult ParseCXXReflectionReadQuery();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
-
 private:
   bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
   bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);

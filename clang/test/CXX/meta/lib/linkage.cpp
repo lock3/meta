@@ -18,7 +18,7 @@ int main() {
   {
     int local_var = 0;
 
-    constexpr auto refl = reflexpr(local_var);
+    constexpr auto refl = ^local_var;
     static_assert(!__reflect(query_has_linkage, refl));
     static_assert(!__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));
@@ -28,7 +28,7 @@ int main() {
   {
     static int static_local_var = 0;
 
-    constexpr auto refl = reflexpr(static_local_var);
+    constexpr auto refl = ^static_local_var;
     static_assert(!__reflect(query_has_linkage, refl));
     static_assert(!__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));
@@ -36,7 +36,7 @@ int main() {
 
   // global var traits
   {
-    constexpr auto refl = reflexpr(global_var);
+    constexpr auto refl = ^global_var;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));
@@ -44,7 +44,7 @@ int main() {
 
   // static global var traits
   {
-    constexpr auto refl = reflexpr(static_global_var);
+    constexpr auto refl = ^static_global_var;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(!__reflect(query_is_externally_linked, refl));
     static_assert(__reflect(query_is_internally_linked, refl));
@@ -52,7 +52,7 @@ int main() {
 
   // static inline global var traits
   {
-    constexpr auto refl = reflexpr(static_inline_global_var);
+    constexpr auto refl = ^static_inline_global_var;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(!__reflect(query_is_externally_linked, refl));
     static_assert(__reflect(query_is_internally_linked, refl));
@@ -60,7 +60,7 @@ int main() {
 
   // external global var traits
   {
-    constexpr auto refl = reflexpr(external_global_var);
+    constexpr auto refl = ^external_global_var;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));
@@ -68,7 +68,7 @@ int main() {
 
   // thread local global var traits
   {
-    constexpr auto refl = reflexpr(thread_local_global_var);
+    constexpr auto refl = ^thread_local_global_var;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));
@@ -76,7 +76,7 @@ int main() {
 
   // static member data
   {
-    constexpr auto refl = reflexpr(Class::public_access_static);
+    constexpr auto refl = ^Class::public_access_static;
     static_assert(__reflect(query_has_linkage, refl));
     static_assert(__reflect(query_is_externally_linked, refl));
     static_assert(!__reflect(query_is_internally_linked, refl));

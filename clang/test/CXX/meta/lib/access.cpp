@@ -21,7 +21,7 @@ public:
 };
 
 namespace default_access {
-  constexpr meta::info member_1 = __reflect(query_get_begin_member, reflexpr(C));
+  constexpr meta::info member_1 = __reflect(query_get_begin_member, ^C);
   static_assert(__reflect(query_has_access, member_1));
   static_assert(!__reflect(query_is_public, member_1));
   static_assert(!__reflect(query_is_protected, member_1));
@@ -114,7 +114,7 @@ namespace public_access {
 
 int x = 0;
 
-constexpr meta::info global_var = reflexpr(x);
+constexpr meta::info global_var = ^x;
 static_assert(!__reflect(query_has_access, global_var));
 static_assert(!__reflect(query_is_public, global_var));
 static_assert(!__reflect(query_is_protected, global_var));

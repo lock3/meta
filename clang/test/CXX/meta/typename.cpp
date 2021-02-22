@@ -2,4 +2,4 @@
 
 namespace foo_ns { }
 
-foo_ns::typename(reflexpr(int)) global; // expected-error {{expected unqualified-id}}
+foo_ns::typename(^int) global; // expected-error {{expected unqualified-id}}

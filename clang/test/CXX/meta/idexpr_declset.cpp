@@ -38,16 +38,16 @@ void b(int);
 
 void test() {
   foo f;
-  f.call<reflexpr(foo::a), int>(10);
-  f.call<reflexpr(foo::b), int>(10);
-  f.call<reflexpr(foo::c), int>(10);
-  // f.delegate<reflexpr(foo::d), int>(10);
+  f.call<^foo::a, int>(10);
+  f.call<^foo::b, int>(10);
+  f.call<^foo::c, int>(10);
+  // f.delegate<^foo::d, int>(10);
 
-  f.call<reflexpr(bar::a), int>(10); // expected-note {{in instantiation}}
-  f.call<reflexpr(a), int>(10);
+  f.call<^bar::a, int>(10); // expected-note {{in instantiation}}
+  f.call<^a, int>(10);
   // expected-error@-1 {{expression does not reflect a data member or member function}}
   // expected-note@-2 {{in instantiation of function}}
-  f.call<reflexpr(b), int>(10);
+  f.call<^b, int>(10);
   // expected-error@-1 {{expression does not reflect a data member or member function}}
   // expected-note@-2 {{in instantiation of function}}
 }
@@ -69,8 +69,8 @@ int a;
 
 void test() {
   foo f;
-  f.get<reflexpr(foo::a)>();
-  f.get<reflexpr(a)>();
+  f.get<^foo::a>();
+  f.get<^a>();
   // expected-error@-1 {{expression does not reflect a data member or member function}}
   // expected-note@-2 {{in instantiation of function}}
 }

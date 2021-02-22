@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -std=c++1z -freflection %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void));
 }
 
 const int global1 = 75;
@@ -24,24 +24,24 @@ void check_value_expression_splice_dependent() {
 }
 
 int main() {
-  static_assert([<reflexpr(42)>] == 42);
-  check_value_expression_splice_dependent<reflexpr(42), 42>();
+  static_assert([< ^42 >] == 42);
+  check_value_expression_splice_dependent<^42, 42>();
 
-  static_assert([<reflexpr(global1)>] == 75);
-  check_value_expression_splice_dependent<reflexpr(global1), 75>();
+  static_assert([< ^global1 >] == 75);
+  check_value_expression_splice_dependent<^global1, 75>();
 
-  static_assert([<reflexpr(global2)>] == 76);
-  check_value_expression_splice_dependent<reflexpr(global2), 76>();
+  static_assert([< ^global2 >] == 76);
+  check_value_expression_splice_dependent<^global2, 76>();
 
-  static_assert([<reflexpr(A)>] == 0);
-  check_value_expression_splice_dependent<reflexpr(A), 0>();
+  static_assert([< ^A >] == 0);
+  check_value_expression_splice_dependent<^A, 0>();
 
-  static_assert([<reflexpr(S::value)>] == 4);
-  check_value_expression_splice_dependent<reflexpr(S::value), 4>();
+  static_assert([< ^S::value >] == 4);
+  check_value_expression_splice_dependent<^S::value, 4>();
 
-  static_assert([<reflexpr(s1.num)>] == 12);
-  check_value_expression_splice_dependent<reflexpr(s1.num), 12>();
+  static_assert([< ^s1.num >] == 12);
+  check_value_expression_splice_dependent<^s1.num, 12>();
 
-  static_assert([<reflexpr(f)>] == &f);
-  check_value_expression_splice_dependent<reflexpr(f), &f>();
+  static_assert([< ^f >] == &f);
+  check_value_expression_splice_dependent<^f, &f>();
 }

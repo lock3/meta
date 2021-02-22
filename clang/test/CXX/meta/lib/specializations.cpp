@@ -11,7 +11,7 @@ namespace partial_specialization {
     class Foo<int, B, C> { };
   }
 
-  constexpr auto base_template_refl = __reflect(query_get_begin, reflexpr(refl));
+  constexpr auto base_template_refl = __reflect(query_get_begin, ^refl);
 
   constexpr auto partial_spec_refl = __reflect(query_get_next, base_template_refl);
   static_assert(__reflect(query_is_template, partial_spec_refl));
@@ -31,7 +31,7 @@ namespace explicit_specialization {
     class Foo<int, int, int> { };
   }
 
-  constexpr auto base_template_refl = __reflect(query_get_begin, reflexpr(refl));
+  constexpr auto base_template_refl = __reflect(query_get_begin, ^refl);
 
   constexpr auto explicit_spec_refl = __reflect(query_get_next, base_template_refl);
   static_assert(!__reflect(query_is_template, explicit_spec_refl));
@@ -50,7 +50,7 @@ namespace implicit_instantiation {
     Foo<int, int, int> x;
   }
 
-  constexpr auto base_template_refl = __reflect(query_get_begin, reflexpr(refl));
+  constexpr auto base_template_refl = __reflect(query_get_begin, ^refl);
 
   constexpr auto var_of_implicit_type = __reflect(query_get_next, base_template_refl);
   constexpr auto type_of_var = __reflect(query_get_type, var_of_implicit_type);
@@ -71,7 +71,7 @@ namespace explicit_instantiation {
     extern template class Foo<int, int, int>;
   }
 
-  constexpr auto base_template_refl = __reflect(query_get_begin, reflexpr(refl));
+  constexpr auto base_template_refl = __reflect(query_get_begin, ^refl);
 
   constexpr auto explicit_inst_refl = __reflect(query_get_next, base_template_refl);
   static_assert(!__reflect(query_is_template, explicit_inst_refl));
