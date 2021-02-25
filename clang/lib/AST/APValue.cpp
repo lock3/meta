@@ -258,14 +258,11 @@ APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
                                         unsigned Offset,
                                         const APValue *Parent) :
   ReflKind(ReflKind), ReflEntity(ReflEntity),
-  Offset(Offset), Parent(nullptr) {
-  if (Parent)
-    this->Parent = new APValue(*Parent);
+  Offset(Offset), Parent(Parent ? new APValue(*Parent) : nullptr) {
 }
 
 APValue::ReflectionData::~ReflectionData() {
-  if (Parent)
-    delete Parent;
+  delete Parent;
 }
 
 APValue::APValue(const APValue &RHS) : Kind(None) {

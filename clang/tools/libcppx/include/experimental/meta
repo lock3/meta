@@ -249,6 +249,8 @@ enum reflection_query : unsigned {
   query_get_next_param,
   query_get_begin_member,
   query_get_next_member,
+  query_get_begin_subobject,
+  query_get_next_subobject,
   query_get_begin_base_spec,
   query_get_next_base_spec,
 
@@ -3078,6 +3080,23 @@ constexpr struct next_member_fn
   }
 } next_member;
 
+// Returns the first subobject of the reflected entity.
+constexpr struct front_subobject_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_begin_subobject, reflection);
+  }
+} front_subobject;
+
+// Returns the next subobject of the reflected entity.
+constexpr struct next_subobject_fn
+{
+  consteval info operator()(info reflection) const {
+    return __reflect(detail::query_get_next_subobject, reflection);
+  }
+} next_subobject;
+
+
 // Returns the first function parameter of the reflected entity.
 constexpr struct front_param_fn
 {
@@ -3186,10 +3205,15 @@ public:
   consteval iterator begin() const { return m_first; }
 
   consteval iterator end() const { return m_last; }
+
+  consteval std::size_t size() const { return std::distance(m_first, m_last); }
 };
 
 using member_iterator = detail::iterator<front_member_fn, next_member_fn>;
 using member_range = detail::range<member_iterator>;
+
+using subobject_iterator = detail::iterator<front_subobject_fn, next_subobject_fn>;
+using subobject_range = detail::range<subobject_iterator>;
 
 using member_fn_iterator = detail::iterator<front_member_fn, next_member_fn, is_member_function_fn>;
 using member_fn_range = detail::range<member_fn_iterator>;
@@ -3209,16 +3233,14 @@ using base_spec_range = detail::range<base_spec_iterator>;
 // Ranges
 
 template<typename P>
-consteval auto members_of(info reflection, P pred)
-{
+consteval auto members_of(info reflection, P pred) {
   using iterator = detail::iterator<front_member_fn, next_member_fn, P>;
   using range = detail::range<iterator>;
   return range(reflection, pred);
 }
 
 template<typename... Ps>
-consteval auto members_of(info reflection, Ps... preds)
-{
+consteval auto members_of(info reflection, Ps... preds) {
   return members_of(reflection, [&](info reflection) {
     return (preds(reflection) && ...);
   });
@@ -3232,6 +3254,46 @@ consteval auto members_of(info reflection) {
 consteval auto parameters_of(info reflection)
 {
   return param_range(reflection);
+}
+
+template<typename P>
+consteval auto bases_of(info reflection, P pred) {
+  using iterator = detail::iterator<front_base_spec_fn, next_base_spec_fn, P>;
+  using range = detail::range<iterator>;
+  return range(reflection, pred);
+}
+
+template<typename... Ps>
+consteval auto bases_of(info reflection, Ps... preds) {
+  return bases_of(reflection, [&](info reflection) {
+    return (preds(reflection) && ...);
+  });
+}
+
+template<typename P>
+consteval auto bases_of(info reflection) {
+  return bases_of(reflection, detail::always_true);
+}
+
+// subobjects (with predicate filter)
+
+template<typename P>
+consteval auto subobjects_of(info reflection, P pred) {
+  using iterator = detail::iterator<front_subobject_fn, next_subobject_fn, P>;
+  using range = detail::range<iterator>;
+  return range(reflection, pred);
+}
+
+template<typename... Ps>
+consteval auto subobjects_of(info reflection, Ps... preds) {
+  return subobjects_of(reflection, [&](info reflection) {
+    return (preds(reflection) && ...);
+  });
+}
+
+template<typename P>
+consteval auto subobjects_of(info reflection) {
+  return subobjects_of(reflection, detail::always_true);
 }
 
 // Returns the first sub-object of reflection. Objects behave

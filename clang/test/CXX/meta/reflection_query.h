@@ -227,6 +227,8 @@ enum reflection_query {
   query_get_next_param,
   query_get_begin_member,
   query_get_next_member,
+  query_get_begin_subobject,
+  query_get_next_subobject,
   query_get_begin_base_spec,
   query_get_next_base_spec,
 
