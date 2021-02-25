@@ -1423,7 +1423,7 @@ bool Sema::tryExpandNonDependentPack(IdentifierInfo *ParamII,
                                      ParmVarDecl *Input,
                          SmallVectorImpl<DeclaratorChunk::ParamInfo> &Outputs) {
   bool IsExpandable = isParameterExpandable(Input);
-  assert(!IsExpandable || !DefArgToks &&
+  assert((!IsExpandable || !DefArgToks) &&
          "parameter packs cannot have default arguments");
 
   if (!IsExpandable) {

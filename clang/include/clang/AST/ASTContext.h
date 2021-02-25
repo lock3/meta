@@ -2123,6 +2123,17 @@ public:
   }
 
   //===--------------------------------------------------------------------===//
+  //                         Reflection caching
+  //===--------------------------------------------------------------------===//
+
+  using MemberList = std::vector<const FieldDecl *>;
+  using MemberMap = llvm::DenseMap<const CXXRecordDecl*, MemberList>;
+
+  /// For the subobject queries, the cached subobjects of a class in the
+  /// order they would appear in their layout.
+  mutable MemberMap AllSubobjects;
+
+  //===--------------------------------------------------------------------===//
   //                         Type Sizing and Analysis
   //===--------------------------------------------------------------------===//
 

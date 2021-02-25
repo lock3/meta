@@ -388,6 +388,10 @@ public:
     : Kind(None) {
     MakeReflection(ReflKind, ReflEntity, Offset, &Parent);
   }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity, unsigned Offset)
+    : Kind(None) {
+    MakeReflection(ReflKind, ReflEntity, Offset, nullptr);
+  }
   static APValue IndeterminateValue() {
     APValue Result;
     Result.Kind = Indeterminate;
@@ -646,7 +650,7 @@ public:
   }
 
   bool hasParentReflection() const {
-    return getReflectionOffset();
+    return ((const ReflectionData*)(const char*)Data.buffer)->Parent;
   }
 
   /// Returns the parent reflection, if present.
@@ -755,10 +759,12 @@ private:
     assert(isAbsent() && "Bad state change");
 
 #ifndef NDEBUG
+    // TODO: We're reusing these values for subobject indexing, and these
+    // preconditions don't really apply to those uses.
     if (Offset)
       assert(Parent && "Parent missing");
-    else
-      assert(!Parent && "Parent provided with no offset");
+    // else
+    //   assert(!Parent && "Parent provided with no offset");
 #endif
 
     new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,

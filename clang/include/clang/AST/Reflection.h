@@ -387,6 +387,10 @@ public:
     return Ref.getReflectedBaseSpecifier();
   }
 
+  unsigned getOffset() const {
+    return Ref.getReflectionOffset();
+  }
+
   unsigned getOffsetInParent() const {
     return Ref.getReflectionOffset();
   }
