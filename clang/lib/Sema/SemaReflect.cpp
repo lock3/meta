@@ -1467,6 +1467,11 @@ bool Sema::tryExpandNonDependentPack(IdentifierInfo *ParamII,
   return false;
 }
 
+bool Sema::ActOnCXXIdentifierSplice(
+    ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
+  return BuildCXXIdentifierSplice(Parts, Result);
+}
+
 static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
                               const APValue& Val) {
   // Extracting the string value from the LValue.
@@ -1545,138 +1550,76 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
   return true;
 }
 
-static inline bool
-AppendReflectedDecl(Sema &S, llvm::raw_ostream &OS, const Expr *ReflExpr,
-                    const Decl *D) {
-  // If this is a named declaration, append its identifier.
-  if (!isa<NamedDecl>(D)) {
-    // FIXME: Improve diagnostics.
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflection_not_named);
-    return false;
-  }
-  const NamedDecl *ND = cast<NamedDecl>(D);
-
-  // FIXME: What if D has a special name? For example operator==?
-  // What would we append in that case?
-  DeclarationName Name = ND->getDeclName();
-  if (!Name.isIdentifier()) {
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer) << Name;
-    return false;
-  }
-
-  OS << ND->getName();
-  return true;
-}
-
-static inline bool
-AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
-                    const QualType &QT) {
-  const Type *T = QT.getTypePtr();
-
-  // If this is a class type, append its identifier.
-  if (auto *RC = T->getAsCXXRecordDecl())
-    OS << RC->getName();
-  else if (const BuiltinType *BT = T->getAs<BuiltinType>())
-    OS << BT->getName();
-  else {
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer)
-      << QualType(T, 0);
-    return false;
-  }
-  return true;
-}
-
-static bool
-AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  Reflection Refl;
-  if (EvaluateReflection(S, E, Refl))
-    return false;
-
-  switch (Refl.getKind()) {
-  case RK_invalid:
-    DiagnoseInvalidReflection(S, E, Refl);
-    return false;
-
-  case RK_type: {
-    const QualType QT = Refl.getAsType();
-    return AppendReflectedType(S, OS, E, QT);
-  }
-
-  case RK_declaration: {
-    const Decl *D = Refl.getAsDeclaration();
-    return AppendReflectedDecl(S, OS, E, D);
-  }
-
-  case RK_expression: {
-    const Expr *RE = Refl.getAsExpression();
-    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RE))
-      return AppendReflectedDecl(S, OS, E, DRE->getDecl());
-    break;
-  }
-
-  case RK_base_specifier:
-    break;
-  }
-
-  llvm_unreachable("Unsupported reflection type");
-}
-
-bool Sema::ActOnCXXIdentifierSplice(
-    ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
-  return BuildCXXIdentifierSplice(Parts, Result);
-}
-
 /// Constructs a new identifier from the expressions in Parts.
 ///
 /// Returns true upon error.
 bool Sema::BuildCXXIdentifierSplice(
     ArrayRef<Expr *> Parts, IdentifierInfo *&Result) {
+  // Perform some early checks so we can report problems early.
+  for (std::size_t I = 0; I < Parts.size(); ++I) {
+    Expr *E = Parts[I];
+
+    // Get the type of the reflection.
+    QualType T = DeduceCanonicalType(*this, E);
+
+    if (T->isConstantArrayType())
+      continue;
+
+    if (T->isPointerType())
+      continue;
+
+    SourceLocation ExprLoc = E->getBeginLoc();
+    if (T->isIntegerType()) {
+      if (I == 0) {
+        // An identifier cannot start with an integer value.
+        Diag(ExprLoc, diag::err_reflected_id_with_integer_prefix);
+        return true;
+      }
+
+      continue;
+    }
+
+    Diag(ExprLoc, diag::err_reflected_id_invalid_operand_type) << T;
+    return true;
+  }
+
   // If any components are dependent, we can't compute the name.
   if (HasDependentParts(Parts)) {
     Result = &Context.Idents.get(Context, Parts);
     return false;
   }
 
+  // Actually compute the name.
   SmallString<256> Buf;
   llvm::raw_svector_ostream OS(Buf);
-  for (std::size_t I = 0; I < Parts.size(); ++I) {
-    Expr *E = Parts[I];
-
+  for (Expr *E : Parts) {
     assert(!E->isTypeDependent() && !E->isValueDependent()
         && "Dependent name component");
 
     // Get the type of the reflection.
     QualType T = DeduceCanonicalType(*this, E);
 
-    SourceLocation ExprLoc = E->getBeginLoc();
-
     // Evaluate the sub-expression (depending on type) in order to compute
     // a string part that will constitute a declaration name.
     if (T->isConstantArrayType()) {
       if (!AppendCharacterArray(*this, OS, E, T))
         return true;
+      continue;
     }
-    else if (T->isPointerType()) {
+
+    if (T->isPointerType()) {
       if (!AppendCharacterPointer(*this, OS, E, T))
         return true;
+      continue;
     }
-    else if (T->isIntegerType()) {
-      if (I == 0) {
-        // An identifier cannot start with an integer value.
-        Diag(ExprLoc, diag::err_reflected_id_with_integer_prefix);
-        return true;
-      }
+
+    if (T->isIntegerType()) {
       if (!AppendInteger(*this, OS, E, T))
         return true;
+      continue;
     }
-    else if (CheckReflectionOperand(*this, E)) {
-      if (!AppendReflection(*this, OS, E))
-        return true;
-    }
-    else {
-      Diag(ExprLoc, diag::err_reflected_id_invalid_operand_type) << T;
-      return true;
-    }
+
+    llvm_unreachable("unsupported type, but wasn't caught above?");
   }
 
   Result = &Context.Idents.get(Buf);

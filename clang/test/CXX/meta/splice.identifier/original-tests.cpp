@@ -1,5 +1,11 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
+#include "../reflection_query.h"
+
+consteval auto name_of(meta::info refl) {
+  return __reflect(query_get_name, refl);
+}
+
 namespace bar {
   namespace fin {
   }
@@ -10,27 +16,27 @@ using namespace bar::fin;
 template<typename T>
 void test_template() {
   constexpr auto int_reflexpr = ^int;
-  T [# "foo_", ^bar, "_", ^bar::fin #] = T();
+  T [# "foo_", name_of(^bar), "_", name_of(^bar::fin) #] = T();
 
-  int int_x = foo_bar_fin.[# "get_", [# "int_reflexpr" #] #]();
+  int int_x = foo_bar_fin.[# "get_", "int" #]();
   int int_y = [# "foo_bar_fin" #].get_int();
   int int_z = [# "foo_bar_fin" #].[# "get_int" #]();
 
   static constexpr auto r = ^T::field_1;
-  static_assert(T::[# r #] == 0);
+  static_assert(T::[# name_of(r) #] == 0);
 }
 
 template<typename T>
 struct TemplateS {
-  T [# "val_", ^T #];
-  T [# "get_", ^T #]() { return T(); }
+  T [# "val_", name_of(^T) #];
+  T [# "get_", name_of(^T) #]() { return T(); }
 };
 
 template<typename T>
 void test_template_class_attribute() {
   TemplateS<T> s;
-  T res_val = s.[# "val_", ^T #];
-  T res_get = s.[# "get_", ^T #]();
+  T res_val = s.[# "val_", name_of(^T) #];
+  T res_get = s.[# "get_", name_of(^T) #]();
 }
 
 template<int y>
@@ -84,9 +90,9 @@ struct S : public SBase {
 
 void test_non_template() {
   constexpr auto int_reflexpr = ^int;
-  S [# "foo_", ^bar, "_", ^bar::fin #] = S();
+  S [# "foo_", name_of(^bar), "_", name_of(^bar::fin) #] = S();
 
-  int int_x = foo_bar_fin.[# "get_", [# "int_reflexpr" #] #]();
+  int int_x = foo_bar_fin.[# "get_", "int" #]();
   int int_y = [# "foo_bar_fin" #].get_int();
   int int_z = [# "foo_bar_fin" #].[# "get_int" #]();
 }

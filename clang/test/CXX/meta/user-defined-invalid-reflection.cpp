@@ -13,12 +13,6 @@ namespace non_template_reflection {
     // expected-note@-2 {{custom error message}}
   }
 
-  int identifier_splice_test() {
-    return [# invalid_refl #];
-    // expected-error@-1 {{cannot splice invalid reflection}}
-    // expected-note@-2 {{custom error message}}
-  }
-
   using ReflectedType = typename [:invalid_refl:];
   // expected-error@-1 {{cannot splice invalid reflection}}
   // expected-note@-2 {{custom error message}}
@@ -41,12 +35,6 @@ namespace template_reflection {
 
   int expr_splice_test() {
     return [:invalid_refl<1>:];
-    // expected-error@-1 {{cannot splice invalid reflection}}
-    // expected-note@-2 {{Error code: 1}}
-  }
-
-  int identifier_splice_test() {
-    return [# invalid_refl<1> #];
     // expected-error@-1 {{cannot splice invalid reflection}}
     // expected-note@-2 {{Error code: 1}}
   }
