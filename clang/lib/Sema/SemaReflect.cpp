@@ -557,8 +557,17 @@ static ConstantExpr *ReflectionToValueExpr(Sema &S, Expr *E) {
                               std::move(Result.Val));
 }
 
-static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl,
-                                         bool AllowValue = false) {
+// FIXME: This is likely to aggressive and probably marks things used
+// that aren't really used.
+static DeclRefExpr *MarkDeclUsedInExprSplice(Sema &S, const DeclRefExpr *DRE) {
+  Decl *ReferencedDecl = const_cast<NamedDecl *>(DRE->getFoundDecl());
+  ReferencedDecl->setReferenced();
+  ReferencedDecl->markUsed(S.Context);
+  return const_cast<DeclRefExpr *>(DRE);
+}
+
+static ExprResult getSplicedExpr(Sema &SemaRef, Expr *Refl,
+                                 bool AllowValue = false) {
   // The operand must be a reflection.
   if (!CheckReflectionOperand(SemaRef, Refl))
     return ExprError();
@@ -576,13 +585,13 @@ static ExprResult getIdExprReflectedExpr(Sema &SemaRef, Expr *Refl,
 
   if (R.isDeclaration())
     if (auto *DRE = DeclReflectionToDeclRefExpr(SemaRef, R, ReflLoc))
-      return DRE;
+      return MarkDeclUsedInExprSplice(SemaRef, DRE);
 
   if (R.isExpression()) {
     Expr *E = const_cast<Expr *>(R.getAsExpression());
 
-    if (isa<DeclRefExpr>(E))
-      return E;
+    if (auto *DRE = dyn_cast<DeclRefExpr>(E))
+      return MarkDeclUsedInExprSplice(SemaRef, DRE);
 
     if (isa<UnresolvedLookupExpr>(E))
       return E;
@@ -602,7 +611,7 @@ ExprResult Sema::ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
   if (Reflection->isTypeDependent() || Reflection->isValueDependent())
     return CXXExprSpliceExpr::Create(Context, SBELoc, Reflection, SEELoc);
 
-  return getIdExprReflectedExpr(*this, Reflection, /*AllowValue=*/true);
+  return getSplicedExpr(*this, Reflection, /*AllowValue=*/true);
 }
 
 ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
@@ -620,7 +629,7 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
   //
   // FIXME: We can refactor this to avoid the creation of this intermediary
   // expression
-  ExprResult ReflectedExprResult = getIdExprReflectedExpr(*this, Refl);
+  ExprResult ReflectedExprResult = getSplicedExpr(*this, Refl);
   if (ReflectedExprResult.isInvalid())
     return ExprError();
 
