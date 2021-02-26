@@ -390,7 +390,7 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
 }
 
 template<template<typename> class Collection>
-static bool HasDependentParts(Collection<Expr *>& Parts) {
+static bool hasDependentParts(Collection<Expr *>& Parts) {
  return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
    return E->isTypeDependent() || E->isValueDependent();
  });
@@ -400,7 +400,7 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                              SmallVectorImpl<Expr *> &Args,
                                              SourceLocation LParenLoc,
                                              SourceLocation RParenLoc) {
-  if (HasDependentParts(Args))
+  if (hasDependentParts(Args))
     return new (Context) CXXReflectPrintLiteralExpr(
         Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
 
@@ -1561,6 +1561,8 @@ bool Sema::BuildCXXIdentifierSplice(
 
     // Get the type of the reflection.
     QualType T = DeduceCanonicalType(*this, E);
+    if (T->isDependentType())
+      continue;
 
     if (T->isConstantArrayType())
       continue;
@@ -1584,7 +1586,7 @@ bool Sema::BuildCXXIdentifierSplice(
   }
 
   // If any components are dependent, we can't compute the name.
-  if (HasDependentParts(Parts)) {
+  if (hasDependentParts(Parts)) {
     Result = &Context.Idents.get(Context, Parts);
     return false;
   }
