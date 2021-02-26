@@ -1,6 +1,12 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
 #include "reflection_iterator.h"
+#include "reflection_query.h"
+
+consteval auto name_of(meta::info refl) {
+  return __reflect(query_get_name, refl);
+}
+
 
 consteval void test_metaclass(meta::info source) {
   for (auto method : meta::range(source)) {
@@ -14,10 +20,10 @@ class base_test_class {
 };
 
 consteval void do_thing() {
-  for (auto field : meta::range(reflexpr(base_test_class))) {
+  for (auto field : meta::range(^base_test_class)) {
     -> fragment class {
         public:
-        constexpr int unqualid("fn_", %{field})() { return 10; }
+        constexpr int [# "fn_", name_of(%{field}) #]() { return 10; }
     };
   }
 }

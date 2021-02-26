@@ -51,7 +51,7 @@ constexpr bool compare(const T& a, const T& b) {
 }
 
 template<typename T>
-bool equal(const T& a, const T& b) {
+constexpr bool equal(const T& a, const T& b) {
   return compare<meta::front(^T)>(a, b);
 }
 

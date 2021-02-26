@@ -27,7 +27,7 @@ class z {
 };
 
 consteval {
-  (void) __reflect_pretty_print(__reflect(query_get_definition, reflexpr(z)));
+  (void) __reflect_pretty_print(__reflect(query_get_definition, ^z));
 }
 
 

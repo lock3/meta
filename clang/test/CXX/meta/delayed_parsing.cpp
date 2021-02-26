@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -freflection -fdelayed-template-parsing -std=c++2a %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 consteval void virtual_destructor(meta::info source) {

@@ -155,5 +155,5 @@ int main() {
 }
 
 consteval {
-  compiler_print_type_definition(reflexpr(Point));
+  compiler_print_type_definition(^Point);
 }

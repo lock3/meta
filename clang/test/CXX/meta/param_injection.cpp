@@ -16,22 +16,22 @@ constexpr int add(int a, int b) {
 class foo {
   consteval {
     {
-      meta::info fn_refl = reflexpr(bar::do_thing);
+      meta::info fn_refl = ^bar::do_thing;
       meta::range params(fn_refl);
 
       -> fragment struct {
         constexpr int new_do_thing(-> %{params}) const {
-          return add(unqualid(... %{params}));
+          return add(...[: %{params} :]...);
         }
       };
     }
     {
-      meta::info fn_refl = reflexpr(bar::undefined_do_thing);
+      meta::info fn_refl = ^bar::undefined_do_thing;
       meta::range params(fn_refl);
 
       -> fragment struct {
         constexpr int new_undefined_do_thing(-> %{params}) const {
-          return add(unqualid(... %{params}));
+          return add(...[: %{params} :]...);
         }
       };
     }
@@ -42,22 +42,22 @@ template<int = 0>
 class foo_two {
   consteval {
     {
-      meta::info fn_refl = reflexpr(bar::do_thing);
+      meta::info fn_refl = ^bar::do_thing;
       meta::range params(fn_refl);
 
       -> fragment struct {
         constexpr int new_do_thing(-> %{params}) const {
-          return add(unqualid(... %{params}));
+          return add(...[: %{params} :]...);
         }
       };
     }
     {
-      meta::info fn_refl = reflexpr(bar::undefined_do_thing);
+      meta::info fn_refl = ^bar::undefined_do_thing;
       meta::range params(fn_refl);
 
       -> fragment struct {
         constexpr int new_undefined_do_thing(-> %{params}) const {
-          return add(unqualid(... %{params}));
+          return add(...[: %{params} :]...);
         }
       };
     }

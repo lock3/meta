@@ -9,6 +9,6 @@ struct foo {
 };
 
 class foo_derived {
-  consteval -> reflexpr(foo::bar);
+  consteval -> ^foo::bar;
   // expected-error@-1 {{a clone of 'b' was required, but was not present in the injectee 'foo_derived'}}
 };

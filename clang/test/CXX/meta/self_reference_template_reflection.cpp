@@ -8,7 +8,7 @@ struct test {
 
   test() {
     consteval -> fragment this {
-      auto ptr = &typename(reflexpr(test))::template f<void>;
+      auto ptr = &typename [: ^test :]::template f<void>;
       (*this.*ptr)();
     };
   }
@@ -23,7 +23,7 @@ struct templ_test {
 
   templ_test() {
     consteval -> fragment this {
-      auto ptr = &typename(reflexpr(templ_test))::template f<void>;
+      auto ptr = &typename [: ^templ_test :]::template f<void>;
       (*this.*ptr)();
     };
   }

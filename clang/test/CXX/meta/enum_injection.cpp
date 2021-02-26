@@ -34,7 +34,7 @@ struct NonTemplatedGen {
     consteval {
       for (int i = 0; i < 3; ++i) {
         -> fragment enum {
-          unqualid("VAL_", %{i}) = %{i * 5}
+          [# "VAL_", %{i} #] = %{i * 5}
         };
       }
     }
@@ -47,7 +47,7 @@ struct TemplatedGen {
     consteval {
       for (int i = 0; i < 3; ++i) {
         -> fragment enum {
-          unqualid("VAL_", %{i + K}) = %{i * 5}
+          [# "VAL_", %{i + K} #] = %{i * 5}
         };
       }
     }

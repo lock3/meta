@@ -4,7 +4,7 @@
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 namespace ns { }
 

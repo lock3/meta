@@ -24,7 +24,7 @@ class foo {
   consteval {
     -> namespace fragment namespace {
       namespace {
-        void unqualid("bar", I)() { }
+        void [# "bar", I #]() { }
       }
     };
   }

@@ -61,7 +61,7 @@ int main() {
   static_assert(&[: ^S::value :] == &S::value);
   check_expr_splice_dependent_addr<^S::value, &S::value>();
 
-  // static_assert(|reflexpr(s1.num)| == 12); // expected-error
+  // static_assert([: ^s1.num :] == 12); // expected-error
 
   static_assert(s1.[: ^S::num :] == 12);
   static_assert(s1.[: ^S::f1 :]() == 42);

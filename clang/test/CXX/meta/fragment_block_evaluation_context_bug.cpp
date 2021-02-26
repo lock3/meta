@@ -9,7 +9,7 @@ consteval const char *name_of(meta::info reflection) {
 template<typename Lambda>
 void call_lambda(Lambda &&lambda) {
   consteval -> fragment {
-    idexpr(%{reflexpr(lambda)})(name_of(%{reflexpr(int)}));
+    [: %{^lambda} :](name_of(%{^int}));
   };
 }
 

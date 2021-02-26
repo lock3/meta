@@ -14,13 +14,13 @@ struct Existing {
 struct New {
   consteval {
     // Fields
-    auto field_1 = reflexpr(Existing::field_1);
+    auto field_1 = ^Existing::field_1;
     __reflect_mod(query_set_new_name, field_1, "ns_field_1");
 
     -> field_1;
 
     // Methods
-    auto method_1 = reflexpr(Existing::method_1);
+    auto method_1 = ^Existing::method_1;
     __reflect_mod(query_set_new_name, method_1, "ns_method_1");
 
     -> method_1;

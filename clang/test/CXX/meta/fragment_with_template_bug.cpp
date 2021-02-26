@@ -6,7 +6,7 @@ struct struct_s {
     int a = 1;
     -> fragment struct {
       template<typename Q, int QV>
-      int unqualid("foo_", %{a})() {
+      int [# "foo_", %{a} #]() {
         T t = TV;
         Q q = QV;
         return t + q;

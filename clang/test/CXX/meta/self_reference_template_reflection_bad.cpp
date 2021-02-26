@@ -10,7 +10,7 @@ struct test {
 
   test() {
     consteval -> fragment this {
-      auto ptr = typename(reflexpr(test))::template f<void>;
+      auto ptr = typename [: ^test :]::template f<void>;
       // expected-error@-1 {{variable 'ptr' with type 'auto' has incompatible initializer of type '<overloaded function type>'}}
       // expected-error@-2 {{declaration of variable 'ptr' with deduced type 'auto' requires an initializer}}
     };
@@ -26,7 +26,7 @@ struct templ_test {
 
   templ_test() {
     consteval -> fragment this {
-      auto ptr = typename(reflexpr(templ_test))::template f<void>;
+      auto ptr = typename [: ^templ_test :]::template f<void>;
       // expected-error@-1 {{variable 'ptr' with type 'auto' has incompatible initializer of type '<overloaded function type>'}}
     };
   }
