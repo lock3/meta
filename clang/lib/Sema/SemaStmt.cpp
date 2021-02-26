@@ -3470,6 +3470,11 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
   if (!RangeClass)
     return StmtError();
+
+  // FIXME: Is this a diagnosable error or are we failing silently?
+  if (RangeClass->isLocalClass())
+    return StmtError();
+
   NestedNameSpecifierLoc NNS =
       GetQualifiedNameForDecl(SemaRef.Context, RangeClass, ColonLoc);
   IdentifierInfo *Name = &SemaRef.Context.Idents.get("get");
