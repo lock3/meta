@@ -25,6 +25,7 @@
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
@@ -2565,13 +2566,13 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
-  OS << "idexpr(";
+void StmtPrinter::VisitCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << ">]";
 }
 
-void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void StmtPrinter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   PrintExpr(E->getBase());
 
   if (E->isArrow())
@@ -2579,17 +2580,19 @@ void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
   else
     OS << ".";
 
-  OS << "idexpr(";
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << ">]";
+}
+
+void StmtPrinter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+  OS << "...[<";
+  PrintExpr(E->getPackSplice()->getOperand());
+  OS << ">]";
 }
 
 void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {
   OS << "(. " << Node->getNameInfo() << " .)";
-}
-
-void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
-  OS << "valueof(...)"; // TODO Finish this
 }
 
 void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
@@ -2601,27 +2604,6 @@ void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
     PrintStmt(*I);
   }
   OS << ')';
-}
-
-void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
-    CXXDependentVariadicReifierExpr *E) {
-  // TODO Finish this
-  switch(E->getKeywordId()) {
-  case tok::kw_valueof:
-    OS << "valueof(...)";
-    break;
-  case tok::kw_idexpr:
-    OS << "idexpr(...)";
-    break;
-  case tok::kw_unqualid:
-    OS << "unqualid(...)";
-    break;
-  case tok::kw_typename:
-    OS << "typename(...)";
-    break;
-  default:
-    break;
-  }
 }
 
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {

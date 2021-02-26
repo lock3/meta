@@ -25,6 +25,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
@@ -1157,7 +1158,7 @@ public:
   SUGARED_TYPE_CLASS(TypeOfExpr)
   SUGARED_TYPE_CLASS(TypeOf)
   SUGARED_TYPE_CLASS(Decltype)
-  SUGARED_TYPE_CLASS(Reflected)
+  SUGARED_TYPE_CLASS(TypeSplice)
   SUGARED_TYPE_CLASS(UnaryTransform)
   TRIVIAL_TYPE_CLASS(Record)
   TRIVIAL_TYPE_CLASS(Enum)
@@ -2969,6 +2970,29 @@ DependentTemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
     Arg.Profile(ID, Context);
 }
 
+static TypeDependence computePackExpansionDependence(QualType Pattern) {
+  auto D = Pattern->getDependence() & ~TypeDependence::UnexpandedPack;
+
+  // If a pack expansion is dependent in any way, its type, and
+  // instantiation dependent.
+  //
+  // Additionally, if we have a pattern with no UnexpandedPack dependence,
+  // assume it's type and instantiation dependent.
+  if (D || !(Pattern->getDependence() & TypeDependence::UnexpandedPack))
+    D |= TypeDependence::DependentInstantiation;
+
+  return D;
+}
+
+PackExpansionType::PackExpansionType(QualType Pattern, QualType Canon,
+                                     Optional<unsigned> NumExpansions)
+    : Type(PackExpansion, Canon,
+           computePackExpansionDependence(Pattern), /*MetaType=*/false),
+      Pattern(Pattern) {
+  PackExpansionTypeBits.NumExpansions =
+      NumExpansions ? *NumExpansions + 1 : 0;
+}
+
 bool Type::isElaboratedTypeSpecifier() const {
   ElaboratedTypeKeyword Keyword;
   if (const auto *Elab = dyn_cast<ElaboratedType>(this))
@@ -3560,31 +3584,56 @@ void DependentIdentifierSpliceType::Profile(
   }
 }
 
-ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
-  : Type(Reflected, Can, toTypeDependence(E->getDependence()),
+TypeSpliceType::TypeSpliceType(Expr *E, QualType T, QualType Can)
+  : Type(TypeSplice, Can, toTypeDependence(E->getDependence()),
          T->isMetaType()),
     Reflection(E), UnderlyingType(T) {
 }
 
-bool ReflectedType::isSugared() const {
-  // A reflected type is sugared if it's non-dependent.
-  return !Reflection->isInstantiationDependent();
-}
-
-QualType ReflectedType::desugar() const {
+QualType TypeSpliceType::desugar() const {
   if (isSugared())
     return getUnderlyingType();
   else
     return QualType(this, 0);
 }
 
-DependentReflectedType::DependentReflectedType(const ASTContext &Cxt, Expr *E)
-  : ReflectedType(E, Cxt.DependentTy), Context(Cxt) { }
+bool TypeSpliceType::isSugared() const {
+  // A reflected type is sugared if it's non-dependent.
+  return !Reflection->isInstantiationDependent();
+}
 
-void DependentReflectedType::Profile(llvm::FoldingSetNodeID &ID,
+DependentTypeSpliceType::DependentTypeSpliceType(const ASTContext &Ctx, Expr *E)
+  : TypeSpliceType(E, Ctx.DependentTy), Context(Ctx) { }
+
+void DependentTypeSpliceType::Profile(llvm::FoldingSetNodeID &ID,
                                      const ASTContext& Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
+
+static TypeDependence computePackSpliceDependence(const PackSplice *PS) {
+  // FIXME: Duplicated by the computeDependence function for
+  // CXXPackSpliceExpr
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
+
+  if (PS->isExpanded()) {
+    for (Expr *SE : PS->getExpansions())
+      Depends |= SE->getDependence();
+  } else {
+    Depends |= PS->getOperand()->getDependence();
+  }
+
+  return toTypeDependence(Depends);
+}
+
+TypePackSpliceType::TypePackSpliceType(const ASTContext &Ctx,
+                                       const PackSplice *PS)
+    : Type(TypePackSplice, Ctx.DependentTy, computePackSpliceDependence(PS),
+           /*MetaType=*/false), PS(PS) { }
+
+SubstTypePackSpliceType::SubstTypePackSpliceType(Expr *ExpansionExpr,
+                                                 QualType Canon)
+    : Type(SubstTypePackSplice, Canon, Canon->getDependence(),
+           Canon->isMetaType()), ExpansionExpr(ExpansionExpr) { }
 
 UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        QualType UnderlyingType, UTTKind UKind,
@@ -4190,7 +4239,8 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
+  case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:
   case Type::SubstTemplateTypeParmPack:
@@ -4286,7 +4336,6 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::Enum:
   case Type::InjectedClassName:
   case Type::PackExpansion:
-  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::Atomic:

@@ -6641,8 +6641,23 @@ void TypeLocReader::VisitDependentIdentifierSpliceTypeLoc(
         TL.getTypePtr()->getArg(I).getKind()));
 }
 
-void TypeLocReader::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
-  TL.setNameLoc(readSourceLocation());
+void TypeLocReader::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
+  TL.setTypenameKeywordLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  TL.setEllipsisLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
+void TypeLocReader::VisitSubstTypePackSpliceTypeLoc(
+                                                SubstTypePackSpliceTypeLoc TL) {
+  TL.setEllipsisLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
 }
 
 void TypeLocReader::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
@@ -6747,11 +6762,6 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
-  TL.setEllipsisLoc(readSourceLocation());
-}
-
-void TypeLocReader::VisitCXXDependentVariadicReifierTypeLoc
-(CXXDependentVariadicReifierTypeLoc TL) {
   TL.setEllipsisLoc(readSourceLocation());
 }
 
@@ -7120,7 +7130,6 @@ ASTReader::getGlobalTypeID(ModuleFile &F, unsigned LocalID) const {
 TemplateArgumentLocInfo
 ASTRecordReader::readTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind) {
   switch (Kind) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return readExpr();
   case TemplateArgument::Type:
@@ -7138,6 +7147,14 @@ ASTRecordReader::readTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind) {
     SourceLocation EllipsisLoc = readSourceLocation();
     return TemplateArgumentLocInfo(getASTContext(), QualifierLoc,
                                    TemplateNameLoc, EllipsisLoc);
+  }
+  case TemplateArgument::PackSplice: {
+    SourceLocation IntroductionEllipsisLoc = readSourceLocation();
+    SourceLocation SBELoc = readSourceLocation();
+    SourceLocation SEELoc = readSourceLocation();
+    SourceLocation ExpansionEllipsisLoc = readSourceLocation();
+    return TemplateArgumentLocInfo(getASTContext(), IntroductionEllipsisLoc,
+                                   SBELoc, SEELoc, ExpansionEllipsisLoc);
   }
   case TemplateArgument::Null:
   case TemplateArgument::Integral:

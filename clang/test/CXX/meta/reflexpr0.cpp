@@ -47,114 +47,114 @@ namespace N {
 }
 
 constexpr int test() {
-  constexpr auto r0 = reflexpr(::);
+  constexpr auto r0 = ^::;
   static_assert(__reflect(query_is_namespace, r0));
 
-  constexpr auto r1 = reflexpr(S);
+  constexpr auto r1 = ^S;
   static_assert(__reflect(query_is_type, __reflect(query_get_type, r1)));
   static_assert(__reflect(query_is_class, r1));
   static_assert(!__reflect(query_is_namespace, r1));
 
-  constexpr auto r2 = reflexpr(E);
+  constexpr auto r2 = ^E;
   static_assert(__reflect(query_is_type, r2));
   static_assert(__reflect(query_is_unscoped_enum, r2));
 
-  constexpr auto r3 = reflexpr(A);
+  constexpr auto r3 = ^A;
   static_assert(__reflect(query_is_expression, r3));
   static_assert(__reflect(query_is_enumerator, r3));
 
-  constexpr auto r4 = reflexpr(EC);
+  constexpr auto r4 = ^EC;
   static_assert(__reflect(query_is_type, r4));
   static_assert(__reflect(query_is_unscoped_enum_type, r4));
   static_assert(__reflect(query_is_scoped_enum_type, r4));
 
-  constexpr auto r5 = reflexpr(EC::A);
+  constexpr auto r5 = ^EC::A;
   static_assert(__reflect(query_is_expression, r5));
   static_assert(__reflect(query_is_enumerator, r5));
 
-  constexpr auto r6 = reflexpr(f);
+  constexpr auto r6 = ^f;
   static_assert(__reflect(query_is_expression, r6));
   static_assert(__reflect(query_is_function, r6));
 
-  constexpr auto r7 = reflexpr(global);
+  constexpr auto r7 = ^global;
 
-  constexpr auto r8 = reflexpr(ovl);
+  constexpr auto r8 = ^ovl;
 
-  constexpr auto r9 = reflexpr(fn_tmpl);
+  constexpr auto r9 = ^fn_tmpl;
 
-  constexpr auto r10 = reflexpr(ClassTemplate);
+  constexpr auto r10 = ^ClassTemplate;
 
-  constexpr auto r11 = reflexpr(ClassTemplate<int>);
+  constexpr auto r11 = ^ClassTemplate<int>;
 
-  constexpr auto r12 = reflexpr(ClassTemplate<int>::function);
+  constexpr auto r12 = ^ClassTemplate<int>::function;
 
-  constexpr auto r13 = reflexpr(ClassTemplate<int>::constexpr_function);
+  constexpr auto r13 = ^ClassTemplate<int>::constexpr_function;
 
-  constexpr auto r14 = reflexpr(ClassTemplate<int>::variable);
+  constexpr auto r14 = ^ClassTemplate<int>::variable;
 
-  constexpr auto r15 = reflexpr(ClassTemplate<int>::constexpr_variable);
+  constexpr auto r15 = ^ClassTemplate<int>::constexpr_variable;
 
-  constexpr auto r16 = reflexpr(ClassTemplate<int>::static_variable);
+  constexpr auto r16 = ^ClassTemplate<int>::static_variable;
 
-  constexpr auto r17 = reflexpr(N);
+  constexpr auto r17 = ^N;
 
-  constexpr auto r18 = reflexpr(N::M);
+  constexpr auto r18 = ^N::M;
 
-  constexpr auto r19 = reflexpr(S::E);
+  constexpr auto r19 = ^S::E;
   // FIXME: This is awkward.
-  static_assert(__reflect(query_get_type, __reflect(query_get_parent, r19)) == reflexpr(S));
+  static_assert(__reflect(query_get_type, __reflect(query_get_parent, r19)) == ^S);
 
-  constexpr auto r20 = reflexpr(S::X);
+  constexpr auto r20 = ^S::X;
   (void)__reflect(query_get_type, r14);
 
-  constexpr auto r21 = reflexpr(S::EC);
+  constexpr auto r21 = ^S::EC;
 
-  constexpr auto r22 = reflexpr(S::EC::X);
+  constexpr auto r22 = ^S::EC::X;
 
-  constexpr auto r23 = reflexpr(S::function);
+  constexpr auto r23 = ^S::function;
 
-  constexpr auto r24 = reflexpr(S::constexpr_function);
+  constexpr auto r24 = ^S::constexpr_function;
 
-  constexpr auto r25 = reflexpr(S::variable);
+  constexpr auto r25 = ^S::variable;
 
-  constexpr auto r26 = reflexpr(S::constexpr_variable);
+  constexpr auto r26 = ^S::constexpr_variable;
 
-  constexpr auto r27 = reflexpr(ClassTemplate<int>::static_variable);
+  constexpr auto r27 = ^ClassTemplate<int>::static_variable;
 
-  constexpr auto r28 = reflexpr(S::E);
+  constexpr auto r28 = ^S::E;
 
-  constexpr auto r29 = reflexpr(S::X);
+  constexpr auto r29 = ^S::X;
 
-  constexpr auto r30 = reflexpr(S::EC);
+  constexpr auto r30 = ^S::EC;
 
-  constexpr auto r31 = reflexpr(S::EC::X);
+  constexpr auto r31 = ^S::EC::X;
 
-  constexpr auto r32 = reflexpr(N::M::E);
+  constexpr auto r32 = ^N::M::E;
 
-  constexpr auto r33 = reflexpr(N::M::A);
+  constexpr auto r33 = ^N::M::A;
 
-  constexpr auto r34 = reflexpr(N::M::EC);
+  constexpr auto r34 = ^N::M::EC;
 
-  constexpr auto r35 = reflexpr(N::M::EC::A);
+  constexpr auto r35 = ^N::M::EC::A;
 
   return 0;
 }
 
 template<typename T>
 consteval int type_template() {
-  auto r = reflexpr(T);
+  auto r = ^T;
   return 0;
 }
 
 template<int N>
 consteval int nontype_template() {
-  auto r = reflexpr(N);
+  auto r = ^N;
   return 0;
 }
 
 template<template<typename> class X>
 consteval int template_template() {
-  auto r = reflexpr(X);
+  auto r = ^X;
   return 0;
 }
 

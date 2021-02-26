@@ -531,6 +531,10 @@ public:
     return Ref.getReflectionModifiers();
   }
 
+  unsigned getOffset() const {
+    return Ref.getReflectionOffset();
+  }
+
   unsigned getOffsetInParent() const {
     return Ref.getReflectionOffset();
   }

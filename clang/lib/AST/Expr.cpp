@@ -2993,14 +2993,6 @@ bool Expr::hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs) {
   return false;
 }
 
-bool Expr::hasDependentVariadicReifierArguments(ArrayRef<Expr *> Exprs) {
-  for (unsigned I = 0; I < Exprs.size(); ++I)
-    if (isa<CXXDependentVariadicReifierExpr>(Exprs[I]))
-      return true;
-
-  return false;
-}
-
 bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
                                  const Expr **Culprit) const {
   assert(!isValueDependent() &&
@@ -3314,12 +3306,11 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXReflectPrintReflectionExprClass:
   case CXXReflectDumpReflectionExprClass:
   case CXXCompilerErrorExprClass:
-  case CXXIdExprExprClass:
-  case CXXMemberIdExprExprClass:
-  case CXXValueOfExprClass:
+  case CXXExprSpliceExprClass:
+  case CXXMemberExprSpliceExprClass:
+  case CXXPackSpliceExprClass:
   case CXXDependentSpliceIdExprClass:
   case CXXConcatenateExprClass:
-  case CXXDependentVariadicReifierExprClass:
   case CXXFragmentExprClass:
   case CXXFragmentCaptureExprClass:
   case CXXInjectedValueExprClass:

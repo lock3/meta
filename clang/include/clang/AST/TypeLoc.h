@@ -2077,12 +2077,175 @@ private:
   }
 };
 
-// FIXME: location of the 'typename' and parens.
-class ReflectedTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
-                                                         ReflectedTypeLoc,
-                                                         ReflectedType> {
+struct TypeSpliceLocInfo {
+  SourceLocation TypenameKWLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class TypeSpliceTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                 TypeSpliceTypeLoc,
+                                                 TypeSpliceType,
+                                                 TypeSpliceLocInfo> {
 public:
-  Expr *getReflection() const { return getTypePtr()->getReflection(); }
+  Expr *getReflection() const {
+    return getTypePtr()->getReflection();
+  }
+
+  SourceLocation getTypenameKeywordLoc() const {
+    return getLocalData()->TypenameKWLoc;
+  }
+
+  void setTypenameKeywordLoc(SourceLocation Loc) {
+    this->getLocalData()->TypenameKWLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getTypenameKeywordLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getTypenameKeywordLoc(), getTypenameKeywordLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
+struct TypePackSpliceLocInfo {
+  SourceLocation EllipsisLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class TypePackSpliceTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                     TypePackSpliceTypeLoc,
+                                                     TypePackSpliceType,
+                                                     TypePackSpliceLocInfo> {
+public:
+  const PackSplice *getPackSplice() const {
+    return getTypePtr()->getPackSplice();
+  }
+
+  SourceLocation getEllipsisLoc() const {
+    return getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  PackSpliceLoc getAsPackSpliceLoc() const {
+    return { getPackSplice(), getEllipsisLoc(), getSBELoc(), getSEELoc() };
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getEllipsisLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
+struct SubstTypePackSpliceLocInfo {
+  SourceLocation EllipsisLoc;
+
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class SubstTypePackSpliceTypeLoc
+    : public ConcreteTypeLoc<UnqualTypeLoc,
+                             SubstTypePackSpliceTypeLoc,
+                             SubstTypePackSpliceType,
+                             SubstTypePackSpliceLocInfo> {
+public:
+  Expr *getExpansionExpr() const {
+    return getTypePtr()->getExpansionExpr();
+  }
+
+  QualType getReplacementType() const {
+    return getTypePtr()->getReplacementType();
+  }
+
+  SourceLocation getEllipsisLoc() const {
+    return getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  void setFromPackSpliceLoc(PackSpliceLoc Loc) {
+    setEllipsisLoc(Loc.getEllipsisLoc());
+    setSBELoc(Loc.getSBELoc());
+    setSEELoc(Loc.getSEELoc());
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getEllipsisLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
 };
 
 struct UnaryTransformTypeLocInfo {
@@ -2553,39 +2716,6 @@ public:
   QualType getInnerType() const {
     return this->getTypePtr()->getPattern();
   }
-};
-
-/// A dependent C++ variadic typename expression.
-struct CXXDependentVariadicReifierTypeLocInfo {
-  SourceLocation EllipsisLoc;
-};
-
-class CXXDependentVariadicReifierTypeLoc :
-    public ConcreteTypeLoc<UnqualTypeLoc, CXXDependentVariadicReifierTypeLoc,
-                           CXXDependentVariadicReifierType,
-                           CXXDependentVariadicReifierTypeLocInfo> {
-public:
-    SourceLocation getEllipsisLoc() const {
-    return this->getLocalData()->EllipsisLoc;
-  }
-
-  void setEllipsisLoc(SourceLocation Loc) {
-    this->getLocalData()->EllipsisLoc = Loc;
-  }
-
-  SourceRange getLocalSourceRange() const {
-    return SourceRange(getEllipsisLoc(), getEllipsisLoc());
-  }
-
-  void initializeLocal(ASTContext &Context, SourceLocation Loc) {
-    setEllipsisLoc(Loc);
-  }
-
-  TypeLoc getPatternLoc() const {
-    return getInnerTypeLoc();
-  }
-
-  QualType getInnerType() const;
 };
 
 struct AtomicTypeLocInfo {

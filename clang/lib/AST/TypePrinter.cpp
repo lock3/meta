@@ -19,6 +19,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -213,7 +214,9 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::TypeOf:
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
-    case Type::Reflected:
+    case Type::TypeSplice:
+    case Type::TypePackSplice:
+    case Type::SubstTypePackSplice:
     case Type::UnaryTransform:
     case Type::Record:
     case Type::Enum:
@@ -267,7 +270,6 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
     case Type::MacroQualified:
-    case Type::CXXDependentVariadicReifier:
       CanPrefixQualifiers = false;
       break;
 
@@ -1105,7 +1107,7 @@ void TypePrinter::printDependentIdentifierSpliceBefore(
   if (Qualifier)
     Qualifier->print(OS, Policy);
 
-  OS << "unqualid(" << T->getIdentifierInfo()->getName() << ")";
+  OS << "[# " << T->getIdentifierInfo()->getName() << " #]";
 
   if (T->getNumArgs()) {
     IncludeStrongLifetimeRAII Strong(Policy);
@@ -1118,20 +1120,44 @@ void TypePrinter::printDependentIdentifierSpliceBefore(
 void TypePrinter::printDependentIdentifierSpliceAfter(
     const DependentIdentifierSpliceType *T, raw_ostream &OS) { }
 
-void TypePrinter::printReflectedBefore(const ReflectedType *T,
-                                       raw_ostream &OS) {
+void TypePrinter::printTypeSpliceBefore(const TypeSpliceType *T,
+                                        raw_ostream &OS) {
   if (T->isDependentType()) {
-    OS << "typename(";
+    OS << "typename [<";
     if (T->getReflection())
       T->getReflection()->printPretty(OS, nullptr, Policy);
-    OS << ')';
+    OS << ">]";
   } else {
     print(T->getUnderlyingType(), OS, StringRef());
   }
   spaceBeforePlaceHolder(OS);
 }
-void TypePrinter::printReflectedAfter(const ReflectedType *T,
-                                      raw_ostream &OS) { }
+
+void TypePrinter::printTypeSpliceAfter(const TypeSpliceType *T,
+                                       raw_ostream &OS) { }
+
+void TypePrinter::printTypePackSpliceBefore(const TypePackSpliceType *T,
+                                            raw_ostream &OS) {
+  OS << "...[<";
+  T->getPackSplice()->getOperand()->printPretty(OS, nullptr, Policy);
+  OS << ">]";
+  spaceBeforePlaceHolder(OS);
+}
+
+void TypePrinter::printTypePackSpliceAfter(const TypePackSpliceType *T,
+                                           raw_ostream &OS) { }
+
+void TypePrinter::printSubstTypePackSpliceBefore(
+                            const SubstTypePackSpliceType *T, raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+  printBefore(T->getReplacementType(), OS);
+}
+
+void TypePrinter::printSubstTypePackSpliceAfter(
+                            const SubstTypePackSpliceType *T, raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+  printAfter(T->getReplacementType(), OS);
+}
 
 void TypePrinter::printUnaryTransformBefore(const UnaryTransformType *T,
                                             raw_ostream &OS) {
@@ -1552,17 +1578,6 @@ void TypePrinter::printPackExpansionBefore(const PackExpansionType *T,
 void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
                                           raw_ostream &OS) {
   printAfter(T->getPattern(), OS);
-  OS << "...";
-}
-
-void TypePrinter::printCXXDependentVariadicReifierBefore(
-  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
-  printBefore(T->getRange()->getType(), OS);
-}
-
-void TypePrinter::printCXXDependentVariadicReifierAfter(
-  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
-  printAfter(T->getRange()->getType(), OS);
   OS << "...";
 }
 

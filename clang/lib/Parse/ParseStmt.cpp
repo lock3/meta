@@ -210,7 +210,10 @@ Retry:
     cutOffParsing();
     return StmtError();
 
-  case tok::kw_unqualid: {
+  case tok::l_square: {
+    if (NextToken().isNot(tok::hash))
+      goto DefaultFallback;
+
     if (AnnotateIdentifierSplice())
       return StmtError();
 
@@ -250,6 +253,7 @@ Retry:
   }
 
   default:
+  DefaultFallback:
     return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs, GNUAttributeLoc);
 
   case tok::kw___attribute: {

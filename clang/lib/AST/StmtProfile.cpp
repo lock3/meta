@@ -20,6 +20,7 @@
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/ODRHash.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtVisitor.h"
 #include "llvm/ADT/FoldingSet.h"
 using namespace clang;
@@ -72,6 +73,9 @@ namespace {
 
     /// Visit a single template argument.
     void VisitTemplateArgument(const TemplateArgument &Arg);
+
+    /// Visit a pack splice.
+    void VisitPackSplice(const PackSplice *PS);
   };
 
   class StmtProfilerWithPointers : public StmtProfiler {
@@ -2135,29 +2139,20 @@ void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
+void StmtProfiler::VisitCXXExprSpliceExpr(const CXXExprSpliceExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXMemberIdExprExpr(const CXXMemberIdExprExpr *E) {
+void StmtProfiler::VisitCXXMemberExprSpliceExpr(const CXXMemberExprSpliceExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXPackSpliceExpr(const CXXPackSpliceExpr *E) {
   VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXDependentSpliceIdExpr(const CXXDependentSpliceIdExpr *E) {
   VisitName(E->getNameInfo().getName());
-}
-
-void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
-  VisitExpr(E);
-}
-
-void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
-  VisitExpr(E);
-}
-
-void StmtProfiler::VisitCXXDependentVariadicReifierExpr(
-    const CXXDependentVariadicReifierExpr *E) {
-  VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
@@ -2169,6 +2164,10 @@ void StmtProfiler::VisitCXXFragmentCaptureExpr(const CXXFragmentCaptureExpr *E) 
 }
 
 void StmtProfiler::VisitCXXInjectedValueExpr(const CXXInjectedValueExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
   VisitExpr(E);
 }
 
@@ -2308,7 +2307,6 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     VisitType(Arg.getIntegralType());
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     Visit(Arg.getAsExpr());
     break;
@@ -2317,7 +2315,21 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     for (const auto &P : Arg.pack_elements())
       VisitTemplateArgument(P);
     break;
+
+  case TemplateArgument::PackSplice:
+    VisitPackSplice(Arg.getPackSplice());
+    break;
   }
+}
+
+void StmtProfiler::VisitPackSplice(const PackSplice *PS) {
+  Visit(PS->getOperand());
+
+  if (!PS->isExpanded())
+    return;
+
+  for (auto *SubOperand : PS->getExpansions())
+    Visit(SubOperand);
 }
 
 void Stmt::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,

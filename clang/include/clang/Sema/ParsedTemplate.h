@@ -36,8 +36,8 @@ namespace clang {
       NonType,
       /// A template template argument, stored as a template name.
       Template,
-      /// A dependent template argument, stored as an expression.
-      Dependent
+      /// A pack splice parameter, stored as an expression.
+      PackSplice
     };
 
     /// Build an empty template argument.
@@ -68,6 +68,21 @@ namespace clang {
         Arg(Template.getAsOpaquePtr()),
         SS(SS), Loc(TemplateLoc), EllipsisLoc() { }
 
+    /// Create a pack splice template argument.
+    ///
+    /// \param E the operand of the pack splice operator.
+    ///
+    /// \param IntroEllipsisLoc the location of the ellipsis introducing
+    /// the pack splice.
+    ///
+    /// \param EndEllipsisLoc the location of the ellipsis triggering
+    /// expansion if present.
+    ParsedTemplateArgument(Expr *E, SourceLocation IntroEllipsisLoc,
+                           SourceLocation EndEllipsisLoc)
+      : Kind(ParsedTemplateArgument::PackSplice),
+        Arg(reinterpret_cast<void *>(E)), Loc(IntroEllipsisLoc),
+        EllipsisLoc(EndEllipsisLoc) { }
+
     /// Determine whether the given template argument is invalid.
     bool isInvalid() const { return Arg == nullptr; }
 
@@ -82,8 +97,7 @@ namespace clang {
 
     /// Retrieve the non-type template argument's expression.
     Expr *getAsExpr() const {
-      assert((Kind == NonType || Kind == Dependent)
-             && "Not a non-type template argument");
+      assert(Kind == NonType && "Not a non-type template argument");
       return static_cast<Expr*>(Arg);
     }
 
@@ -91,6 +105,12 @@ namespace clang {
     ParsedTemplateTy getAsTemplate() const {
       assert(Kind == Template && "Not a template template argument");
       return ParsedTemplateTy::getFromOpaquePtr(Arg);
+    }
+
+    /// Retrieve the operand for a pack splice.
+    Expr *getPackSpliceOperand() const {
+      assert(Kind == PackSplice && "Not a pack splice template argument");
+      return static_cast<Expr*>(Arg);
     }
 
     /// Retrieve the location of the template argument.
@@ -105,10 +125,11 @@ namespace clang {
     }
 
     /// Retrieve the location of the ellipsis that makes a template
-    /// template argument into a pack expansion.
+    /// template argument or a pack splice into a pack expansion.
     SourceLocation getEllipsisLoc() const {
-      assert(Kind == Template &&
-             "Only template template arguments can have an ellipsis");
+      assert((Kind == Template || Kind == PackSplice) &&
+             "Only template template arguments and pack splices "
+             "can have an ellipsis");
       return EllipsisLoc;
     }
 

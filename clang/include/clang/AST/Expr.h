@@ -962,7 +962,6 @@ public:
   bool isImplicitCXXThis() const;
 
   static bool hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs);
-  static bool hasDependentVariadicReifierArguments(ArrayRef<Expr *> Exprs);
 
   /// For an expression of class type or pointer to class type,
   /// return the most derived class decl the expression is known to refer to.

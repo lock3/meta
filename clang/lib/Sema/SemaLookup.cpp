@@ -2646,7 +2646,8 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
   //   -- [...] ;
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
-      break;
+    case TemplateArgument::PackSplice:
+      llvm_unreachable("these shouldn't be present during ADL");
 
     case TemplateArgument::Type:
       // [...] the namespaces and classes associated with the types of the
@@ -2674,7 +2675,6 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:
       // [Note: non-type template arguments do not contribute to the set of
@@ -3413,9 +3413,7 @@ Sema::LookupLiteralOperator(Scope *S, LookupResult &R,
         if (StringLit) {
           SFINAETrap Trap(*this);
           SmallVector<TemplateArgument, 1> Checked;
-          TemplateArgumentLoc Arg(
-              TemplateArgument(StringLit, TemplateArgument::Expression),
-              StringLit);
+          TemplateArgumentLoc Arg(TemplateArgument(StringLit), StringLit);
           if (CheckTemplateArgument(Params->getParam(0), Arg, FD,
                                     R.getNameLoc(), R.getNameLoc(), 0,
                                     Checked) ||

@@ -2267,6 +2267,10 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
     return getTypeInfo(cast<SubstTemplateTypeParmType>(T)->
                        getReplacementType().getTypePtr());
 
+  case Type::SubstTypePackSplice:
+    return getTypeInfo(cast<SubstTypePackSpliceType>(T)->
+                       getReplacementType().getTypePtr());
+
   case Type::Auto:
   case Type::DeducedTemplateSpecialization: {
     const auto *A = cast<DeducedType>(T);
@@ -3466,7 +3470,8 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
+  case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -3479,7 +3484,6 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::PackExpansion:
   case Type::ExtInt:
   case Type::DependentExtInt:
-  case Type::CXXDependentVariadicReifier:
   case Type::DependentIdentifierSplice:
   case Type::CXXRequiredType:
     llvm_unreachable("type should never be variably-modified");
@@ -4934,7 +4938,7 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
     if (NTTP->isParameterPack())
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
                                         None);
-    Arg = TemplateArgument(E, TemplateArgument::Expression);
+    Arg = TemplateArgument(E);
   } else {
     auto *TTP = cast<TemplateTemplateParmDecl>(Param);
     if (TTP->isParameterPack())
@@ -4986,17 +4990,6 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
       PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
-  return QualType(T, 0);
-}
-
-QualType
-ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
-                                               SourceLocation EllipsisLoc,
-                                               SourceLocation RParenLoc) {
-  CXXDependentVariadicReifierType *T =
-    new (*this, TypeAlignment)
-    CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
-  Types.push_back(T);
   return QualType(T, 0);
 }
 
@@ -5455,35 +5448,51 @@ QualType ASTContext::getDependentIdentifierSpliceType(
   return QualType(T, 0);
 }
 
-QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
-  ReflectedType *RT;
+QualType ASTContext::getTypeSpliceType(Expr *E, QualType UnderlyingType) const {
+  TypeSpliceType *TST;
 
-  const Type *UnderlyingType = &(*T);
-  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingType)) {
-    T = LITy->getType();
-  }
+  // Unwrap any LocInfoType introduced via reflexpr(Ty)
+  const Type *UnderlyingTyPtr = UnderlyingType.getTypePtr();
+  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingTyPtr))
+    UnderlyingType = LITy->getType();
 
   if (E->isInstantiationDependent()) {
     llvm::FoldingSetNodeID ID;
-    DependentReflectedType::Profile(ID, *this, E);
+    DependentTypeSpliceType::Profile(ID, *this, E);
 
     void *InsertPos = nullptr;
-    DependentReflectedType *Canon
-      = DependentReflectedTypes.FindNodeOrInsertPos(ID, InsertPos);
+    DependentTypeSpliceType *Canon
+      = DependentTypeSpliceTypes.FindNodeOrInsertPos(ID, InsertPos);
     if (!Canon) {
-      // Build a new, canonical typename(E) type.
-      Canon = new (*this, TypeAlignment) DependentReflectedType(*this, E);
-      DependentReflectedTypes.InsertNode(Canon, InsertPos);
+      // Build a new, canonical typename [< E> ] type.
+      Canon = new (*this, TypeAlignment) DependentTypeSpliceType(*this, E);
+      DependentTypeSpliceTypes.InsertNode(Canon, InsertPos);
     }
-    RT = new (*this, TypeAlignment) ReflectedType(E, T, QualType(Canon, 0));
+    TST = new (*this, TypeAlignment) TypeSpliceType(E, UnderlyingType,
+                                                    QualType(Canon, 0));
   } else {
-    CanQualType Canon = getCanonicalType(T);
-    RT = new (*this, TypeAlignment) ReflectedType(E, T, Canon);
+    CanQualType Canon = getCanonicalType(UnderlyingType);
+    TST = new (*this, TypeAlignment) TypeSpliceType(E, UnderlyingType, Canon);
   }
-  Types.push_back(RT);
-  return QualType(RT, 0);
+  Types.push_back(TST);
+  return QualType(TST, 0);
 }
 
+QualType ASTContext::getTypePackSpliceType(const PackSplice *PS) const {
+  auto *Ty = new (*this, TypeAlignment) TypePackSpliceType(*this, PS);
+  Types.push_back(Ty);
+  return QualType(Ty, 0);
+}
+
+QualType ASTContext::getSubstTypePackSpliceType(Expr *ExpansionExpr,
+                                                QualType Replacement) const {
+  QualType CanReplacement = getCanonicalType(Replacement);
+
+  auto *Ty = new (*this, TypeAlignment)
+      SubstTypePackSpliceType(ExpansionExpr, CanReplacement);
+  Types.push_back(Ty);
+  return QualType(Ty, 0);
+}
 
 /// getUnaryTransformationType - We don't unique these, since the memory
 /// savings are minimal and these are rare.
@@ -5993,10 +6002,8 @@ TemplateArgument
 ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
-      return Arg;
-
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
+    case TemplateArgument::PackSplice:
       return Arg;
 
     case TemplateArgument::Declaration: {

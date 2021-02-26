@@ -4,25 +4,25 @@
 
 int x;
 
-static_assert(__reflect(query_is_variable, reflexpr(x)));
-static_assert(__reflect(query_has_static_storage, reflexpr(x)));
-static_assert(!__reflect(query_has_thread_local_storage, reflexpr(x)));
-static_assert(!__reflect(query_has_automatic_storage, reflexpr(x)));
+static_assert(__reflect(query_is_variable, ^x));
+static_assert(__reflect(query_has_static_storage, ^x));
+static_assert(!__reflect(query_has_thread_local_storage, ^x));
+static_assert(!__reflect(query_has_automatic_storage, ^x));
 
 thread_local int k;
 
-static_assert(__reflect(query_is_variable, reflexpr(k)));
-static_assert(!__reflect(query_has_static_storage, reflexpr(k)));
-static_assert(__reflect(query_has_thread_local_storage, reflexpr(k)));
-static_assert(!__reflect(query_has_automatic_storage, reflexpr(k)));
+static_assert(__reflect(query_is_variable, ^k));
+static_assert(!__reflect(query_has_static_storage, ^k));
+static_assert(__reflect(query_has_thread_local_storage, ^k));
+static_assert(!__reflect(query_has_automatic_storage, ^k));
 
 void local() {
   int y;
 
-  static_assert(__reflect(query_is_variable, reflexpr(y)));
-  static_assert(!__reflect(query_has_static_storage, reflexpr(y)));
-  static_assert(!__reflect(query_has_thread_local_storage, reflexpr(y)));
-  static_assert(__reflect(query_has_automatic_storage, reflexpr(y)));
+  static_assert(__reflect(query_is_variable, ^y));
+  static_assert(!__reflect(query_has_static_storage, ^y));
+  static_assert(!__reflect(query_has_thread_local_storage, ^y));
+  static_assert(__reflect(query_has_automatic_storage, ^y));
 }
 
-static_assert(!__reflect(query_is_variable, reflexpr(local)));
+static_assert(!__reflect(query_is_variable, ^local));

@@ -1959,7 +1959,6 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
           TheCU, Name, nullptr,
           CollectTemplateParams(nullptr, TA.getPackAsArray(), Unit)));
       break;
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       const Expr *E = TA.getAsExpr();
       QualType T = E->getType();
@@ -1973,6 +1972,7 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
     } break;
     // And the following should never occur:
     case TemplateArgument::TemplateExpansion:
+    case TemplateArgument::PackSplice:
     case TemplateArgument::Null:
       llvm_unreachable(
           "These argument types shouldn't exist in concrete types");
@@ -3087,8 +3087,8 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::Decltype:
       T = cast<DecltypeType>(T)->getUnderlyingType();
       break;
-    case Type::Reflected:
-      T = cast<ReflectedType>(T)->getUnderlyingType();
+    case Type::TypeSplice:
+      T = cast<TypeSpliceType>(T)->getUnderlyingType();
       break;
     case Type::UnaryTransform:
       T = cast<UnaryTransformType>(T)->getUnderlyingType();
@@ -3297,10 +3297,11 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::Paren:
   case Type::MacroQualified:
   case Type::SubstTemplateTypeParm:
+  case Type::SubstTypePackSplice:
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
   case Type::UnaryTransform:
     break;
   }

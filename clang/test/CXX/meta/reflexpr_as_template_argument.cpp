@@ -1,8 +1,8 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
 template<auto T, auto V>
-constexpr typename(T) test() {
-  typename(T) x = valueof(V);
+constexpr typename [:T:] test() {
+  typename [:T:] x = [:V:];
   return x;
 }
 
@@ -13,8 +13,8 @@ struct S {
 };
 
 int main() {
-  constexpr int i = test<reflexpr(int), reflexpr(4)>();
-  constexpr S s = test<reflexpr(S), reflexpr(S(2))>();
+  constexpr int i = test<^int, ^4>();
+  constexpr S s = test<^S, ^S(2)>();
 
   static_assert(i == 4);
   static_assert(s.i == 2);

@@ -204,6 +204,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
   case ConstraintsCheck:
   case NestedRequirementConstraintsCheck:
   case ForLoopInstantiation:
+  case NonDependentPackSplicing:
     return true;
 
   case RequirementInstantiation:
@@ -846,6 +847,11 @@ void Sema::PrintInstantiationStack() {
                    diag::note_parameter_mapping_substitution_here)
           << Active->InstantiationRange;
       break;
+    case CodeSynthesisContext::NonDependentPackSplicing:
+      Diags.Report(Active->PointOfInstantiation,
+                   diag::note_non_dependent_pack_splicing)
+          << Active->InstantiationRange;
+      break;
     }
   }
 }
@@ -902,6 +908,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
     case CodeSynthesisContext::DefiningSynthesizedFunction:
     case CodeSynthesisContext::InitializingStructuredBinding:
     case CodeSynthesisContext::MarkingClassDllexported:
+    case CodeSynthesisContext::NonDependentPackSplicing:
       // This happens in a context unrelated to template instantiation, so
       // there is no SFINAE.
       return None;
@@ -983,6 +990,13 @@ namespace {
 
     void ExpandingFunctionParameterPack(ParmVarDecl *Pack) {
       SemaRef.CurrentInstantiationScope->MakeInstantiatedLocalArgPack(Pack);
+    }
+
+    // Expose this function as public for the hack that is SubstPacks.
+    // See TreeTransform's copy of  this function for more information
+    // on this issue.
+    bool TransformPacks(SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
+      return inherited::TransformPacks(Unexpanded);
     }
 
     TemplateArgument ForgetPartiallySubstitutedPack() {
@@ -1217,7 +1231,8 @@ bool TemplateInstantiator::AlreadyTransformed(QualType T) {
   if (T.isNull())
     return true;
 
-  if (T->isInstantiationDependentType() || T->isVariablyModifiedType())
+  if (T->isInstantiationDependentType() || T->isVariablyModifiedType() ||
+      T->containsUnexpandedParameterPack())
     return false;
 
   getSema().MarkDeclarationsReferencedInType(Loc, T);
@@ -2150,7 +2165,8 @@ TypeSourceInfo *Sema::SubstType(TypeSourceInfo *T,
          "instantiation stack");
 
   if (!T->getType()->isInstantiationDependentType() &&
-      !T->getType()->isVariablyModifiedType())
+      !T->getType()->isVariablyModifiedType() &&
+      !T->getType()->containsUnexpandedParameterPack())
     return T;
 
   TemplateInstantiator Instantiator(*this, Args, Loc, Entity);
@@ -2170,7 +2186,8 @@ TypeSourceInfo *Sema::SubstType(TypeLoc TL,
     return nullptr;
 
   if (!TL.getType()->isInstantiationDependentType() &&
-      !TL.getType()->isVariablyModifiedType()) {
+      !TL.getType()->isVariablyModifiedType() &&
+      !TL.getType()->containsUnexpandedParameterPack()) {
     // FIXME: Make a copy of the TypeLoc data here, so that we can
     // return a new TypeSourceInfo. Inefficient!
     TypeLocBuilder TLB;
@@ -2559,25 +2576,22 @@ bool Sema::SubstParmTypes(
       Loc, Params, nullptr, ExtParamInfos, ParamTypes, OutParams, ParamInfos);
 }
 
-/// Perform substitution on the base class specifiers of the
-/// given class template specialization.
-///
-/// Produces a diagnostic and returns true on error, returns false and
-/// attaches the instantiated base classes to the class template
-/// specialization if successful.
-bool
-Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
-                          CXXRecordDecl *Pattern,
-                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+bool Sema::SubstBaseSpecifiers(
+    CXXRecordDecl *Class,
+    CXXBaseSpecifier *Inputs, unsigned NumInputs,
+    const MultiLevelTemplateArgumentList &TemplateArgs,
+    SmallVectorImpl<CXXBaseSpecifier *> &Outputs) {
   bool Invalid = false;
-  SmallVector<CXXBaseSpecifier*, 4> InstantiatedBases;
-  for (const auto &Base : Pattern->bases()) {
-    if (!Base.getType()->isDependentType()) {
-      if (const CXXRecordDecl *RD = Base.getType()->getAsCXXRecordDecl()) {
+  for (unsigned I = 0; I != NumInputs; ++I) {
+    CXXBaseSpecifier Base = Inputs[I];
+    QualType BaseType = Base.getType();
+    bool IsTypePackSplice = isa<TypePackSpliceType>(BaseType.getTypePtr());
+    if (!BaseType->isDependentType() && !IsTypePackSplice) {
+      if (const CXXRecordDecl *RD = BaseType->getAsCXXRecordDecl()) {
         if (RD->isInvalidDecl())
-          Instantiation->setInvalidDecl();
+          Invalid = true;
       }
-      InstantiatedBases.push_back(new (Context) CXXBaseSpecifier(Base));
+      Outputs.push_back(new (Context) CXXBaseSpecifier(Base));
       continue;
     }
 
@@ -2589,6 +2603,11 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       collectUnexpandedParameterPacks(Base.getTypeSourceInfo()->getTypeLoc(),
                                       Unexpanded);
+      if (SubstPacks(Unexpanded, TemplateArgs)) {
+        Invalid = true;
+        continue;
+      }
+
       bool ShouldExpand = false;
       bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;
@@ -2605,11 +2624,11 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       // If we should expand this pack expansion now, do so.
       if (ShouldExpand) {
         for (unsigned I = 0; I != *NumExpansions; ++I) {
-            Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
+          Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
 
           TypeSourceInfo *BaseTypeLoc = SubstType(Base.getTypeSourceInfo(),
                                                   TemplateArgs,
-                                              Base.getSourceRange().getBegin(),
+                                               Base.getSourceRange().getBegin(),
                                                   DeclarationName());
           if (!BaseTypeLoc) {
             Invalid = true;
@@ -2617,13 +2636,13 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
           }
 
           if (CXXBaseSpecifier *InstantiatedBase
-                = CheckBaseSpecifier(Instantiation,
+                = CheckBaseSpecifier(Class,
                                      Base.getSourceRange(),
                                      Base.isVirtual(),
                                      Base.getAccessSpecifier(),
                                      BaseTypeLoc,
                                      SourceLocation()))
-            InstantiatedBases.push_back(InstantiatedBase);
+            Outputs.push_back(InstantiatedBase);
           else
             Invalid = true;
         }
@@ -2638,37 +2657,6 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                               TemplateArgs,
                               Base.getSourceRange().getBegin(),
                               DeclarationName());
-    } else if (isa<CXXDependentVariadicReifierType>(Base.getType().getTypePtr())) {
-      TemplateInstantiator::TreeTransform Transformer(*this);
-      llvm::SmallVector<QualType, 8> ReifiedTypes;
-      CXXDependentVariadicReifierType const *Reifier
-        = cast<CXXDependentVariadicReifierType>(Base.getType().getTypePtr());
-      Transformer.MaybeTransformVariadicReifier(Reifier, ReifiedTypes);
-
-      for (auto ReifiedType : ReifiedTypes) {
-        BaseTypeLoc =
-          Context.CreateTypeSourceInfo(ReifiedType,
-                              TypeLoc::getFullDataSizeForType(ReifiedType));
-        BaseTypeLoc->getTypeLoc().initialize(Context, Reifier->getBeginLoc());
-        if (!BaseTypeLoc) {
-          Invalid = true;
-          continue;
-        }
-
-        SourceRange BaseRange(Reifier->getBeginLoc(), Reifier->getEndLoc());
-        if (CXXBaseSpecifier *InstantiatedBase =
-            CheckBaseSpecifier(Instantiation,
-                               BaseRange,
-                               Base.isVirtual(),
-                               Base.getAccessSpecifierAsWritten(),
-                               BaseTypeLoc,
-                               SourceLocation()))
-          InstantiatedBases.push_back(InstantiatedBase);
-        else
-          Invalid = true;
-      }
-
-      continue;
     } else {
       BaseTypeLoc = SubstType(Base.getTypeSourceInfo(),
                               TemplateArgs,
@@ -2682,21 +2670,38 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
     }
 
     if (CXXBaseSpecifier *InstantiatedBase
-          = CheckBaseSpecifier(Instantiation,
+          = CheckBaseSpecifier(Class,
                                Base.getSourceRange(),
                                Base.isVirtual(),
                                Base.getAccessSpecifierAsWritten(),
                                BaseTypeLoc,
                                EllipsisLoc))
-      InstantiatedBases.push_back(InstantiatedBase);
+      Outputs.push_back(InstantiatedBase);
     else
       Invalid = true;
   }
-
-  if (!Invalid && AttachBaseSpecifiers(Instantiation, InstantiatedBases))
-    Invalid = true;
-
   return Invalid;
+}
+
+/// Perform substitution on the base class specifiers of the
+/// given class template specialization.
+///
+/// Produces a diagnostic and returns true on error, returns false and
+/// attaches the instantiated base classes to the class template
+/// specialization if successful.
+static bool SubstBaseSpecifiers(
+    Sema &SemaRef, CXXRecordDecl *Instantiation, CXXRecordDecl *Pattern,
+    const MultiLevelTemplateArgumentList &TemplateArgs) {
+  SmallVector<CXXBaseSpecifier *, 4> InstantiatedBases;
+  if (SemaRef.SubstBaseSpecifiers(Instantiation, Pattern->bases_begin(),
+                                  Pattern->getNumBases(), TemplateArgs,
+                                  InstantiatedBases))
+    return true;
+
+  if (SemaRef.AttachBaseSpecifiers(Instantiation, InstantiatedBases))
+    return true;
+
+  return false;
 }
 
 // Defined via #include from SemaTemplateInstantiateDecl.cpp
@@ -2812,7 +2817,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   Instantiation->setTagKind(Pattern->getTagKind());
 
   // Do substitution on the base class specifiers.
-  if (SubstBaseSpecifiers(Instantiation, Pattern, TemplateArgs))
+  if (::SubstBaseSpecifiers(*this, Instantiation, Pattern, TemplateArgs))
     Instantiation->setInvalidDecl();
 
   TemplateDeclInstantiator Instantiator(*this, Instantiation, TemplateArgs);
@@ -3675,6 +3680,13 @@ bool Sema::Subst(const TemplateArgumentLoc *Args, unsigned NumArgs,
                                     DeclarationName());
 
   return Instantiator.TransformTemplateArguments(Args, NumArgs, Result);
+}
+
+bool Sema::SubstPacks(SmallVectorImpl<UnexpandedParameterPack> &Unexpanded,
+                      const MultiLevelTemplateArgumentList &TemplateArgs) {
+  TemplateInstantiator Instantiator(*this, TemplateArgs,
+                                    SourceLocation(), DeclarationName());
+  return Instantiator.TransformPacks(Unexpanded);
 }
 
 static const Decl *getCanonicalParmVarDecl(const Decl *D) {

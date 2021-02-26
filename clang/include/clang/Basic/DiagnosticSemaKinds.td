@@ -2856,26 +2856,27 @@ def err_reflect_print_literal_wrong_operand_type : Error<
   "expected either integer or string operand">;
 def err_invalid_reflection_wrong_operand_type : Error<
   "expected a string operand">;
-def err_reify_invalid_reflection : Error<
-  "cannot reify invalid reflection">;
+def err_splice_invalid_reflection : Error<
+  "cannot splice invalid reflection">;
+def err_expression_unexpandable : Error<
+  "cannot expand expression">;
 def note_user_defined_note : Note<
   "%0">;
 def err_compiler_error_wrong_operand_type : Error<
   "expected a string operand">;
 def err_concatenate_wrong_operand_type : Error<
   "expected either integer or string operand">;
+def err_unexpanded_pack_splice : Error<
+  "template argument contains an unexpanded pack splice">;
+def err_pack_splice_mismatch : Error<
+  "pack splice element %1 does not splice as an %select{expression|type}0">;
+def note_non_dependent_pack_splicing : Note<
+  "while splicing a non-dependent pack declared here">;
 
 def err_constexpr_range_iteration_failed : Error<
   "constexpr range iteration failed">;
 
 def err_meta_type_constexpr : Error<"meta type variables must be constexpr">;
-
-// variadic reifiers
-def err_namespace_as_variadic_reifier : Error<
-  "'namespace' cannot be used as a variadic reifier.">;
-def err_invalid_reifier_context : Error<
-  "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
-   "reifier in this context: %select{expression|typename}1 expected.">;
 
 // declaration names
 def err_reflected_id_with_integer_prefix : Error<

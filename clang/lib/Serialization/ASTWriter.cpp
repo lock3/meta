@@ -377,8 +377,23 @@ void TypeLocWriter::VisitDependentIdentifierSpliceTypeLoc(
 }
 
 
-void TypeLocWriter::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
-  Record.AddSourceLocation(TL.getNameLoc());
+void TypeLocWriter::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getTypenameKeywordLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
+
+void TypeLocWriter::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
+
+void TypeLocWriter::VisitSubstTypePackSpliceTypeLoc(
+                                                SubstTypePackSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
 }
 
 void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
@@ -484,11 +499,6 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
-  Record.AddSourceLocation(TL.getEllipsisLoc());
-}
-
-void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
-(CXXDependentVariadicReifierTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
 }
 
@@ -5361,7 +5371,6 @@ void ASTRecordWriter::AddCXXTemporary(const CXXTemporary *Temp) {
 void ASTRecordWriter::AddTemplateArgumentLocInfo(
     TemplateArgument::ArgKind Kind, const TemplateArgumentLocInfo &Arg) {
   switch (Kind) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
     break;
@@ -5376,6 +5385,12 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
     AddNestedNameSpecifierLoc(Arg.getTemplateQualifierLoc());
     AddSourceLocation(Arg.getTemplateNameLoc());
     AddSourceLocation(Arg.getTemplateEllipsisLoc());
+    break;
+  case TemplateArgument::PackSplice:
+    AddSourceLocation(Arg.getPackSpliceIntroductionEllipsisLoc());
+    AddSourceLocation(Arg.getPackSpliceSBELoc());
+    AddSourceLocation(Arg.getPackSpliceSEELoc());
+    AddSourceLocation(Arg.getPackSpliceExpansionEllipsisLoc());
     break;
   case TemplateArgument::Null:
   case TemplateArgument::Integral:

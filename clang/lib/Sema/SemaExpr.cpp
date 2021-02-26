@@ -1879,7 +1879,7 @@ Sema::ActOnStringLiteral(ArrayRef<Token> StringToks, Scope *UDLScope) {
 
   case LOLR_Template: {
     TemplateArgumentListInfo ExplicitArgs;
-    TemplateArgument Arg(Lit, TemplateArgument::Expression);
+    TemplateArgument Arg(Lit);
     TemplateArgumentLocInfo ArgInfo(Lit);
     ExplicitArgs.addArgument(TemplateArgumentLoc(Arg, ArgInfo));
     return BuildLiteralOperatorCall(R, OpNameInfo, None, StringTokLocs.back(),
@@ -2025,7 +2025,7 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
 /// This actually loses a lot of source location information for
 /// non-standard name kinds; we should consider preserving that in
 /// some way.
-void
+bool
 Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
                              TemplateArgumentListInfo &Buffer,
                              DeclarationNameInfo &NameInfo,
@@ -2036,7 +2036,8 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
 
     ASTTemplateArgsPtr TemplateArgsPtr(Id.TemplateId->getTemplateArgs(),
                                        Id.TemplateId->NumArgs);
-    translateTemplateArguments(TemplateArgsPtr, Buffer);
+    if (translateTemplateArguments(TemplateArgsPtr, Buffer))
+      return true;
 
     TemplateName TName = Id.TemplateId->Template.get();
     SourceLocation TNameLoc = Id.TemplateId->TemplateNameLoc;
@@ -2046,6 +2047,8 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
     NameInfo = GetNameFromUnqualifiedId(Id);
     TemplateArgs = nullptr;
   }
+
+  return false;
 }
 
 static void emitEmptyLookupTypoDiagnostic(
@@ -2339,7 +2342,8 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   // Decompose the UnqualifiedId into the following data.
   DeclarationNameInfo NameInfo;
   const TemplateArgumentListInfo *TemplateArgs;
-  DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs);
+  if (DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs))
+    return ExprError();
 
   return ActOnIdExpression(S, SS, TemplateKWLoc, NameInfo, TemplateArgs,
                            Id.getKind(), Id.TemplateId,
@@ -4368,6 +4372,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::UnaryTransform:
     case Type::Attributed:
     case Type::SubstTemplateTypeParm:
+    case Type::SubstTypePackSplice:
     case Type::MacroQualified:
       // Keep walking after single level desugaring.
       T = T.getSingleStepDesugaredType(Context);
@@ -4378,8 +4383,8 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::Decltype:
       T = cast<DecltypeType>(Ty)->desugar();
       break;
-    case Type::Reflected:
-      T = cast<ReflectedType>(Ty)->desugar();
+    case Type::TypeSplice:
+      T = cast<TypeSpliceType>(Ty)->desugar();
       break;
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
@@ -6361,8 +6366,7 @@ ExprResult Sema::BuildCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
 
     // Determine whether this is a dependent call inside a C++ template,
     // in which case we won't do any semantic analysis now.
-    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)
-        || Expr::hasDependentVariadicReifierArguments(ArgExprs)) {
+    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)) {
       if (ExecConfig) {
         return CUDAKernelCallExpr::Create(
             Context, Fn, cast<CallExpr>(ExecConfig), ArgExprs,

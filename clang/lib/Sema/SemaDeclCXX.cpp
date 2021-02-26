@@ -2498,8 +2498,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                          SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
                          TypeSourceInfo *TInfo,
-                         SourceLocation EllipsisLoc,
-                         bool VariadicReifier) {
+                         SourceLocation EllipsisLoc) {
   QualType BaseType = TInfo->getType();
   if (BaseType->containsErrors()) {
     // Already emitted a diagnostic when parsing the error type.
@@ -2513,7 +2512,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }
 
-  if (!VariadicReifier && EllipsisLoc.isValid() &&
+  if (EllipsisLoc.isValid() &&
       !TInfo->getType()->containsUnexpandedParameterPack()) {
     Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
       << TInfo->getTypeLoc().getSourceRange();
@@ -2544,6 +2543,13 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
                                           BaseOfClass, Access,
                                           TInfo, EllipsisLoc);
+  }
+
+  // Base is non-dependent and a pack splice.
+  if (isa<TypePackSpliceType>(BaseType.getTypePtr())) {
+    return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
+                                          Class->getTagKind() == TTK_Class,
+                                          Access, TInfo, EllipsisLoc);
   }
 
   // Base specifiers must be record types.
@@ -2645,8 +2651,7 @@ Sema::ActOnBaseSpecifier(Decl *ClassDecl, SourceRange SpecifierRange,
                          ParsedAttributes &Attributes,
                          bool Virtual, AccessSpecifier Access,
                          ParsedType basetype, SourceLocation BaseLoc,
-                         SourceLocation EllipsisLoc,
-                         bool VariadicReifier) {
+                         SourceLocation EllipsisLoc) {
   CXXRecordDecl *Class;
   if (ClassDecl) {
     AdjustDeclIfTemplate(ClassDecl);
@@ -2672,10 +2677,8 @@ Sema::ActOnBaseSpecifier(Decl *ClassDecl, SourceRange SpecifierRange,
 
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(basetype, &TInfo);
-  if (VariadicReifier)
-    TInfo = Context.CreateTypeSourceInfo(basetype.get());
 
-  if (!VariadicReifier && EllipsisLoc.isInvalid() &&
+  if (EllipsisLoc.isInvalid() &&
       DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo,
                                       UPPC_BaseType))
     return true;
@@ -4110,8 +4113,8 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
-                             TemplateTypeTy, DS, IdLoc, InitList,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
+                             DS, IdLoc, InitList,
                              EllipsisLoc);
 }
 
@@ -4129,27 +4132,7 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation RParenLoc,
                           SourceLocation EllipsisLoc) {
   Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
-                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
-}
-
-/// Handle a C++ member initializer using a (dependent) variadic reifier.
-MemInitResult
-Sema::ActOnMemInitializer(Decl *ConstructorD,
-                          Scope *S,
-                          CXXScopeSpec &SS,
-                          IdentifierInfo *MemberOrBase,
-                          QualType ReifierType,
-                          ParsedType TemplateTypeTy,
-                          const DeclSpec &DS,
-                          SourceLocation IdLoc,
-                          SourceLocation LParenLoc,
-                          ArrayRef<Expr *> Args,
-                          SourceLocation RParenLoc,
-                          SourceLocation EllipsisLoc) {
-  Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase,
-                             ReifierType, TemplateTypeTy,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
                              DS, IdLoc, List, EllipsisLoc);
 }
 
@@ -4203,7 +4186,6 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
-                          QualType ReifierType,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -4262,19 +4244,11 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
       return true;
   } else if (DS.getTypeSpecType() == TST_decltype) {
     BaseType = BuildDecltypeType(DS.getRepAsExpr(), DS.getTypeSpecTypeLoc());
+  } else if (DS.getTypeSpecType() == TST_type_pack_splice) {
+    BaseType = ActOnTypePackSpliceType(S, DS.getRepAsExpr());
   } else if (DS.getTypeSpecType() == TST_decltype_auto) {
     Diag(DS.getTypeSpecTypeLoc(), diag::err_decltype_auto_invalid);
     return true;
-  } else if (!ReifierType.isNull() &&
-             CXXDependentVariadicReifierType::
-             classof(ReifierType.getTypePtr())) {
-    TInfo = Context.getTrivialTypeSourceInfo(ReifierType, IdLoc);
-    CXXDependentVariadicReifierType const *Reifier =
-      cast<CXXDependentVariadicReifierType>(ReifierType.getTypePtr());
-    DeclRefExpr *RangeRef = cast<DeclRefExpr>(Reifier->getRange());
-    MarkAnyDeclReferenced(RangeRef->getLocation(), RangeRef->getFoundDecl(), /*OdrUse=*/false);
-    return BuildBaseInitializer(ReifierType, TInfo, Init,
-                                ClassDecl, EllipsisLoc);
   } else {
     LookupResult R(*this, MemberOrBase, IdLoc, LookupOrdinaryName);
     LookupParsedName(R, S, &SS);
@@ -4421,13 +4395,13 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
     // Initialize the member.
     InitializedEntity MemberEntity =
       DirectMember ? InitializedEntity::InitializeMember(DirectMember, nullptr)
-      : InitializedEntity::InitializeMember(IndirectMember,
-                                            nullptr);
+                   : InitializedEntity::InitializeMember(IndirectMember,
+                                                         nullptr);
     InitializationKind Kind =
-      InitList ? InitializationKind::CreateDirectList(
-        IdLoc, Init->getBeginLoc(), Init->getEndLoc())
-      : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
-                                         InitRange.getEnd());
+        InitList ? InitializationKind::CreateDirectList(
+                       IdLoc, Init->getBeginLoc(), Init->getEndLoc())
+                 : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
+                                                    InitRange.getEnd());
 
     InitializationSequence InitSeq(*this, MemberEntity, Kind, Args);
     ExprResult MemberInit = InitSeq.Perform(*this, MemberEntity, Kind, Args,
@@ -4518,10 +4492,18 @@ MemInitResult
 Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                            Expr *Init, CXXRecordDecl *ClassDecl,
                            SourceLocation EllipsisLoc) {
+  // TypePackSpliceType being dependent is only an approximation of
+  // the truth. i.e. BaseDependent and its sister variable Dependent,
+  // might not be the best names, this really determines whether or
+  // not we're ready to check the base -- which we're not if we're
+  // still seeing a pack splice type.
+  bool BaseDependent = BaseType->isDependentType() ||
+      BaseType->isTypePackSpliceType();
+
   SourceLocation BaseLoc
     = BaseTInfo->getTypeLoc().getLocalSourceRange().getBegin();
 
-  if (!BaseType->isDependentType() && !BaseType->isRecordType())
+  if (!BaseDependent && !BaseType->isRecordType())
     return Diag(BaseLoc, diag::err_base_init_does_not_name_class)
              << BaseType << BaseTInfo->getTypeLoc().getLocalSourceRange();
 
@@ -4531,7 +4513,7 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
   //   of that class, the mem-initializer is ill-formed. A
   //   mem-initializer-list can initialize a base class using any
   //   name that denotes that base class type.
-  bool Dependent = BaseType->isDependentType() || Init->isTypeDependent();
+  bool Dependent = BaseDependent || Init->isTypeDependent();
 
   SourceRange InitRange = Init->getSourceRange();
   if (EllipsisLoc.isValid()) {
@@ -13547,6 +13529,9 @@ void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
         ActOnFinishInlineFunctionDef(M);
     }
   }
+
+  assert(LateMethodParameterInfo.empty() && "keyed parameter info not cleaned up");
+  assert(LateMethodParameterInfoStack.empty() && "parameter info not cleaned up");
 }
 
 void Sema::referenceDLLExportedClassMethods() {

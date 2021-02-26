@@ -213,7 +213,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
-  mutable llvm::FoldingSet<DependentReflectedType> DependentReflectedTypes;
+  mutable llvm::FoldingSet<DependentTypeSpliceType> DependentTypeSpliceTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
   mutable llvm::FoldingSet<SubstTemplateTypeParmType>
@@ -1525,10 +1525,6 @@ public:
                                 Optional<unsigned> NumExpansions,
                                 bool ExpectPackInType = true);
 
-  QualType getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
-                                              SourceLocation EllipsisLoc,
-                                              SourceLocation RParenLoc);
-
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
 
@@ -1573,9 +1569,12 @@ public:
       NestedNameSpecifier *NNS, IdentifierInfo *II,
       ArrayRef<TemplateArgument> TemplateArgs) const;
 
-  /// \brief Reflected types.
-  QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
+  /// Reflection splice types.
+  QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
+  QualType getTypePackSpliceType(const PackSplice *PS) const;
+  QualType getSubstTypePackSpliceType(Expr *ExpansionExpr,
+                                      QualType Replacement) const;
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
                                  UnaryTransformType::UTTKind UKind) const;
@@ -2127,6 +2126,17 @@ public:
   static bool isObjCNSObjectType(QualType Ty) {
     return Ty->isObjCNSObjectType();
   }
+
+  //===--------------------------------------------------------------------===//
+  //                         Reflection caching
+  //===--------------------------------------------------------------------===//
+
+  using MemberList = std::vector<const FieldDecl *>;
+  using MemberMap = llvm::DenseMap<const CXXRecordDecl*, MemberList>;
+
+  /// For the subobject queries, the cached subobjects of a class in the
+  /// order they would appear in their layout.
+  mutable MemberMap AllSubobjects;
 
   //===--------------------------------------------------------------------===//
   //                         Type Sizing and Analysis

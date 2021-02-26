@@ -442,6 +442,8 @@ private:
       return "InitializingStructuredBinding";
     case CodeSynthesisContext::MarkingClassDllexported:
       return "MarkingClassDllexported";
+    case CodeSynthesisContext::NonDependentPackSplicing:
+      return "NonDependentPackSplicing";
     }
     return "";
   }

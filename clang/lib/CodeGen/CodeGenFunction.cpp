@@ -2105,6 +2105,7 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
     case Type::UnaryTransform:
     case Type::Attributed:
     case Type::SubstTemplateTypeParm:
+    case Type::SubstTypePackSplice:
     case Type::MacroQualified:
       // Keep walking after single level desugaring.
       type = type.getSingleStepDesugaredType(getContext());
@@ -2112,7 +2113,7 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
 
     case Type::Typedef:
     case Type::Decltype:
-    case Type::Reflected:
+    case Type::TypeSplice:
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
       // Stop walking: nothing to do.

@@ -265,15 +265,12 @@ APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
                                         const APValue *Parent) :
   ReflectionBase(ReflKind), ReflEntity(ReflEntity),
   ReflModifiers(new ReflectionModifiers(ReflModifiers)),
-  Offset(Offset), Parent(nullptr) {
-  if (Parent)
-    this->Parent = new APValue(*Parent);
+  Offset(Offset), Parent(Parent ? new APValue(*Parent) : nullptr) {
 }
 
 APValue::ReflectionData::~ReflectionData() {
   delete ReflModifiers;
-  if (Parent)
-    delete Parent;
+  delete Parent;
 }
 
 APValue::FragmentData::FragmentData(
@@ -393,6 +390,13 @@ APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
                  unsigned Offset, const APValue &Parent)
     : Kind(None) {
   MakeReflection(ReflKind, ReflEntity, ReflectionModifiers(), Offset, &Parent);
+}
+
+
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
+                 unsigned Offset)
+    : Kind(None) {
+  MakeReflection(ReflKind, ReflEntity, ReflectionModifiers(), Offset, nullptr);
 }
 
 APValue::APValue(const Expr *Parent, const ArrayRef<APValue> Captures)

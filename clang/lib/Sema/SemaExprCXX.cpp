@@ -8636,7 +8636,7 @@ Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
                              SourceLocation BaseLoc,
                              SourceLocation IdxLoc)
 {
-  TemplateArgument BaseArg(Base, TemplateArgument::Expression);
+  TemplateArgument BaseArg(Base);
   assert(BaseArg.isPackExpansion() ||
          BaseArg.containsUnexpandedParameterPack());
 

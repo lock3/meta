@@ -1443,6 +1443,8 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     llvm_unreachable("Can't mangle null template arguments!");
   case TemplateArgument::TemplateExpansion:
     llvm_unreachable("Can't mangle template expansion arguments!");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
   case TemplateArgument::Type: {
     QualType T = TA.getAsType();
     mangleType(T, SourceRange(), QMM_Escape);
@@ -1543,8 +1545,6 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     }
     break;
   }
-  case TemplateArgument::Reflected:
-    llvm_unreachable("This should not exist at codegen");
   }
 }
 
@@ -2938,11 +2938,11 @@ void MicrosoftCXXNameMangler::mangleType(const DecltypeType *T, Qualifiers,
     << Range;
 }
 
-void MicrosoftCXXNameMangler::mangleType(const ReflectedType *T, Qualifiers,
+void MicrosoftCXXNameMangler::mangleType(const TypeSpliceType *T, Qualifiers,
                                          SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-    "cannot mangle this typename() yet");
+    "cannot mangle this typename [< >] yet");
   Diags.Report(Range.getBegin(), DiagID)
     << Range;
 }

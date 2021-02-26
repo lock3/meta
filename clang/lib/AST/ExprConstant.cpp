@@ -15798,7 +15798,6 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:
   case Expr::CXXConcatenateExprClass:
-  case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::CXXFragmentExprClass:
   case Expr::CXXFragmentCaptureExprClass:
   case Expr::CXXInjectedValueExprClass:
@@ -15856,10 +15855,10 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
-  case Expr::CXXIdExprExprClass:
-  case Expr::CXXMemberIdExprExprClass:
+  case Expr::CXXExprSpliceExprClass:
+  case Expr::CXXMemberExprSpliceExprClass:
+  case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
-  case Expr::CXXValueOfExprClass:
     return NoDiag();
 
   case Expr::CallExprClass:

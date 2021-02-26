@@ -2065,7 +2065,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::DependentIdentifierSplice:
-  case Type::CXXDependentVariadicReifier:
   case Type::CXXRequiredType:
   case Type::ObjCObject:
   case Type::ObjCInterface:
@@ -2093,7 +2092,9 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
+  case Type::TypePackSplice:
+  case Type::SubstTypePackSplice:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -3504,8 +3505,8 @@ void CXXNameMangler::mangleType(const DependentSizedMatrixType *T) {
   // U<Len>matrix_type<row expr><column expr><element type>
   StringRef VendorQualifier = "matrix_type";
   Out << "U" << VendorQualifier.size() << VendorQualifier;
-  mangleTemplateArg({T->getRowExpr(), TemplateArgument::Expression});
-  mangleTemplateArg({T->getColumnExpr(), TemplateArgument::Expression});
+  mangleTemplateArg(TemplateArgument(T->getRowExpr()));
+  mangleTemplateArg(TemplateArgument(T->getColumnExpr()));
   mangleType(T->getElementType());
 }
 
@@ -3669,7 +3670,7 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
   Out << 'E';
 }
 
-void CXXNameMangler::mangleType(const ReflectedType *T) {
+void CXXNameMangler::mangleType(const TypeSpliceType *T) {
   // <type> ::= RT <expression> E  # typename of an expression
   Out << "RT";
   mangleExpression(T->getReflection());
@@ -3745,7 +3746,7 @@ void CXXNameMangler::mangleType(const ExtIntType *T) {
 
 void CXXNameMangler::mangleType(const DependentExtIntType *T) {
   Out << "U7_ExtInt";
-  TemplateArgument TA(T->getNumBitsExpr(), TemplateArgument::Expression);
+  TemplateArgument TA(T->getNumBitsExpr());
   mangleTemplateArgs(&TA, 1);
   if (T->isUnsigned())
     Out << "j";
@@ -3971,12 +3972,11 @@ recurse:
   case Expr::OMPArrayShapingExprClass:
   case Expr::OMPIteratorExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
-  case Expr::CXXIdExprExprClass:
-  case Expr::CXXMemberIdExprExprClass:
+  case Expr::CXXExprSpliceExprClass:
+  case Expr::CXXMemberExprSpliceExprClass:
+  case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
-  case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
-  case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 
@@ -4947,6 +4947,8 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   switch (A.getKind()) {
   case TemplateArgument::Null:
     llvm_unreachable("Cannot mangle NULL template argument");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
 
   case TemplateArgument::Type:
     mangleType(A.getAsType());
@@ -5021,8 +5023,6 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     Out << 'E';
     break;
   }
-  case TemplateArgument::Reflected:
-    llvm_unreachable("This should not exist at codegen");
   }
 }
 

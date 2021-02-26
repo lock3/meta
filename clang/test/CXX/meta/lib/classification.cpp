@@ -9,6 +9,6 @@ constexpr meta::info invalid_reflection() {
 static_assert(__reflect(query_is_invalid, invalid_reflection()));
 
 constexpr meta::info valid_reflection() {
-  return reflexpr(int);
+  return ^int;
 }
 static_assert(!__reflect(query_is_invalid, valid_reflection()));

@@ -34,6 +34,7 @@
 #include "clang/AST/LambdaCapture.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
@@ -211,7 +212,7 @@ namespace clang {
 
     // Always use these functions to create a Decl during import. There are
     // certain tasks which must be done after the Decl was created, e.g. we
-    // must immediatey register that as an imported Decl.  The parameter `ToD`
+    // must immediately register that as an imported Decl.  The parameter `ToD`
     // will be set to the newly created Decl or if had been imported before
     // then to the already imported Decl.  Returns a bool value set to true if
     // the `FromD` had been imported before.
@@ -379,8 +380,6 @@ namespace clang {
     ExpectedType VisitElaboratedType(const ElaboratedType *T);
     ExpectedType VisitDependentNameType(const DependentNameType *T);
     ExpectedType VisitPackExpansionType(const PackExpansionType *T);
-    ExpectedType VisitCXXDependentVariadicReifierType
-    (const CXXDependentVariadicReifierType *T);
     ExpectedType VisitDependentTemplateSpecializationType(
         const DependentTemplateSpecializationType *T);
     ExpectedType VisitObjCInterfaceType(const ObjCInterfaceType *T);
@@ -435,6 +434,7 @@ namespace clang {
     Error ImportDefinition(
         ObjCProtocolDecl *From, ObjCProtocolDecl *To,
         ImportDefinitionKind Kind = IDK_Default);
+
     Error ImportTemplateArguments(
         const TemplateArgument *FromArgs, unsigned NumFromArgs,
         SmallVectorImpl<TemplateArgument> &ToArgs);
@@ -832,10 +832,9 @@ ASTNodeImporter::import(const TemplateArgument &From) {
         *ToTemplateOrErr, From.getNumTemplateExpansions());
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (ExpectedExpr ToExpr = import(From.getAsExpr()))
-      return TemplateArgument(*ToExpr, From.getKind());
+      return TemplateArgument(*ToExpr);
     else
       return ToExpr.takeError();
 
@@ -849,6 +848,15 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     return TemplateArgument(
         llvm::makeArrayRef(ToPack).copy(Importer.getToContext()));
   }
+
+  case TemplateArgument::PackSplice: {
+    Expected<PackSplice *> ToSplice = import(From.getPackSplice());
+    if (!ToSplice)
+      return ToSplice.takeError();
+
+    return TemplateArgument(*ToSplice);
+  }
+
   }
 
   llvm_unreachable("Invalid template argument kind");
@@ -1519,14 +1527,6 @@ ASTNodeImporter::VisitPackExpansionType(const PackExpansionType *T) {
   return Importer.getToContext().getPackExpansionType(*ToPatternOrErr,
                                                       T->getNumExpansions(),
                                                       /*ExpactPack=*/false);
-}
-
-ExpectedType
-ASTNodeImporter::VisitCXXDependentVariadicReifierType
-(const CXXDependentVariadicReifierType *T) {
-  return Importer.getToContext().
-    getCXXDependentVariadicReifierType(T->getRange(), T->getBeginLoc(),
-                                       T->getEllipsisLoc(), T->getEndLoc());
 }
 
 ExpectedType ASTNodeImporter::VisitDependentTemplateSpecializationType(
@@ -8623,6 +8623,25 @@ Expected<TemplateName> ASTImporter::Import(TemplateName From) {
   }
 
   llvm_unreachable("Invalid template name kind");
+}
+
+Expected<PackSplice *> ASTImporter::Import(const PackSplice *From) {
+  ExpectedExpr ToExpr = Import(From->getOperand());
+  if (!ToExpr)
+    return ToExpr.takeError();
+
+  if (!From->isExpanded())
+    return PackSplice::Create(getToContext(), *ToExpr);
+
+  // Import the expansion operands
+  ASTNodeImporter Importer(*this);
+  ArrayRef<Expr *> FromExpansions = From->getExpansions();
+  SmallVector<Expr *, 4> ToExpansions;
+  ToExpansions.reserve(From->getNumExpansions());
+  if (Error Err = Importer.ImportContainerChecked(FromExpansions, ToExpansions))
+    return std::move(Err);
+
+  return PackSplice::Create(getToContext(), *ToExpr, ToExpansions);
 }
 
 Expected<SourceLocation> ASTImporter::Import(SourceLocation FromLoc) {

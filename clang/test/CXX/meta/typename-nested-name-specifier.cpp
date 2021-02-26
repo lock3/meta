@@ -6,4 +6,4 @@ namespace foo_ns {
   };
 }
 
-auto y = foo_ns::typename(reflexpr(foo_ns::foo))::i; // expected-error {{the typename reifier cannot be preceded by a nested name specifier}}
+auto y = foo_ns::typename [:^foo_ns::foo:]::i; // expected-error {{expected unqualified-id}}

@@ -19,10 +19,16 @@
 
 using namespace clang;
 
-/// Parse the operand of a reflexpr expression. This is almost exactly like
-/// parsing a template argument, except that we also allow namespace-names
-/// in this context.
-ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
+// Assuming the current token is '::' returns true if the next tokens would
+// start a nested-name-specifier (i.e., the next token is an identifier or
+// (invalidly) the 'template' keyword).
+static bool startsNestedNameSpecifier(Parser& P) {
+  return P.NextToken().is(tok::identifier) ||
+         P.NextToken().is(tok::kw_template);
+}
+
+ParsedReflectionOperand Parser::ParseCXXReflectionOperand() {
+  // Prevent diagnostics in this context.
   Sema::CXXReflectionScopeRAII ReflectionScope(Actions);
 
   // The operand is unevaluated.
@@ -30,7 +36,15 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
       Actions, Sema::ExpressionEvaluationContext::Unevaluated);
 
   // Perform the tentative parses first since isCXXTypeId tends to rewrite
-  // tokens, which can subsequent parses a bit wonky.
+  // tokens, which can make subsequent parses a bit wonky.
+
+  // Match '^::'. Note that '::' could start a nested-name-specifier, so if the
+  // next token is an identifier or 'template', then this is not a reflection of
+  // the global scope.
+  if (Tok.is(tok::coloncolon) && !startsNestedNameSpecifier(*this)) {
+    SourceLocation ColonColonLoc = ConsumeToken();
+    return Actions.ActOnReflectedNamespace(ColonColonLoc);
+  }
 
   // Tentatively parse a template-name.
   {
@@ -41,12 +55,6 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
       return Actions.ActOnReflectedTemplate(T);
     }
     TPA.Revert();
-  }
-
-  // Otherwise, check for the global namespace
-  if (Tok.is(tok::coloncolon) && NextToken().is(tok::r_paren)) {
-    SourceLocation ColonColonLoc = ConsumeToken();
-    return Actions.ActOnReflectedNamespace(ColonColonLoc);
   }
 
   // Otherwise, tentatively parse a namespace-name.
@@ -74,42 +82,23 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
   }
 
   // Parse an expression. template argument.
-  ExprResult E = ParseExpression(NotTypeCast);
+  ExprResult E = ParseCastExpression(AnyCastExpr);
   if (E.isInvalid() || !E.get())
     return ParsedReflectionOperand();
 
   return Actions.ActOnReflectedExpression(E.get());
 }
 
-/// Parse a reflect-expression.
-///
-/// \verbatim
-///       reflect-expression:
-///         'reflexpr' '(' type-id ')'
-///         'reflexpr' '(' template-name ')'
-///         'reflexpr' '(' namespace-name ')'
-///         'reflexpr' '(' id-expression ')'
-/// \endverbatim
-ExprResult Parser::ParseCXXReflectExpression() {
-  assert(Tok.is(tok::kw_reflexpr) && "expected 'reflexpr'");
-  SourceLocation KWLoc = ConsumeToken();
+ExprResult Parser::ParseCXXReflectionExpression() {
+  assert(Tok.is(tok::caret) && "expected '^'");
+  SourceLocation Loc = ConsumeToken();
 
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
+  ParsedReflectionOperand PR = ParseCXXReflectionOperand();
+  if (PR.isInvalid())
     return ExprError();
 
-  ParsedReflectionOperand PR = ParseCXXReflectOperand();
-  if (PR.isInvalid()) {
-    T.skipToEnd();
-    return ExprError();
-  }
-
-  if (T.consumeClose())
-    return ExprError();
-
-  return Actions.ActOnCXXReflectExpr(KWLoc, PR,
-                                     T.getOpenLocation(),
-                                     T.getCloseLocation());
+  // FIXME: The source locations are wrong.
+  return Actions.ActOnCXXReflectExpr(Loc, PR, Loc, Loc);
 }
 
 /// Parse an invalid reflection.
@@ -322,36 +311,79 @@ ExprResult Parser::ParseCXXCompilerErrorExpression() {
                                            T.getCloseLocation());
 }
 
-/// Parse an idexpr expression.
+bool Parser::matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead) {
+  if (!getLangOpts().Reflection)
+    return false;
+
+  if (getRelativeToken(LookAhead).isNot(tok::l_square))
+    return false;
+  if (getRelativeToken(LookAhead + 1).isNot(T))
+    return false;
+
+  return true;
+}
+
+bool Parser::matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead) {
+  if (getRelativeToken(LookAhead).isNot(T))
+    return false;
+  if (getRelativeToken(LookAhead + 1).isNot(tok::r_square))
+    return false;
+
+  return true;
+}
+
+bool Parser::isCXXPackSpliceBegin(unsigned LookAhead) {
+  if (getRelativeToken(LookAhead).isNot(tok::ellipsis))
+    return false;
+
+  return matchCXXSpliceBegin(tok::colon, LookAhead + 1);
+}
+
+bool Parser::parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL) {
+  if (!matchCXXSpliceBegin(T))
+    return true;
+
+  SL = ConsumeBracket();
+  ConsumeToken();
+  return false;
+}
+
+bool Parser::parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL) {
+  if (!matchCXXSpliceEnd(T)) {
+    Diag(Tok, diag::err_expected_end_of_splice);
+    return true;
+  }
+
+  ConsumeToken();
+  SL = ConsumeBracket();
+  return false;
+}
+
+/// Parse an expression splice expression.
 ///
 /// \verbatim
-///   idexpr-splice:
-///     idexpr '(' constant-expression ')'
+///   decl-splice:
+///     '[' '<' constant-expression '>' ']'
 /// \endverbatim
-ExprResult Parser::ParseCXXIdExprExpression() {
-  assert(Tok.is(tok::kw_idexpr) && "Not idexpr");
-  SourceLocation Loc = ConsumeToken();
+ExprResult Parser::ParseCXXExprSpliceExpr() {
+  assert(matchCXXSpliceBegin(tok::colon) && "Not '[<'");
 
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::colon, SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid()) {
-    Parens.skipToEnd();
-    return ExprError();
-  }
-
-  if (Parens.consumeClose())
+  if (Expr.isInvalid())
     return ExprError();
 
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXIdExprExpr(Loc, Expr.get(), LPLoc, RPLoc);
+  SourceLocation SEELoc;
+  if (parseCXXSpliceEnd(tok::colon, SEELoc))
+    return ExprError();
+
+  return Actions.ActOnCXXExprSpliceExpr(SBELoc, Expr.get(), SEELoc);
 }
 
-ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
+ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base) {
   assert(Tok.isOneOf(tok::arrow, tok::period));
 
   bool IsArrow = Tok.getKind() == tok::arrow;
@@ -360,25 +392,17 @@ ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
   if (Tok.is(tok::kw_template))
     TemplateKWLoc = ConsumeToken();
 
-  if (ExpectAndConsume(tok::kw_idexpr))
-    return ExprError();
-
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::colon, SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid()) {
-    Parens.skipToEnd();
-    return ExprError();
-  }
-
-  if (Parens.consumeClose())
+  if (Expr.isInvalid())
     return ExprError();
 
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
+  SourceLocation SEELoc;
+  if (parseCXXSpliceEnd(tok::colon, SEELoc))
+    return ExprError();
 
   // Check for template arguments
   if (Tok.is(tok::less) && !TemplateKWLoc.isInvalid()) {
@@ -392,48 +416,44 @@ ExprResult Parser::ParseCXXMemberIdExprExpression(Expr *Base) {
 
     ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
 
-    return Actions.ActOnCXXMemberIdExprExpr(
+    return Actions.ActOnCXXMemberExprSpliceExpr(
         Base, Expr.get(), IsArrow, OperatorLoc, TemplateKWLoc,
-        LPLoc, RPLoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
+        SBELoc, SEELoc, LAngleLoc, TemplateArgsPtr, RAngleLoc);
   }
 
-  return Actions.ActOnCXXMemberIdExprExpr(
+  return Actions.ActOnCXXMemberExprSpliceExpr(
       Base, Expr.get(), IsArrow, OperatorLoc,
-      TemplateKWLoc, LPLoc, RPLoc, /*TemplateArgs=*/nullptr);
+      TemplateKWLoc, SBELoc, SEELoc, /*TemplateArgs=*/nullptr);
 }
 
-/// Parse a valueof expression.
+/// Parse pack splice expression.
 ///
 /// \verbatim
-///   primary-expression:
-///     valueof '(' constant-expression ')'
+///   pack-splice:
+///     '...' '[' '<' constant-expression '>' ']'
 /// \endverbatim
-ExprResult Parser::ParseCXXValueOfExpression() {
-  assert(Tok.is(tok::kw_valueof) && "Not valueof");
-  SourceLocation Loc = ConsumeToken();
+ExprResult Parser::ParseCXXPackSpliceExpr() {
+  assert(isCXXPackSpliceBegin() && "Not '[<'");
+  SourceLocation EllipsisLoc = ConsumeToken();
 
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::colon, SBELoc))
     return ExprError();
 
   ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid()) {
-    Parens.skipToEnd();
-    return ExprError();
-  }
-
-  if (Parens.consumeClose())
+  if (Expr.isInvalid())
     return ExprError();
 
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
+  SourceLocation SEELoc;
+  if (parseCXXSpliceEnd(tok::colon, SEELoc))
+    return ExprError();
 
-  return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
+  return Actions.ActOnCXXPackSpliceExpr(EllipsisLoc, SBELoc,
+                                        Expr.get(), SEELoc);
 }
 
 bool Parser::AnnotateIdentifierSplice() {
-  assert(Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis));
+  assert(matchCXXSpliceBegin(tok::hash) && GetLookAheadToken(2).isNot(tok::ellipsis));
 
   // Attempt to reinterpret an identifier splice as a single annotated token.
   IdentifierInfo *II;
@@ -460,7 +480,7 @@ bool Parser::AnnotateIdentifierSplice() {
 }
 
 bool Parser::TryAnnotateIdentifierSplice() {
-  if (Tok.isNot(tok::kw_unqualid) || GetLookAheadToken(2).is(tok::ellipsis))
+  if (!matchCXXSpliceBegin(tok::hash) || GetLookAheadToken(2).is(tok::ellipsis))
     return false;
 
   return AnnotateIdentifierSplice();
@@ -472,43 +492,39 @@ bool Parser::ParseCXXIdentifierSplice(
   return ParseCXXIdentifierSplice(Id, IdBeginLoc, IdEndLoc);
 }
 
-/// Parse a reflected id
+/// Parse an identifier splice
 ///
-///   reflected-unqualid-id:
-///     'unqaulid' '(' reflection ')'
+///   identifier-splice:
+///     '[' '#' reflection '#' ']'
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseCXXIdentifierSplice(
     IdentifierInfo *&Id, SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc) {
-  assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
-  IdBeginLoc = ConsumeToken();
+  assert(matchCXXSpliceBegin(tok::hash) && "Not '[#'");
 
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
+  if (parseCXXSpliceBegin(tok::hash, IdBeginLoc))
     return true;
 
   SmallVector<Expr *, 4> Parts;
   while (true) {
     ExprResult Result = ParseConstantExpression();
     if (Result.isInvalid()) {
-      SkipUntil(tok::r_paren);
+      SkipUntil(tok::r_square);
       return true;
     }
 
     Parts.push_back(Result.get());
-    if (Tok.is(tok::r_paren))
+    if (matchCXXSpliceEnd(tok::hash))
       break;
 
     if (ExpectAndConsume(tok::comma)) {
-      SkipUntil(tok::r_paren);
+      SkipUntil(tok::r_square);
       return true;
     }
   }
 
-  if (T.consumeClose())
+  if (parseCXXSpliceEnd(tok::hash, IdEndLoc))
     return true;
-
-  IdEndLoc = T.getCloseLocation();
 
   ArrayRef<Expr *> FinalParts(Parts.data(), Parts.size());
   if (Actions.ActOnCXXIdentifierSplice(FinalParts, Id))
@@ -517,54 +533,216 @@ bool Parser::ParseCXXIdentifierSplice(
   return false;
 }
 
-/// Parse a type reflection specifier.
+/// Parse a type splice
 ///
 /// \verbatim
-///   reflection-type-specifier:
-///     'typename' '(' reflection ')'
+///   type-splice:
+///     'typename' '[' '<' reflection '>' ']'
 /// \endverbatim
-///
-/// The constant expression must be a reflection of a type.
-TypeResult Parser::ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                               SourceLocation &EndLoc) {
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
-    return TypeResult(true);
+SourceLocation Parser::ParseTypeSplice(DeclSpec &DS) {
+  assert((Tok.is(tok::annot_type_splice) ||
+          (Tok.is(tok::kw_typename) &&
+           matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)))
+         && "Not a type splice");
 
-  ExprResult Result = ParseConstantExpression();
-  if (T.consumeClose())
-    return TypeResult(true);
+  ExprResult Result;
+  SourceLocation StartLoc = Tok.getLocation();
+  SourceLocation EndLoc;
 
-  EndLoc = T.getCloseLocation();
-  if (Result.isInvalid())
-    return TypeResult(true);
+  if (Tok.is(tok::annot_type_splice)) {
+    Result = getExprAnnotation(Tok);
+    EndLoc = Tok.getAnnotationEndLoc();
+    ConsumeAnnotationToken();
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return SourceLocation();
+    }
+  } else {
+    StartLoc = ConsumeToken();
 
-  return Actions.ActOnReflectedTypeSpecifier(TypenameLoc, Result.get());
+    SourceLocation SBELoc;
+    if (parseCXXSpliceBegin(tok::colon, SBELoc))
+      return SourceLocation();
+
+    Result = ParseConstantExpression();
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return SourceLocation();
+    }
+
+    if (parseCXXSpliceEnd(tok::colon, EndLoc))
+      return SourceLocation();
+  }
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  const PrintingPolicy &Policy = Actions.getASTContext().getPrintingPolicy();
+
+  if (DS.SetTypeSpecType(DeclSpec::TST_type_splice, StartLoc, PrevSpec,
+                         DiagID, Result.get(), Policy)) {
+    Diag(StartLoc, DiagID) << PrevSpec;
+    DS.SetTypeSpecError();
+  }
+  return EndLoc;
 }
 
-/// Parse a template argument reflection.
+void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
+                                        SourceLocation StartLoc,
+                                        SourceLocation EndLoc) {
+  // make sure we have a token we can turn into an annotation token
+  if (PP.isBacktrackEnabled())
+    PP.RevertCachedTokens(1);
+  else
+    PP.EnterToken(Tok, /*IsReinject*/true);
+
+  Tok.setKind(tok::annot_type_splice);
+  setExprAnnotation(Tok,
+                    DS.getTypeSpecType() == TST_type_splice ?
+                    DS.getRepAsExpr() : ExprError());
+  Tok.setAnnotationEndLoc(EndLoc);
+  Tok.setLocation(StartLoc);
+  PP.AnnotateCachedTokens(Tok);
+}
+
+/// Parse a type pack splice
 ///
 /// \verbatim
-///   reflection-template-argument:
-///     'templarg' '(' reflection ')'
+///   type-pack-splice:
+///     '...' '[' '<' reflection '>' ']'
 /// \endverbatim
 ///
 /// The constant expression must be a reflection of a type.
-ParsedTemplateArgument
-Parser::ParseReflectedTemplateArgument() {
-  assert(Tok.is(tok::kw_templarg) && "expected 'templarg'");
-  SourceLocation Loc = ConsumeToken();
+SourceLocation Parser::ParseTypePackSplice(DeclSpec &DS) {
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
 
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "templarg"))
-    return ParsedTemplateArgument();
+  SourceLocation StartLoc = ConsumeToken();
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::colon, SBELoc))
+    return SourceLocation();
+
   ExprResult Result = ParseConstantExpression();
-  if (T.consumeClose())
+  if (Result.isInvalid()) {
+    DS.SetTypeSpecError();
+    return SourceLocation();
+  }
+
+  SourceLocation EndLoc;
+  if (parseCXXSpliceEnd(tok::colon, EndLoc))
+    return SourceLocation();
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  const PrintingPolicy &Policy = Actions.getASTContext().getPrintingPolicy();
+
+  if (DS.SetTypeSpecType(DeclSpec::TST_type_pack_splice, StartLoc, PrevSpec,
+                         DiagID, Result.get(), Policy)) {
+    Diag(StartLoc, DiagID) << PrevSpec;
+    DS.SetTypeSpecError();
+  }
+  return EndLoc;
+}
+
+// This is a custom method for storing the type pack splice tokens as
+// the existing methods for doing so (e.g. ConsumeAndStoreUntil) don't
+// work with our use of introductory and ending token sequences
+// (i.e. '[' '<' and '>' ']').
+//
+// As a reminder, these cannot be combined by the lexer per cases like:
+//   b[x<a>]
+bool Parser::ConsumeAndStoreTypePackSplice(CachedTokens &Toks) {
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
+
+  // Store the one off introductory '...'
+  Toks.push_back(Tok);
+  ConsumeToken();
+
+  unsigned OpenTokenCount = 0;
+  while (true) {
+    if (matchCXXSpliceBegin(tok::colon)) {
+      // Store the possibly nested introductory tokens
+
+      // [
+      Toks.push_back(Tok);
+      ConsumeBracket();
+
+      // <
+      Toks.push_back(Tok);
+      ConsumeToken();
+
+      ++OpenTokenCount;
+
+      continue;
+    }
+
+    if (matchCXXSpliceEnd(tok::colon)) {
+      // Store the possibly nested ending tokens
+
+      // >
+      Toks.push_back(Tok);
+      ConsumeToken();
+
+      // ]
+      Toks.push_back(Tok);
+      ConsumeBracket();
+
+      // If we've hit the matching end of this splice,
+      // finish storing tokens
+      if (--OpenTokenCount == 0)
+        break;
+
+      continue;
+    }
+
+    switch (Tok.getKind()) {
+    case tok::eof:
+    case tok::annot_module_begin:
+    case tok::annot_module_end:
+    case tok::annot_module_include:
+      // Ran out of tokens.
+      return false;
+    default:
+      Toks.push_back(Tok);
+      ConsumeAnyToken();
+      break;
+    }
+  }
+
+  return true;
+}
+
+/// Parse a type pack splice
+///
+/// \verbatim
+///   type-pack-splice:
+///     '...' '[' '<' reflection '>' ']'
+/// \endverbatim
+ParsedTemplateArgument Parser::ParseCXXTemplateArgumentPackSplice() {
+  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
+
+  SourceLocation StartLoc = ConsumeToken();
+  SourceLocation SBELoc;
+  if (parseCXXSpliceBegin(tok::colon, SBELoc))
     return ParsedTemplateArgument();
+
+  ExprResult Result = ParseConstantExpression();
   if (Result.isInvalid())
     return ParsedTemplateArgument();
 
-  return Actions.ActOnReflectedTemplateArgument(Loc, Result.get());
+  SourceLocation EndLoc;
+  if (parseCXXSpliceEnd(tok::colon, EndLoc))
+    return ParsedTemplateArgument();
+
+  // We could just handle the ellipsis here, but to integrate better
+  // with existing control flow, allow ActOnPackExpansion to rebuild
+  // the ParsedTemplateArgument with the ellipsis loc.
+  if (!Tok.isOneOf(tok::ellipsis, tok::comma, tok::greater, tok::greatergreater,
+                   tok::greatergreatergreater)) {
+    // The next token does not end this pack splice
+    return ParsedTemplateArgument();
+  }
+
+  return ParsedTemplateArgument(Result.get(), StartLoc,
+                                /*EllipsisLoc=*/SourceLocation());
 }
 
 /// Parse a concatenation expression.
@@ -599,157 +777,4 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
   return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
                                          Parens.getOpenLocation(),
                                          Parens.getCloseLocation());
-}
-
-/// Returns true if reflection is enabled and the
-/// current expression appears to be a variadic reifier.
-bool Parser::isVariadicReifier() const {
-  if (tok::isAnnotation(Tok.getKind()) || Tok.is(tok::raw_identifier))
-     return false;
-
-  IdentifierInfo *TokII = Tok.getIdentifierInfo();
-  // If Reflection is enabled, the current token is a
-  // a reifier keyword, followed by an open parentheses,
-  // followed by an ellipsis, this is a variadic reifier.
-  return getLangOpts().Reflection && TokII &&
-    TokII->isReifierKeyword(getLangOpts())
-    && PP.LookAhead(0).getKind() == tok::l_paren
-    && PP.LookAhead(1).getKind() == tok::ellipsis;
-}
-
-bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs) {
-  IdentifierInfo *KW = Tok.getIdentifierInfo();
-  SourceLocation KWLoc = ConsumeToken();
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return false;
-
-  SourceLocation EllipsisLoc;
-  TryConsumeToken(tok::ellipsis, EllipsisLoc);
-
-  // FIXME: differentiate this return from an error, as
-  // returning here means we have a non-variadic reifier.
-  if (!EllipsisLoc.isValid())
-    return false;
-
-  ExprResult ReflRange = ParseConstantExpression();
-
-  if (ReflRange.isInvalid()) {
-    // TODO: Diag << KWLoc, err_invalid_reflection in parse
-    return true;
-  }
-
-  if (ReflRange.isInvalid()) {
-    Parens.skipToEnd();
-    return true;
-  }
-
-  if (Parens.consumeClose())
-    return true;
-
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();;
-  return Actions.ActOnVariadicReifier(Exprs, KWLoc, KW, ReflRange.get(),
-                                      LPLoc, EllipsisLoc, RPLoc);
-}
-
-bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types) {
-  SourceLocation KWLoc = ConsumeToken();
-  // Parse any number of arguments in parens.
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return false;
-
-  SourceLocation EllipsisLoc;
-  TryConsumeToken(tok::ellipsis, EllipsisLoc);
-
-  ExprResult ReflRange = ParseConstantExpression();
-
-  if (ReflRange.isInvalid()) {
-    Parens.skipToEnd();
-    return true;
-  }
-
-  if (Parens.consumeClose())
-    return true;
-
-  SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnVariadicReifier(Types, KWLoc, ReflRange.get(),
-                                      LPLoc, EllipsisLoc, RPLoc);
-}
-
-/// Parse a non-type variadic reifier (valueof, unqualid, idexpr)
-/// Returns true on error.
-bool Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
-  llvm::SmallVector<Expr *, 4> Exprs;
-
-  if (ParseVariadicReifier(Exprs))
-    return true;
-
-  // Check each argument and add it to the argument list.n
-  for (auto ConstantValue : Exprs) {
-    ParsedTemplateArgument Arg
-      (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
-
-    if (Arg.isInvalid()) {
-      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-      return true;
-    }
-
-    Args.push_back(Arg);
-  }
-
-  return false;
-}
-
-/// Parse a type variadic reifier (typename)
-/// Returns true on error.
-bool Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
-  llvm::SmallVector<QualType, 4> Types;
-
-  if (ParseVariadicReifier(Types))
-    return true;
-
-  for (auto ReflectedType : Types) {
-    const Type *T = ReflectedType.getTypePtr();
-    void *OpaqueT = reinterpret_cast<void*>(const_cast<Type *>(T));
-    ParsedTemplateArgument Arg
-      (ParsedTemplateArgument::Type, OpaqueT, KWLoc);
-
-    if (Arg.isInvalid()) {
-      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-      return true;
-    }
-
-    Args.push_back(Arg);
-  }
-
-  return false;
-}
-
-bool Parser::ParseTemplateReifier(TemplateArgList &Args) {
-  assert(isVariadicReifier());
-
-  /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
-  /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-  SourceLocation KWLoc = Tok.getLocation();
-
-  switch (Tok.getIdentifierInfo()->getTokenID()) {
-  case tok::kw_typename:
-    if (ParseTypeReifier(Args, KWLoc))
-      return true;
-    break;
-  case tok::kw_valueof:
-  case tok::kw_unqualid:
-  case tok::kw_idexpr:
-    if (ParseNonTypeReifier(Args, KWLoc))
-      return true;
-    break;
-  default:
-    return true;
-  }
-
-  return false;
 }

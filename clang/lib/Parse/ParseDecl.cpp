@@ -2365,7 +2365,8 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
       // ProduceConstructorSignatureHelp only on VarDecls.
       ExpressionStarts = SetPreferredType;
     }
-    if (ParseExpressionList(Exprs, CommaLocs, ExpressionStarts)) {
+    if (ParseExpressionList(Exprs, CommaLocs, /*IsCall=*/true,
+                            ExpressionStarts)) {
       if (ThisVarDecl && PP.isCodeCompletionReached() && !CalledSignatureHelp) {
         Actions.ProduceConstructorSignatureHelp(
             getCurScope(), ThisVarDecl->getType()->getCanonicalTypeInternal(),
@@ -2799,20 +2800,7 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
     return;
 
   SourceLocation EllipsisLoc;
-
-  ExprResult ArgExpr;
-  ArgsVector ArgExprs;
-
-  if (isVariadicReifier()) {
-    llvm::SmallVector<Expr*, 4> ExpandedAlignments;
-    if(ParseVariadicReifier(ExpandedAlignments)) {
-      T.skipToEnd();
-      return;
-    }
-
-    ArgExprs.append(ExpandedAlignments.begin(), ExpandedAlignments.end());
-  } else
-    ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
+  ExprResult ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
   if (ArgExpr.isInvalid()) {
     T.skipToEnd();
     return;
@@ -2822,6 +2810,7 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
   if (EndLoc)
     *EndLoc = T.getCloseLocation();
 
+  ArgsVector ArgExprs;
   ArgExprs.push_back(ArgExpr.get());
   Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
                ParsedAttr::AS_Keyword, EllipsisLoc);
@@ -3181,20 +3170,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       }
 
-      // Handle the typename reifier. In this context, the reifier
-      // is always invalid as it shouldn't be preceded
-      // by a nested-name-specifier.
-      if (getLangOpts().Reflection && Next.is(tok::kw_typename) &&
-          GetLookAheadToken(2).is(tok::l_paren)) {
-        assert(SS.isNotEmpty());
-
-        PrevSpec = ""; // not actually used by the diagnostic
-        DiagID = diag::err_reify_typename_preceded;
-        isInvalid = true;
-
-        break;
-      }
-
       if (Next.is(tok::annot_typename)) {
         DS.getTypeSpecScope() = SS;
         ConsumeAnnotationToken(); // The C++ scope.
@@ -3208,7 +3183,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         ConsumeAnnotationToken(); // The typename
       }
 
-      if (!Next.isIdentifier())
+      if (!isIdentifier(/*LookAhead=*/1))
         goto DoneWithDeclSpec;
 
       // Check whether this is a constructor declaration. If we're in a
@@ -3236,7 +3211,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         if (TryAnnotateTypeConstraint())
           goto DoneWithDeclSpec;
         if (Tok.isNot(tok::annot_cxxscope) ||
-            !NextToken().isIdentifier())
+            !isIdentifier(/*LookAhead=*/1))
           continue;
         // Eat the scope spec so the identifier is current.
         ConsumeAnnotationToken();
@@ -3265,7 +3240,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       continue;
     }
 
-    case tok::annot_refltype:
     case tok::annot_typename: {
       // If we've previously seen a tag definition, we were almost surely
       // missing a semicolon after it.
@@ -3978,6 +3952,14 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       break;
 
+    // C++ pack type splice, which doesn't begin with typename
+    case tok::ellipsis:
+      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
+        ParseTypePackSplice(DS);
+        continue;
+      }
+      goto DoneWithDeclSpec;
+
     // GNU typeof support.
     case tok::kw_typeof:
       ParseTypeofSpecifier(DS);
@@ -3985,6 +3967,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     case tok::annot_decltype:
       ParseDecltypeSpecifier(DS);
+      continue;
+
+    case tok::annot_type_splice:
+      ParseTypeSplice(DS);
       continue;
 
     case tok::annot_pragma_pack:
@@ -4450,7 +4436,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
 
   // Must have either 'enum name' or 'enum {...}' or (rarely) 'enum : T { ... }'.
   if (!isIdentifier() && Tok.isNot(tok::l_brace) &&
-      Tok.isNot(tok::colon) && Tok.isNot(tok::kw_unqualid)) {
+      Tok.isNot(tok::colon)) {
     Diag(Tok, diag::err_expected_either) << tok::identifier << tok::l_brace;
 
     // Skip the rest of this declarator, up until the comma or semicolon.
@@ -4464,9 +4450,6 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   if (isIdentifier()) {
     Name = Tok.getIdentifierInfo();
     NameLoc = ConsumeIdentifier();
-  } else if (Tok.is(tok::kw_unqualid)) {
-    // Ignore failure in an attempt to get better diagnostics.
-    ParseCXXIdentifierSplice(Name, NameLoc);
   }
 
   if (!Name && ScopedEnumKWLoc.isValid()) {
@@ -4832,21 +4815,17 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
       }
     }
 
-    IdentifierInfo *Ident;
-    SourceLocation IdentLoc;
-
     // Parse enumerator. If failed, try skipping till the start of the next
     // enumerator definition.
-    if (isIdentifier()) {
-      Ident = Tok.getIdentifierInfo();
-      IdentLoc = ConsumeIdentifier();
-    } else {
+    if (!isIdentifier()) {
       Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
       if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
           TryConsumeToken(tok::comma))
         continue;
       break;
     }
+    IdentifierInfo *Ident = Tok.getIdentifierInfo();
+    SourceLocation IdentLoc = ConsumeIdentifier();
 
     // If attributes exist after the enumerator, parse them.
     ParsedAttributesWithRange attrs(AttrFactory);
@@ -5010,10 +4989,6 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
     // typedef-name
   case tok::annot_typename:
     return true;
-
-    // [Meta] reflected-type-specifier
-  case tok::annot_refltype:
-    return true;
   }
 }
 
@@ -5103,10 +5078,6 @@ bool Parser::isTypeSpecifierQualifier() {
 
     // typedef-name
   case tok::annot_typename:
-    return true;
-
-    // [Meta] reflected-type-specifiers
-  case tok::annot_refltype:
     return true;
 
     // GNU ObjC bizarre protocol extension: <proto1,proto2> with implicit 'id'.
@@ -5293,8 +5264,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::annot_decltype:
   case tok::kw_constexpr:
 
-    // [Meta] reflected-type-specifier
-  case tok::annot_refltype:
+    // [Meta] type-splice
+  case tok::annot_type_splice:
 
     // C++20 consteval and constinit.
   case tok::kw_consteval:
@@ -5447,7 +5418,7 @@ bool Parser::isConstructorDeclarator(bool IsUnqualified, bool DeductionGuide) {
   if (isDeclarationSpecifier())
     IsConstructor = true;
   else if (isIdentifier() ||
-           (Tok.is(tok::annot_cxxscope) && NextToken().isIdentifier())) {
+           (Tok.is(tok::annot_cxxscope) && isIdentifier(/*LookAhead=*/1))) {
     // We've seen "C ( X" or "C ( X::Y", but "X" / "X::Y" is not a type.
     // This might be a parenthesized member name, but is more likely to
     // be a constructor declaration with an invalid argument type. Keep
@@ -7018,9 +6989,10 @@ void Parser::ParseParameterDeclarationClause(
         }
       }
 
-      ParamInfo.push_back(DeclaratorChunk::ParamInfo(ParmII,
-                                          ParmDeclarator.getIdentifierLoc(),
-                                          Param, std::move(DefArgToks)));
+      Actions.tryExpandNonDependentPack(ParmII,
+                                        ParmDeclarator.getIdentifierLoc(),
+                                        std::move(DefArgToks),
+                                        cast<ParmVarDecl>(Param), ParamInfo);
     }
 
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {

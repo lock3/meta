@@ -399,32 +399,6 @@ let Class = TypeOfType in {
   }]>;
 }
 
-let Class = DecltypeType in {
-  def : Property<"underlyingType", QualType> {
-    let Read = [{ node->getUnderlyingType() }];
-  }
-  def : Property<"expression", ExprRef> {
-    let Read = [{ node->getUnderlyingExpr() }];
-  }
-
-  def : Creator<[{
-    return ctx.getDecltypeType(expression, underlyingType);
-  }]>;
-}
-
-let Class = ReflectedType in {
-  def : Property<"underlyingType", QualType> {
-    let Read = [{ node->getUnderlyingType() }];
-  }
-  def : Property<"reflection", ExprRef> {
-    let Read = [{ node->getReflection() }];
-  }
-
-  def : Creator<[{
-    return ctx.getReflectedType(reflection, underlyingType);
-  }]>;
-}
-
 let Class = DependentIdentifierSpliceType in {
   def : Property<"qualifier", NestedNameSpecifier> {
     let Read = [{ node->getQualifier() }];
@@ -439,6 +413,54 @@ let Class = DependentIdentifierSpliceType in {
   def : Creator<[{
     return ctx.getDependentIdentifierSpliceType(qualifier, identifier,
                                                 templateArguments);
+  }]>;
+}
+
+let Class = DecltypeType in {
+  def : Property<"underlyingType", QualType> {
+    let Read = [{ node->getUnderlyingType() }];
+  }
+  def : Property<"expression", ExprRef> {
+    let Read = [{ node->getUnderlyingExpr() }];
+  }
+
+  def : Creator<[{
+    return ctx.getDecltypeType(expression, underlyingType);
+  }]>;
+}
+
+let Class = TypeSpliceType in {
+  def : Property<"underlyingType", QualType> {
+    let Read = [{ node->getUnderlyingType() }];
+  }
+  def : Property<"reflection", ExprRef> {
+    let Read = [{ node->getReflection() }];
+  }
+
+  def : Creator<[{
+    return ctx.getTypeSpliceType(reflection, underlyingType);
+  }]>;
+}
+
+let Class = TypePackSpliceType in {
+  def : Property<"packSplice", PackSplice> {
+    let Read = [{ *node->getPackSplice() }];
+  }
+  def : Creator<[{
+    return ctx.getTypePackSpliceType(&packSplice);
+  }]>;
+}
+
+let Class = SubstTypePackSpliceType in {
+  def : Property<"expansionExpr", ExprRef> {
+    let Read = [{ node->getExpansionExpr() }];
+  }
+  def : Property<"replacementType", QualType> {
+    let Read = [{ node->getReplacementType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getSubstTypePackSpliceType(expansionExpr, replacementType);
   }]>;
 }
 
@@ -754,26 +776,6 @@ let Class = PackExpansionType in {
   def : Creator<[{
     return ctx.getPackExpansionType(pattern, numExpansions,
                                     /*ExpectPackInType*/false);
-  }]>;
-}
-
-let Class = CXXDependentVariadicReifierType in {
-  def : Property<"range", ExprRef> {
-    let Read = [{ node->getRange() }];
-  }
-  def : Property<"keywordLoc", SourceLocation> {
-    let Read = [{ node->getBeginLoc() }];
-  }
-  def : Property<"ellipsisLoc", SourceLocation> {
-    let Read = [{ node->getEllipsisLoc() }];
-  }
-  def : Property<"rparenLoc", SourceLocation> {
-    let Read = [{ node->getEndLoc() }];
-  }
-
-  def : Creator<[{
-    return ctx.getCXXDependentVariadicReifierType(range, keywordLoc,
-                                                  ellipsisLoc, rparenLoc);
   }]>;
 }
 

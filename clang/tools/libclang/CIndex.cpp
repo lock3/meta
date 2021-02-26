@@ -25,6 +25,7 @@
 #include "clang/AST/DeclObjCCommon.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCategories.h"
@@ -1498,7 +1499,6 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
     return false;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (Expr *E = TAL.getSourceExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
@@ -1511,9 +1511,27 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
 
     return VisitTemplateName(TAL.getArgument().getAsTemplateOrTemplatePattern(),
                              TAL.getTemplateNameLoc());
+
+  case TemplateArgument::PackSplice:
+    return VisitPackSplice(TAL.getArgument().getPackSplice());
   }
 
   llvm_unreachable("Invalid TemplateArgument::Kind!");
+}
+
+bool CursorVisitor::VisitPackSplice(const PackSplice *PS) {
+  if (Visit(PS->getOperand()))
+    return true;
+
+  if (!PS->isExpanded())
+    return false;
+
+  for (Expr *E : PS->getExpansions()) {
+    if (Visit(MakeCXCursor(E, StmtParent, TU)))
+      return true;
+  }
+
+  return false;
 }
 
 bool CursorVisitor::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
@@ -1775,11 +1793,6 @@ bool CursorVisitor::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   return Visit(TL.getPatternLoc());
 }
 
-bool CursorVisitor::VisitCXXDependentVariadicReifierTypeLoc
-(CXXDependentVariadicReifierTypeLoc TL) {
-  return Visit(TL.getPatternLoc());
-}
-
 bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   if (Expr *E = TL.getUnderlyingExpr())
     return Visit(MakeCXCursor(E, StmtParent, TU));
@@ -1809,11 +1822,15 @@ bool CursorVisitor::VisitDependentIdentifierSpliceTypeLoc(
   return false;
 }
 
-bool CursorVisitor::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+bool CursorVisitor::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   if (Expr *E = TL.getReflection())
     return Visit(MakeCXCursor(E, StmtParent, TU));
 
   return false;
+}
+
+bool CursorVisitor::VisitTypePackSpliceTypeLoc(TypePackSpliceTypeLoc TL) {
+  return VisitPackSplice(TL.getPackSplice());
 }
 
 bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
@@ -1851,6 +1868,7 @@ DEFAULT_TYPELOC_IMPL(Record, TagType)
 DEFAULT_TYPELOC_IMPL(Enum, TagType)
 DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParm, Type)
 DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParmPack, Type)
+DEFAULT_TYPELOC_IMPL(SubstTypePackSplice, Type)
 DEFAULT_TYPELOC_IMPL(Auto, Type)
 DEFAULT_TYPELOC_IMPL(ExtInt, Type)
 DEFAULT_TYPELOC_IMPL(DependentExtInt, Type)

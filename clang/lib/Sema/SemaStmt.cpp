@@ -3462,7 +3462,7 @@ StmtResult
 ExpansionStatementBuilder::BuildExpansionOverTuple()
 {
   /// Build the template argument list for get<N>.
-  TemplateArgument Arg(InductionRef, TemplateArgument::Expression);
+  TemplateArgument Arg(InductionRef);
   TemplateArgumentLocInfo ArgLocInfo(InductionRef);
   TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);

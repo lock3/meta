@@ -376,8 +376,9 @@ checkDeducedTemplateArguments(ASTContext &Context,
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
 
-  case TemplateArgument::Reflected:
-    llvm_unreachable("You cannot deduce a reflected template argument");
+  case TemplateArgument::PackSplice:
+    // FIXME: Figure out what it means to deduce a pack splice
+    llvm_unreachable("Deduction not yet supported");
 
   }
 
@@ -464,10 +465,10 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
                               S.Context.NullPtrTy, NTTP->getLocation()),
                           NullPtrType, CK_NullToPointer)
           .get();
+  TemplateArgument New(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-      DeducedTemplateArgument(
-          TemplateArgument(Value, TemplateArgument::Expression)),
-      Value->getType(), Info, Deduced);
+                                       DeducedTemplateArgument(New),
+                                       Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -478,10 +479,10 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     Sema &S, TemplateParameterList *TemplateParams,
     const NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+  TemplateArgument New(Value);
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-      DeducedTemplateArgument(
-          TemplateArgument(Value, TemplateArgument::Expression)),
-      Value->getType(), Info, Deduced);
+                                       DeducedTemplateArgument(New),
+                                       Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -2318,13 +2319,13 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::UnresolvedUsing:
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
-    case Type::Reflected:
+    case Type::TypeSplice:
+    case Type::TypePackSplice:
     case Type::UnaryTransform:
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
     case Type::DependentTemplateSpecialization:
     case Type::PackExpansion:
-    case Type::CXXDependentVariadicReifier:
     case Type::Pipe:
     case Type::CXXRequiredType:
       // No template argument deduction for these types
@@ -2444,8 +2445,9 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
 
-  case TemplateArgument::Reflected:
-    llvm_unreachable("You cannot deduce a reflected template argument");
+  case TemplateArgument::PackSplice:
+    // FIXME: Figure out what it means to deduce a pack splice
+    llvm_unreachable("Deduction not yet supported");
 
   }
 
@@ -2627,7 +2629,6 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
       X.getAsExpr()->Profile(XID, Context, true);
@@ -2647,6 +2648,11 @@ static bool isSameTemplateArg(ASTContext &Context,
           return false;
 
       return true;
+
+  case TemplateArgument::PackSplice:
+    // FIXME: Figure out what it means to deduce a pack splice
+    llvm_unreachable("Deduction not yet supported");
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -2681,8 +2687,7 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
       NTTPType = Arg.getParamTypeForDecl();
     Expr *E = BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
                   .getAs<Expr>();
-    return TemplateArgumentLoc(
-        TemplateArgument(E, TemplateArgument::Expression), E);
+    return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
   case TemplateArgument::NullPtr: {
@@ -2697,8 +2702,7 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
   case TemplateArgument::Integral: {
     Expr *E =
         BuildExpressionFromIntegralTemplateArgument(Arg, Loc).getAs<Expr>();
-    return TemplateArgumentLoc(
-        TemplateArgument(E, TemplateArgument::Expression), E);
+    return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
   case TemplateArgument::Template:
@@ -2719,12 +2723,15 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
         Context, Arg, Builder.getWithLocInContext(Context), Loc, Loc);
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
 
   case TemplateArgument::Pack:
     return TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
+
+  case TemplateArgument::PackSplice:
+    return TemplateArgumentLoc(Context, Arg, Loc, Loc, Loc, Loc);
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -5831,6 +5838,24 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
 }
 
 /// Mark the template parameters that are used by the given
+/// pack splice.
+static void
+MarkUsedTemplateParameters(ASTContext &Ctx,
+                           const PackSplice *PS,
+                           bool OnlyDeduced,
+                           unsigned Depth,
+                           llvm::SmallBitVector &Used) {
+  MarkUsedTemplateParameters(Ctx, PS->getOperand(),
+                             OnlyDeduced, Depth, Used);
+
+  if (!PS->isExpanded())
+    return;
+
+  for (Expr *SubOperand : PS->getExpansions())
+    MarkUsedTemplateParameters(Ctx, SubOperand, OnlyDeduced, Depth, Used);
+}
+
+/// Mark the template parameters that are used by the given
 /// type.
 static void
 MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
@@ -6097,11 +6122,17 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     break;
   }
 
-  case Type::Reflected:
+  case Type::TypeSplice:
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(Ctx,
-                                 cast<ReflectedType>(T)->getReflection(),
+                                 cast<TypeSpliceType>(T)->getReflection(),
                                  OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::TypePackSplice:
+    MarkUsedTemplateParameters(Ctx,
+                               cast<TypePackSpliceType>(T)->getPackSplice(),
+                               OnlyDeduced, Depth, Used);
     break;
 
   case Type::UnaryTransform:
@@ -6141,7 +6172,6 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::UnresolvedUsing:
   case Type::Pipe:
   case Type::ExtInt:
-  case Type::CXXDependentVariadicReifier:
   case Type::CXXRequiredType:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
@@ -6183,7 +6213,6 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
                                OnlyDeduced, Depth, Used);
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     MarkUsedTemplateParameters(Ctx, TemplateArg.getAsExpr(), OnlyDeduced,
                                Depth, Used);
@@ -6193,6 +6222,12 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
     for (const auto &P : TemplateArg.pack_elements())
       MarkUsedTemplateParameters(Ctx, P, OnlyDeduced, Depth, Used);
     break;
+
+  case TemplateArgument::PackSplice:
+    MarkUsedTemplateParameters(Ctx, TemplateArg.getPackSplice(), OnlyDeduced,
+                               Depth, Used);
+    break;
+
   }
 }
 

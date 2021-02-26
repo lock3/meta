@@ -576,7 +576,7 @@ public:
     if (const auto *E = D->getPlaceholderTypeConstraint())
       Visit(E);
     if (D->hasDefaultArgument()) {
-      TemplateArgument Arg(D->getDefaultArgument(), TemplateArgument::Expression);
+      TemplateArgument Arg(D->getDefaultArgument());
       Visit(Arg, SourceRange(), D->getDefaultArgStorage().getInheritedFrom(),
             D->defaultArgumentWasInherited() ? "inherited from" : "previous");
     }

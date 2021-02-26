@@ -1626,6 +1626,28 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     }
     break;
   }
+  case DeclSpec::TST_type_splice: {
+    Expr *E = DS.getRepAsExpr();
+    assert(E && "Didn't get an expression for type-splice?");
+    // TypeQuals handled by caller.
+    Result = S.ActOnTypeSpliceType(E);
+    if (Result.isNull()) {
+      Result = Context.IntTy;
+      declarator.setInvalidType(true);
+    }
+    break;
+  }
+  case DeclSpec::TST_type_pack_splice: {
+    Expr *E = DS.getRepAsExpr();
+    assert(E && "Didn't get an expression for type-pack-splice?");
+    // TypeQuals handled by caller.
+    Result = S.ActOnTypePackSpliceType(nullptr, E);
+    if (Result.isNull()) {
+      Result = Context.IntTy;
+      declarator.setInvalidType(true);
+    }
+    break;
+  }
   case DeclSpec::TST_underlyingType:
     Result = S.GetTypeFromParser(DS.getRepAsType());
     assert(!Result.isNull() && "Didn't get a type for __underlying_type?");

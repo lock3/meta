@@ -4,7 +4,7 @@
 
 namespace meta {
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 consteval bool is_invalid(info x) {
   return __reflect(query_is_invalid, x);
@@ -34,10 +34,10 @@ consteval int nesting(meta::info d) {
 }
 
 int main(int argc, char* argv[]) {
-  constexpr meta::info n1 = reflexpr(N1);
-  constexpr meta::info n2 = reflexpr(N1::N2);
-  constexpr meta::info s = reflexpr(N1::N2::S);
-  constexpr meta::info x = reflexpr(N1::x);
+  constexpr meta::info n1 = ^N1;
+  constexpr meta::info n2 = ^N1::N2;
+  constexpr meta::info s = ^N1::N2::S;
+  constexpr meta::info x = ^N1::x;
 
   static_assert(meta::get_parent(n2) == n1);
   static_assert(meta::get_parent(s) == n2);

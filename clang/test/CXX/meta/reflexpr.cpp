@@ -8,20 +8,20 @@ namespace N {
 }
 
 void f(int n) {
-  constexpr auto ref_S = reflexpr(S);
-  constexpr auto ref_E = reflexpr(E);
-  constexpr auto ref_EA = reflexpr(A);
-  constexpr auto ref_N =  reflexpr(N);
-  constexpr auto ref_NM = reflexpr(N::M);
+  constexpr auto ref_S = ^S;
+  constexpr auto ref_E = ^E;
+  constexpr auto ref_EA = ^A;
+  constexpr auto ref_N =  ^N;
+  constexpr auto ref_NM = ^N::M;
 
-  constexpr auto meta1 = reflexpr(n);
-  constexpr auto meta2 = reflexpr(f);
+  constexpr auto meta1 = ^n;
+  constexpr auto meta2 = ^f;
 
   double dub = 42.0;
   char character = 'a';
 
-  constexpr auto meta3 = reflexpr(dub);
-  constexpr auto meta4 = reflexpr(character);
+  constexpr auto meta3 = ^dub;
+  constexpr auto meta4 = ^character;
 }
 
 namespace Bad {
@@ -32,10 +32,10 @@ void g(int);
 template<typename T> void g2(T);
 
 void f() {
-  auto a = reflexpr(x); // expected-error {{use of undeclared identifier 'x'}}
+  auto a = ^x; // expected-error {{use of undeclared identifier 'x'}}
 #if 0
-  auto b = reflexpr(g); // expected-error {{reflection of overloaded identifier 'g'}}
-  auto c = reflexpr(g2); // expected-error {{reflection of overloaded identifier 'g2'}}
+  auto b = ^g; // expected-error {{reflection of overloaded identifier 'g'}}
+  auto c = ^g2; // expected-error {{reflection of overloaded identifier 'g2'}}
 #endif
 }
 
@@ -47,7 +47,7 @@ struct product{};
 
 template<typename T>
 consteval int test() {
-  auto x = reflexpr(T);
+  auto x = ^T;
   return 0;
 }
 

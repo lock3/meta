@@ -1,5 +1,11 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
+#include "../reflection_query.h"
+
+consteval auto name_of(meta::info refl) {
+  return __reflect(query_get_name, refl);
+}
+
 namespace bar {
   namespace fin {
   }
@@ -9,33 +15,33 @@ using namespace bar::fin;
 
 template<typename T>
 void test_template() {
-  constexpr auto int_reflexpr = reflexpr(int);
-  T unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = T();
+  constexpr auto int_reflexpr = ^int;
+  T [# "foo_", name_of(^bar), "_", name_of(^bar::fin) #] = T();
 
-  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
-  int int_y = unqualid("foo_bar_fin").get_int();
-  int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
+  int int_x = foo_bar_fin.[# "get_", "int" #]();
+  int int_y = [# "foo_bar_fin" #].get_int();
+  int int_z = [# "foo_bar_fin" #].[# "get_int" #]();
 
-  static constexpr auto r = reflexpr(T::field_1);
-  static_assert(T::unqualid(r) == 0);
+  static constexpr auto r = ^T::field_1;
+  static_assert(T::[# name_of(r) #] == 0);
 }
 
 template<typename T>
 struct TemplateS {
-  T unqualid("val_", reflexpr(T));
-  T unqualid("get_", reflexpr(T))() { return T(); }
+  T [# "val_", name_of(^T) #];
+  T [# "get_", name_of(^T) #]() { return T(); }
 };
 
 template<typename T>
 void test_template_class_attribute() {
   TemplateS<T> s;
-  T res_val = s.unqualid("val_", reflexpr(T));
-  T res_get = s.unqualid("get_", reflexpr(T))();
+  T res_val = s.[# "val_", name_of(^T) #];
+  T res_get = s.[# "get_", name_of(^T) #]();
 }
 
 template<int y>
-constexpr int get_ret_value(int unqualid("parm_", y)) {
-  return unqualid("parm_", y);
+constexpr int get_ret_value(int [# "parm_", y #]) {
+  return [# "parm_", y #];
 }
 
 void test_parameter() {
@@ -59,12 +65,12 @@ struct S : public SBase {
 
   template<int y>
   constexpr int get_template_field_int() const {
-    return unqualid("field_", y);
+    return [# "field_", y #];
   }
 
   template<int y>
   constexpr int get_template_base_field_int() const {
-    return unqualid("base_field_", y);
+    return [# "base_field_", y #];
   }
 
   constexpr int method_1() const {
@@ -73,34 +79,34 @@ struct S : public SBase {
 
   template<int y>
   constexpr int get_template_method_int() const {
-    return unqualid("method_", y)();
+    return [# "method_", y #]();
   }
 
   template<int y>
   constexpr int get_template_base_method_int() const {
-    return unqualid("base_method_", y)();
+    return [# "base_method_", y #]();
   }
 };
 
 void test_non_template() {
-  constexpr auto int_reflexpr = reflexpr(int);
-  S unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = S();
+  constexpr auto int_reflexpr = ^int;
+  S [# "foo_", name_of(^bar), "_", name_of(^bar::fin) #] = S();
 
-  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
-  int int_y = unqualid("foo_bar_fin").get_int();
-  int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
+  int int_x = foo_bar_fin.[# "get_", "int" #]();
+  int int_y = [# "foo_bar_fin" #].get_int();
+  int int_z = [# "foo_bar_fin" #].[# "get_int" #]();
 }
 
 template<int y>
 constexpr int template_bad_local_var_function() {
-  int z1 = unqualid("x", y); // expected-error {{use of undeclared identifier 'x1'}}
+  int z1 = [# "x", y #]; // expected-error {{use of undeclared identifier 'x1'}}
   int x1 = 0;
   return x1;
 }
 
 template<int y>
 constexpr int template_bad_local_var_in_caller_function() {
-  return unqualid("local_var_", y); // expected-error {{use of undeclared identifier 'local_var_1'}}
+  return [# "local_var_", y #]; // expected-error {{use of undeclared identifier 'local_var_1'}}
 }
 
 template<int y>
@@ -113,8 +119,8 @@ void test_bad() {
   auto not_a_reflexpr = 1;
 
   S foo_bar_fin  = S();
-  int int_x = foo_bar_fin.unqualid("get_nothing")(); // expected-error {{no member named 'get_nothing' in 'S'}}
-  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}} expected-error {{no member named '__invalid_identifier_splice' in 'S'}}
+  int int_x = foo_bar_fin.[# "get_nothing" #](); // expected-error {{no member named 'get_nothing' in 'S'}}
+  int int_y = foo_bar_fin.[# "get_", [# "not_a_reflexpr" #] #](); // expected-error {{expression is not an integral constant expression}} expected-error {{no member named '__invalid_identifier_splice' in 'S'}}
   template_bad_local_var_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_function<1>' requested here}}
   template_bad_local_var_in_caller_calling_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_in_caller_calling_function<1>' requested here}}
 }
@@ -123,25 +129,25 @@ constexpr void function_foo_1() { }
 
 template<int y>
 constexpr bool template_function_address_check() {
-  return &unqualid("function_foo_", y) == &function_foo_1;
+  return &[# "function_foo_", y #] == &function_foo_1;
 }
 
 template<int y>
 constexpr int template_parm_function(int x1) {
-  return unqualid("x", y);
+  return [# "x", y #];
 }
 
 template<int y>
 constexpr int template_local_var_function() {
   int x1 = 2;
-  return unqualid("x", y);
+  return [# "x", y #];
 }
 
 constexpr int global_var_1 = 1;
 
 template<int y>
 constexpr int template_global_var_function() {
-  return unqualid("global_var_", y);
+  return [# "global_var_", y #];
 }
 
 template<int y>
@@ -150,18 +156,18 @@ constexpr int template_proxy_function_1() {
 }
 
 template<int y>
-constexpr int template_template_non_dependent_unqualid_call_function() {
-  return template unqualid("template_proxy_function_", 1)<y>();
+constexpr int template_template_non_dependent_identifier_splice_call_function() {
+  return template [# "template_proxy_function_", 1 #]<y>();
 }
 
 template<int y>
-constexpr int template_template_non_dependent_implicit_unqualid_call_function() {
-  return unqualid("template_proxy_function_", 1)<y>();
+constexpr int template_template_non_dependent_implicit_identifier_splice_call_function() {
+  return [# "template_proxy_function_", 1 #]<y>();
 }
 
 template<int y>
-constexpr int template_template_unqualid_call_function() {
-  return template unqualid("template_proxy_function_", y)<y>();
+constexpr int template_template_identifier_splice_call_function() {
+  return template [# "template_proxy_function_", y #]<y>();
 }
 
 namespace namespace_a {
@@ -177,25 +183,25 @@ namespace namespace_a {
 
   template<int y>
   constexpr int template_namespace_var_function() {
-    return unqualid("namespace_var_", y);
+    return [# "namespace_var_", y #];
   }
 }
 
 template<int y>
 constexpr int template_adl_function() {
   namespace_a::NamespaceAStruct arg;
-  return unqualid("adl_found_function_", y)(arg);
+  return [# "adl_found_function_", y #](arg);
 }
 
 template<int y>
 constexpr int template_other_namespace_var_function() {
-  return namespace_a::unqualid("namespace_var_", y);
+  return namespace_a::[# "namespace_var_", y #];
 }
 
 template<int y>
 struct template_struct {
   int field_1 = 73;
-  int field_2 = unqualid("field_", y);
+  int field_2 = [# "field_", y #];
 };
 
 void test_template_param() {
@@ -204,9 +210,9 @@ void test_template_param() {
   static_assert(template_parm_function<1>(3) == 3);
   static_assert(template_local_var_function<1>() == 2);
   static_assert(template_global_var_function<1>() == 1);
-  static_assert(template_template_non_dependent_unqualid_call_function<1>() == 1);
-  static_assert(template_template_non_dependent_implicit_unqualid_call_function<1>() == 1);
-  static_assert(template_template_unqualid_call_function<1>() == 1);
+  static_assert(template_template_non_dependent_identifier_splice_call_function<1>() == 1);
+  static_assert(template_template_non_dependent_implicit_identifier_splice_call_function<1>() == 1);
+  static_assert(template_template_identifier_splice_call_function<1>() == 1);
   static_assert(namespace_a::template_namespace_var_function<1>() == 12);
   static_assert(template_adl_function<1>() == 22);
   static_assert(template_other_namespace_var_function<1>() == 12);

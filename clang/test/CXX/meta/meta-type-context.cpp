@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 class meta_type_class {
@@ -23,16 +23,16 @@ int main() {
     meta::info reflection; // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
   }
   {
-    auto reflection = reflexpr(void); // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
+    auto reflection = ^void; // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
   }
   {
-    meta::info reflection = reflexpr(void); // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
+    meta::info reflection = ^void; // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
   }
   {
     meta::info* reflection_ptr; // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
   }
   {
-    constexpr meta::info reflection = reflexpr(void);
+    constexpr meta::info reflection = ^void;
     const meta::info& reflection_ptr = reflection; // expected-error {{meta type variables may only appear in manifestly constant evaluated contexts}}
   }
   {
