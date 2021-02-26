@@ -13531,7 +13531,13 @@ void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
   }
 
   assert(LateMethodParameterInfo.empty() && "keyed parameter info not cleaned up");
-  assert(LateMethodParameterInfoStack.empty() && "parameter info not cleaned up");
+
+  // Classes in fragments can be completed within classes, so it's
+  // fine to bypass this check; though as a possible improvement we
+  // could find the enclosing fragment and verify we're in a class
+  // fragment.
+  assert((LateMethodParameterInfoStack.empty() || D->isInFragment()) &&
+         "parameter info not cleaned up");
 }
 
 void Sema::referenceDLLExportedClassMethods() {
