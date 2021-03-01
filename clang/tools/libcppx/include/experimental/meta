@@ -436,6 +436,12 @@ consteval std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> las
   return n;
 }
 
+template<typename I>
+consteval std::size_t size(range<I> const& r)
+{
+  return distance(r.begin(), r.end());
+}
+
 } // end internal namespace detail
 
 // -------------------------------------------------------------------------- //
