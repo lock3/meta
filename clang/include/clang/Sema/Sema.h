@@ -12423,14 +12423,6 @@ public:
   ExprResult BuildCXXFragmentExpr(
       SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
 
-  void ActOnCXXLegacyFragmentCapture(SmallVectorImpl<Expr *> &Captures);
-  CXXFragmentDecl *ActOnStartCXXLegacyFragment(
-      Scope *S, SourceLocation Loc, SmallVectorImpl<Expr *> &Captures);
-  ExprResult ActOnCXXLegacyFragmentExpr(
-      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
-  ExprResult BuildCXXLegacyFragmentExpr(
-      SourceLocation Loc, Decl *Fragment, SmallVectorImpl<Expr *> &Captures);
-
   bool ActOnCXXSpecifiedNamespaceInjectionContext(SourceLocation BeginLoc,
                                                   Decl *NamespaceDecl,
                                         CXXInjectionContextSpecifier &Specifier,

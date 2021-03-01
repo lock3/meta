@@ -6043,20 +6043,16 @@ class CXXFragmentExpr final
   }
 
   CXXFragmentExpr(QualType Ty, SourceLocation IntroLoc,
-                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
-                  bool IsLegacy);
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
 
   CXXFragmentExpr(EmptyShell Empty) : Expr(CXXFragmentExprClass, Empty) {}
 public:
   static CXXFragmentExpr *Create(
       const ASTContext &C, SourceLocation IntroLoc,
-      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
-      bool IsLegacy = false);
+      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
 
   static CXXFragmentExpr *CreateEmpty(const ASTContext &C,
                                       EmptyShell Empty);
-
-  bool isLegacy() const { return FragmentExprBits.IsLegacy; }
 
   /// \brief The number of captured declarations.
   std::size_t getNumCaptures() const { return NumCaptures; }

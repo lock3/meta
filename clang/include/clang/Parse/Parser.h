@@ -3214,10 +3214,6 @@ public:
   ExprResult ParseCXXUnquoteOperator();
   bool ParseCXXFragmentCaptures(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
-
-  Decl *ParseCXXLegacyFragment(SmallVectorImpl<Expr *> &Captures);
-  ExprResult ParseCXXLegacyFragmentExpression();
-
   Decl *MaybeParseCXXInjectorDeclaration();
   Decl *ParseCXXMetaprogramDeclaration();
 private:

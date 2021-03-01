@@ -1684,13 +1684,8 @@ public:
 
   /// Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
-                                    SmallVectorImpl<Expr *> &Captures,
-                                    bool IsLegacy) {
-    if (IsLegacy) {
-      return getSema().BuildCXXLegacyFragmentExpr(Loc, Fragment, Captures);
-    } else {
-      return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
-    }
+                                    SmallVectorImpl<Expr *> &Captures) {
+    return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
   }
 
   /// Build a new fragment capture expression.
@@ -8815,7 +8810,7 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
 
   // Rebuild the expression.
   return getDerived().RebuildCXXFragmentExpr(
-      E->getIntroLoc(), E->getFragment(), Captures, E->isLegacy());
+      E->getIntroLoc(), E->getFragment(), Captures);
 }
 
 template<typename Derived>

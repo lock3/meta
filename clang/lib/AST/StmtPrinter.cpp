@@ -2601,7 +2601,7 @@ void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
 }
 
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
-  OS << (Node->isLegacy() ? "__fragment " : "fragment ");
+  OS << "fragment ";
   Node->getFragment()->getContent()->print(OS, Policy);
 }
 

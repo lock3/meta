@@ -73,33 +73,6 @@ struct InjectedDef {
   Decl *Injected;
 };
 
-class InjectionCapture {
-  enum {
-   Legacy, Explicit
-  } Kind;
-  const ValueDecl *Decl;
-  APValue Value;
-
-public:
-  InjectionCapture(const ValueDecl *Decl, APValue Value)
-    : Kind(Legacy), Decl(Decl), Value(Value) { }
-  InjectionCapture(APValue Value)
-    : Kind(Explicit), Value(Value) { }
-
-  bool isLegacy() const {
-    return Kind == Legacy;
-  }
-
-  const ValueDecl *getDecl() const {
-    assert(isLegacy());
-    return Decl;
-  }
-
-  APValue getValue() const {
-    return Value;
-  }
-};
-
 using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
 
 struct InjectionInfo {
@@ -311,44 +284,15 @@ public:
     AddDeclSubstitution(Old, New);
   }
 
-  /// Adds substitutions for each placeholder in the fragment.
-  /// The types and values are sourced from the fields of the reflection
-  /// class and the captured values.
-  void AddLegacyPlaceholderSubstitutions(
-      const DeclContext *Fragment, const ArrayRef<InjectionCapture> &Captures) {
-    assert(isa<CXXFragmentDecl>(Fragment) && "Context is not a fragment");
-
-    auto PlaceIter = Fragment->decls_begin();
-    auto PlaceIterEnd = Fragment->decls_end();
-    auto CaptureIter = Captures.begin();
-    auto CaptureIterEnd = Captures.end();
-
-    while (PlaceIter != PlaceIterEnd && CaptureIter != CaptureIterEnd) {
-      const InjectionCapture &IC = (*CaptureIter++);
-      if (!IC.isLegacy())
-        continue;
-
-      Decl *Var = *PlaceIter++;
-
-      QualType Ty = IC.getDecl()->getType();
-      APValue Val = IC.getValue();
-
-      CurInjection->PlaceholderSubsts.try_emplace(Var, Ty, Val);
-    }
-  }
-
   /// Adds the evaluated value for each capture mapped by itself
   /// index.
   void AddCapturedValues(const CXXFragmentExpr *InitializingFragment,
-      const ArrayRef<InjectionCapture> &Captures) {
+      const ArrayRef<APValue> &Captures) {
     assert(!CurInjection->InitializingFragment);
     CurInjection->InitializingFragment = InitializingFragment;
 
-    for (const InjectionCapture &IC : Captures) {
-      if (IC.isLegacy())
-        continue;
-
-      CurInjection->CapturedValues.emplace_back(IC.getValue());
+    for (const APValue &Capture : Captures) {
+      CurInjection->CapturedValues.push_back(Capture);
     }
   }
 
@@ -3571,7 +3515,7 @@ static void UpdateInjector(InjectionContext *Ctx, CXXInjectorDecl *ID, Decl *Inj
 static bool InjectFragment(
     Sema &S, CXXInjectorDecl *ID, const CXXFragmentExpr *FragExpr,
     const Sema::FragInstantiationArgTy &InjectionTemplateArgs,
-    const SmallVector<InjectionCapture, 8> &Captures, Decl *Injectee) {
+    const SmallVector<APValue, 8> &Captures, Decl *Injectee) {
   SourceLocation POI = ID->getSourceRange().getEnd();
 
   Decl *Injection = getFragInjectionDecl(FragExpr);
@@ -3592,9 +3536,6 @@ static bool InjectFragment(
 
     // Add source location information for the current injection.
     Ctx->SetPointOfInjection(POI);
-
-    // Legacy setup.
-    Ctx->AddLegacyPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     // Perform the transfer from Injection to Injectee.
     PerformInjection(Ctx, Injectee, Injection);
@@ -3748,7 +3689,7 @@ GetTemplateArguments(Sema &S, InjectionEffect &IE) {
     return { };
 }
 
-static SmallVector<InjectionCapture, 8>
+static SmallVector<APValue, 8>
 GetFragCaptures(InjectionEffect &IE) {
   // Retrieve state from the InjectionEffect.
   const CXXFragmentExpr *E = getFragExpr(IE);
@@ -3756,20 +3697,12 @@ GetFragCaptures(InjectionEffect &IE) {
   unsigned NumCaptures = E->getNumCaptures();
 
   // Allocate space in advanced as we know the size.
-  SmallVector<InjectionCapture, 8> Captures;
+  SmallVector<APValue, 8> Captures;
   Captures.reserve(NumCaptures);
 
-  if (E->isLegacy()) {
-    // Map the capture decls to their values.
-    for (unsigned I = 0; I < NumCaptures; ++I) {
-      auto *DRE = cast<DeclRefExpr>(E->getCapture(I));
-      Captures.emplace_back(DRE->getDecl(), Values[I]);
-    }
-  } else {
-    // Map the captures to their values by index.
-    for (unsigned I = 0; I < NumCaptures; ++I) {
-      Captures.emplace_back(Values[I]);
-    }
+  // Map the captures to their values by index.
+  for (unsigned I = 0; I < NumCaptures; ++I) {
+    Captures.push_back(Values[I]);
   }
 
   return Captures;
@@ -3779,7 +3712,7 @@ static bool ApplyFragmentInjection(Sema &S, CXXInjectorDecl *MD,
                                    InjectionEffect &IE, Decl *Injectee) {
   const CXXFragmentExpr *FragExpr = getFragExpr(IE);
   Sema::FragInstantiationArgTy &&TemplateArgs = GetTemplateArguments(S, IE);
-  SmallVector<InjectionCapture, 8> &&Captures = GetFragCaptures(IE);
+  SmallVector<APValue, 8> &&Captures = GetFragCaptures(IE);
   return InjectFragment(S, MD, FragExpr, TemplateArgs, Captures, Injectee);
 }
 

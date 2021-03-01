@@ -2052,20 +2052,19 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
 
 CXXFragmentExpr::CXXFragmentExpr(
     QualType T, SourceLocation IntroLoc, CXXFragmentDecl *Frag,
-    ArrayRef<Expr *> Caps, bool IsLegacy)
+    ArrayRef<Expr *> Caps)
   : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary),
     NumCaptures(Caps.size()), Fragment(Frag) {
-  FragmentExprBits.IsLegacy = IsLegacy;
   FragmentExprBits.IntroLoc = IntroLoc;
 }
 
 CXXFragmentExpr *CXXFragmentExpr::Create(
     const ASTContext &C, SourceLocation IntroLoc,
-    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures, bool IsLegacy) {
+    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures) {
   // Allocate buffered CXXFragmentExpr with space for trailing captures.
   void *Buffer = C.Allocate(totalSizeToAlloc<Expr *>(Captures.size()));
   auto *E = new (Buffer) CXXFragmentExpr(
-      C.MetaInfoTy, IntroLoc, Fragment, Captures, IsLegacy);
+      C.MetaInfoTy, IntroLoc, Fragment, Captures);
 
   // Add captures and compute dependence.
   std::copy(Captures.begin(), Captures.end(), E->getTrailingObjects<Expr *>());

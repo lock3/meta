@@ -1708,9 +1708,6 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw_fragment:
     return ParseCXXFragmentExpression();
 
-  case tok::kw___fragment:
-    return ParseCXXLegacyFragmentExpression();
-
   case tok::kw_noexcept: { // [C++0x] 'noexcept' '(' expression ')'
     if (NotPrimaryExpression)
       *NotPrimaryExpression = true;
