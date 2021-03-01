@@ -1107,7 +1107,13 @@ bool InjectionContext::InjectBaseSpecifier(CXXBaseSpecifier *BS) {
   for (CXXBaseSpecifier &Base : Owner->vbases())
     Bases.push_back(&Base);
 
-  CXXBaseSpecifier *NewBase = TransformCXXBaseSpecifier(Owner, BS);
+  TypeSourceInfo *TSI = TransformType(BS->getTypeSourceInfo());
+  if (!TSI)
+    return true;
+
+  CXXBaseSpecifier *NewBase = getSema().CheckBaseSpecifier(
+      Owner, BS->getSourceRange(), BS->isVirtual(),
+      BS->getAccessSpecifierAsWritten(), TSI, BS->getEllipsisLoc());
   if (!NewBase)
     return true;
 
@@ -3310,21 +3316,6 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
   }
 
   return new (Context) CXXInjectionStmt(Loc, ContextSpecifier, Operand);
-}
-
-StmtResult Sema::ActOnCXXBaseInjectionStmt(
-    SourceLocation KWLoc, SourceLocation LParenLoc,
-    SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
-    SourceLocation RParenLoc) {
-  return BuildCXXBaseInjectionStmt(KWLoc, LParenLoc, BaseSpecifiers, RParenLoc);
-}
-
-StmtResult Sema::BuildCXXBaseInjectionStmt(
-    SourceLocation KWLoc, SourceLocation LParenLoc,
-    SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
-    SourceLocation RParenLoc) {
-  return CXXBaseInjectionStmt::Create(Context, KWLoc, LParenLoc,
-                                      BaseSpecifiers, RParenLoc);
 }
 
 static Decl *getFragInjectionDecl(const CXXFragmentExpr *E) {

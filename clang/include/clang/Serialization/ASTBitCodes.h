@@ -1797,9 +1797,6 @@ public:
       /// A CXXInjection record.
       STMT_CXX_INJECTION,
 
-      /// A CXXBaseInjection record.
-      STMT_CXX_BASE_INJECTION,
-
       /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
 

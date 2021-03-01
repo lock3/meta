@@ -53,7 +53,6 @@ def CXXExpansionStmt : StmtNode<Stmt, 1>;
 def CXXCompositeExpansionStmt : StmtNode<CXXExpansionStmt>;
 def CXXPackExpansionStmt : StmtNode<CXXExpansionStmt>;
 def CXXInjectionStmt : StmtNode<Stmt>;
-def CXXBaseInjectionStmt : StmtNode<Stmt>;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : StmtNode<Stmt>;

@@ -2061,7 +2061,6 @@ private:
   bool ParseOptionalCXXInjectionContextSpecifier(
                                        CXXInjectionContextSpecifier &Specifier);
   StmtResult ParseCXXInjectionStatement();
-  StmtResult ParseCXXBaseInjectionStatement();
 
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while condition expression.

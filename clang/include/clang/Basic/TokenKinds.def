@@ -411,7 +411,6 @@ KEYWORD(__reflect_dump              , KEYREFLECT)
 KEYWORD(__compiler_error            , KEYREFLECT)
 KEYWORD(__concatenate               , KEYREFLECT)
 KEYWORD(__select_member             , KEYREFLECT)
-KEYWORD(__inject_base               , KEYREFLECT)
 
 // C++20 keywords.
 CXX20_KEYWORD(consteval             , 0)

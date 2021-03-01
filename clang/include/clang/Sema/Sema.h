@@ -12443,15 +12443,6 @@ public:
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc,
           const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Operand);
 
-  StmtResult ActOnCXXBaseInjectionStmt(
-      SourceLocation KWLoc, SourceLocation LParenLoc,
-      SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
-      SourceLocation RParenLoc);
-  StmtResult BuildCXXBaseInjectionStmt(
-      SourceLocation KWLoc, SourceLocation LParenLoc,
-      SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
-      SourceLocation RParenLoc);
-
   bool ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE);
   bool ApplyEffects(CXXInjectorDecl *MD,
                     SmallVectorImpl<InjectionEffect> &Effects);
