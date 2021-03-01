@@ -632,7 +632,7 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
   ExprResult ReflectedExprResult = getSplicedExpr(*this, Refl);
   if (ReflectedExprResult.isInvalid())
     return ExprError();
-
+  
   // Extract the relevant information for transform into an
   // UnresolvedMemberExpr.
   Expr *ReflectedExpr = ReflectedExprResult.get();
@@ -643,12 +643,19 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
 
   if (auto *DRE = dyn_cast<DeclRefExpr>(ReflectedExpr)) {
     NamedDecl *Named = DRE->getDecl();
-
     if (auto *FD = dyn_cast<FieldDecl>(Named)) {
-      return BuildFieldReferenceExpr(
+      // Suppress access errors (including base class conversion errors)
+      // whe splicing a member.
+      //
+      // TOOD: Do we need to do anything with this trap?
+      // SFINAETrap Trap(*this, true);
+      auto Prev = ForceBaseConversion;
+      ForceBaseConversion = true;
+      auto R = BuildFieldReferenceExpr(
           Base, IsArrow, OpLoc, /*SS*/{}, FD,
-          DeclAccessPair::make(FD, FD->getAccess()),
-          Named->getNameInfo());
+          DeclAccessPair::make(FD, FD->getAccess()), Named->getNameInfo());
+      ForceBaseConversion = Prev;
+      return R;
     } else {
       NameInfo = Named->getNameInfo();
       ToDecls.addDecl(Named);

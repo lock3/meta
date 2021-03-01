@@ -10385,6 +10385,10 @@ public:
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
       SourceLocation RAngleLoc);
 
+  // Set when splicing members to force conversions for inaccessible
+  // base classes.
+  bool ForceBaseConversion = false;
+
   ExprResult ActOnCXXPackSpliceExpr(SourceLocation EllipsisLoc,
                                     SourceLocation SBELoc,
                                     Expr *Operand,
