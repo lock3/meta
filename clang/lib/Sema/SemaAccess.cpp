@@ -1836,6 +1836,9 @@ Sema::AccessResult Sema::CheckBaseClassAccess(SourceLocation AccessLoc,
   if (Path.Access == AS_public)
     return AR_accessible;
 
+  if (ForceBaseConversion)
+    return AR_accessible;
+
   CXXRecordDecl *BaseD, *DerivedD;
   BaseD = cast<CXXRecordDecl>(Base->castAs<RecordType>()->getDecl());
   DerivedD = cast<CXXRecordDecl>(Derived->castAs<RecordType>()->getDecl());
