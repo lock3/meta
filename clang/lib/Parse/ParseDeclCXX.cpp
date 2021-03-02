@@ -2153,6 +2153,14 @@ BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
+  // Parse the optional prefix ellipsis (designating an expandable term). The
+  // ellipsis is actually part of the base-specifier-list grammar productions,
+  // but we parse it here for convenience.
+  //
+  // FIXME: Implement me.
+  if (Tok.is(tok::ellipsis))
+    assert(false && "nomination of base specifier as expandable");
+
   ParsedAttributesWithRange Attributes(AttrFactory);
   MaybeParseCXX11Attributes(Attributes);
 
@@ -3618,6 +3626,10 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 ///         '::'[opt] nested-name-specifier[opt] class-name
 ///         identifier
 MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
+  // FIXME: Implement this.
+  if (Tok.is(tok::ellipsis))
+    assert(false && "nomination of member-initializer as expandable");
+
   // parse '::'[opt] nested-name-specifier[opt]
   CXXScopeSpec SS;
   if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
@@ -3648,8 +3660,6 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ParseDecltypeSpecifier(DS);
   } else if (Tok.is(tok::annot_type_splice)) {
     ParseTypeSplice(DS);
-  } else if (isCXXPackSpliceBegin()) {
-    ParseTypePackSplice(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
                                            ? takeTemplateIdAnnotation(Tok)
@@ -3672,7 +3682,6 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ExprResult InitList = ParseBraceInitializer();
     if (InitList.isInvalid())
       return true;
-
 
     SourceLocation EllipsisLoc;
     TryConsumeToken(tok::ellipsis, EllipsisLoc);
