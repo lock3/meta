@@ -3427,6 +3427,16 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     if (ExpressionStarts)
       ExpressionStarts();
 
+    // Parse the expansion nomination.
+    //
+    // TODO: Note that ParseBraceInitializer handles the postfix expansion
+    // separately from the code here, so we'll have to forward the prefix
+    // ellipsis to the parse for that function.
+    //
+    // FIXME: Implement this.
+    if (Tok.is(tok::ellipsis))
+      assert(false && "nomination of initializer-clause as expansion");
+
     ExprResult Expr;
 
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {

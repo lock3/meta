@@ -921,6 +921,12 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
   bool MightBeTemplateArgument = false;
 
   while (true) {
+    // Skip a prefix ellipsis.
+    if (Tok.is(tok::ellipsis)) {
+      Toks.push_back(Tok);
+      ConsumeToken();
+    }
+
     // Skip over the mem-initializer-id, if possible.
     if (Tok.is(tok::kw_decltype)) {
       Toks.push_back(Tok);
@@ -933,18 +939,6 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
       if (!ConsumeAndStoreUntil(tok::r_paren, Toks, /*StopAtSemi=*/true)) {
         Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
         Diag(OpenLoc, diag::note_matching) << tok::l_paren;
-        return true;
-      }
-    }
-
-    if (Tok.is(tok::ellipsis) &&
-        matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
-      // Use the location of the '[' token
-      SourceLocation OpenLoc = NextToken().getLocation();
-
-      if (!ConsumeAndStoreTypePackSplice(Toks)) {
-        Diag(Tok.getLocation(), diag::err_expected_end_of_splice);
-        Diag(OpenLoc, diag::note_matching);
         return true;
       }
     }

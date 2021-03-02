@@ -1566,12 +1566,16 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
 ///
 ///       template-argument-list: [C++ 14.2]
 ///         template-argument
-///         template-argument-list ',' template-argument
+///         template-argument-list ',' template-argument ...[opt]
 bool
 Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
+    // FIXME: Implement me.
+    if (Tok.is(tok::ellipsis))
+      assert(false && "nomination of template argument as expandable");
+    
     ParsedTemplateArgument Arg = ParseTemplateArgument();
     SourceLocation EllipsisLoc;
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
