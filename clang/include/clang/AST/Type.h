@@ -129,7 +129,6 @@ class TemplateArgumentLoc;
 class TemplateTypeParmDecl;
 class TypedefNameDecl;
 class UnresolvedUsingTypenameDecl;
-class CXXRequiredTypeDecl;
 
 using CanQualType = CanQual<Type>;
 
@@ -4423,37 +4422,6 @@ public:
 
   static void Profile(llvm::FoldingSetNodeID &ID,
                       UnresolvedUsingTypenameDecl *D) {
-    ID.AddPointer(D);
-  }
-};
-
-class CXXRequiredTypeType : public Type {
-  friend class ASTContext; // ASTContext creates these.
-
-  CXXRequiredTypeDecl *RequiresDecl;
-
-  CXXRequiredTypeType(const CXXRequiredTypeDecl *D)
-    : Type(CXXRequiredType, QualType(this, 0),
-             TypeDependence::DependentInstantiation, /*MetaType=*/false),
-      RequiresDecl(const_cast<CXXRequiredTypeDecl*>(D))
-    {}
-
-public:
-  CXXRequiredTypeDecl *getDecl() const { return RequiresDecl; }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == CXXRequiredType;
-  }
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    return Profile(ID, RequiresDecl);
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      const CXXRequiredTypeDecl *D) {
     ID.AddPointer(D);
   }
 };

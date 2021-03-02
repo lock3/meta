@@ -2,22 +2,22 @@
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-template<int val>
-consteval auto thing() {
-  return fragment namespace {
-    requires typename R;
+using info = decltype(^void);
 
-    R build_r() {
-      return R { val };
+template<int val>
+consteval auto thing(info ret_ty) {
+  return fragment namespace {
+    typename [: %{ret_ty} :] build_r() {
+      return typename [: %{ret_ty} :]{ val };
     }
   };
 }
 
-constexpr auto frag = thing<10>();
-
 struct R {
   int val;
 };
+
+constexpr auto frag = thing<10>(^R);
 
 namespace r_space {
   consteval -> frag;

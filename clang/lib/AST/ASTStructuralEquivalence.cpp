@@ -937,14 +937,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::CXXRequiredType:
-    if (!IsStructurallyEquivalent(Context,
-                                  cast<CXXRequiredTypeType>(T1)->getDecl(),
-                                  cast<CXXRequiredTypeType>(T2)->getDecl()))
-      return false;
-    break;
-
-
   case Type::Attributed:
     if (!IsStructurallyEquivalent(Context,
                                   cast<AttributedType>(T1)->getModifiedType(),

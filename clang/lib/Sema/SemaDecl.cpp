@@ -9224,8 +9224,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   }
 
   // Filter out previous declarations that don't match the scope.
-  FilterLookupForScope(Previous, OriginalDC, S, (AnalyzingRequiredDeclarator
-                       || shouldConsiderLinkage(NewFD)),
+  FilterLookupForScope(Previous, OriginalDC, S, shouldConsiderLinkage(NewFD),
                        D.getCXXScopeSpec().isNotEmpty() ||
                        isMemberSpecialization ||
                        isFunctionTemplateSpecialization);

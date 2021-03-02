@@ -965,11 +965,6 @@ public:
     return SemaRef.Context.getMacroQualifiedType(T, MacroII);
   }
 
-  /// Build a new required type type.
-  QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
-    return SemaRef.Context.getCXXRequiredTypeType(D);
-  }
-
   /// Build a new class/struct/union type.
   QualType RebuildRecordType(RecordDecl *Record) {
     return SemaRef.Context.getTypeDeclType(Record);
@@ -6433,29 +6428,6 @@ TreeTransform<Derived>::TransformUnresolvedUsingType(TypeLocBuilder &TLB,
 
   // We might get an arbitrary type spec type back.  We should at
   // least always get a type spec type, though.
-  TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(Result);
-  NewTL.setNameLoc(TL.getNameLoc());
-
-  return Result;
-}
-
-template<typename Derived> QualType
-TreeTransform<Derived>::TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
-                                                 CXXRequiredTypeTypeLoc TL) {
-  const CXXRequiredTypeType *T = TL.getTypePtr();
-  CXXRequiredTypeDecl *D =
-    cast_or_null<CXXRequiredTypeDecl>(getDerived().TransformDecl(
-                                        TL.getNameLoc(), T->getDecl()));
-  if (!D)
-    return QualType();
-
-  QualType Result = TL.getType();
-  if (getDerived().AlwaysRebuild() || D != T->getDecl()) {
-    Result = getDerived().RebuildCXXRequiredTypeType(D);
-    if (Result.isNull())
-      return QualType();
-  }
-
   TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(Result);
   NewTL.setNameLoc(TL.getNameLoc());
 

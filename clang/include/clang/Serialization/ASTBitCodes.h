@@ -1501,12 +1501,6 @@ public:
       /// A CXXInjectionDecl record.
       DECL_CXX_INJECTION,
 
-      /// A CXXRequiredTypeDecl record.
-      DECL_CXX_REQUIRED_TYPE,
-
-      /// A CXXRequiredDeclaratorDecl record.
-      DECL_CXX_REQUIRED_DECLARATOR,
-
       DECL_LAST = DECL_CXX_INJECTION
     };
 

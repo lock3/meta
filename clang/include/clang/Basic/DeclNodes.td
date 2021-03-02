@@ -33,7 +33,6 @@ def Named : DeclNode<Decl, "named declarations", 1>;
             def ClassTemplatePartialSpecialization
               : DeclNode<ClassTemplateSpecialization>;
     def TemplateTypeParm : DeclNode<Type>;
-    def CXXRequiredType : DeclNode<Type>;
   def Value : DeclNode<Named, "value declarations", 1>;
     def EnumConstant : DeclNode<Value, "enumerators">;
     def UnresolvedUsingValue : DeclNode<Value>;
@@ -63,7 +62,6 @@ def Named : DeclNode<Decl, "named declarations", 1>;
         def Decomposition : DeclNode<Var>;
         def OMPCapturedExpr : DeclNode<Var>;
       def NonTypeTemplateParm : DeclNode<Declarator>;
-      def CXXRequiredDeclarator : DeclNode<Declarator>;
   def Template : DeclNode<Named, "templates", 1>;
     def RedeclarableTemplate : DeclNode<Template, "redeclarable templates", 1>;
       def FunctionTemplate : DeclNode<RedeclarableTemplate>;

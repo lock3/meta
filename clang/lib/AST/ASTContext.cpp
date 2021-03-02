@@ -3485,7 +3485,6 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::ExtInt:
   case Type::DependentExtInt:
   case Type::DependentIdentifierSplice:
-  case Type::CXXRequiredType:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -4459,9 +4458,6 @@ QualType ASTContext::getTypeDeclTypeSlow(const TypeDecl *Decl) const {
     Type *newType = new (*this, TypeAlignment) UnresolvedUsingType(Using);
     Decl->TypeForDecl = newType;
     Types.push_back(newType);
-  } else if (const auto *Req = dyn_cast<CXXRequiredTypeDecl>(Decl)) {
-    const Type *newType = getCXXRequiredTypeType(Req).getTypePtr();
-    Decl->TypeForDecl = newType;
   } else
     llvm_unreachable("TypeDecl without a type?");
 
@@ -4777,13 +4773,6 @@ QualType ASTContext::getElaboratedType(ElaboratedTypeKeyword Keyword,
   Types.push_back(T);
   ElaboratedTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
-}
-
-QualType
-ASTContext::getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const {
-  Type *newType = new (*this, TypeAlignment) CXXRequiredTypeType(D);
-  Types.push_back(newType);
-  return QualType(newType, 0);
 }
 
 QualType

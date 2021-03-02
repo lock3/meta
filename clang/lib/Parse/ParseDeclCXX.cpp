@@ -901,70 +901,6 @@ Decl *Parser::ParseAliasDeclarationAfterDeclarator(
                                        DeclFromDeclSpec);
 }
 
-Decl *
-Parser::ParseCXXRequiredTypenameDecl(SourceLocation RequiresLoc,
-                                     DeclaratorContext Ctx,
-                                     AccessSpecifier AS) {
-  assert(Tok.isOneOf(tok::kw_class, tok::kw_typename) &&
-         "A require type starts with 'class' or 'typename'");
-
-  bool DeclaredWithTypename = Tok.is(tok::kw_typename);
-
-  SourceLocation SpecLoc = ConsumeToken();
-  CXXScopeSpec SS;
-  if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
-                                     /*ObjectHadErrors=*/false,
-                                     /*EnteringContext=*/false,
-                                     /*MayBePseudoDestructor=*/nullptr,
-                                     /*IsTypename*/true))
-    return nullptr;
-
-  // The actual name of the type.
-  if (!isIdentifier())
-    return nullptr;
-  IdentifierInfo *TypeId = Tok.getIdentifierInfo();
-  ConsumeIdentifier();
-
-  // Eat the ';'.
-  ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
-
-  return Actions.ActOnCXXRequiredTypeDecl(AS, RequiresLoc, SpecLoc, TypeId,
-                                          DeclaredWithTypename);
-}
-
-Decl *
-Parser::ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
-                                       DeclaratorContext Ctx,
-                                       AccessSpecifier AS) {
-  DeclSpecContext DSC = getDeclSpecContextFromDeclaratorContext(Ctx);
-
-  // Get the specifiers and declarator we are going to require.
-  DeclSpec DS(AttrFactory);
-  ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS, DSC);
-
-  Declarator DeclaratorInfo(DS, Ctx);
-  ParseDeclarator(DeclaratorInfo);
-
-  // Eat the ';'.
-  ExpectAndConsume(tok::semi);
-
-  return Actions.ActOnCXXRequiredDeclaratorDecl(getCurScope(),
-                                                RequiresLoc,
-                                                DeclaratorInfo);
-}
-
-Decl *
-Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, AccessSpecifier AS) {
-  assert(Tok.is(tok::kw_requires) && "Not requires!");
-  SourceLocation RequiresLoc = ConsumeToken();
-
-  // We have a declaration the form 'requires typename T'
-  if (Tok.isOneOf(tok::kw_class, tok::kw_typename))
-    return ParseCXXRequiredTypenameDecl(RequiresLoc, Ctx, AS);
-
-  return ParseCXXRequiredDeclaratorDecl(RequiresLoc, Ctx, AS);
-}
-
 /// ParseStaticAssertDeclaration - Parse C++0x or C11 static_assert-declaration.
 ///
 /// [C++0x] static_assert-declaration:
@@ -2788,12 +2724,6 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // [Meta] injector-declaration
     if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
       return Actions.ConvertDeclToDeclGroup(ParsedDecl);
-  }
-
-  if (Tok.is(tok::kw_requires)) {
-    ProhibitAttributes(attrs);
-    return Actions.ConvertDeclToDeclGroup(
-        ParseCXXRequiredDecl(DeclaratorContext::MemberContext, AS));
   }
 
   // Hold late-parsed attributes so we can attach a Decl to them later.

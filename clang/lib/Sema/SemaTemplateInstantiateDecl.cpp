@@ -1245,18 +1245,6 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   llvm_unreachable("should never get here");
 }
 
-Decl
-*TemplateDeclInstantiator::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  // See VisitCXXFragmentDecl.
-  llvm_unreachable("should never get here");
-}
-
-Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
-                                                 CXXRequiredDeclaratorDecl *D) {
-  // See VisitCXXFragmentDecl.
-  llvm_unreachable("should never get here");
-}
-
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
@@ -5331,9 +5319,6 @@ void Sema::InstantiateVariableInitializer(
 
     // We'll add an initializer to a for-range declaration later.
     if (Var->isCXXForRangeDecl() || Var->isObjCForDecl())
-      return;
-
-    if (AnalyzingRequiredDeclarator)
       return;
 
     ActOnUninitializedDecl(Var);

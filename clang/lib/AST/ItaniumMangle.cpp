@@ -2065,7 +2065,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::DependentIdentifierSplice:
-  case Type::CXXRequiredType:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:

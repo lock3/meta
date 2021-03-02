@@ -3275,7 +3275,6 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &type, ValueDecl *VD,
 
   // Non-type template parameters are either l-values or r-values
   // depending on the type.
-  case Decl::CXXRequiredDeclarator:
   case Decl::NonTypeTemplateParm: {
     if (const ReferenceType *reftype = type->getAs<ReferenceType>()) {
       type = reftype->getPointeeType();

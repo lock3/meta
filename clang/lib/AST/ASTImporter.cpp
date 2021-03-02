@@ -358,7 +358,6 @@ namespace clang {
     ExpectedType VisitFunctionNoProtoType(const FunctionNoProtoType *T);
     ExpectedType VisitFunctionProtoType(const FunctionProtoType *T);
     ExpectedType VisitUnresolvedUsingType(const UnresolvedUsingType *T);
-    ExpectedType VisitCXXRequiredTypeType(const CXXRequiredTypeType *T);
     ExpectedType VisitParenType(const ParenType *T);
     ExpectedType VisitTypedefType(const TypedefType *T);
     ExpectedType VisitTypeOfExprType(const TypeOfExprType *T);
@@ -1292,18 +1291,6 @@ ASTNodeImporter::VisitFunctionProtoType(const FunctionProtoType *T) {
 
 ExpectedType ASTNodeImporter::VisitUnresolvedUsingType(
     const UnresolvedUsingType *T) {
-  Error Err = Error::success();
-  auto ToD = importChecked(Err, T->getDecl());
-  auto ToPrevD = importChecked(Err, T->getDecl()->getPreviousDecl());
-  if (Err)
-    return std::move(Err);
-
-  return Importer.getToContext().getTypeDeclType(
-      ToD, cast_or_null<TypeDecl>(ToPrevD));
-}
-
-ExpectedType
-ASTNodeImporter::VisitCXXRequiredTypeType(const CXXRequiredTypeType *T) {
   Error Err = Error::success();
   auto ToD = importChecked(Err, T->getDecl());
   auto ToPrevD = importChecked(Err, T->getDecl()->getPreviousDecl());

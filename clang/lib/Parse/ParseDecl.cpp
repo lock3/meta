@@ -1690,10 +1690,6 @@ Parser::ParseDeclaration(DeclaratorContext Context, SourceLocation &DeclEnd,
     ProhibitAttributes(attrs);
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
-  case tok::kw_requires:
-    ProhibitAttributes(attrs);
-    SingleDecl = ParseCXXRequiredDecl(Context);
-    break;
   case tok::kw_consteval:
     // [Meta] injector-declaration
     if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {

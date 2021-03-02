@@ -856,9 +856,6 @@ public:
     }
   };
 
-  /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
-  bool AnalyzingRequiredDeclarator = false;
-
   class DelayedDiagnostics;
 
   class DelayedDiagnosticsState {
@@ -5733,13 +5730,6 @@ public:
                               SourceLocation UsingLoc, UnqualifiedId &Name,
                               const ParsedAttributesView &AttrList,
                               TypeResult Type, Decl *DeclFromDeclSpec);
-  Decl *ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
-                                 SourceLocation RequiresLoc,
-                                 SourceLocation TypenameLoc,
-                                 IdentifierInfo *Id, bool Typename);
-  Decl *ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
-                                       SourceLocation RequiresLoc,
-                                       Declarator &D);
   bool TypeCheckRequiredAutoReturn(SourceLocation Loc,
                                    QualType TypeWithAuto, QualType Replacement);
 
