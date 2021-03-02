@@ -41,6 +41,9 @@ static void on_ompt_callback_implicit_task(ompt_scope_endpoint_t endpoint,
            ", memory_addr=%p, memory_size=%lu, result=%d \n",
            task_data->value, addr, size, result);
     break;
+  case ompt_scope_beginend:
+    printf("ompt_scope_beginend should never be passed to %s\n", __func__);
+    exit(-1);
   }
 }
 
@@ -74,9 +77,9 @@ int ompt_initialize(ompt_function_lookup_t lookup, int initial_device_num,
   ompt_get_unique_id = (ompt_get_unique_id_t)lookup("ompt_get_unique_id");
   ompt_get_task_memory = (ompt_get_task_memory_t)lookup("ompt_get_task_memory");
 
-  register_callback(ompt_callback_implicit_task);
-  register_callback(ompt_callback_task_create);
-  register_callback(ompt_callback_task_schedule);
+  register_ompt_callback(ompt_callback_implicit_task);
+  register_ompt_callback(ompt_callback_task_create);
+  register_ompt_callback(ompt_callback_task_schedule);
   printf("0: NULL_POINTER=%p\n", (void *)NULL);
   return 1; // success
 }

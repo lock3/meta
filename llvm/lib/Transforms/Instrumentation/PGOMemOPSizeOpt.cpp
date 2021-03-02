@@ -22,6 +22,7 @@
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
@@ -45,6 +46,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Instrumentation/PGOInstrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -244,7 +246,7 @@ public:
   void visitMemIntrinsic(MemIntrinsic &MI) {
     Value *Length = MI.getLength();
     // Not perform on constant length calls.
-    if (dyn_cast<ConstantInt>(Length))
+    if (isa<ConstantInt>(Length))
       return;
     WorkList.push_back(MemOp(&MI));
   }
@@ -253,7 +255,7 @@ public:
     LibFunc Func;
     if (TLI.getLibFunc(CI, Func) &&
         (Func == LibFunc_memcmp || Func == LibFunc_bcmp) &&
-        !dyn_cast<ConstantInt>(CI.getArgOperand(2))) {
+        !isa<ConstantInt>(CI.getArgOperand(2))) {
       WorkList.push_back(MemOp(&CI));
     }
   }
@@ -337,6 +339,7 @@ bool MemOPSizeOpt::perform(MemOp MO) {
   SmallVector<uint64_t, 16> CaseCounts;
   uint64_t MaxCount = 0;
   unsigned Version = 0;
+  int64_t LastV = -1;
   // Default case is in the front -- save the slot here.
   CaseCounts.push_back(0);
   for (auto &VD : VDs) {
@@ -352,6 +355,15 @@ bool MemOPSizeOpt::perform(MemOp MO) {
     // value.
     if (!isProfitable(C, RemainCount))
       break;
+
+    if (V == LastV) {
+      LLVM_DEBUG(dbgs() << "Invalid Profile Data in Function " << Func.getName()
+                        << ": Two consecutive, identical values in MemOp value"
+                           "counts.\n");
+      return false;
+    }
+
+    LastV = V;
 
     SizeIds.push_back(V);
     CaseCounts.push_back(C);

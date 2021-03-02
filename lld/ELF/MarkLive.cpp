@@ -56,7 +56,7 @@ private:
   void mark();
 
   template <class RelTy>
-  void resolveReloc(InputSectionBase &sec, RelTy &rel, bool isLSDA);
+  void resolveReloc(InputSectionBase &sec, RelTy &rel, bool fromFDE);
 
   template <class RelTy>
   void scanEhFrameSection(EhInputSection &eh, ArrayRef<RelTy> rels);
@@ -65,7 +65,7 @@ private:
   unsigned partition;
 
   // A list of sections to visit.
-  SmallVector<InputSection *, 256> queue;
+  SmallVector<InputSection *, 0> queue;
 
   // There are normally few input sections whose names are valid C
   // identifiers, so we just store a std::vector instead of a multimap.
@@ -89,7 +89,7 @@ static uint64_t getAddend(InputSectionBase &sec,
 template <class ELFT>
 template <class RelTy>
 void MarkLive<ELFT>::resolveReloc(InputSectionBase &sec, RelTy &rel,
-                                  bool isLSDA) {
+                                  bool fromFDE) {
   Symbol &sym = sec.getFile<ELFT>()->getRelocTargetSym(rel);
 
   // If a symbol is referenced in a live section, it is used.
@@ -104,7 +104,16 @@ void MarkLive<ELFT>::resolveReloc(InputSectionBase &sec, RelTy &rel,
     if (d->isSection())
       offset += getAddend<ELFT>(sec, rel);
 
-    if (!isLSDA || !(relSec->flags & SHF_EXECINSTR))
+    // fromFDE being true means this is referenced by a FDE in a .eh_frame
+    // piece. The relocation points to the described function or to a LSDA. We
+    // only need to keep the LSDA live, so ignore anything that points to
+    // executable sections. If the LSDA is in a section group or has the
+    // SHF_LINK_ORDER flag, we ignore the relocation as well because (a) if the
+    // associated text section is live, the LSDA will be retained due to section
+    // group/SHF_LINK_ORDER rules (b) if the associated text section should be
+    // discarded, marking the LSDA will unnecessarily retain the text section.
+    if (!(fromFDE && ((relSec->flags & (SHF_EXECINSTR | SHF_LINK_ORDER)) ||
+                      relSec->nextInSectionGroup)))
       enqueue(relSec, offset);
     return;
   }
@@ -148,9 +157,6 @@ void MarkLive<ELFT>::scanEhFrameSection(EhInputSection &eh,
       continue;
     }
 
-    // This is a FDE. The relocations point to the described function or to
-    // a LSDA. We only need to keep the LSDA alive, so ignore anything that
-    // points to executable sections.
     uint64_t pieceEnd = piece.inputOff + piece.size;
     for (size_t j = firstRelI, end2 = rels.size();
          j < end2 && rels[j].r_offset < pieceEnd; ++j)
@@ -255,12 +261,17 @@ template <class ELFT> void MarkLive<ELFT>::run() {
         scanEhFrameSection(*eh, eh->template rels<ELFT>());
     }
 
+    if (sec->flags & SHF_GNU_RETAIN) {
+      enqueue(sec, 0);
+      continue;
+    }
     if (sec->flags & SHF_LINK_ORDER)
       continue;
 
     if (isReserved(sec) || script->shouldKeep(sec)) {
       enqueue(sec, 0);
-    } else if (isValidCIdentifier(sec->name)) {
+    } else if (!config->zStartStopGC && isValidCIdentifier(sec->name) &&
+               !sec->nextInSectionGroup) {
       cNamedSections[saver.save("__start_" + sec->name)].push_back(sec);
       cNamedSections[saver.save("__stop_" + sec->name)].push_back(sec);
     }

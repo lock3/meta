@@ -105,7 +105,7 @@ bool PPCLowerMASSVEntries::handlePowSpecialCases(CallInst *CI, Function &Func,
     return false;
 
   if (Constant *Exp = dyn_cast<Constant>(CI->getArgOperand(1)))
-    if (ConstantFP *CFP = dyn_cast<ConstantFP>(Exp->getSplatValue())) {
+    if (ConstantFP *CFP = dyn_cast_or_null<ConstantFP>(Exp->getSplatValue())) {
       // If the argument is 0.75 or 0.25 it is cheaper to turn it into pow
       // intrinsic so that it could be optimzed as sequence of sqrt's.
       if (!CI->hasNoInfs() || !CI->hasApproxFunc())
@@ -167,9 +167,7 @@ bool PPCLowerMASSVEntries::runOnModule(Module &M) {
     // Call to lowerMASSVCall() invalidates the iterator over users upon
     // replacing the users. Precomputing the current list of users allows us to
     // replace all the call sites.
-    SmallVector<User *, 4> MASSVUsers;
-    for (auto *User: Func.users())
-      MASSVUsers.push_back(User);
+    SmallVector<User *, 4> MASSVUsers(Func.users());
     
     for (auto *User : MASSVUsers) {
       auto *CI = dyn_cast<CallInst>(User);

@@ -26,6 +26,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
+using namespace llvm;
 using namespace polly;
 
 static cl::opt<bool> RewriteAllocas(
@@ -354,7 +355,7 @@ public:
   GPURuntime Runtime;
 
   ManagedMemoryRewritePass() : ModulePass(ID) {}
-  virtual bool runOnModule(Module &M) {
+  bool runOnModule(Module &M) override {
     const DataLayout &DL = M.getDataLayout();
 
     Function *Malloc = M.getFunction("malloc");

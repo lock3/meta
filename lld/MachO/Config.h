@@ -24,10 +24,27 @@ namespace macho {
 class Symbol;
 struct SymbolPriorityEntry;
 
+using NamePair = std::pair<llvm::StringRef, llvm::StringRef>;
+using SectionRenameMap = llvm::DenseMap<NamePair, NamePair>;
+using SegmentRenameMap = llvm::DenseMap<llvm::StringRef, llvm::StringRef>;
+
 struct PlatformInfo {
   llvm::MachO::PlatformKind kind;
   llvm::VersionTuple minimum;
   llvm::VersionTuple sdk;
+};
+
+enum class NamespaceKind {
+  twolevel,
+  flat,
+};
+
+enum class UndefinedSymbolTreatment {
+  unknown,
+  error,
+  warning,
+  suppress,
+  dynamic_lookup,
 };
 
 struct Configuration {
@@ -36,20 +53,35 @@ struct Configuration {
   bool allLoad = false;
   bool forceLoadObjC = false;
   bool staticLink = false;
+  bool implicitDylibs = false;
   bool isPic = false;
   bool headerPadMaxInstallNames = false;
+  bool ltoNewPassManager = LLVM_ENABLE_NEW_PASS_MANAGER;
+  bool printEachFile = false;
+  bool printWhyLoad = false;
   bool searchDylibsFirst = false;
+  bool saveTemps = false;
   uint32_t headerPad;
+  uint32_t dylibCompatibilityVersion = 0;
+  uint32_t dylibCurrentVersion = 0;
   llvm::StringRef installName;
   llvm::StringRef outputFile;
+  llvm::StringRef ltoObjPath;
+  bool demangle = false;
   llvm::MachO::Architecture arch;
   PlatformInfo platform;
+  NamespaceKind namespaceKind = NamespaceKind::twolevel;
+  UndefinedSymbolTreatment undefinedSymbolTreatment =
+      UndefinedSymbolTreatment::error;
   llvm::MachO::HeaderFileType outputType;
   std::vector<llvm::StringRef> systemLibraryRoots;
   std::vector<llvm::StringRef> librarySearchPaths;
   std::vector<llvm::StringRef> frameworkSearchPaths;
   std::vector<llvm::StringRef> runtimePaths;
+  std::vector<Symbol *> explicitUndefineds;
   llvm::DenseMap<llvm::StringRef, SymbolPriorityEntry> priorities;
+  SectionRenameMap sectionRenameMap;
+  SegmentRenameMap segmentRenameMap;
 };
 
 // The symbol with the highest priority should be ordered first in the output

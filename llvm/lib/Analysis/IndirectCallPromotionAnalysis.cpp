@@ -22,9 +22,7 @@
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include <string>
-#include <utility>
-#include <vector>
+#include <memory>
 
 using namespace llvm;
 
@@ -47,7 +45,7 @@ static cl::opt<unsigned>
 
 // Set the maximum number of targets to promote for a single indirect-call
 // callsite.
-static cl::opt<unsigned>
+cl::opt<unsigned>
     MaxNumPromotions("icp-max-prom", cl::init(3), cl::Hidden, cl::ZeroOrMore,
                      cl::desc("Max number of promotions for a single indirect "
                               "call callsite"));

@@ -87,6 +87,9 @@ void RunTestCase(MultiStringType const& MS) {
   RunTestCaseImpl<CharT>(MS, fs::path::format::auto_format);
   RunTestCaseImpl<CharT>(MS, fs::path::format::native_format);
   RunTestCaseImpl<CharT>(MS, fs::path::format::generic_format);
+  RunTestCaseImpl<CharT>(MS, fs::path::auto_format);
+  RunTestCaseImpl<CharT>(MS, fs::path::native_format);
+  RunTestCaseImpl<CharT>(MS, fs::path::generic_format);
 }
 
 void test_sfinae() {
@@ -123,6 +126,9 @@ void test_sfinae() {
 int main(int, char**) {
   for (auto const& MS : PathList) {
     RunTestCase<char>(MS);
+#if TEST_STD_VER > 17 && defined(__cpp_char8_t)
+    RunTestCase<char8_t>(MS);
+#endif
     RunTestCase<wchar_t>(MS);
     RunTestCase<char16_t>(MS);
     RunTestCase<char32_t>(MS);

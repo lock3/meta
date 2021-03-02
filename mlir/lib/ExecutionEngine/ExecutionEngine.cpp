@@ -12,10 +12,9 @@
 //===----------------------------------------------------------------------===//
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/Function.h"
-#include "mlir/IR/Module.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/FileUtilities.h"
-#include "mlir/Target/LLVMIR.h"
+#include "mlir/Target/LLVMIR/Export.h"
 
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
@@ -131,6 +130,10 @@ bool ExecutionEngine::setupTargetTriple(Module *llvmModule) {
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       targetTriple, cpu, features.getString(), {}, {}));
+  if (!machine) {
+    errs() << "Unable to create target machine\n";
+    return true;
+  }
   llvmModule->setDataLayout(machine->createDataLayout());
   llvmModule->setTargetTriple(targetTriple);
   return false;
@@ -252,6 +255,15 @@ Expected<std::unique_ptr<ExecutionEngine>> ExecutionEngine::create(
     if (engine->perfListener)
       objectLayer->registerJITEventListener(*engine->perfListener);
 
+    // COFF format binaries (Windows) need special handling to deal with
+    // exported symbol visibility.
+    // cf llvm/lib/ExecutionEngine/Orc/LLJIT.cpp LLJIT::createObjectLinkingLayer
+    llvm::Triple targetTriple(llvm::Twine(llvmModule->getTargetTriple()));
+    if (targetTriple.isOSBinFormatCOFF()) {
+      objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+      objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+    }
+
     // Resolve symbols from shared libraries.
     for (auto libPath : sharedLibPaths) {
       auto mb = llvm::MemoryBuffer::getFile(libPath);
@@ -336,7 +348,8 @@ Expected<void (*)(void **)> ExecutionEngine::lookup(StringRef name) const {
   return fptr;
 }
 
-Error ExecutionEngine::invoke(StringRef name, MutableArrayRef<void *> args) {
+Error ExecutionEngine::invokePacked(StringRef name,
+                                    MutableArrayRef<void *> args) {
   auto expectedFPtr = lookup(name);
   if (!expectedFPtr)
     return expectedFPtr.takeError();

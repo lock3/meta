@@ -441,8 +441,8 @@ private:
     // but template arguments get canonicalized too quickly.
     NestedNameSpecifier *Qualifier;
     void *QualifierLocData;
-    unsigned TemplateNameLoc;
-    unsigned EllipsisLoc;
+    SourceLocation TemplateNameLoc;
+    SourceLocation EllipsisLoc;
   };
 
   struct PackSpliceArgLocInfo {
@@ -490,11 +490,11 @@ public:
   }
 
   SourceLocation getTemplateNameLoc() const {
-    return SourceLocation::getFromRawEncoding(getTemplate()->TemplateNameLoc);
+    return getTemplate()->TemplateNameLoc;
   }
 
   SourceLocation getTemplateEllipsisLoc() const {
-    return SourceLocation::getFromRawEncoding(getTemplate()->EllipsisLoc);
+    return getTemplate()->EllipsisLoc;
   }
 
   SourceLocation getPackSpliceIntroductionEllipsisLoc() const {

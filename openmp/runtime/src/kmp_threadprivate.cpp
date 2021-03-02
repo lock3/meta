@@ -113,10 +113,9 @@ static struct private_data *__kmp_init_common_data(void *pc_addr,
 // Initialize the data area from the template.
 static void __kmp_copy_common_data(void *pc_addr, struct private_data *d) {
   char *addr = (char *)pc_addr;
-  int i, offset;
 
-  for (offset = 0; d != 0; d = d->next) {
-    for (i = d->more; i > 0; --i) {
+  for (size_t offset = 0; d != 0; d = d->next) {
+    for (int i = d->more; i > 0; --i) {
       if (d->data == 0)
         memset(&addr[offset], '\0', d->size);
       else
@@ -411,7 +410,7 @@ struct private_common *kmp_threadprivate_insert(int gtid, void *pc_addr,
   }
 
   __kmp_release_lock(&__kmp_global_lock, gtid);
-/* +++++++++ END OF CRITICAL SECTION +++++++++ */
+  /* +++++++++ END OF CRITICAL SECTION +++++++++ */
 
 #ifdef USE_CHECKS_COMMON
   if (pc_size > d_tn->cmn_size) {

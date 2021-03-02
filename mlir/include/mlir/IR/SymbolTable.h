@@ -38,7 +38,8 @@ public:
 
   /// Insert a new symbol into the table, and rename it as necessary to avoid
   /// collisions. Also insert at the specified location in the body of the
-  /// associated operation.
+  /// associated operation if it is not already there. It is asserted that the
+  /// symbol is not inside another operation.
   void insert(Operation *symbol, Block::iterator insertPt = {});
 
   /// Return the name of the attribute used for symbol names.
@@ -188,17 +189,17 @@ public:
   /// 'from'. This does not traverse into any nested symbol tables. If there are
   /// any unknown operations that may potentially be symbol tables, no uses are
   /// replaced and failure is returned.
-  LLVM_NODISCARD static LogicalResult replaceAllSymbolUses(StringRef oldSymbol,
-                                                           StringRef newSymbol,
-                                                           Operation *from);
-  LLVM_NODISCARD static LogicalResult
-  replaceAllSymbolUses(Operation *oldSymbol, StringRef newSymbolName,
-                       Operation *from);
-  LLVM_NODISCARD static LogicalResult
-  replaceAllSymbolUses(StringRef oldSymbol, StringRef newSymbol, Region *from);
-  LLVM_NODISCARD static LogicalResult
-  replaceAllSymbolUses(Operation *oldSymbol, StringRef newSymbolName,
-                       Region *from);
+  static LogicalResult replaceAllSymbolUses(StringRef oldSymbol,
+                                            StringRef newSymbol,
+                                            Operation *from);
+  static LogicalResult replaceAllSymbolUses(Operation *oldSymbol,
+                                            StringRef newSymbolName,
+                                            Operation *from);
+  static LogicalResult replaceAllSymbolUses(StringRef oldSymbol,
+                                            StringRef newSymbol, Region *from);
+  static LogicalResult replaceAllSymbolUses(Operation *oldSymbol,
+                                            StringRef newSymbolName,
+                                            Region *from);
 
 private:
   Operation *symbolTableOp;
@@ -302,6 +303,18 @@ public:
 };
 
 } // end namespace OpTrait
+
+//===----------------------------------------------------------------------===//
+// Visibility parsing implementation.
+//===----------------------------------------------------------------------===//
+
+namespace impl {
+/// Parse an optional visibility attribute keyword (i.e., public, private, or
+/// nested) without quotes in a string attribute named 'attrName'.
+ParseResult parseOptionalVisibilityKeyword(OpAsmParser &parser,
+                                           NamedAttrList &attrs);
+} // end namespace impl
+
 } // end namespace mlir
 
 /// Include the generated symbol interfaces.

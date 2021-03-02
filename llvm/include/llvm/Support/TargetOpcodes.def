@@ -110,6 +110,9 @@ HANDLE_TARGET_OPCODE(BUNDLE)
 HANDLE_TARGET_OPCODE(LIFETIME_START)
 HANDLE_TARGET_OPCODE(LIFETIME_END)
 
+/// Pseudo probe
+HANDLE_TARGET_OPCODE(PSEUDO_PROBE)
+
 /// A Stackmap instruction captures the location of live variables at its
 /// position in the instruction stream. It is followed by a shadow of bytes
 /// that must lie within the function and not contain another stackmap.
@@ -209,6 +212,15 @@ HANDLE_TARGET_OPCODE(ICALL_BRANCH_FUNNEL)
 /// The following generic opcodes are not supposed to appear after ISel.
 /// This is something we might want to relax, but for now, this is convenient
 /// to produce diagnostics.
+
+/// Instructions which should not exist past instruction selection, but do not
+/// generate code. These instructions only act as optimization hints.
+HANDLE_TARGET_OPCODE(G_ASSERT_SEXT)
+HANDLE_TARGET_OPCODE(G_ASSERT_ZEXT)
+HANDLE_TARGET_OPCODE_MARKER(PRE_ISEL_GENERIC_OPTIMIZATION_HINT_START,
+                            G_ASSERT_SEXT)
+HANDLE_TARGET_OPCODE_MARKER(PRE_ISEL_GENERIC_OPTIMIZATION_HINT_END,
+                            G_ASSERT_ZEXT)
 
 /// Generic ADD instruction. This is an integer add.
 HANDLE_TARGET_OPCODE(G_ADD)

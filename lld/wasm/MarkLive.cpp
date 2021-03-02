@@ -21,8 +21,7 @@
 #include "MarkLive.h"
 #include "Config.h"
 #include "InputChunks.h"
-#include "InputEvent.h"
-#include "InputGlobal.h"
+#include "InputElement.h"
 #include "SymbolTable.h"
 #include "Symbols.h"
 
@@ -43,7 +42,6 @@ public:
 private:
   void enqueue(Symbol *sym);
   void enqueueInitFunctions(const ObjFile *sym);
-  void markSymbol(Symbol *sym);
   void mark();
   bool isCallCtorsLive();
 
@@ -96,16 +94,8 @@ void MarkLive::run() {
     if (sym->isNoStrip() || sym->isExported())
       enqueue(sym);
 
-  // If we'll be calling the user's `__wasm_call_dtors` function, mark it live.
-  if (Symbol *callDtors = WasmSym::callDtors)
-    enqueue(callDtors);
-
-  // In Emscripten-style PIC, `__wasm_call_ctors` calls `__wasm_apply_relocs`.
-  if (config->isPic)
-    enqueue(WasmSym::applyRelocs);
-
-  if (config->sharedMemory && !config->shared)
-    enqueue(WasmSym::initMemory);
+  if (WasmSym::callDtors)
+    enqueue(WasmSym::callDtors);
 
   // Enqueue constructors in objects explicitly live from the command-line.
   for (const ObjFile *obj : symtab->objectFiles)
@@ -142,7 +132,7 @@ void MarkLive::mark() {
           reloc.Type == R_WASM_TABLE_INDEX_I32 ||
           reloc.Type == R_WASM_TABLE_INDEX_I64) {
         auto *funcSym = cast<FunctionSymbol>(sym);
-        if (funcSym->hasTableIndex() && funcSym->getTableIndex() == 0)
+        if (funcSym->isStub)
           continue;
       }
 
@@ -175,6 +165,9 @@ void markLive() {
       for (InputEvent *e : obj->events)
         if (!e->live)
           message("removing unused section " + toString(e));
+      for (InputTable *t : obj->tables)
+        if (!t->live)
+          message("removing unused section " + toString(t));
     }
     for (InputChunk *c : symtab->syntheticFunctions)
       if (!c->live)
@@ -182,6 +175,9 @@ void markLive() {
     for (InputGlobal *g : symtab->syntheticGlobals)
       if (!g->live)
         message("removing unused section " + toString(g));
+    for (InputTable *t : symtab->syntheticTables)
+      if (!t->live)
+        message("removing unused section " + toString(t));
   }
 }
 
@@ -191,7 +187,7 @@ bool MarkLive::isCallCtorsLive() {
     return false;
 
   // In Emscripten-style PIC, we call `__wasm_call_ctors` which calls
-  // `__wasm_apply_relocs`.
+  // `__wasm_apply_data_relocs`.
   if (config->isPic)
     return true;
 

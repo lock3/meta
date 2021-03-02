@@ -334,8 +334,12 @@ bool MprotectNoAccess(uptr addr, uptr size) {
 }
 
 void ReleaseMemoryPagesToOS(uptr beg, uptr end) {
-  // This is almost useless on 32-bits.
-  // FIXME: add madvise-analog when we move to 64-bits.
+  uptr beg_aligned = RoundDownTo(beg, GetPageSizeCached()),
+       end_aligned = RoundDownTo(end, GetPageSizeCached());
+  CHECK(beg < end);                // make sure the region is sane
+  if (beg_aligned == end_aligned)  // make sure we're freeing at least 1 page;
+    return;
+  UnmapOrDie((void *)beg, end_aligned - beg_aligned);
 }
 
 void SetShadowRegionHugePageMode(uptr addr, uptr size) {
@@ -611,6 +615,10 @@ static uptr GetPreferredBase(const char *modname) {
   return (uptr)pe_header->ImageBase;
 }
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wframe-larger-than="
+#endif
 void ListOfModules::init() {
   clearOrInit();
   HANDLE cur_process = GetCurrentProcess();
@@ -672,6 +680,9 @@ void ListOfModules::init() {
   }
   UnmapOrDie(hmodules, modules_buffer_size);
 }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 void ListOfModules::fallbackInit() { clear(); }
 
@@ -956,22 +967,27 @@ void SignalContext::InitPcSpBp() {
 
 uptr SignalContext::GetAddress() const {
   EXCEPTION_RECORD *exception_record = (EXCEPTION_RECORD *)siginfo;
-  return exception_record->ExceptionInformation[1];
+  if (exception_record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)
+    return exception_record->ExceptionInformation[1];
+  return (uptr)exception_record->ExceptionAddress;
 }
 
 bool SignalContext::IsMemoryAccess() const {
-  return GetWriteFlag() != SignalContext::UNKNOWN;
+  return ((EXCEPTION_RECORD *)siginfo)->ExceptionCode ==
+         EXCEPTION_ACCESS_VIOLATION;
 }
 
-bool SignalContext::IsTrueFaultingAddress() const {
-  // FIXME: Provide real implementation for this. See Linux and Mac variants.
-  return IsMemoryAccess();
-}
+bool SignalContext::IsTrueFaultingAddress() const { return true; }
 
 SignalContext::WriteFlag SignalContext::GetWriteFlag() const {
   EXCEPTION_RECORD *exception_record = (EXCEPTION_RECORD *)siginfo;
+
+  // The write flag is only available for access violation exceptions.
+  if (exception_record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+    return SignalContext::UNKNOWN;
+
   // The contents of this array are documented at
-  // https://msdn.microsoft.com/en-us/library/windows/desktop/aa363082(v=vs.85).aspx
+  // https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-exception_record
   // The first element indicates read as 0, write as 1, or execute as 8.  The
   // second element is the faulting address.
   switch (exception_record->ExceptionInformation[0]) {
@@ -1037,10 +1053,23 @@ const char *SignalContext::Describe() const {
 }
 
 uptr ReadBinaryName(/*out*/char *buf, uptr buf_len) {
-  // FIXME: Actually implement this function.
-  CHECK_GT(buf_len, 0);
-  buf[0] = 0;
-  return 0;
+  if (buf_len == 0)
+    return 0;
+
+  // Get the UTF-16 path and convert to UTF-8.
+  wchar_t binname_utf16[kMaxPathLength];
+  int binname_utf16_len =
+      GetModuleFileNameW(NULL, binname_utf16, ARRAY_SIZE(binname_utf16));
+  if (binname_utf16_len == 0) {
+    buf[0] = '\0';
+    return 0;
+  }
+  int binary_name_len = ::WideCharToMultiByte(
+      CP_UTF8, 0, binname_utf16, binname_utf16_len, buf, buf_len, NULL, NULL);
+  if ((unsigned)binary_name_len == buf_len)
+    --binary_name_len;
+  buf[binary_name_len] = '\0';
+  return binary_name_len;
 }
 
 uptr ReadLongProcessName(/*out*/char *buf, uptr buf_len) {
@@ -1137,6 +1166,8 @@ void LogFullErrorReport(const char *buffer) {
   }
 }
 #endif // SANITIZER_WIN_TRACE
+
+void InitializePlatformCommonFlags(CommonFlags *cf) {}
 
 }  // namespace __sanitizer
 

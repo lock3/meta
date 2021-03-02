@@ -1308,6 +1308,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPTargetTeamsDistributeParallelForDirectiveClass:
     case Stmt::OMPTargetTeamsDistributeParallelForSimdDirectiveClass:
     case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
+    case Stmt::OMPTileDirectiveClass:
     case Stmt::CapturedStmtClass: {
       const ExplodedNode *node = Bldr.generateSink(S, Pred, Pred->getState());
       Engine.addAbortedBlock(node, currBldrCtx->getBlock());
@@ -3166,7 +3167,7 @@ struct DOTGraphTraits<ExplodedGraph*> : public DefaultDOTGraphTraits {
       if (Stop(N))
         return true;
 
-      if (N->succ_size() != 1 || !isNodeHidden(N->getFirstSucc()))
+      if (N->succ_size() != 1 || !isNodeHidden(N->getFirstSucc(), nullptr))
         break;
       PostCallback(N);
 
@@ -3175,7 +3176,7 @@ struct DOTGraphTraits<ExplodedGraph*> : public DefaultDOTGraphTraits {
     return false;
   }
 
-  static bool isNodeHidden(const ExplodedNode *N) {
+  static bool isNodeHidden(const ExplodedNode *N, const ExplodedGraph *G) {
     return N->isTrivial();
   }
 

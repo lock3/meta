@@ -27,6 +27,9 @@
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
 
+#include "llvm/ADT/Triple.h"
+#include "llvm/Support/Host.h"
+
 // Define these constants from FreeBSD mman.h for use when targeting remote
 // FreeBSD systems even when host has different values.
 #define MAP_PRIVATE 0x0002
@@ -211,49 +214,13 @@ void PlatformFreeBSD::GetStatus(Stream &strm) {
 #endif
 }
 
-size_t
-PlatformFreeBSD::GetSoftwareBreakpointTrapOpcode(Target &target,
-                                                 BreakpointSite *bp_site) {
-  switch (target.GetArchitecture().GetMachine()) {
-  case llvm::Triple::arm: {
-    lldb::BreakpointLocationSP bp_loc_sp(bp_site->GetOwnerAtIndex(0));
-    AddressClass addr_class = AddressClass::eUnknown;
-
-    if (bp_loc_sp) {
-      addr_class = bp_loc_sp->GetAddress().GetAddressClass();
-      if (addr_class == AddressClass::eUnknown &&
-          (bp_loc_sp->GetAddress().GetFileAddress() & 1))
-        addr_class = AddressClass::eCodeAlternateISA;
-    }
-
-    if (addr_class == AddressClass::eCodeAlternateISA) {
-      // TODO: Enable when FreeBSD supports thumb breakpoints.
-      // FreeBSD kernel as of 10.x, does not support thumb breakpoints
-      return 0;
-    }
-
-    static const uint8_t g_arm_breakpoint_opcode[] = {0xFE, 0xDE, 0xFF, 0xE7};
-    size_t trap_opcode_size = sizeof(g_arm_breakpoint_opcode);
-    assert(bp_site);
-    if (bp_site->SetTrapOpcode(g_arm_breakpoint_opcode, trap_opcode_size))
-      return trap_opcode_size;
-  }
-    LLVM_FALLTHROUGH;
-  default:
-    return Platform::GetSoftwareBreakpointTrapOpcode(target, bp_site);
-  }
-}
-
 bool PlatformFreeBSD::CanDebugProcess() {
-  if (getenv("FREEBSD_REMOTE_PLUGIN")) {
-    if (IsHost()) {
-      return true;
-    } else {
-      // If we're connected, we can debug.
-      return IsConnected();
-    }
+  if (IsHost()) {
+    return true;
+  } else {
+    // If we're connected, we can debug.
+    return IsConnected();
   }
-  return false;
 }
 
 void PlatformFreeBSD::CalculateTrapHandlerSymbolNames() {

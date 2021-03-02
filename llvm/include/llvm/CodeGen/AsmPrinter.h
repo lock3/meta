@@ -66,6 +66,7 @@ class MCSymbol;
 class MCTargetOptions;
 class MDNode;
 class Module;
+class PseudoProbeHandler;
 class raw_ostream;
 class StackMaps;
 class StringRef;
@@ -184,14 +185,6 @@ protected:
   std::vector<HandlerInfo> Handlers;
   size_t NumUserHandlers = 0;
 
-public:
-  struct SrcMgrDiagInfo {
-    SourceMgr SrcMgr;
-    std::vector<const MDNode *> LocInfos;
-    LLVMContext::InlineAsmDiagHandlerTy DiagHandler;
-    void *DiagContext;
-  };
-
 private:
   /// If generated on the fly this own the instance.
   std::unique_ptr<MachineDominatorTree> OwnedMDT;
@@ -199,12 +192,12 @@ private:
   /// If generated on the fly this own the instance.
   std::unique_ptr<MachineLoopInfo> OwnedMLI;
 
-  /// Structure for generating diagnostics for inline assembly. Only initialised
-  /// when necessary.
-  mutable std::unique_ptr<SrcMgrDiagInfo> DiagInfo;
-
   /// If the target supports dwarf debug info, this pointer is non-null.
   DwarfDebug *DD = nullptr;
+
+  /// A handler that supports pseudo probe emission with embedded inline
+  /// context.
+  PseudoProbeHandler *PP = nullptr;
 
   /// If the current module uses dwarf CFI annotations strictly for debugging.
   bool isCFIMoveForDebugging = false;
@@ -359,6 +352,8 @@ public:
   void emitStackSizeSection(const MachineFunction &MF);
 
   void emitBBAddrMapSection(const MachineFunction &MF);
+
+  void emitPseudoProbe(const MachineInstr &MI);
 
   void emitRemarksSection(remarks::RemarkStreamer &RS);
 
@@ -603,7 +598,7 @@ public:
   unsigned GetSizeOfEncodedValue(unsigned Encoding) const;
 
   /// Emit reference to a ttype global with a specified encoding.
-  void emitTTypeReference(const GlobalValue *GV, unsigned Encoding) const;
+  virtual void emitTTypeReference(const GlobalValue *GV, unsigned Encoding);
 
   /// Emit a reference to a symbol for use in dwarf. Different object formats
   /// represent this in different ways. Some use a relocation others encode
@@ -632,17 +627,15 @@ public:
   /// Emit 32- or 64-bit value depending on the DWARF format.
   void emitDwarfLengthOrOffset(uint64_t Value) const;
 
-  /// Emit a special value of 0xffffffff if producing 64-bit debugging info.
-  void maybeEmitDwarf64Mark() const;
-
   /// Emit a unit length field. The actual format, DWARF32 or DWARF64, is chosen
   /// according to the settings.
   void emitDwarfUnitLength(uint64_t Length, const Twine &Comment) const;
 
   /// Emit a unit length field. The actual format, DWARF32 or DWARF64, is chosen
   /// according to the settings.
-  void emitDwarfUnitLength(const MCSymbol *Hi, const MCSymbol *Lo,
-                           const Twine &Comment) const;
+  /// Return the end symbol generated inside, the caller needs to emit it.
+  MCSymbol *emitDwarfUnitLength(const Twine &Prefix,
+                                const Twine &Comment) const;
 
   /// Emit reference to a call site with a specified encoding
   void emitCallSiteOffset(const MCSymbol *Hi, const MCSymbol *Lo,

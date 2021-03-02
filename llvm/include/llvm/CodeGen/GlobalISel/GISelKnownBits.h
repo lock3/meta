@@ -10,8 +10,8 @@
 /// passes.
 //
 //===----------------------------------------------------------------------===//
-#ifndef LLVM_CODEGEN_GLOBALISEL_KNOWNBITSINFO_H
-#define LLVM_CODEGEN_GLOBALISEL_KNOWNBITSINFO_H
+#ifndef LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H
+#define LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/GlobalISel/GISelChangeObserver.h"
@@ -44,7 +44,6 @@ class GISelKnownBits : public GISelChangeObserver {
 public:
   GISelKnownBits(MachineFunction &MF, unsigned MaxDepth = 6);
   virtual ~GISelKnownBits() = default;
-  void setMF(MachineFunction &MF);
 
   const MachineFunction &getMachineFunction() const {
     return MF;
@@ -129,4 +128,4 @@ public:
 };
 } // namespace llvm
 
-#endif // ifdef
+#endif // LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H

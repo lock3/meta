@@ -83,7 +83,8 @@ enum GPUKind : uint32_t {
   GK_GFX906 = 63,
   GK_GFX908 = 64,
   GK_GFX909 = 65,
-  GK_GFX90C = 66,
+  GK_GFX90A = 66,
+  GK_GFX90C = 67,
 
   GK_GFX1010 = 71,
   GK_GFX1011 = 72,
@@ -125,7 +126,7 @@ enum ArchFeatureKind : uint32_t {
   FEATURE_XNACK = 1 << 7,
 
   // Sram-ecc is available.
-  FEATURE_SRAM_ECC = 1 << 8,
+  FEATURE_SRAMECC = 1 << 8,
 };
 
 StringRef getArchNameAMDGCN(GPUKind AK);

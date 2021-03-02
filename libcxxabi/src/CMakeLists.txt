@@ -57,6 +57,9 @@ endif()
 
 include_directories("${LIBCXXABI_LIBCXX_INCLUDES}")
 
+# stdlib_stdexcept.cpp depends on libc++ internals.
+include_directories("${LIBCXXABI_LIBCXX_PATH}")
+
 if (LIBCXXABI_HAS_CXA_THREAD_ATEXIT_IMPL)
   add_definitions(-DHAVE___CXA_THREAD_ATEXIT_IMPL)
 endif()
@@ -74,6 +77,11 @@ else()
 
   add_library_flags_if(LIBCXXABI_HAS_C_LIB c)
 endif()
+
+if (LIBCXXABI_USE_COMPILER_RT)
+  find_compiler_rt_library(builtins LIBCXXABI_BUILTINS_LIBRARY)
+  list(APPEND LIBCXXABI_SHARED_LIBRARIES "${LIBCXXABI_BUILTINS_LIBRARY}")
+endif ()
 
 if (LIBCXXABI_USE_LLVM_UNWINDER)
   # Prefer using the in-tree version of libunwind, either shared or static. If
@@ -109,7 +117,11 @@ if (NOT LIBCXXABI_USE_COMPILER_RT)
 endif ()
 
 # Setup flags.
-add_link_flags_if_supported(-nodefaultlibs)
+if (LIBCXXABI_SUPPORTS_NOSTDLIBXX_FLAG)
+  add_link_flags_if_supported(-nostdlib++)
+else()
+  add_link_flags_if_supported(-nodefaultlibs)
+endif()
 
 if ( APPLE )
   if (LLVM_USE_SANITIZER)
@@ -165,9 +177,6 @@ endif()
 # Build the shared library.
 if (LIBCXXABI_ENABLE_SHARED)
   add_library(cxxabi_shared SHARED ${LIBCXXABI_SOURCES} ${LIBCXXABI_HEADERS})
-  if(COMMAND llvm_setup_rpath)
-    llvm_setup_rpath(cxxabi_shared)
-  endif()
   target_link_libraries(cxxabi_shared PRIVATE ${LIBCXXABI_SHARED_LIBRARIES} ${LIBCXXABI_LIBRARIES})
   if (TARGET pstl::ParallelSTL)
     target_link_libraries(cxxabi_shared PUBLIC pstl::ParallelSTL)
@@ -177,9 +186,9 @@ if (LIBCXXABI_ENABLE_SHARED)
                           CXX_EXTENSIONS
                             OFF
                           CXX_STANDARD
-                            17
+                            20
                           CXX_STANDARD_REQUIRED
-                            ON
+                            OFF
                           COMPILE_FLAGS
                             "${LIBCXXABI_COMPILE_FLAGS}"
                           LINK_FLAGS
@@ -244,9 +253,9 @@ if (LIBCXXABI_ENABLE_STATIC)
                           CXX_EXTENSIONS
                             OFF
                           CXX_STANDARD
-                            17
+                            20
                           CXX_STANDARD_REQUIRED
-                            ON
+                            OFF
                           COMPILE_FLAGS
                             "${LIBCXXABI_COMPILE_FLAGS}"
                           LINK_FLAGS

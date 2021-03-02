@@ -88,6 +88,7 @@ write_cmake_config("config") {
     "HAVE_LIBPFM=",
     "HAVE_LIBPSAPI=",
     "HAVE_MALLCTL=",
+    "HAVE_MALLINFO2=",
     "HAVE_SIGNAL_H=1",
     "HAVE_STD_IS_TRIVIALLY_COPYABLE=1",
     "HAVE_STRERROR=1",
@@ -162,6 +163,7 @@ write_cmake_config("config") {
       "HAVE_MACH_MACH_H=1",
       "HAVE_MALLOC_MALLOC_H=1",
       "HAVE_MALLOC_ZONE_STATISTICS=1",
+      "HAVE_PROC_PID_RUSAGE=1",
       "HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC=1",
     ]
   } else {
@@ -172,6 +174,7 @@ write_cmake_config("config") {
       "HAVE_MACH_MACH_H=",
       "HAVE_MALLOC_MALLOC_H=",
       "HAVE_MALLOC_ZONE_STATISTICS=",
+      "HAVE_PROC_PID_RUSAGE=",
       "HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC=",
     ]
   }
@@ -187,6 +190,18 @@ write_cmake_config("config") {
       "HAVE_BACKTRACE=",
       "HAVE_POSIX_SPAWN=",
       "HAVE_PTHREAD_GETNAME_NP=",
+    ]
+  }
+
+  if (current_os == "win" || current_cpu == "arm") {
+    values += [
+      "HAVE_DEREGISTER_FRAME=",
+      "HAVE_REGISTER_FRAME=",
+    ]
+  } else {
+    values += [
+      "HAVE_DEREGISTER_FRAME=1",
+      "HAVE_REGISTER_FRAME=1",
     ]
   }
 
@@ -312,8 +327,9 @@ write_cmake_config("llvm-config") {
   input = "llvm-config.h.cmake"
   output = "$target_gen_dir/llvm-config.h"
   values = [
-    "LLVM_ENABLE_DUMP=",
     "LLVM_DEFAULT_TARGET_TRIPLE=$llvm_target_triple",
+    "LLVM_ENABLE_DUMP=",
+    "LLVM_ENABLE_NEW_PASS_MANAGER=1",
     "LLVM_FORCE_ENABLE_STATS=",
     "LLVM_HAS_ATOMICS=1",
     "LLVM_HAVE_TF_AOT=",

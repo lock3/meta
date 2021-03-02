@@ -50,21 +50,21 @@ public:
     return Def->getValueAsBit("enableBitmaskEnumInNamespace");
   }
 
-  const std::vector<Record *> getDirectives() const {
+  std::vector<Record *> getDirectives() const {
     return Records.getAllDerivedDefinitions("Directive");
   }
 
-  const std::vector<Record *> getClauses() const {
+  std::vector<Record *> getClauses() const {
     return Records.getAllDerivedDefinitions("Clause");
   }
 
-  bool CheckRecordsValidity() const;
+  bool HasValidityErrors() const;
 
 private:
   const llvm::Record *Def;
   const llvm::RecordKeeper &Records;
 
-  const std::vector<Record *> getDirectiveLanguages() const {
+  std::vector<Record *> getDirectiveLanguages() const {
     return Records.getAllDerivedDefinitions("DirectiveLanguage");
   }
 };
@@ -93,7 +93,7 @@ public:
   bool isDefault() const { return Def->getValueAsBit("isDefault"); }
 
   // Returns the record name.
-  const StringRef getRecordName() const { return Def->getName(); }
+  StringRef getRecordName() const { return Def->getName(); }
 
 protected:
   const llvm::Record *Def;
@@ -138,11 +138,6 @@ public:
     return Def->getValueAsString("flangClass");
   }
 
-  // Optional field.
-  StringRef getFlangClassValue() const {
-    return Def->getValueAsString("flangClassValue");
-  }
-
   // Get the formatted name for Flang parser class. The generic formatted class
   // name is constructed from the name were the first letter of each word is
   // captitalized and the underscores are removed.
@@ -182,7 +177,7 @@ public:
     return Def->getValueAsString("defaultValue");
   }
 
-  bool isImplict() const { return Def->getValueAsBit("isImplicit"); }
+  bool isImplicit() const { return Def->getValueAsBit("isImplicit"); }
 };
 
 // Wrapper class that contains VersionedClause's information defined in

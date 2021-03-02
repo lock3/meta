@@ -1,6 +1,7 @@
 add_subdirectory(Transforms)
 
 add_mlir_dialect_library(MLIRLLVMIR
+  IR/FunctionCallUtils.cpp
   IR/LLVMDialect.cpp
   IR/LLVMTypes.cpp
   IR/LLVMTypeSyntax.cpp
@@ -10,7 +11,7 @@ add_mlir_dialect_library(MLIRLLVMIR
 
   DEPENDS
   MLIRLLVMOpsIncGen
-  MLIRLLVMConversionsIncGen
+  MLIRLLVMOpsInterfacesIncGen
   MLIROpenMPOpsIncGen
   intrinsics_gen
 
@@ -37,6 +38,48 @@ add_mlir_dialect_library(MLIRLLVMAVX512
   DEPENDS
   MLIRLLVMAVX512IncGen
   MLIRLLVMAVX512ConversionsIncGen
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  AsmParser
+  Core
+
+  LINK_LIBS PUBLIC
+  MLIRIR
+  MLIRLLVMIR
+  MLIRSideEffectInterfaces
+  )
+
+add_mlir_dialect_library(MLIRLLVMArmNeon
+  IR/LLVMArmNeonDialect.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/LLVMIR
+
+  DEPENDS
+  MLIRLLVMArmNeonIncGen
+  MLIRLLVMArmNeonConversionsIncGen
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  AsmParser
+  Core
+
+  LINK_LIBS PUBLIC
+  MLIRIR
+  MLIRLLVMIR
+  MLIRSideEffectInterfaces
+  )
+
+add_mlir_dialect_library(MLIRLLVMArmSVE
+  IR/LLVMArmSVEDialect.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/LLVMIR
+
+  DEPENDS
+  MLIRLLVMArmSVEIncGen
+  MLIRLLVMArmSVEConversionsIncGen
   intrinsics_gen
 
   LINK_COMPONENTS

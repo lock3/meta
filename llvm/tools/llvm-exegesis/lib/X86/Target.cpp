@@ -26,7 +26,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
 #include <immintrin.h>
 #include <intrin.h>
 #endif
@@ -196,6 +196,21 @@ static const char *isInvalidOpcode(const Instruction &Instr) {
   if (OpcodeName.startswith("POP") || OpcodeName.startswith("PUSH") ||
       OpcodeName.startswith("ADJCALLSTACK") || OpcodeName.startswith("LEAVE"))
     return "unsupported opcode: Push/Pop/AdjCallStack/Leave";
+  switch (Instr.Description.Opcode) {
+  case X86::LFS16rm:
+  case X86::LFS32rm:
+  case X86::LFS64rm:
+  case X86::LGS16rm:
+  case X86::LGS32rm:
+  case X86::LGS64rm:
+  case X86::LSS16rm:
+  case X86::LSS32rm:
+  case X86::LSS64rm:
+  case X86::SYSENTER:
+    return "unsupported opcode";
+  default:
+    break;
+  }
   if (const auto reason = isInvalidMemoryInstr(Instr))
     return reason;
   // We do not handle instructions with OPERAND_PCREL.

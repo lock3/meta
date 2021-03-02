@@ -80,6 +80,11 @@ llvm::cl::opt<std::string> ServerAddress(
     "server-address", llvm::cl::init("0.0.0.0:50051"),
     llvm::cl::desc("Address of the invoked server. Defaults to 0.0.0.0:50051"));
 
+llvm::cl::opt<size_t> IdleTimeoutSeconds(
+    "idle-timeout", llvm::cl::init(8 * 60),
+    llvm::cl::desc("Maximum time a channel may stay idle until server closes "
+                   "the connection, in seconds. Defaults to 480."));
+
 static Key<grpc::ServerContext *> CurrentRequest;
 
 class RemoteIndexServer final : public v1::SymbolIndex::Service {
@@ -94,10 +99,14 @@ public:
   }
 
 private:
+  using stopwatch = std::chrono::steady_clock;
+
   grpc::Status Lookup(grpc::ServerContext *Context,
                       const LookupRequest *Request,
                       grpc::ServerWriter<LookupReply> *Reply) override {
-    WithContextValue(CurrentRequest, Context);
+    auto StartTime = stopwatch::now();
+    WithContextValue WithRequestContext(CurrentRequest, Context);
+    logRequest(*Request);
     trace::Span Tracer("LookupRequest");
     auto Req = ProtobufMarshaller->fromProtobuf(Request);
     if (!Req) {
@@ -116,21 +125,26 @@ private:
       }
       LookupReply NextMessage;
       *NextMessage.mutable_stream_result() = *SerializedItem;
+      logResponse(NextMessage);
       Reply->Write(NextMessage);
       ++Sent;
     });
     LookupReply LastMessage;
     LastMessage.mutable_final_result()->set_has_more(true);
+    logResponse(LastMessage);
     Reply->Write(LastMessage);
     SPAN_ATTACH(Tracer, "Sent", Sent);
     SPAN_ATTACH(Tracer, "Failed to send", FailedToSend);
+    logRequestSummary("v1/Lookup", Sent, StartTime);
     return grpc::Status::OK;
   }
 
   grpc::Status FuzzyFind(grpc::ServerContext *Context,
                          const FuzzyFindRequest *Request,
                          grpc::ServerWriter<FuzzyFindReply> *Reply) override {
-    WithContextValue(CurrentRequest, Context);
+    auto StartTime = stopwatch::now();
+    WithContextValue WithRequestContext(CurrentRequest, Context);
+    logRequest(*Request);
     trace::Span Tracer("FuzzyFindRequest");
     auto Req = ProtobufMarshaller->fromProtobuf(Request);
     if (!Req) {
@@ -150,20 +164,25 @@ private:
       }
       FuzzyFindReply NextMessage;
       *NextMessage.mutable_stream_result() = *SerializedItem;
+      logResponse(NextMessage);
       Reply->Write(NextMessage);
       ++Sent;
     });
     FuzzyFindReply LastMessage;
     LastMessage.mutable_final_result()->set_has_more(HasMore);
+    logResponse(LastMessage);
     Reply->Write(LastMessage);
     SPAN_ATTACH(Tracer, "Sent", Sent);
     SPAN_ATTACH(Tracer, "Failed to send", FailedToSend);
+    logRequestSummary("v1/FuzzyFind", Sent, StartTime);
     return grpc::Status::OK;
   }
 
   grpc::Status Refs(grpc::ServerContext *Context, const RefsRequest *Request,
                     grpc::ServerWriter<RefsReply> *Reply) override {
-    WithContextValue(CurrentRequest, Context);
+    auto StartTime = stopwatch::now();
+    WithContextValue WithRequestContext(CurrentRequest, Context);
+    logRequest(*Request);
     trace::Span Tracer("RefsRequest");
     auto Req = ProtobufMarshaller->fromProtobuf(Request);
     if (!Req) {
@@ -182,21 +201,26 @@ private:
       }
       RefsReply NextMessage;
       *NextMessage.mutable_stream_result() = *SerializedItem;
+      logResponse(NextMessage);
       Reply->Write(NextMessage);
       ++Sent;
     });
     RefsReply LastMessage;
     LastMessage.mutable_final_result()->set_has_more(HasMore);
+    logResponse(LastMessage);
     Reply->Write(LastMessage);
     SPAN_ATTACH(Tracer, "Sent", Sent);
     SPAN_ATTACH(Tracer, "Failed to send", FailedToSend);
+    logRequestSummary("v1/Refs", Sent, StartTime);
     return grpc::Status::OK;
   }
 
   grpc::Status Relations(grpc::ServerContext *Context,
                          const RelationsRequest *Request,
                          grpc::ServerWriter<RelationsReply> *Reply) override {
-    WithContextValue(CurrentRequest, Context);
+    auto StartTime = stopwatch::now();
+    WithContextValue WithRequestContext(CurrentRequest, Context);
+    logRequest(*Request);
     trace::Span Tracer("RelationsRequest");
     auto Req = ProtobufMarshaller->fromProtobuf(Request);
     if (!Req) {
@@ -217,15 +241,42 @@ private:
           }
           RelationsReply NextMessage;
           *NextMessage.mutable_stream_result() = *SerializedItem;
+          logResponse(NextMessage);
           Reply->Write(NextMessage);
           ++Sent;
         });
     RelationsReply LastMessage;
     LastMessage.mutable_final_result()->set_has_more(true);
+    logResponse(LastMessage);
     Reply->Write(LastMessage);
     SPAN_ATTACH(Tracer, "Sent", Sent);
     SPAN_ATTACH(Tracer, "Failed to send", FailedToSend);
+    logRequestSummary("v1/Relations", Sent, StartTime);
     return grpc::Status::OK;
+  }
+
+  // Proxy object to allow proto messages to be lazily serialized as text.
+  struct TextProto {
+    const google::protobuf::Message &M;
+    friend llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
+                                         const TextProto &P) {
+      return OS << P.M.DebugString();
+    }
+  };
+
+  void logRequest(const google::protobuf::Message &M) {
+    vlog("<<< {0}\n{1}", M.GetDescriptor()->name(), TextProto{M});
+  }
+  void logResponse(const google::protobuf::Message &M) {
+    vlog(">>> {0}\n{1}", M.GetDescriptor()->name(), TextProto{M});
+  }
+  void logRequestSummary(llvm::StringLiteral RequestName, unsigned Sent,
+                         stopwatch::time_point StartTime) {
+    auto Duration = stopwatch::now() - StartTime;
+    auto Millis =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Duration).count();
+    log("[public] request {0} => OK: {1} results in {2}ms", RequestName, Sent,
+        Millis);
   }
 
   std::unique_ptr<Marshaller> ProtobufMarshaller;
@@ -265,6 +316,8 @@ void runServerAndWait(clangd::SymbolIndex &Index, llvm::StringRef ServerAddress,
   grpc::ServerBuilder Builder;
   Builder.AddListeningPort(ServerAddress.str(),
                            grpc::InsecureServerCredentials());
+  Builder.AddChannelArgument(GRPC_ARG_MAX_CONNECTION_IDLE_MS,
+                             IdleTimeoutSeconds * 1000);
   Builder.RegisterService(&Service);
   std::unique_ptr<grpc::Server> Server(Builder.BuildAndStart());
   log("Server listening on {0}", ServerAddress);
@@ -357,24 +410,23 @@ int main(int argc, char *argv[]) {
     return Status.getError().value();
   }
 
-  auto Index = std::make_unique<clang::clangd::SwapIndex>(
-      clang::clangd::loadIndex(IndexPath));
-
-  if (!Index) {
+  auto SymIndex = clang::clangd::loadIndex(IndexPath);
+  if (!SymIndex) {
     llvm::errs() << "Failed to open the index.\n";
     return -1;
   }
+  clang::clangd::SwapIndex Index(std::move(SymIndex));
 
   std::thread HotReloadThread([&Index, &Status, &FS]() {
     llvm::vfs::Status LastStatus = *Status;
     static constexpr auto RefreshFrequency = std::chrono::seconds(30);
     while (!clang::clangd::shutdownRequested()) {
-      hotReload(*Index, llvm::StringRef(IndexPath), LastStatus, FS);
+      hotReload(Index, llvm::StringRef(IndexPath), LastStatus, FS);
       std::this_thread::sleep_for(RefreshFrequency);
     }
   });
 
-  runServerAndWait(*Index, ServerAddress, IndexPath);
+  runServerAndWait(Index, ServerAddress, IndexPath);
 
   HotReloadThread.join();
 }

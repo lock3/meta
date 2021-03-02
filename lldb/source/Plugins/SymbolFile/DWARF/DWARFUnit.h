@@ -65,6 +65,7 @@ public:
   }
   uint64_t GetTypeHash() const { return m_type_hash; }
   dw_offset_t GetTypeOffset() const { return m_type_offset; }
+  uint64_t GetDWOId() const { return m_dwo_id; }
   bool IsTypeUnit() const {
     return m_unit_type == DW_UT_type || m_unit_type == DW_UT_split_type;
   }
@@ -72,7 +73,8 @@ public:
 
   static llvm::Expected<DWARFUnitHeader>
   extract(const lldb_private::DWARFDataExtractor &data, DIERef::Section section,
-          lldb::offset_t *offset_ptr, const llvm::DWARFUnitIndex *index);
+          lldb_private::DWARFContext &dwarf_context,
+          lldb::offset_t *offset_ptr);
 };
 
 class DWARFUnit : public lldb_private::UserID {
@@ -83,11 +85,11 @@ public:
   static llvm::Expected<DWARFUnitSP>
   extract(SymbolFileDWARF &dwarf2Data, lldb::user_id_t uid,
           const lldb_private::DWARFDataExtractor &debug_info,
-          DIERef::Section section, lldb::offset_t *offset_ptr,
-          const llvm::DWARFUnitIndex *index);
+          DIERef::Section section, lldb::offset_t *offset_ptr);
   virtual ~DWARFUnit();
 
   bool IsDWOUnit() { return m_is_dwo; }
+  uint64_t GetDWOId();
 
   void ExtractUnitDIEIfNeeded();
   void ExtractDIEsIfNeeded();
@@ -333,6 +335,8 @@ protected:
 
   const DIERef::Section m_section;
   bool m_is_dwo;
+  /// Value of DW_AT_GNU_dwo_id (v4) or dwo_id from CU header (v5).
+  uint64_t m_dwo_id;
 
 private:
   void ParseProducerInfo();

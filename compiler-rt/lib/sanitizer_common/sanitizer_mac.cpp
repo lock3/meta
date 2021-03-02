@@ -44,6 +44,14 @@ extern char **environ;
 #define SANITIZER_OS_TRACE 0
 #endif
 
+// import new crash reporting api
+#if defined(__has_include) && __has_include(<CrashReporterClient.h>)
+#define HAVE_CRASHREPORTERCLIENT_H 1
+#include <CrashReporterClient.h>
+#else
+#define HAVE_CRASHREPORTERCLIENT_H 0
+#endif
+
 #if !SANITIZER_IOS
 #include <crt_externs.h>  // for _NSGetArgv and _NSGetEnviron
 #else
@@ -62,6 +70,8 @@ extern "C" {
 #include <mach/mach_time.h>
 #include <mach/vm_statistics.h>
 #include <malloc/malloc.h>
+#include <os/lock.h>
+#include <os/log.h>
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
@@ -497,22 +507,42 @@ void MprotectMallocZones(void *addr, int prot) {
 }
 
 BlockingMutex::BlockingMutex() {
+  // Initialize all member variables to 0
   internal_memset(this, 0, sizeof(*this));
+  static_assert(sizeof(os_unfair_lock_t) <= sizeof(opaque_storage_),
+                "Not enough space in opaque storage to use os_unfair_lock");
+  static_assert(sizeof(OSSpinLock) <= sizeof(opaque_storage_),
+                "Not enough space in opaque storage to use OSSpinLock");
 }
 
+static bool UnfairLockAvailable() { return bool(os_unfair_lock_lock); }
+static_assert(OS_UNFAIR_LOCK_INIT._os_unfair_lock_opaque == 0,
+              "os_unfair_lock does not initialize to 0");
+static_assert(OS_SPINLOCK_INIT == 0, "OSSpinLock does not initialize to 0");
+
 void BlockingMutex::Lock() {
-  CHECK(sizeof(OSSpinLock) <= sizeof(opaque_storage_));
-  CHECK_EQ(OS_SPINLOCK_INIT, 0);
   CHECK_EQ(owner_, 0);
-  OSSpinLockLock((OSSpinLock*)&opaque_storage_);
+  if (UnfairLockAvailable()) {
+    os_unfair_lock_lock((os_unfair_lock *)&opaque_storage_);
+  } else {
+    OSSpinLockLock((OSSpinLock *)&opaque_storage_);
+  }
 }
 
 void BlockingMutex::Unlock() {
-  OSSpinLockUnlock((OSSpinLock*)&opaque_storage_);
+  if (UnfairLockAvailable()) {
+    os_unfair_lock_unlock((os_unfair_lock *)&opaque_storage_);
+  } else {
+    OSSpinLockUnlock((OSSpinLock *)&opaque_storage_);
+  }
 }
 
 void BlockingMutex::CheckLocked() {
-  CHECK_NE(*(OSSpinLock*)&opaque_storage_, 0);
+  if (UnfairLockAvailable()) {
+    CHECK_NE((*(os_unfair_lock *)&opaque_storage_)._os_unfair_lock_opaque, 0);
+  } else {
+    CHECK_NE(*(OSSpinLock *)&opaque_storage_, 0);
+  }
 }
 
 u64 NanoTime() {
@@ -620,6 +650,23 @@ constexpr u16 GetOSMajorKernelOffset() {
 
 using VersStr = char[64];
 
+static uptr ApproximateOSVersionViaKernelVersion(VersStr vers) {
+  u16 kernel_major = GetDarwinKernelVersion().major;
+  u16 offset = GetOSMajorKernelOffset();
+  CHECK_GE(kernel_major, offset);
+  u16 os_major = kernel_major - offset;
+
+  const char *format = "%d.0";
+  if (TARGET_OS_OSX) {
+    if (os_major >= 16) {  // macOS 11+
+      os_major -= 5;
+    } else {  // macOS 10.15 and below
+      format = "10.%d";
+    }
+  }
+  return internal_snprintf(vers, sizeof(VersStr), format, os_major);
+}
+
 static void GetOSVersion(VersStr vers) {
   uptr len = sizeof(VersStr);
   if (SANITIZER_IOSSIM) {
@@ -633,17 +680,19 @@ static void GetOSVersion(VersStr vers) {
   } else {
     int res =
         internal_sysctlbyname("kern.osproductversion", vers, &len, nullptr, 0);
-    if (res) {
-      // Fallback for XNU 17 (macOS 10.13) and below that do not provide the
-      // `kern.osproductversion` property.
-      u16 kernel_major = GetDarwinKernelVersion().major;
-      u16 offset = GetOSMajorKernelOffset();
-      CHECK_LE(kernel_major, 17);
-      CHECK_GE(kernel_major, offset);
-      u16 os_major = kernel_major - offset;
 
-      auto format = TARGET_OS_OSX ? "10.%d" : "%d.0";
-      len = internal_snprintf(vers, len, format, os_major);
+    // XNU 17 (macOS 10.13) and below do not provide the sysctl
+    // `kern.osproductversion` entry (res != 0).
+    bool no_os_version = res != 0;
+
+    // For launchd, sanitizer initialization runs before sysctl is setup
+    // (res == 0 && len != strlen(vers), vers is not a valid version).  However,
+    // the kernel version `kern.osrelease` is available.
+    bool launchd = (res == 0 && internal_strlen(vers) < 3);
+    if (launchd) CHECK_EQ(internal_getpid(), 1);
+
+    if (no_os_version || launchd) {
+      len = ApproximateOSVersionViaKernelVersion(vers);
     }
   }
   CHECK_LT(len, sizeof(VersStr));
@@ -681,7 +730,7 @@ static void MapToMacos(u16 *major, u16 *minor) {
 }
 
 static MacosVersion GetMacosAlignedVersionInternal() {
-  VersStr vers;
+  VersStr vers = {};
   GetOSVersion(vers);
 
   u16 major, minor;
@@ -707,7 +756,7 @@ MacosVersion GetMacosAlignedVersion() {
 }
 
 DarwinKernelVersion GetDarwinKernelVersion() {
-  VersStr vers;
+  VersStr vers = {};
   uptr len = sizeof(VersStr);
   int res = internal_sysctlbyname("kern.osrelease", vers, &len, nullptr, 0);
   CHECK_EQ(res, 0);
@@ -751,7 +800,51 @@ static BlockingMutex syslog_lock(LINKER_INITIALIZED);
 void WriteOneLineToSyslog(const char *s) {
 #if !SANITIZER_GO
   syslog_lock.CheckLocked();
-  asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", s);
+  if (GetMacosAlignedVersion() >= MacosVersion(10, 12)) {
+    os_log_error(OS_LOG_DEFAULT, "%{public}s", s);
+  } else {
+    asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", s);
+  }
+#endif
+}
+
+// buffer to store crash report application information
+static char crashreporter_info_buff[__sanitizer::kErrorMessageBufferSize] = {};
+static BlockingMutex crashreporter_info_mutex(LINKER_INITIALIZED);
+
+extern "C" {
+// Integrate with crash reporter libraries.
+#if HAVE_CRASHREPORTERCLIENT_H
+CRASH_REPORTER_CLIENT_HIDDEN
+struct crashreporter_annotations_t gCRAnnotations
+    __attribute__((section("__DATA," CRASHREPORTER_ANNOTATIONS_SECTION))) = {
+        CRASHREPORTER_ANNOTATIONS_VERSION,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+#if CRASHREPORTER_ANNOTATIONS_VERSION > 4
+        0,
+#endif
+};
+
+#else
+// fall back to old crashreporter api
+static const char *__crashreporter_info__ __attribute__((__used__)) =
+    &crashreporter_info_buff[0];
+asm(".desc ___crashreporter_info__, 0x10");
+#endif
+
+}  // extern "C"
+
+static void CRAppendCrashLogMessage(const char *msg) {
+  BlockingMutexLock l(&crashreporter_info_mutex);
+  internal_strlcat(crashreporter_info_buff, msg,
+                   sizeof(crashreporter_info_buff));
+#if HAVE_CRASHREPORTERCLIENT_H
+  (void)CRSetCrashLogMessage(crashreporter_info_buff);
 #endif
 }
 
@@ -1066,7 +1159,7 @@ char **GetArgv() {
   return *_NSGetArgv();
 }
 
-#if SANITIZER_IOS
+#if SANITIZER_IOS && !SANITIZER_IOSSIM
 // The task_vm_info struct is normally provided by the macOS SDK, but we need
 // fields only available in 10.12+. Declare the struct manually to be able to
 // build against older SDKs.
@@ -1332,6 +1425,8 @@ bool GetRandom(void *buffer, uptr length, bool blocking) {
 u32 GetNumberOfCPUs() {
   return (u32)sysconf(_SC_NPROCESSORS_ONLN);
 }
+
+void InitializePlatformCommonFlags(CommonFlags *cf) {}
 
 }  // namespace __sanitizer
 

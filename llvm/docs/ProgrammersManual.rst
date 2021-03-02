@@ -1521,6 +1521,12 @@ this makes the size of the SmallVector itself large, so you don't want to
 allocate lots of them (doing so will waste a lot of space).  As such,
 SmallVectors are most useful when on the stack.
 
+In the absence of a well-motivated choice for the number of
+inlined elements ``N``, it is recommended to use ``SmallVector<T>`` (that is,
+omitting the ``N``). This will choose a default number of
+inlined elements reasonable for allocation on the stack (for example, trying
+to keep ``sizeof(SmallVector<T>)`` around 64 bytes).
+
 SmallVector also provides a nice portable and efficient replacement for
 ``alloca``.
 
@@ -1530,7 +1536,7 @@ SmallVector has grown a few other minor advantages over std::vector, causing
 #. std::vector is exception-safe, and some implementations have pessimizations
    that copy elements when SmallVector would move them.
 
-#. SmallVector understands ``llvm::is_trivially_copyable<Type>`` and uses realloc aggressively.
+#. SmallVector understands ``std::is_trivially_copyable<Type>`` and uses realloc aggressively.
 
 #. Many LLVM APIs take a SmallVectorImpl as an out parameter (see the note
    below).
@@ -2462,7 +2468,7 @@ Basic Inspection and Traversal Routines
 The LLVM compiler infrastructure have many different data structures that may be
 traversed.  Following the example of the C++ standard template library, the
 techniques used to traverse these various data structures are all basically the
-same.  For a enumerable sequence of values, the ``XXXbegin()`` function (or
+same.  For an enumerable sequence of values, the ``XXXbegin()`` function (or
 method) returns an iterator to the start of the sequence, the ``XXXend()``
 function returns an iterator pointing to one past the last valid element of the
 sequence, and there is some ``XXXiterator`` data type that is common between the

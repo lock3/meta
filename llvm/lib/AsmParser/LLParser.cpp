@@ -1340,6 +1340,7 @@ bool LLParser::parseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_argmemonly: B.addAttribute(Attribute::ArgMemOnly); break;
     case lltok::kw_builtin: B.addAttribute(Attribute::Builtin); break;
     case lltok::kw_cold: B.addAttribute(Attribute::Cold); break;
+    case lltok::kw_hot: B.addAttribute(Attribute::Hot); break;
     case lltok::kw_convergent: B.addAttribute(Attribute::Convergent); break;
     case lltok::kw_inaccessiblememonly:
       B.addAttribute(Attribute::InaccessibleMemOnly); break;
@@ -1353,6 +1354,9 @@ bool LLParser::parseFnAttributeValuePairs(AttrBuilder &B,
       break;
     case lltok::kw_naked: B.addAttribute(Attribute::Naked); break;
     case lltok::kw_nobuiltin: B.addAttribute(Attribute::NoBuiltin); break;
+    case lltok::kw_nocallback:
+      B.addAttribute(Attribute::NoCallback);
+      break;
     case lltok::kw_noduplicate: B.addAttribute(Attribute::NoDuplicate); break;
     case lltok::kw_nofree: B.addAttribute(Attribute::NoFree); break;
     case lltok::kw_noimplicitfloat:
@@ -1364,6 +1368,7 @@ bool LLParser::parseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_noreturn: B.addAttribute(Attribute::NoReturn); break;
     case lltok::kw_nosync: B.addAttribute(Attribute::NoSync); break;
     case lltok::kw_nocf_check: B.addAttribute(Attribute::NoCfCheck); break;
+    case lltok::kw_noprofile: B.addAttribute(Attribute::NoProfile); break;
     case lltok::kw_norecurse: B.addAttribute(Attribute::NoRecurse); break;
     case lltok::kw_nounwind: B.addAttribute(Attribute::NoUnwind); break;
     case lltok::kw_null_pointer_is_valid:
@@ -1377,9 +1382,6 @@ bool LLParser::parseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_returns_twice:
       B.addAttribute(Attribute::ReturnsTwice); break;
     case lltok::kw_speculatable: B.addAttribute(Attribute::Speculatable); break;
-    case lltok::kw_nossp:
-      B.addAttribute(Attribute::NoStackProtect);
-      break;
     case lltok::kw_ssp: B.addAttribute(Attribute::StackProtect); break;
     case lltok::kw_sspreq: B.addAttribute(Attribute::StackProtectReq); break;
     case lltok::kw_sspstrong:
@@ -1702,14 +1704,14 @@ bool LLParser::parseOptionalParamAttrs(AttrBuilder &B) {
     }
     case lltok::kw_byval: {
       Type *Ty;
-      if (parseOptionalTypeAttr(Ty, lltok::kw_byval))
+      if (parseRequiredTypeAttr(Ty, lltok::kw_byval))
         return true;
       B.addByValAttr(Ty);
       continue;
     }
     case lltok::kw_sret: {
       Type *Ty;
-      if (parseOptionalTypeAttr(Ty, lltok::kw_sret))
+      if (parseRequiredTypeAttr(Ty, lltok::kw_sret))
         return true;
       B.addStructRetAttr(Ty);
       continue;
@@ -1777,6 +1779,7 @@ bool LLParser::parseOptionalParamAttrs(AttrBuilder &B) {
     case lltok::kw_noinline:
     case lltok::kw_nonlazybind:
     case lltok::kw_nomerge:
+    case lltok::kw_noprofile:
     case lltok::kw_noredzone:
     case lltok::kw_noreturn:
     case lltok::kw_nocf_check:
@@ -1791,7 +1794,6 @@ bool LLParser::parseOptionalParamAttrs(AttrBuilder &B) {
     case lltok::kw_sanitize_memory:
     case lltok::kw_sanitize_thread:
     case lltok::kw_speculative_load_hardening:
-    case lltok::kw_nossp:
     case lltok::kw_ssp:
     case lltok::kw_sspreq:
     case lltok::kw_sspstrong:
@@ -1886,6 +1888,7 @@ bool LLParser::parseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_noinline:
     case lltok::kw_nonlazybind:
     case lltok::kw_nomerge:
+    case lltok::kw_noprofile:
     case lltok::kw_noredzone:
     case lltok::kw_noreturn:
     case lltok::kw_nocf_check:
@@ -1900,7 +1903,6 @@ bool LLParser::parseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_sanitize_memory:
     case lltok::kw_sanitize_thread:
     case lltok::kw_speculative_load_hardening:
-    case lltok::kw_nossp:
     case lltok::kw_ssp:
     case lltok::kw_sspreq:
     case lltok::kw_sspstrong:
@@ -2134,6 +2136,7 @@ bool LLParser::parseOptionalCallingConv(unsigned &CC) {
   case lltok::kw_hhvm_ccc:       CC = CallingConv::HHVM_C; break;
   case lltok::kw_cxx_fast_tlscc: CC = CallingConv::CXX_FAST_TLS; break;
   case lltok::kw_amdgpu_vs:      CC = CallingConv::AMDGPU_VS; break;
+  case lltok::kw_amdgpu_gfx:     CC = CallingConv::AMDGPU_Gfx; break;
   case lltok::kw_amdgpu_ls:      CC = CallingConv::AMDGPU_LS; break;
   case lltok::kw_amdgpu_hs:      CC = CallingConv::AMDGPU_HS; break;
   case lltok::kw_amdgpu_es:      CC = CallingConv::AMDGPU_ES; break;
@@ -2629,22 +2632,6 @@ bool LLParser::parseParameterList(SmallVectorImpl<ParamInfo> &ArgList,
                     "in varargs function");
 
   Lex.Lex();  // Lex the ')'.
-  return false;
-}
-
-/// parseByValWithOptionalType
-///   ::= byval
-///   ::= byval(<ty>)
-bool LLParser::parseOptionalTypeAttr(Type *&Result, lltok::Kind AttrName) {
-  Result = nullptr;
-  if (!EatIfPresent(AttrName))
-    return true;
-  if (!EatIfPresent(lltok::lparen))
-    return false;
-  if (parseType(Result))
-    return true;
-  if (!EatIfPresent(lltok::rparen))
-    return error(Lex.getLoc(), "expected ')'");
   return false;
 }
 
@@ -3293,6 +3280,7 @@ bool LLParser::parseValID(ValID &ID, PerFunctionState *PFS) {
     break;
   case lltok::kw_null: ID.Kind = ValID::t_Null; break;
   case lltok::kw_undef: ID.Kind = ValID::t_Undef; break;
+  case lltok::kw_poison: ID.Kind = ValID::t_Poison; break;
   case lltok::kw_zeroinitializer: ID.Kind = ValID::t_Zero; break;
   case lltok::kw_none: ID.Kind = ValID::t_None; break;
 
@@ -3491,6 +3479,39 @@ bool LLParser::parseValID(ValID &ID, PerFunctionState *PFS) {
     }
 
     ID.ConstantVal = BlockAddress::get(F, BB);
+    ID.Kind = ValID::t_Constant;
+    return false;
+  }
+
+  case lltok::kw_dso_local_equivalent: {
+    // ValID ::= 'dso_local_equivalent' @foo
+    Lex.Lex();
+
+    ValID Fn;
+
+    if (parseValID(Fn))
+      return true;
+
+    if (Fn.Kind != ValID::t_GlobalID && Fn.Kind != ValID::t_GlobalName)
+      return error(Fn.Loc,
+                   "expected global value name in dso_local_equivalent");
+
+    // Try to find the function (but skip it if it's forward-referenced).
+    GlobalValue *GV = nullptr;
+    if (Fn.Kind == ValID::t_GlobalID) {
+      if (Fn.UIntVal < NumberedVals.size())
+        GV = NumberedVals[Fn.UIntVal];
+    } else if (!ForwardRefVals.count(Fn.StrVal)) {
+      GV = M->getNamedValue(Fn.StrVal);
+    }
+
+    assert(GV && "Could not find a corresponding global variable");
+
+    if (!GV->getValueType()->isFunctionTy())
+      return error(Fn.Loc, "expected a function, alias to function, or ifunc "
+                           "in dso_local_equivalent");
+
+    ID.ConstantVal = DSOLocalEquivalent::get(GV);
     ID.Kind = ValID::t_Constant;
     return false;
   }
@@ -5101,7 +5122,7 @@ bool LLParser::parseDIMacroFile(MDNode *&Result, bool IsDistinct) {
 /// parseDIModule:
 ///   ::= !DIModule(scope: !0, name: "SomeModule", configMacros:
 ///   "-DNDEBUG", includePath: "/usr/include", apinotes: "module.apinotes",
-///   file: !1, line: 4)
+///   file: !1, line: 4, isDecl: false)
 bool LLParser::parseDIModule(MDNode *&Result, bool IsDistinct) {
 #define VISIT_MD_FIELDS(OPTIONAL, REQUIRED)                                    \
   REQUIRED(scope, MDField, );                                                  \
@@ -5110,13 +5131,14 @@ bool LLParser::parseDIModule(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(includePath, MDStringField, );                                      \
   OPTIONAL(apinotes, MDStringField, );                                         \
   OPTIONAL(file, MDField, );                                                   \
-  OPTIONAL(line, LineField, );
+  OPTIONAL(line, LineField, );                                                 \
+  OPTIONAL(isDecl, MDBoolField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
   Result = GET_OR_DISTINCT(DIModule, (Context, file.Val, scope.Val, name.Val,
                                       configMacros.Val, includePath.Val,
-                                      apinotes.Val, line.Val));
+                                      apinotes.Val, line.Val, isDecl.Val));
   return false;
 }
 
@@ -5523,10 +5545,15 @@ bool LLParser::convertValIDToValue(Type *Ty, ValID &ID, Value *&V,
       return error(ID.Loc, "invalid type for none constant");
     V = Constant::getNullValue(Ty);
     return false;
+  case ValID::t_Poison:
+    // FIXME: LabelTy should not be a first-class type.
+    if (!Ty->isFirstClassType() || Ty->isLabelTy())
+      return error(ID.Loc, "invalid type for poison constant");
+    V = PoisonValue::get(Ty);
+    return false;
   case ValID::t_Constant:
     if (ID.ConstantVal->getType() != Ty)
       return error(ID.Loc, "constant expression type mismatch");
-
     V = ID.ConstantVal;
     return false;
   case ValID::t_ConstantStruct:
@@ -7405,7 +7432,8 @@ int LLParser::parseStore(Instruction *&Inst, PerFunctionState &PFS) {
 
 /// parseCmpXchg
 ///   ::= 'cmpxchg' 'weak'? 'volatile'? TypeAndValue ',' TypeAndValue ','
-///       TypeAndValue 'singlethread'? AtomicOrdering AtomicOrdering
+///       TypeAndValue 'singlethread'? AtomicOrdering AtomicOrdering ','
+///       'Align'?
 int LLParser::parseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Ptr, *Cmp, *New; LocTy PtrLoc, CmpLoc, NewLoc;
   bool AteExtraComma = false;
@@ -7414,6 +7442,7 @@ int LLParser::parseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   SyncScope::ID SSID = SyncScope::System;
   bool isVolatile = false;
   bool isWeak = false;
+  MaybeAlign Alignment;
 
   if (EatIfPresent(lltok::kw_weak))
     isWeak = true;
@@ -7427,7 +7456,8 @@ int LLParser::parseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
       parseToken(lltok::comma, "expected ',' after cmpxchg cmp operand") ||
       parseTypeAndValue(New, NewLoc, PFS) ||
       parseScopeAndOrdering(true /*Always atomic*/, SSID, SuccessOrdering) ||
-      parseOrdering(FailureOrdering))
+      parseOrdering(FailureOrdering) ||
+      parseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
   if (SuccessOrdering == AtomicOrdering::Unordered ||
@@ -7449,14 +7479,16 @@ int LLParser::parseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   if (!New->getType()->isFirstClassType())
     return error(NewLoc, "cmpxchg operand must be a first class value");
 
-  Align Alignment(
+  const Align DefaultAlignment(
       PFS.getFunction().getParent()->getDataLayout().getTypeStoreSize(
           Cmp->getType()));
 
   AtomicCmpXchgInst *CXI = new AtomicCmpXchgInst(
-      Ptr, Cmp, New, Alignment, SuccessOrdering, FailureOrdering, SSID);
+      Ptr, Cmp, New, Alignment.getValueOr(DefaultAlignment), SuccessOrdering,
+      FailureOrdering, SSID);
   CXI->setVolatile(isVolatile);
   CXI->setWeak(isWeak);
+
   Inst = CXI;
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
@@ -7472,6 +7504,7 @@ int LLParser::parseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   bool isVolatile = false;
   bool IsFP = false;
   AtomicRMWInst::BinOp Operation;
+  MaybeAlign Alignment;
 
   if (EatIfPresent(lltok::kw_volatile))
     isVolatile = true;
@@ -7504,7 +7537,8 @@ int LLParser::parseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   if (parseTypeAndValue(Ptr, PtrLoc, PFS) ||
       parseToken(lltok::comma, "expected ',' after atomicrmw address") ||
       parseTypeAndValue(Val, ValLoc, PFS) ||
-      parseScopeAndOrdering(true /*Always atomic*/, SSID, Ordering))
+      parseScopeAndOrdering(true /*Always atomic*/, SSID, Ordering) ||
+      parseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
   if (Ordering == AtomicOrdering::Unordered)
@@ -7539,11 +7573,12 @@ int LLParser::parseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   if (Size < 8 || (Size & (Size - 1)))
     return error(ValLoc, "atomicrmw operand must be power-of-two byte-sized"
                          " integer");
-  Align Alignment(
+  const Align DefaultAlignment(
       PFS.getFunction().getParent()->getDataLayout().getTypeStoreSize(
           Val->getType()));
   AtomicRMWInst *RMWI =
-      new AtomicRMWInst(Operation, Ptr, Val, Alignment, Ordering, SSID);
+      new AtomicRMWInst(Operation, Ptr, Val,
+                        Alignment.getValueOr(DefaultAlignment), Ordering, SSID);
   RMWI->setVolatile(isVolatile);
   Inst = RMWI;
   return AteExtraComma ? InstExtraComma : InstNormal;
@@ -8490,7 +8525,8 @@ bool LLParser::parseFunctionSummary(std::string Name, GlobalValue::GUID GUID,
 
   StringRef ModulePath;
   GlobalValueSummary::GVFlags GVFlags = GlobalValueSummary::GVFlags(
-      /*Linkage=*/GlobalValue::ExternalLinkage, /*NotEligibleToImport=*/false,
+      GlobalValue::ExternalLinkage, GlobalValue::DefaultVisibility,
+      /*NotEligibleToImport=*/false,
       /*Live=*/false, /*IsLocal=*/false, /*CanAutoHide=*/false);
   unsigned InstCount;
   std::vector<FunctionSummary::EdgeTy> Calls;
@@ -8566,7 +8602,8 @@ bool LLParser::parseVariableSummary(std::string Name, GlobalValue::GUID GUID,
 
   StringRef ModulePath;
   GlobalValueSummary::GVFlags GVFlags = GlobalValueSummary::GVFlags(
-      /*Linkage=*/GlobalValue::ExternalLinkage, /*NotEligibleToImport=*/false,
+      GlobalValue::ExternalLinkage, GlobalValue::DefaultVisibility,
+      /*NotEligibleToImport=*/false,
       /*Live=*/false, /*IsLocal=*/false, /*CanAutoHide=*/false);
   GlobalVarSummary::GVarFlags GVarFlags(/*ReadOnly*/ false,
                                         /* WriteOnly */ false,
@@ -8624,7 +8661,8 @@ bool LLParser::parseAliasSummary(std::string Name, GlobalValue::GUID GUID,
 
   StringRef ModulePath;
   GlobalValueSummary::GVFlags GVFlags = GlobalValueSummary::GVFlags(
-      /*Linkage=*/GlobalValue::ExternalLinkage, /*NotEligibleToImport=*/false,
+      GlobalValue::ExternalLinkage, GlobalValue::DefaultVisibility,
+      /*NotEligibleToImport=*/false,
       /*Live=*/false, /*IsLocal=*/false, /*CanAutoHide=*/false);
   if (parseToken(lltok::colon, "expected ':' here") ||
       parseToken(lltok::lparen, "expected '(' here") ||
@@ -9312,8 +9350,9 @@ bool LLParser::parseVFuncId(FunctionSummary::VFuncId &VFuncId,
 
 /// GVFlags
 ///   ::= 'flags' ':' '(' 'linkage' ':' OptionalLinkageAux ','
-///         'notEligibleToImport' ':' Flag ',' 'live' ':' Flag ','
-///         'dsoLocal' ':' Flag ',' 'canAutoHide' ':' Flag ')'
+///         'visibility' ':' Flag 'notEligibleToImport' ':' Flag ','
+///         'live' ':' Flag ',' 'dsoLocal' ':' Flag ','
+///         'canAutoHide' ':' Flag ',' ')'
 bool LLParser::parseGVFlags(GlobalValueSummary::GVFlags &GVFlags) {
   assert(Lex.getKind() == lltok::kw_flags);
   Lex.Lex();
@@ -9333,6 +9372,13 @@ bool LLParser::parseGVFlags(GlobalValueSummary::GVFlags &GVFlags) {
       GVFlags.Linkage = parseOptionalLinkageAux(Lex.getKind(), HasLinkage);
       assert(HasLinkage && "Linkage not optional in summary entry");
       Lex.Lex();
+      break;
+    case lltok::kw_visibility:
+      Lex.Lex();
+      if (parseToken(lltok::colon, "expected ':'"))
+        return true;
+      parseOptionalVisibility(Flag);
+      GVFlags.Visibility = Flag;
       break;
     case lltok::kw_notEligibleToImport:
       Lex.Lex();

@@ -9,6 +9,7 @@
 #include "lldb/Utility/Reproducer.h"
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/Utility/ReproducerProvider.h"
+#include "lldb/Utility/Timer.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Threading.h"
@@ -194,6 +195,7 @@ ProviderBase *Generator::Register(std::unique_ptr<ProviderBase> provider) {
 }
 
 void Generator::Keep() {
+  LLDB_SCOPED_TIMER();
   assert(!m_done);
   m_done = true;
 
@@ -204,6 +206,7 @@ void Generator::Keep() {
 }
 
 void Generator::Discard() {
+  LLDB_SCOPED_TIMER();
   assert(!m_done);
   m_done = true;
 
@@ -371,7 +374,7 @@ static llvm::Error addPaths(StringRef path,
   SmallVector<StringRef, 0> paths;
   (*buffer)->getBuffer().split(paths, '\0');
   for (StringRef p : paths) {
-    if (!p.empty())
+    if (!p.empty() && llvm::sys::fs::exists(p))
       callback(p);
   }
 

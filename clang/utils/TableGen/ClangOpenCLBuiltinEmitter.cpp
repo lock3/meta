@@ -48,7 +48,7 @@
 //    Find out whether a string matches an existing OpenCL builtin function
 //    name and return an index into BuiltinTable and the number of overloads.
 //
-//  * void OCL2Qual(ASTContext&, OpenCLTypeStruct, std::vector<QualType>&)
+//  * void OCL2Qual(Sema&, OpenCLTypeStruct, std::vector<QualType>&)
 //    Convert an OpenCLTypeStruct type to a list of QualType instances.
 //    One OpenCLTypeStruct can represent multiple types, primarily when using
 //    GenTypes.
@@ -628,6 +628,9 @@ static std::pair<unsigned, unsigned> isOpenCLBuiltin(llvm::StringRef Name) {
 void BuiltinNameEmitter::EmitQualTypeFinder() {
   OS << R"(
 
+static QualType getOpenCLEnumType(Sema &S, llvm::StringRef Name);
+static QualType getOpenCLTypedefType(Sema &S, llvm::StringRef Name);
+
 // Convert an OpenCLTypeStruct type to a list of QualTypes.
 // Generic types represent multiple types and vector sizes, thus a vector
 // is returned. The conversion is done in two steps:
@@ -636,8 +639,9 @@ void BuiltinNameEmitter::EmitQualTypeFinder() {
 //         or a single scalar type for non generic types.
 // Step 2: Qualifiers and other type properties such as vector size are
 //         applied.
-static void OCL2Qual(ASTContext &Context, const OpenCLTypeStruct &Ty,
+static void OCL2Qual(Sema &S, const OpenCLTypeStruct &Ty,
                      llvm::SmallVectorImpl<QualType> &QT) {
+  ASTContext &Context = S.Context;
   // Number of scalar types in the GenType.
   unsigned GenTypeNumTypes;
   // Pointer to the list of vector sizes for the GenType.
@@ -691,8 +695,9 @@ static void OCL2Qual(ASTContext &Context, const OpenCLTypeStruct &Ty,
                 .Case("RO", "        case OCLAQ_ReadOnly:\n")
                 .Case("WO", "        case OCLAQ_WriteOnly:\n")
                 .Case("RW", "        case OCLAQ_ReadWrite:\n")
-         << "          QT.push_back(Context."
-         << Image->getValueAsDef("QTName")->getValueAsString("Name") << ");\n"
+         << "          QT.push_back("
+         << Image->getValueAsDef("QTExpr")->getValueAsString("TypeExpr")
+         << ");\n"
          << "          break;\n";
     }
     OS << "      }\n"
@@ -713,8 +718,7 @@ static void OCL2Qual(ASTContext &Context, const OpenCLTypeStruct &Ty,
          I++) {
       for (const auto *T :
            GenType->getValueAsDef("TypeList")->getValueAsListOfDefs("List")) {
-        OS << "Context."
-           << T->getValueAsDef("QTName")->getValueAsString("Name") << ", ";
+        OS << T->getValueAsDef("QTExpr")->getValueAsString("TypeExpr") << ", ";
       }
     }
     OS << "});\n";
@@ -748,14 +752,13 @@ static void OCL2Qual(ASTContext &Context, const OpenCLTypeStruct &Ty,
     TypesSeen.insert(std::make_pair(T->getValueAsString("Name"), true));
 
     // Check the Type does not have an "abstract" QualType
-    auto QT = T->getValueAsDef("QTName");
+    auto QT = T->getValueAsDef("QTExpr");
     if (QT->getValueAsBit("IsAbstract") == 1)
       continue;
     // Emit the cases for non generic, non image types.
-    OS << "    case OCLT_" << T->getValueAsString("Name") << ":\n";
-    OS << "      QT.push_back(Context." << QT->getValueAsString("Name")
-       << ");\n";
-    OS << "      break;\n";
+    OS << "    case OCLT_" << T->getValueAsString("Name") << ":\n"
+       << "      QT.push_back(" << QT->getValueAsString("TypeExpr") << ");\n"
+       << "      break;\n";
   }
 
   // End of switch statement.

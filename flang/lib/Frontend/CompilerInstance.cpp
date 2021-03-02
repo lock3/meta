@@ -7,10 +7,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "flang/Frontend/CompilerInstance.h"
+#include "flang/Common/Fortran-features.h"
 #include "flang/Frontend/CompilerInvocation.h"
 #include "flang/Frontend/TextDiagnosticPrinter.h"
 #include "flang/Parser/parsing.h"
 #include "flang/Parser/provenance.h"
+#include "flang/Semantics/semantics.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
@@ -24,7 +26,6 @@ CompilerInstance::CompilerInstance()
       allSources_(new Fortran::parser::AllSources()),
       allCookedSources_(new Fortran::parser::AllCookedSources(*allSources_)),
       parsing_(new Fortran::parser::Parsing(*allCookedSources_)) {
-
   // TODO: This is a good default during development, but ultimately we should
   // give the user the opportunity to specify this.
   allSources_->set_encoding(Fortran::parser::Encoding::UTF_8);
@@ -37,6 +38,17 @@ CompilerInstance::~CompilerInstance() {
 void CompilerInstance::set_invocation(
     std::shared_ptr<CompilerInvocation> value) {
   invocation_ = std::move(value);
+}
+
+void CompilerInstance::set_semaOutputStream(raw_ostream &Value) {
+  ownedSemaOutputStream_.release();
+  semaOutputStream_ = &Value;
+}
+
+void CompilerInstance::set_semaOutputStream(
+    std::unique_ptr<raw_ostream> Value) {
+  ownedSemaOutputStream_.swap(Value);
+  semaOutputStream_ = ownedSemaOutputStream_.get();
 }
 
 void CompilerInstance::AddOutputFile(OutputFile &&outFile) {
@@ -126,12 +138,19 @@ void CompilerInstance::ClearOutputFiles(bool eraseFiles) {
 }
 
 bool CompilerInstance::ExecuteAction(FrontendAction &act) {
-  // Set some sane defaults for the frontend.
-  // TODO: Instead of defaults we should be setting these options based on the
-  // user input.
-  this->invocation().SetDefaultFortranOpts();
+  auto &invoc = this->invocation();
 
-  // Connect Input to a CompileInstance
+  // Set some sane defaults for the frontend.
+  invoc.SetDefaultFortranOpts();
+  invoc.setDefaultPredefinitions();
+  // Update the fortran options based on user-based input.
+  invoc.setFortranOpts();
+  // Set the encoding to read all input files in based on user input.
+  allSources_->set_encoding(invoc.fortranOpts().encoding);
+  // Create the semantics context and set semantic options.
+  invoc.setSemanticsOpts(*this->allCookedSources_);
+
+  // Run the frontend action `act` for every input file.
   for (const FrontendInputFile &fif : frontendOpts().inputs_) {
     if (act.BeginSourceFile(*this, fif)) {
       if (llvm::Error err = act.Execute()) {
@@ -140,7 +159,7 @@ bool CompilerInstance::ExecuteAction(FrontendAction &act) {
       act.EndSourceFile();
     }
   }
-  return true;
+  return !diagnostics().getClient()->getNumErrors();
 }
 
 void CompilerInstance::CreateDiagnostics(

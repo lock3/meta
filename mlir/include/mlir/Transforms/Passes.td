@@ -17,6 +17,111 @@ include "mlir/Pass/PassBase.td"
 
 def AffineLoopFusion : FunctionPass<"affine-loop-fusion"> {
   let summary = "Fuse affine loop nests";
+  let description = [{
+    This pass performs fusion of loop nests using a slicing-based approach. It
+    combines two fusion strategies: producer-consumer fusion and sibling fusion.
+    Producer-consumer fusion is aimed at fusing pairs of loops where the first
+    one writes to a memref that the second reads. Sibling fusion targets pairs
+    of loops that share no dependences between them but that load from the same
+    memref. The fused loop nests, when possible, are rewritten to access
+    significantly smaller local buffers instead of the original memref's, and
+    the latter are often either completely optimized away or contracted. This
+    transformation leads to enhanced locality and lower memory footprint through
+    the elimination or contraction of temporaries/intermediate memref's. These
+    benefits are sometimes achieved at the expense of redundant computation
+    through a cost model that evaluates available choices such as the depth at
+    which a source slice should be materialized in the designation slice.
+
+    Example 1: Producer-consumer fusion.
+    Input:
+    ```mlir
+    func @producer_consumer_fusion(%arg0: memref<10xf32>, %arg1: memref<10xf32>) {
+      %0 = alloc() : memref<10xf32>
+      %1 = alloc() : memref<10xf32>
+      %cst = constant 0.000000e+00 : f32
+      affine.for %arg2 = 0 to 10 {
+        affine.store %cst, %0[%arg2] : memref<10xf32>
+        affine.store %cst, %1[%arg2] : memref<10xf32>
+      }
+      affine.for %arg2 = 0 to 10 {
+        %2 = affine.load %0[%arg2] : memref<10xf32>
+        %3 = addf %2, %2 : f32
+        affine.store %3, %arg0[%arg2] : memref<10xf32>
+      }
+      affine.for %arg2 = 0 to 10 {
+        %2 = affine.load %1[%arg2] : memref<10xf32>
+        %3 = mulf %2, %2 : f32
+        affine.store %3, %arg1[%arg2] : memref<10xf32>
+      }
+      return
+    }
+    ```
+    Output:
+    ```mlir
+    func @producer_consumer_fusion(%arg0: memref<10xf32>, %arg1: memref<10xf32>) {
+      %0 = alloc() : memref<1xf32>
+      %1 = alloc() : memref<1xf32>
+      %cst = constant 0.000000e+00 : f32
+      affine.for %arg2 = 0 to 10 {
+        affine.store %cst, %0[0] : memref<1xf32>
+        affine.store %cst, %1[0] : memref<1xf32>
+        %2 = affine.load %1[0] : memref<1xf32>
+        %3 = mulf %2, %2 : f32
+        affine.store %3, %arg1[%arg2] : memref<10xf32>
+        %4 = affine.load %0[0] : memref<1xf32>
+        %5 = addf %4, %4 : f32
+        affine.store %5, %arg0[%arg2] : memref<10xf32>
+      }
+      return
+    }
+    ```
+
+    Example 2: Sibling fusion.
+    Input:
+    ```mlir
+    func @sibling_fusion(%arg0: memref<10x10xf32>, %arg1: memref<10x10xf32>,
+                         %arg2: memref<10x10xf32>, %arg3: memref<10x10xf32>,
+                         %arg4: memref<10x10xf32>) {
+      affine.for %arg5 = 0 to 3 {
+        affine.for %arg6 = 0 to 3 {
+          %0 = affine.load %arg0[%arg5, %arg6] : memref<10x10xf32>
+          %1 = affine.load %arg1[%arg5, %arg6] : memref<10x10xf32>
+          %2 = mulf %0, %1 : f32
+          affine.store %2, %arg3[%arg5, %arg6] : memref<10x10xf32>
+        }
+      }
+      affine.for %arg5 = 0 to 3 {
+        affine.for %arg6 = 0 to 3 {
+          %0 = affine.load %arg0[%arg5, %arg6] : memref<10x10xf32>
+          %1 = affine.load %arg2[%arg5, %arg6] : memref<10x10xf32>
+          %2 = addf %0, %1 : f32
+          affine.store %2, %arg4[%arg5, %arg6] : memref<10x10xf32>
+        }
+      }
+      return
+    }
+    ```
+    Output:
+    ```mlir
+    func @sibling_fusion(%arg0: memref<10x10xf32>, %arg1: memref<10x10xf32>,
+                         %arg2: memref<10x10xf32>, %arg3: memref<10x10xf32>,
+                         %arg4: memref<10x10xf32>) {
+      affine.for %arg5 = 0 to 3 {
+        affine.for %arg6 = 0 to 3 {
+          %0 = affine.load %arg0[%arg5, %arg6] : memref<10x10xf32>
+          %1 = affine.load %arg1[%arg5, %arg6] : memref<10x10xf32>
+          %2 = mulf %0, %1 : f32
+          affine.store %2, %arg3[%arg5, %arg6] : memref<10x10xf32>
+          %3 = affine.load %arg0[%arg5, %arg6] : memref<10x10xf32>
+          %4 = affine.load %arg2[%arg5, %arg6] : memref<10x10xf32>
+          %5 = addf %3, %4 : f32
+          affine.store %5, %arg4[%arg5, %arg6] : memref<10x10xf32>
+        }
+      }
+      return
+    }
+    ```
+  }];
   let constructor = "mlir::createLoopFusionPass()";
   let options = [
     Option<"computeToleranceThreshold", "fusion-compute-tolerance", "double",
@@ -207,13 +312,21 @@ def PromoteBuffersToStack : FunctionPass<"promote-buffers-to-stack"> {
   let description = [{
     This pass implements a simple algorithm to convert heap-based memory
     allocations to stack-based ones. It uses a built-in heuristic to decide
-    whether it makes sense to convert an allocation.
+    whether it makes sense to convert an allocation. Furthermore, dynamic
+    shaped buffers that are limited by the rank of the tensor can be
+    converted. They are only transformed if they are considered to be small.
   }];
   let constructor = "mlir::createPromoteBuffersToStackPass()";
   let options = [
     Option<"maxAllocSizeInBytes", "max-alloc-size-in-bytes", "unsigned",
            /*default=*/"1024",
-           "Define the maximum size in bytes to promote allocations to stack.">,
+           "Maximal size in bytes to promote allocations to stack.">,
+    Option<"bitwidthOfIndexType", "bitwidth-of-index-type", "unsigned",
+           /*default=*/"64",
+           "Bitwidth of the index type. Used for size estimation.">,
+    Option<"maxRankOfAllocatedMemRef", "max-rank-of-allocated-memref", "unsigned",
+           /*default=*/"1",
+           "Maximal memref rank to promote dynamic buffers.">,
   ];
 }
 
@@ -277,13 +390,32 @@ def Inliner : Pass<"inline"> {
   let summary = "Inline function calls";
   let constructor = "mlir::createInlinerPass()";
   let options = [
-    Option<"disableCanonicalization", "disable-simplify", "bool",
-           /*default=*/"false",
-           "Disable running simplifications during inlining">,
+    Option<"defaultPipelineStr", "default-pipeline", "std::string",
+           /*default=*/"", "The default optimizer pipeline used for callables">,
+    ListOption<"opPipelineStrs", "op-pipelines", "std::string",
+               "Callable operation specific optimizer pipelines (in the form "
+               "of `dialect.op(pipeline)`)",
+               "llvm::cl::MiscFlags::CommaSeparated">,
     Option<"maxInliningIterations", "max-iterations", "unsigned",
            /*default=*/"4",
            "Maximum number of iterations when inlining within an SCC">,
   ];
+}
+
+def FinalizingBufferize : FunctionPass<"finalizing-bufferize"> {
+  let summary = "Finalize a partial bufferization";
+  let description = [{
+    A bufferize pass that finalizes a partial bufferization by removing
+    remaining `tensor_load` and `tensor_to_memref` operations.
+
+    The removal of those operations is only possible if the operations only
+    exist in pairs, i.e., all uses of `tensor_load` operations are
+    `tensor_to_memref` operations.
+
+    This pass will fail if not all operations can be removed or if any operation
+    with tensor typed operands remains.
+  }];
+  let constructor = "mlir::createFinalizingBufferizePass()";
 }
 
 def LocationSnapshot : Pass<"snapshot-op-locations"> {
@@ -570,11 +702,11 @@ def SymbolDCE : Pass<"symbol-dce"> {
     For example, consider the following input:
 
     ```mlir
-    func @dead_private_function() attributes { sym_visibility = "private" }
-    func @live_private_function() attributes { sym_visibility = "private" }
+    func private @dead_private_function()
+    func private @live_private_function()
 
     // Note: The `public` isn't necessary here, as this is the default.
-    func @public_function() attributes { sym_visibility = "public" } {
+    func public @public_function() {
       "foo.return"() {uses = [@live_private_function]} : () -> ()
     }
     ```
@@ -586,9 +718,9 @@ def SymbolDCE : Pass<"symbol-dce"> {
     are no links to known-live operations. After running, we get the expected:
 
     ```mlir
-    func @live_private_function() attributes { sym_visibility = "private" }
+    func private @live_private_function()
 
-    func @public_function() attributes { sym_visibility = "public" } {
+    func public @public_function() {
       "foo.return"() {uses = [@live_private_function]} : () -> ()
     }
     ```
@@ -598,4 +730,22 @@ def SymbolDCE : Pass<"symbol-dce"> {
   }];
   let constructor = "mlir::createSymbolDCEPass()";
 }
+
+def ViewOpGraphPass : Pass<"symbol-dce", "ModuleOp"> {
+  let summary = "Print graphviz view of module";
+  let description = [{
+    This pass prints a graphviz per block of a module.
+
+    - Op are represented as nodes;
+    - Uses as edges;
+  }];
+  let constructor = "mlir::createPrintOpGraphPass()";
+  let options = [
+    Option<"title", "title", "std::string",
+           /*default=*/"", "The prefix of the title of the graph">,
+    Option<"shortNames", "short-names", "bool", /*default=*/"false",
+           "Use short names">
+  ];
+}
+
 #endif // MLIR_TRANSFORMS_PASSES

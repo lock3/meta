@@ -122,7 +122,9 @@ bool VPlanSlp::areVectorizable(ArrayRef<VPValue *> Operands) const {
     unsigned LoadsSeen = 0;
     VPBasicBlock *Parent = cast<VPInstruction>(Operands[0])->getParent();
     for (auto &I : *Parent) {
-      auto *VPI = cast<VPInstruction>(&I);
+      auto *VPI = dyn_cast<VPInstruction>(&I);
+      if (!VPI)
+        break;
       if (VPI->getOpcode() == Instruction::Load &&
           llvm::is_contained(Operands, VPI))
         LoadsSeen++;
@@ -466,8 +468,8 @@ VPInstruction *VPlanSlp::buildGraph(ArrayRef<VPValue *> Values) {
   auto *VPI = new VPInstruction(Opcode, CombinedOperands);
   VPI->setUnderlyingInstr(cast<VPInstruction>(Values[0])->getUnderlyingInstr());
 
-  LLVM_DEBUG(dbgs() << "Create VPInstruction "; VPI->print(dbgs());
-             cast<VPInstruction>(Values[0])->print(dbgs()); dbgs() << "\n");
+  LLVM_DEBUG(dbgs() << "Create VPInstruction " << *VPI << " "
+                    << *cast<VPInstruction>(Values[0]) << "\n");
   addCombined(Values, VPI);
   return VPI;
 }
