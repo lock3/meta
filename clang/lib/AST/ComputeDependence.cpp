@@ -59,8 +59,9 @@ ExprDependence clang::computeDependence(UnaryOperator *E,
     SmallVector<PartialDiagnosticAt, 8> Diag;
     Result.Diag = &Diag;
     // FIXME: This doesn't enforce the C++98 constant expression rules.
-    if (E->getSubExpr()->EvaluateAsConstantExpr(Result, Ctx) && Diag.empty() &&
-        Result.Val.isLValue()) {
+    Expr::EvalContext EvalCtx(Ctx, nullptr);
+    if (E->getSubExpr()->EvaluateAsConstantExpr(Result, EvalCtx) &&
+        Diag.empty() && Result.Val.isLValue()) {
       auto *VD = Result.Val.getLValueBase().dyn_cast<const ValueDecl *>();
       if (VD && VD->isTemplated()) {
         auto *VarD = dyn_cast<VarDecl>(VD);

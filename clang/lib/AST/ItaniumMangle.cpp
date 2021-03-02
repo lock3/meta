@@ -3602,8 +3602,8 @@ void CXXNameMangler::mangleType(const DependentSizedMatrixType *T) {
   Out << "u" << VendorQualifier.size() << VendorQualifier;
 
   Out << "I";
-  mangleTemplateArgExpr(TemplateArgument(T->getRowExpr()));
-  mangleTemplateArgExpr(TemplateArgument(T->getColumnExpr()));
+  mangleTemplateArgExpr(T->getRowExpr());
+  mangleTemplateArgExpr(T->getColumnExpr());
   mangleType(T->getElementType());
   Out << "E";
 }
@@ -5751,7 +5751,7 @@ void CXXNameMangler::mangleValueInTemplateArg(QualType T, const APValue &V,
     break;
   }
 
-  case APValue::MemberPointer:
+  case APValue::MemberPointer: {
     // Proposed in https://github.com/itanium-cxx-abi/cxx-abi/issues/47.
     if (!V.getMemberPointerDecl()) {
       mangleNullPointer(T);

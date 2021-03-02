@@ -4148,9 +4148,10 @@ bool Sema::CheckUnaryExprOrTypeTraitOperand(Expr *E,
   // Exclude instantiation-dependent expressions, because 'sizeof' is sometimes
   // used to build SFINAE gadgets.
   // FIXME: Should we consider instantiation-dependent operands to 'alignof'?
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (IsUnevaluatedOperand && !inTemplateInstantiation() &&
       !E->isInstantiationDependent() &&
-      E->HasSideEffects(Context, false))
+      E->HasSideEffects(EvalCtx, false))
     Diag(E->getExprLoc(), diag::warn_side_effects_unevaluated_context);
 
   if (ExprKind == UETT_VecStep)

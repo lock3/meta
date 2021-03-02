@@ -803,7 +803,8 @@ struct CounterCoverageMappingBuilder
   /// Determine whether the given condition can be constant folded.
   bool ConditionFoldsToBool(const Expr *Cond) {
     Expr::EvalResult Result;
-    return (Cond->EvaluateAsInt(Result, CVM.getCodeGenModule().getContext()));
+    Expr::EvalContext EvalCtx(CVM.getCodeGenModule().getContext(), nullptr);
+    return Cond->EvaluateAsInt(Result, EvalCtx);
   }
 
   /// Create a Branch Region around an instrumentable condition for coverage

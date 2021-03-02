@@ -1206,7 +1206,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
 
     EndLocation = ParseTypeSplice(DS);
 
-    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeNameContext);
+    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeName);
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
   }
 
@@ -1216,7 +1216,7 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
 
     EndLocation = ParseTypePackSplice(DS);
 
-    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeNameContext);
+    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeName);
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
   }
 

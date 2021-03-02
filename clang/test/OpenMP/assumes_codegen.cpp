@@ -95,8 +95,10 @@ int lambda_outer() {
 // AST-NEXT: public:
 // AST-NEXT:     BAZ() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp")))    {
 // AST-NEXT:     }
-// AST-NEXT:     void baz1() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp")));
-// AST-NEXT:     static void baz2() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp")));
+// AST-NEXT:     void baz1() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp")))    {
+// AST-NEXT:     }
+// AST-NEXT:     static void baz2() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp")))    {
+// AST-NEXT:     }
 // AST-NEXT: };
 // AST-NEXT: void baz() __attribute__((assume("1234"))) __attribute__((assume("no_openmp_routines,another_warning,after_invalid_clauses"))) __attribute__((assume("no_openmp"))) {
 // AST-NEXT:     BAZ<float> b;

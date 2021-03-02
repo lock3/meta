@@ -1384,9 +1384,10 @@ private:
 
       // We don't care what is written in the RHS, it could be whatever
       // we can interpret as 0.
+      Expr::EvalContext EvalCtx(AC.getASTContext(), nullptr);
       if (auto Constant =
               Assignment->getRHS()->IgnoreParenCasts()->getIntegerConstantExpr(
-                  AC.getASTContext())) {
+                  EvalCtx)) {
 
         ParameterStatus &CurrentParamStatus = CurrentState.getStatusFor(*Index);
 

@@ -10365,7 +10365,7 @@ bool RecordExprEvaluator::VisitLambdaExpr(const LambdaExpr *E) {
   auto *CaptureInitIt = E->capture_init_begin();
   const LambdaCapture *CaptureIt = ClosureClass->captures_begin();
   bool Success = true;
-  const ASTRecordLayout &Layout = Info.Ctx.getASTRecordLayout(ClosureClass);
+  const ASTRecordLayout &Layout = Info.ASTCtx.getASTRecordLayout(ClosureClass);
   for (const auto *Field : ClosureClass->fields()) {
     assert(CaptureInitIt != E->capture_init_end());
     // Get the initializer for this field

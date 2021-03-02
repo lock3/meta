@@ -1116,6 +1116,7 @@ LinkageInfo LinkageComputer::getLVForValue(const APValue &V,
   case APValue::ComplexInt:
   case APValue::ComplexFloat:
   case APValue::Vector:
+  case APValue::Reflection:
     break;
 
   case APValue::AddrLabelDiff:

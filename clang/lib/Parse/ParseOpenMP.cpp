@@ -1980,10 +1980,10 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
   }
   case OMPD_assumes:
   case OMPD_begin_assumes:
-    ParseOpenMPAssumesDirective(DKind, ConsumeToken());
+    ParseOpenMPAssumesDirective(DKind, ConsumeIdentifier());
     break;
   case OMPD_end_assumes:
-    ParseOpenMPEndAssumesDirective(ConsumeToken());
+    ParseOpenMPEndAssumesDirective(ConsumeIdentifier());
     break;
   case OMPD_declare_reduction:
     ConsumeIdentifier();
@@ -2653,7 +2653,7 @@ bool Parser::ParseOpenMPSimpleVarList(
 }
 
 OMPClause *Parser::ParseOpenMPSizesClause() {
-  SourceLocation ClauseNameLoc = ConsumeToken();
+  SourceLocation ClauseNameLoc = ConsumeIdentifier();
   SmallVector<Expr *, 4> ValExprs;
 
   BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);

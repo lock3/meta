@@ -1915,10 +1915,11 @@ static QualType adjustFunctionTypeForInstantiation(ASTContext &Context,
 static ConstexprSpecKind getNewConstexprSpecKind(
     FunctionDecl *D, const MultiLevelTemplateArgumentList &TemplateArgs) {
   ConstexprSpecKind OldKind = D->getConstexprKind();
-  if (OldKind != CSK_constexpr)
+  if (OldKind != ConstexprSpecKind::Constexpr)
     return OldKind;
 
-  return TemplateArgs.isConstexprPromoting() ? CSK_consteval : CSK_constexpr;
+  return TemplateArgs.isConstexprPromoting() ? ConstexprSpecKind::Consteval
+                                             : ConstexprSpecKind::Constexpr;
 }
 
 /// Normal class members are of more specific types and therefore
@@ -4877,7 +4878,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   Function->setInnerLocStart(PatternDecl->getInnerLocStart());
 
   EnterExpressionEvaluationContext EvalContext(
-      *this, PatternDecl->getConstexprKind() == CSK_consteval
+      *this, PatternDecl->getConstexprKind() == ConstexprSpecKind::Consteval
                  ? Sema::ExpressionEvaluationContext::ConstantEvaluated
                  : Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 

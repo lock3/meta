@@ -2244,7 +2244,8 @@ struct ConvertConstructorToDeductionGuideTransform {
     }
 
     return buildDeductionGuide(Template->getTemplateParameters(),
-                               ExplicitSpecifier(), CSK_unspecified,
+                               ExplicitSpecifier(),
+                               ConstexprSpecKind::Unspecified,
                                TSI, Loc, Loc, Loc);
   }
 
