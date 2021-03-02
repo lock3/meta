@@ -27,17 +27,17 @@ class bar {
 namespace type_reflection {
 
 void test1() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy7PubTypeEEDav(
+  // CHECK: define linkonce_odr i32 @_Z3fooIReTy7PubTypeEDav(
   foo<^PubType>();
 }
 
 void test2() {
-  // CHECK: define internal i32 @_Z3fooIXReTyN12_GLOBAL__N_18PrivTypeEEEDav(
+  // CHECK: define internal i32 @_Z3fooIReTyN12_GLOBAL__N_18PrivTypeEEDav(
   foo<^PrivType>();
 }
 
 void test3() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy3barILi1EEEEDav(
+  // CHECK: define linkonce_odr i32 @_Z3fooIReTy3barILi1EEEDav(
   foo<^bar<1>>();
 }
 
@@ -46,7 +46,7 @@ void test3() {
 namespace template_reflection {
 
 void test3() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXRe3barEEDav(
+  // CHECK: define linkonce_odr i32 @_Z3fooIRe3barEDav(
   foo<^bar>();
 }
 
@@ -55,12 +55,12 @@ void test3() {
 namespace namespace_reflection {
 
 void test1() {
-  // CHECK: define internal i32 @_Z3fooIXReTuEEDav(
+  // CHECK: define internal i32 @_Z3fooIReTuEDav(
   foo<^::>();
 }
 
 void test2() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXRe20namespace_reflectionEEDav(
+  // CHECK: define linkonce_odr i32 @_Z3fooIRe20namespace_reflectionEDav(
   foo<^::namespace_reflection>();
 }
 
@@ -69,7 +69,7 @@ void test2() {
 namespace expr_reflection {
 
 void test1() {
-  // CHECK: define internal i32 @_Z3fooIXRe{{[0-9]+}}EEDav(
+  // CHECK: define internal i32 @_Z3fooIRe{{[0-9]+}}EDav(
   foo<^(1 + 2)>();
 }
 

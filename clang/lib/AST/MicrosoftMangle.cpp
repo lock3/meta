@@ -435,6 +435,7 @@ private:
                           const TemplateArgumentList &TemplateArgs);
   void mangleTemplateArg(const TemplateDecl *TD, const TemplateArgument &TA,
                          const NamedDecl *Parm);
+  void mangleReflectionOp(const ReflectionOperand &Op);
   void mangleTemplateArgValue(QualType T, const APValue &V,
                               bool WithScalarType = false);
 
@@ -1660,6 +1661,47 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
   }
 }
 
+void MicrosoftCXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
+  // FIXME: This is place holder code that is duplicated in
+  // ItaniumMangle.cpp
+  switch (Op.getKind()) {
+  case ReflectionOperand::Type: {
+    Out << "Ty";
+    mangleType(Op.getAsType().getCanonicalType(), SourceRange());
+    return;
+  }
+  case ReflectionOperand::Template: {
+    if (TemplateDecl *TD = Op.getAsTemplate().getAsTemplateDecl())
+      mangleUnscopedTemplateName(TD);
+    llvm_unreachable("unsupported mangling of template");
+  }
+  case ReflectionOperand::Namespace: {
+    Decl *D = Op.getAsNamespace().getNamespaceAsDecl();
+    if (NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
+      mangleName(NSD);
+    } else {
+      assert(isa<TranslationUnitDecl>(D));
+      Out << "Tu";
+    }
+    return;
+  }
+  case ReflectionOperand::Expression: {
+    Out << reinterpret_cast<std::uintmax_t>(Op.getOpaqueReflectionValue());
+    return;
+  }
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Declaration:
+  case ReflectionOperand::BaseSpecifier: {
+    // These reflections should never show up in the mangler, as there
+    // isn't a way to directly reflect them.
+    llvm_unreachable("invalid reflection kind");
+  }
+
+  }
+
+  llvm_unreachable("unhandled reflection kind");
+}
+
 void MicrosoftCXXNameMangler::mangleTemplateArgValue(QualType T,
                                                      const APValue &V,
                                                      bool WithScalarType) {
@@ -1856,6 +1898,11 @@ void MicrosoftCXXNameMangler::mangleTemplateArgValue(QualType T,
 
   case APValue::AddrLabelDiff:
   case APValue::FixedPoint:
+    break;
+
+  case APValue::Reflection:
+    Out << "Re";
+    mangleReflectionOp(ReflectionOperand(V));
     break;
   }
 

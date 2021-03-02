@@ -3953,6 +3953,9 @@ void CXXNameMangler::mangleInitListElements(const InitListExpr *InitList) {
 }
 
 void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
+  // FIXME: This is place holder code that is duplicated in
+  // MicrosoftMangle.cpp
+
   switch (Op.getKind()) {
   case ReflectionOperand::Type: {
     Out << "Ty";
@@ -5339,6 +5342,7 @@ static bool isZeroInitialized(QualType T, const APValue &V) {
   case APValue::None:
   case APValue::Indeterminate:
   case APValue::AddrLabelDiff:
+  case APValue::Reflection: // FIXME: Is this right?
     return false;
 
   case APValue::Struct: {
@@ -5783,6 +5787,12 @@ void CXXNameMangler::mangleValueInTemplateArg(QualType T, const APValue &V,
         mangleNumber(Offset.getQuantity());
       Out << 'E';
     }
+    break;
+  }
+
+  case APValue::Reflection:
+    Out << "Re";
+    mangleReflectionOp(ReflectionOperand(V));
     break;
   }
 
