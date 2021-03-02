@@ -1218,18 +1218,21 @@ Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
 static bool InjectVariableInitializer(InjectionContext &Ctx,
                                       VarDecl *Old,
                                       VarDecl *New) {
+  Sema &SemaRef = Ctx.getSema();
+
   if (Old->getInit()) {
-    if (New->isStaticDataMember() && !Old->isOutOfLine())
-      Ctx.getSema().PushExpressionEvaluationContext(
+    if ((New->isStaticDataMember() && !Old->isOutOfLine()) ||
+        SemaRef.isConstantEvaluated())
+      SemaRef.PushExpressionEvaluationContext(
           Sema::ExpressionEvaluationContext::ConstantEvaluated, Old);
     else
-      Ctx.getSema().PushExpressionEvaluationContext(
+      SemaRef.PushExpressionEvaluationContext(
           Sema::ExpressionEvaluationContext::PotentiallyEvaluated, Old);
 
     // Instantiate the initializer.
     ExprResult Init;
     {
-      Sema::ContextRAII SwitchContext(Ctx.getSema(), New->getDeclContext());
+      Sema::ContextRAII SwitchContext(SemaRef, New->getDeclContext());
       bool DirectInit = (Old->getInitStyle() == VarDecl::CallInit);
       Init = Ctx.TransformInitializer(Old->getInit(), DirectInit);
     }
@@ -1241,15 +1244,15 @@ static bool InjectVariableInitializer(InjectionContext &Ctx,
            !InitExpr->isConstantInitializer(Ctx.getContext(), false))) {
         // Do not dynamically initialize dllimport variables.
       } else if (InitExpr) {
-        Ctx.getSema().AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
+        SemaRef.AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
       } else {
-        Ctx.getSema().ActOnUninitializedDecl(New);
+        SemaRef.ActOnUninitializedDecl(New);
       }
     } else {
       New->setInvalidDecl();
     }
 
-    Ctx.getSema().PopExpressionEvaluationContext();
+    SemaRef.PopExpressionEvaluationContext();
   } else {
     if (New->isStaticDataMember()) {
       if (!New->isOutOfLine())
@@ -1265,7 +1268,7 @@ static bool InjectVariableInitializer(InjectionContext &Ctx,
     if (New->isCXXForRangeDecl())
       return New;
 
-    Ctx.getSema().ActOnUninitializedDecl(New);
+    SemaRef.ActOnUninitializedDecl(New);
   }
 
   return New;
@@ -2247,6 +2250,9 @@ Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
 
   DeclContext *OriginalDC;
   Sema.ActOnStartCXXMetaprogramDecl(New, OriginalDC);
+
+  EnterExpressionEvaluationContext Unevaluated(
+      getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   StmtResult S = TransformStmt(D->getBody());
   if (!S.isInvalid())
