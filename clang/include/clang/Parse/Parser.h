@@ -853,6 +853,7 @@ private:
     return PP.LookAhead(Dist - 1);
   }
 
+
   static void setTypeAnnotation(Token &Tok, TypeResult T) {
     assert((T.isInvalid() || T.get()) &&
            "produced a valid-but-null type annotation?");
@@ -3189,13 +3190,32 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 private:
+  // TODO: Don't call these functions directly. If we want to change the
+  // tokens, the modify the the functions below and/or the definition of
+  // these functions.
+
   bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
   bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
+  bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &Loc);
+  bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &Loc);
 
   bool isCXXPackSpliceBegin(unsigned LookAhead = 0);
 
-  bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
-  bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);
+  bool matchCXXReflectionSpliceBegin(unsigned LookAhead = 0) {
+    return matchCXXSpliceBegin(tok::colon, LookAhead);
+  }
+
+  bool matchCXXReflectionSpliceEnd(unsigned LookAhead = 0) {
+    return matchCXXSpliceEnd(tok::colon, LookAhead);
+  }
+
+  bool parseCXXReflectionSpliceBegin(SourceLocation &Loc) {
+    return parseCXXSpliceBegin(tok::colon, Loc);
+  }
+
+  bool parseCXXReflectionSpliceEnd(SourceLocation &Loc) {
+    return parseCXXSpliceEnd(tok::colon, Loc);
+  }
 public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
@@ -3214,6 +3234,16 @@ public:
   bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
   ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
+
+  struct ParsedSplice
+  {
+    SourceLocation Start;
+    SourceLocation End;
+    ExprResult Refl;
+  };
+
+  bool ParseReflectionSplice(ParsedSplice& Splice, bool IsTypename);
+  void AnnotateExistingReflectionSplice(ParsedSplice &Splice);
 
   /// Parse a __select expression
   ExprResult ParseCXXSelectMemberExpr();

@@ -1791,6 +1791,11 @@ Sema::ActOnCXXDependentIdentifierSpliceType(
   return CreateParsedType(Result, Builder.getTypeSourceInfo(Context, Result));
 }
 
+bool Sema::ActOnCXXNestedNameSpecifierSplice(CXXScopeSpec &SS, ExprResult E,
+                                             SourceLocation ColonColonLoc) {
+  assert(false && "Splice in nested-name-specifier");
+}
+
 bool Sema::ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
                                                  const DeclSpec &DS,
                                                  SourceLocation ColonColonLoc) {
@@ -1930,4 +1935,144 @@ ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
 
 DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
   return SemaRef.PP.getDiagnostics();
+}
+
+TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Expr *Refl) {
+  // If the expression is dependent, the type is dependent.
+  if (Refl->isTypeDependent() || Refl->isValueDependent())
+    return ParsedType::make(Context.DependentTy);
+
+  // Evaluate the reflection.
+  Expr::EvalResult Eval;
+  Expr::EvalContext EvalCtx(Context, nullptr);
+  if (!Refl->EvaluateAsConstantExpr(Eval, EvalCtx))
+    return TypeError();
+  APValue const& Result = Eval.Val;
+
+  // The kind depends on the type. See through cv-references.
+  QualType T = Refl->getType().getCanonicalType();
+  if (T->isReferenceType())
+    T = T->getPointeeType();
+  T = T.getUnqualifiedType();
+  T = Context.getCanonicalType(T);
+
+  // Evaluate the expression to see what's been reflected.
+  //
+  // FIXME: What about references to meta::infos.
+  if (T == Context.MetaInfoTy) {
+    assert(Result.isReflection() && "Value of meta::info is not a reflection");
+    switch (Result.getReflectionKind()) {
+    case RK_invalid:
+      Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+      return TypeError();
+    
+    case RK_declaration: {
+      const Decl *D = Result.getReflectedDeclaration();
+      if (TypeDecl const* TD = dyn_cast<TypeDecl>(D))
+        return ParsedType::make(Context.getTypeDeclType(TD));
+      break;
+    }
+    
+    case RK_type:
+      return ParsedType::make(Result.getReflectedType());
+    
+    default:
+      break;
+    }
+
+    // FIXME: This could be a better diagnostic.
+    Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+    return TypeError();
+  }
+
+  // FIXME: This is a poor man's approximation of testing to see if `T` is
+  // a range. It would be nice if there were a simple predicate that asked
+  // "is T a range" (and the provided the looked up members if needed). That
+  // would be a nice cleanup for the Range/Expansion statement code.
+  //
+  // FIXME: We need to know if the prefix ... has been seen. If so, then
+  // the resulting type is "expansion dependent?" or something like that.
+  // If not, the program is ill-formed.
+  if (T->isRecordType()) {
+    // Just fall through for now.
+  }
+
+  // FIXME: This could be a better diagnostic.
+  Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+  return TypeError();
+}
+
+// FIXME: I don't think this is being used any more.
+Sema::SpliceKind Sema::DetermineSpliceKind(Expr *Refl) {
+  // This could be any kind of splice, including a range.
+  if (Refl->isTypeDependent() || Refl->isValueDependent())
+    return SpliceKind::Dependent;
+
+  // Evaluate the expression.
+  //
+  // TODO: The parser calls this multiple times per reflection. We should
+  // cache the results to prevent potentially expensive re-computations.
+  // Or, guarantee that the operand is a ConstantExpr and the value is
+  // cached there.
+  Expr::EvalResult Eval;
+  Expr::EvalContext EvalCtx(Context, nullptr);
+  if (!Refl->EvaluateAsConstantExpr(Eval, EvalCtx))
+    return SpliceKind::Invalid;
+  APValue const& Result = Eval.Val;
+
+  // The kind depends on the type.
+  QualType T = Refl->getType().getCanonicalType();
+
+  // Evaluate the expression to see what's been reflected.
+  //
+  // FIXME: What about references to meta::infos.
+  if (T != Context.MetaInfoTy) {
+    assert(Result.isReflection() && "Value of meta::info is not a reflection");
+    switch (Result.getReflectionKind()) {
+    case RK_invalid:
+      Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+      return SpliceKind::Invalid;
+    
+    case RK_declaration: {
+      const Decl *D = Result.getReflectedDeclaration();
+      if (isa<ValueDecl>(D))
+        return SpliceKind::Expression;
+      if (isa<TypeDecl>(D))
+        return SpliceKind::Type;
+      if (isa<TemplateDecl>(D))
+        return SpliceKind::Template;
+      if (isa<NamespaceDecl>(D))
+        return SpliceKind::Namespace;
+      // FIXME: This is a diagnosible error.
+      assert(false && "Splice of unknown declaration");
+    }
+    
+    case RK_type:
+      return SpliceKind::Type;
+    
+    case RK_expression:
+      return SpliceKind::Expression;
+    
+    case RK_base_specifier:
+      // Treat base specifiers as types.
+      return SpliceKind::Type;
+
+    default:
+      break;
+    }
+    llvm_unreachable("Unknown reflection");
+  }
+
+  // FIXME: This is a poor man's approximation of testing to see if `T` is
+  // a range. It would be nice if there were a simple predicate that asked
+  // "is T a range" (and the provided the looked up members if needed). That
+  // would be a nice cleanup for the Range/Expansion statement code.
+  if (T->isRecordType()) {
+    return SpliceKind::Range;
+  }
+
+  // FIXME: We should be able to give a better error, like "cannot splice an
+  // expression of type 'X'".
+  Diag(Refl->getBeginLoc(), diag::err_splice_wrong_type) << Refl->getType();
+  return SpliceKind::Invalid;
 }

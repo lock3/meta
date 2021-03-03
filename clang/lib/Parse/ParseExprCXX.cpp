@@ -230,22 +230,38 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
     HasScopeSpecifier = true;
   }
 
-  if (!HasScopeSpecifier && Tok.is(tok::kw_typename) &&
-      matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
-    DeclSpec DS(AttrFactory);
-    SourceLocation DeclLoc = Tok.getLocation();
-    SourceLocation EndLoc  = ParseTypeSplice(DS);
+  // Check for these case:
+  //
+  //    [: refl :] :: 
+  //
+  // If this is part of a typename-specifier (i.e. IsTypename is true), then
+  // this has to be a type splice. Otherwise, we assume it's an expression
+  // splice. 
+  //
+  // Note that reflection splices can only appear at the front of a nested-name
+  // specifier. Identifier splices can appear pretty much anywhere.
+  //
+  // TODO: Handle identifier splices here as well.
+  if (!HasScopeSpecifier && 
+      (matchCXXReflectionSpliceBegin() || Tok.is(tok::annot_reflection_splice))) {
+    SourceLocation StartLoc = Tok.getLocation();
 
-    SourceLocation CCLoc;
-    // Work around a standard defect: 'decltype(auto)::' is not a
-    // nested-name-specifier.
-    if (!TryConsumeToken(tok::coloncolon, CCLoc)) {
-      AnnotateExistingTypeSplice(DS, DeclLoc, EndLoc);
+    // Parse the reflection splice.
+    ParsedSplice Splice;
+    if (ParseReflectionSplice(Splice, IsTypename))
+      return true;
+
+    // Look for the :: after splice. If non, then this is not a nested-name
+    // specifier.
+    SourceLocation ScopeLoc;
+    if (!TryConsumeToken(tok::coloncolon, ScopeLoc)) {
+      AnnotateExistingReflectionSplice(Splice);
       return false;
     }
 
-    if (Actions.ActOnCXXNestedNameSpecifierTypeSplice(SS, DS, CCLoc))
-      SS.SetInvalid(SourceRange(DeclLoc, CCLoc));
+    // Otherwise, append the splice to the nested-name-specifier.
+    if (Actions.ActOnCXXNestedNameSpecifierSplice(SS, Splice.Refl, ScopeLoc))
+      SS.SetInvalid(SourceRange(StartLoc, ScopeLoc));
 
     HasScopeSpecifier = true;
   }
@@ -291,6 +307,12 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
       // If we don't have a scope specifier or an object type, this isn't a
       // nested-name-specifier, since they aren't allowed to start with
       // 'template'.
+      //
+      // FIXME: This isn't true for expression splices.
+      //
+      //    template [:refl:]<args...>
+      //
+      // is valid.
       if (!HasScopeSpecifier && !ObjectType)
         break;
 
