@@ -111,7 +111,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   // An exception is made for fragment contexts, as injection will
   // require a complete delcaration before the end of the translation unit.
   if (getLangOpts().DelayedTemplateParsing &&
-      D.getFunctionDefinitionKind() == FDK_Definition &&
+      D.getFunctionDefinitionKind() == FunctionDefinitionKind::Definition &&
       !D.getDeclSpec().hasConstexprSpecifier() &&
       !(FnD && FnD->getAsFunction() &&
         FnD->getAsFunction()->getReturnType()->getContainedAutoType()) &&

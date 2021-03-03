@@ -520,7 +520,9 @@ enum NodeType {
   /// The elements of VECTOR1 starting at IDX are overwritten with VECTOR2.
   /// Elements IDX through (IDX + num_elements(T) - 1) must be valid VECTOR1
   /// indices. If this condition cannot be determined statically but is false at
-  /// runtime, then the result vector is undefined.
+  /// runtime, then the result vector is undefined. The IDX parameter must be a
+  /// vector index constant type, which for most targets will be an integer
+  /// pointer type.
   ///
   /// This operation supports inserting a fixed-width vector into a scalable
   /// vector, but not the other way around.
@@ -539,6 +541,11 @@ enum NodeType {
   /// This operation supports extracting a fixed-width vector from a scalable
   /// vector, but not the other way around.
   EXTRACT_SUBVECTOR,
+
+  /// VECTOR_REVERSE(VECTOR) - Returns a vector, of the same type as VECTOR,
+  /// whose elements are shuffled using the following algorithm:
+  ///   RESULT[i] = VECTOR[VECTOR.ElementCount - 1 - i]
+  VECTOR_REVERSE,
 
   /// VECTOR_SHUFFLE(VEC1, VEC2) - Returns a vector, of the same type as
   /// VEC1/VEC2.  A VECTOR_SHUFFLE node also contains an array of constant int
@@ -734,6 +741,21 @@ enum NodeType {
   FP_TO_SINT,
   FP_TO_UINT,
 
+  /// FP_TO_[US]INT_SAT - Convert floating point value in operand 0 to a
+  /// signed or unsigned integer type with the bit width given in operand 1 with
+  /// the following semantics:
+  ///
+  ///  * If the value is NaN, zero is returned.
+  ///  * If the value is larger/smaller than the largest/smallest integer,
+  ///    the largest/smallest integer is returned (saturation).
+  ///  * Otherwise the result of rounding the value towards zero is returned.
+  ///
+  /// The width given in operand 1 must be equal to, or smaller than, the scalar
+  /// result type width. It may end up being smaller than the result witdh as a
+  /// result of integer type legalization.
+  FP_TO_SINT_SAT,
+  FP_TO_UINT_SAT,
+
   /// X = FP_ROUND(Y, TRUNC) - Rounding 'Y' from a larger floating point type
   /// down to the precision of the destination VT.  TRUNC is a flag, which is
   /// always an integer that is zero or one.  If TRUNC is 0, this is a
@@ -747,14 +769,21 @@ enum NodeType {
   /// FP_EXTEND(FP_ROUND(X,0)) because the extra bits aren't removed.
   FP_ROUND,
 
-  /// FLT_ROUNDS_ - Returns current rounding mode:
+  /// Returns current rounding mode:
   /// -1 Undefined
   ///  0 Round to 0
-  ///  1 Round to nearest
+  ///  1 Round to nearest, ties to even
   ///  2 Round to +inf
   ///  3 Round to -inf
+  ///  4 Round to nearest, ties to zero
   /// Result is rounding mode and chain. Input is a chain.
+  /// TODO: Rename this node to GET_ROUNDING.
   FLT_ROUNDS_,
+
+  /// Set rounding mode.
+  /// The first operand is a chain pointer. The second specifies the required
+  /// rounding mode, encoded in the same way as used in '``FLT_ROUNDS_``'.
+  SET_ROUNDING,
 
   /// X = FP_EXTEND(Y) - Extend a smaller FP type into a larger FP type.
   FP_EXTEND,
@@ -875,13 +904,18 @@ enum NodeType {
   /// BRCOND - Conditional branch.  The first operand is the chain, the
   /// second is the condition, the third is the block to branch to if the
   /// condition is true.  If the type of the condition is not i1, then the
-  /// high bits must conform to getBooleanContents.
+  /// high bits must conform to getBooleanContents. If the condition is undef,
+  /// it nondeterministically jumps to the block.
+  /// TODO: Its semantics w.r.t undef requires further discussion; we need to
+  /// make it sure that it is consistent with optimizations in MIR & the
+  /// meaning of IMPLICIT_DEF. See https://reviews.llvm.org/D92015
   BRCOND,
 
   /// BR_CC - Conditional branch.  The behavior is like that of SELECT_CC, in
   /// that the condition is represented as condition code, and two nodes to
   /// compare, rather than as a combined SetCC node.  The operands in order
-  /// are chain, cc, lhs, rhs, block to branch to if condition is true.
+  /// are chain, cc, lhs, rhs, block to branch to if condition is true. If
+  /// condition is undef, it nondeterministically jumps to the block.
   BR_CC,
 
   /// INLINEASM - Represents an inline asm block.  This node always has two
@@ -1012,6 +1046,10 @@ enum NodeType {
   /// DEBUGTRAP - Trap intended to get the attention of a debugger.
   DEBUGTRAP,
 
+  /// UBSANTRAP - Trap with an immediate describing the kind of sanitizer
+  /// failure.
+  UBSANTRAP,
+
   /// PREFETCH - This corresponds to a prefetch intrinsic. The first operand
   /// is the chain.  The other operands are the address to prefetch,
   /// read / write specifier, locality specifier and instruction / data cache
@@ -1106,6 +1144,10 @@ enum NodeType {
   /// known nonzero constant. The only operand here is the chain.
   GET_DYNAMIC_AREA_OFFSET,
 
+  /// Pseudo probe for AutoFDO, as a place holder in a basic block to improve
+  /// the sample counts quality.
+  PSEUDO_PROBE,
+
   /// VSCALE(IMM) - Returns the runtime scaling factor used to calculate the
   /// number of elements within a scalable vector. IMM is a constant integer
   /// multiplier that is applied to the runtime value.
@@ -1150,6 +1192,10 @@ enum NodeType {
   VECREDUCE_UMAX,
   VECREDUCE_UMIN,
 
+// Vector Predication
+#define BEGIN_REGISTER_VP_SDNODE(VPSDID, ...) VPSDID,
+#include "llvm/IR/VPIntrinsics.def"
+
   /// BUILTIN_OP_END - This must be the last enum value in this list.
   /// The target-specific pre-isel opcode values start here.
   BUILTIN_OP_END
@@ -1169,6 +1215,15 @@ static const int FIRST_TARGET_MEMORY_OPCODE = BUILTIN_OP_END + 500;
 /// Get underlying scalar opcode for VECREDUCE opcode.
 /// For example ISD::AND for ISD::VECREDUCE_AND.
 NodeType getVecReduceBaseOpcode(unsigned VecReduceOpcode);
+
+/// Whether this is a vector-predicated Opcode.
+bool isVPOpcode(unsigned Opcode);
+
+/// The operand position of the vector mask.
+Optional<unsigned> getVPMaskIdx(unsigned Opcode);
+
+/// The operand position of the explicit vector length parameter.
+Optional<unsigned> getVPExplicitVectorLengthIdx(unsigned Opcode);
 
 //===--------------------------------------------------------------------===//
 /// MemIndexedMode enum - This enum defines the load / store indexed
@@ -1290,6 +1345,12 @@ inline bool isSignedIntSetCC(CondCode Code) {
 /// comparison when used with integer operands.
 inline bool isUnsignedIntSetCC(CondCode Code) {
   return Code == SETUGT || Code == SETUGE || Code == SETULT || Code == SETULE;
+}
+
+/// Return true if this is a setcc instruction that performs an equality
+/// comparison when used with integer operands.
+inline bool isIntEqualitySetCC(CondCode Code) {
+  return Code == SETEQ || Code == SETNE;
 }
 
 /// Return true if the specified condition returns true if the two operands to

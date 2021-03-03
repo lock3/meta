@@ -124,7 +124,7 @@ class ObjCMessageExpr;
 ExprDependence computeDependence(FullExpr *E);
 ExprDependence computeDependence(OpaqueValueExpr *E);
 ExprDependence computeDependence(ParenExpr *E);
-ExprDependence computeDependence(UnaryOperator *E);
+ExprDependence computeDependence(UnaryOperator *E, const ASTContext &Ctx);
 ExprDependence computeDependence(UnaryExprOrTypeTraitExpr *E);
 ExprDependence computeDependence(ArraySubscriptExpr *E);
 ExprDependence computeDependence(MatrixSubscriptExpr *E);

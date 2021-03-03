@@ -75,9 +75,13 @@ private:
 namespace llvm {
 namespace orc {
 
+char RTDyldObjectLinkingLayer::ID;
+
+using BaseT = RTTIExtends<RTDyldObjectLinkingLayer, ObjectLayer>;
+
 RTDyldObjectLinkingLayer::RTDyldObjectLinkingLayer(
     ExecutionSession &ES, GetMemoryManagerFunction GetMemoryManager)
-    : ObjectLayer(ES), GetMemoryManager(GetMemoryManager) {
+    : BaseT(ES), GetMemoryManager(GetMemoryManager) {
   ES.registerResourceManager(*this);
 }
 
@@ -167,8 +171,7 @@ void RTDyldObjectLinkingLayer::emit(
 
 void RTDyldObjectLinkingLayer::registerJITEventListener(JITEventListener &L) {
   std::lock_guard<std::mutex> Lock(RTDyldLayerMutex);
-  assert(llvm::none_of(EventListeners,
-                       [&](JITEventListener *O) { return O == &L; }) &&
+  assert(!llvm::is_contained(EventListeners, &L) &&
          "Listener has already been registered");
   EventListeners.push_back(&L);
 }

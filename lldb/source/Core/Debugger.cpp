@@ -258,6 +258,12 @@ const FormatEntity::Entry *Debugger::GetFrameFormatUnique() const {
   return m_collection_sp->GetPropertyAtIndexAsFormatEntity(nullptr, idx);
 }
 
+uint32_t Debugger::GetStopDisassemblyMaxSize() const {
+  const uint32_t idx = ePropertyStopDisassemblyMaxSize;
+  return m_collection_sp->GetPropertyAtIndexAsUInt64(
+      nullptr, idx, g_debugger_properties[idx].default_uint_value);
+}
+
 bool Debugger::GetNotifyVoid() const {
   const uint32_t idx = ePropertyNotiftVoid;
   return m_collection_sp->GetPropertyAtIndexAsBoolean(
@@ -682,7 +688,16 @@ Debugger::Debugger(lldb::LogOutputCallback log_callback, void *baton)
   assert(default_platform_sp);
   m_platform_list.Append(default_platform_sp, true);
 
-  m_dummy_target_sp = m_target_list.GetDummyTarget(*this);
+  // Create the dummy target.
+  {
+    ArchSpec arch(Target::GetDefaultArchitecture());
+    if (!arch.IsValid())
+      arch = HostInfo::GetArchitecture();
+    assert(arch.IsValid() && "No valid default or host archspec");
+    const bool is_dummy_target = true;
+    m_dummy_target_sp.reset(
+        new Target(*this, arch, default_platform_sp, is_dummy_target));
+  }
   assert(m_dummy_target_sp.get() && "Couldn't construct dummy target?");
 
   m_collection_sp->Initialize(g_debugger_properties);
@@ -807,24 +822,9 @@ void Debugger::SaveInputTerminalState() {
 void Debugger::RestoreInputTerminalState() { m_terminal_state.Restore(); }
 
 ExecutionContext Debugger::GetSelectedExecutionContext() {
-  ExecutionContext exe_ctx;
-  TargetSP target_sp(GetSelectedTarget());
-  exe_ctx.SetTargetSP(target_sp);
-
-  if (target_sp) {
-    ProcessSP process_sp(target_sp->GetProcessSP());
-    exe_ctx.SetProcessSP(process_sp);
-    if (process_sp && !process_sp->IsRunning()) {
-      ThreadSP thread_sp(process_sp->GetThreadList().GetSelectedThread());
-      if (thread_sp) {
-        exe_ctx.SetThreadSP(thread_sp);
-        exe_ctx.SetFrameSP(thread_sp->GetSelectedFrame());
-        if (exe_ctx.GetFramePtr() == nullptr)
-          exe_ctx.SetFrameSP(thread_sp->GetStackFrameAtIndex(0));
-      }
-    }
-  }
-  return exe_ctx;
+  bool adopt_selected = true;
+  ExecutionContextRef exe_ctx_ref(GetSelectedTarget().get(), adopt_selected);
+  return ExecutionContext(exe_ctx_ref);
 }
 
 void Debugger::DispatchInputInterrupt() {
@@ -1569,14 +1569,11 @@ void Debugger::JoinIOHandlerThread() {
   }
 }
 
-Target *Debugger::GetSelectedOrDummyTarget(bool prefer_dummy) {
-  Target *target = nullptr;
+Target &Debugger::GetSelectedOrDummyTarget(bool prefer_dummy) {
   if (!prefer_dummy) {
-    target = m_target_list.GetSelectedTarget().get();
-    if (target)
-      return target;
+    if (TargetSP target = m_target_list.GetSelectedTarget())
+      return *target;
   }
-
   return GetDummyTarget();
 }
 

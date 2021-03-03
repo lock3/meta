@@ -40,7 +40,7 @@ else()
                   --print-resource-dir not supported by host compiler")
 endif()
 
-option(LLVM_LIBC_ENABLE_LINTING "Enables linting of libc source files" ON)
+option(LLVM_LIBC_ENABLE_LINTING "Enables linting of libc source files" OFF)
 if(LLVM_LIBC_ENABLE_LINTING)
   if("clang-tools-extra" IN_LIST LLVM_ENABLE_PROJECTS
              AND "clang" IN_LIST LLVM_ENABLE_PROJECTS)
@@ -70,7 +70,7 @@ include("${LIBC_SOURCE_DIR}/config/${LIBC_TARGET_OS}/${LIBC_TARGET_MACHINE}/entr
 include("${LIBC_SOURCE_DIR}/config/${LIBC_TARGET_OS}/${LIBC_TARGET_MACHINE}/headers.txt")
 
 set(TARGET_ENTRYPOINT_NAME_LIST "")
-foreach(entrypoint IN LISTS TARGET_LIBC_ENTRYPOINTS TARGET_LIBM_ENTRYPOINTS)
+foreach(entrypoint IN LISTS TARGET_LLVMLIBC_ENTRYPOINTS)
   string(FIND ${entrypoint} "." last_dot_loc REVERSE)
   if(${last_dot_loc} EQUAL -1)
     message(FATAL "Invalid entrypoint target name ${entrypoint}; Expected a '.' "
@@ -80,6 +80,10 @@ foreach(entrypoint IN LISTS TARGET_LIBC_ENTRYPOINTS TARGET_LIBM_ENTRYPOINTS)
   string(SUBSTRING ${entrypoint} ${name_loc} -1 entrypoint_name)
   list(APPEND TARGET_ENTRYPOINT_NAME_LIST ${entrypoint_name})
 endforeach()
+
+# We need to set up hdrgen first since other targets depend on it.
+add_subdirectory(utils/LibcTableGenUtil)
+add_subdirectory(utils/HdrGen)
 
 add_subdirectory(include)
 add_subdirectory(config)

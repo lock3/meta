@@ -515,6 +515,7 @@ private:
     DK_PRINT,
     DK_ADDRSIG,
     DK_ADDRSIG_SYM,
+    DK_PSEUDO_PROBE,
     DK_END
   };
 
@@ -677,6 +678,9 @@ private:
 
   // .print <double-quotes-string>
   bool parseDirectivePrint(SMLoc DirectiveLoc);
+
+  // .pseudoprobe
+  bool parseDirectivePseudoProbe();
 
   // Directives to support address-significance tables.
   bool parseDirectiveAddrsig();
@@ -994,7 +998,7 @@ bool AsmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
   // Finalize the output stream if there are no errors and if the client wants
   // us to.
   if (!HadError && !NoFinalize)
-    Out.Finish();
+    Out.Finish(Lexer.getLoc());
 
   return HadError || getContext().hadError();
 }
@@ -2202,6 +2206,8 @@ bool AsmParser::parseStatement(ParseStatementInfo &Info,
       return parseDirectiveAddrsig();
     case DK_ADDRSIG_SYM:
       return parseDirectiveAddrsigSym();
+    case DK_PSEUDO_PROBE:
+      return parseDirectivePseudoProbe();
     }
 
     return Error(IDLoc, "unknown directive");
@@ -2342,7 +2348,7 @@ bool AsmParser::parseCppHashLineFilenameComment(SMLoc L, bool SaveLocInfo) {
 /// will use the last parsed cpp hash line filename comment
 /// for the Filename and LineNo if any in the diagnostic.
 void AsmParser::DiagHandler(const SMDiagnostic &Diag, void *Context) {
-  const AsmParser *Parser = static_cast<const AsmParser *>(Context);
+  auto *Parser = static_cast<AsmParser *>(Context);
   raw_ostream &OS = errs();
 
   const SourceMgr &DiagSrcMgr = *Diag.getSourceMgr();
@@ -2363,12 +2369,11 @@ void AsmParser::DiagHandler(const SMDiagnostic &Diag, void *Context) {
   // If we have not parsed a cpp hash line filename comment or the source
   // manager changed or buffer changed (like in a nested include) then just
   // print the normal diagnostic using its Filename and LineNo.
-  if (!Parser->CppHashInfo.LineNumber || &DiagSrcMgr != &Parser->SrcMgr ||
-      DiagBuf != CppHashBuf) {
+  if (!Parser->CppHashInfo.LineNumber || DiagBuf != CppHashBuf) {
     if (Parser->SavedDiagHandler)
       Parser->SavedDiagHandler(Diag, Parser->SavedDiagContext);
     else
-      Diag.print(nullptr, OS);
+      Parser->getContext().diagnose(Diag);
     return;
   }
 
@@ -2388,9 +2393,9 @@ void AsmParser::DiagHandler(const SMDiagnostic &Diag, void *Context) {
                        Diag.getLineContents(), Diag.getRanges());
 
   if (Parser->SavedDiagHandler)
-    Parser->SavedDiagHandler(NewDiag, Parser->SavedDiagContext);
+    Parser->SavedDiagHandler(Diag, Parser->SavedDiagContext);
   else
-    NewDiag.print(nullptr, OS);
+    Parser->getContext().diagnose(NewDiag);
 }
 
 // FIXME: This is mostly duplicated from the function in AsmLexer.cpp. The
@@ -3002,13 +3007,20 @@ bool AsmParser::parseAngleBracketString(std::string &Data) {
 }
 
 /// parseDirectiveAscii:
-///   ::= ( .ascii | .asciz | .string ) [ "string" ( , "string" )* ]
+//    ::= .ascii [ "string"+ ( , "string"+ )* ]
+///   ::= ( .asciz | .string ) [ "string" ( , "string" )* ]
 bool AsmParser::parseDirectiveAscii(StringRef IDVal, bool ZeroTerminated) {
   auto parseOp = [&]() -> bool {
     std::string Data;
-    if (checkForValidSection() || parseEscapedString(Data))
+    if (checkForValidSection())
       return true;
-    getStreamer().emitBytes(Data);
+    // Only support spaces as separators for .ascii directive for now. See the
+    // discusssion at https://reviews.llvm.org/D91460 for more details.
+    do {
+      if (parseEscapedString(Data))
+        return true;
+      getStreamer().emitBytes(Data);
+    } while (!ZeroTerminated && getTok().is(AsmToken::String));
     if (ZeroTerminated)
       getStreamer().emitBytes(StringRef("\0", 1));
     return false;
@@ -3336,6 +3348,8 @@ bool AsmParser::parseDirectiveAlign(bool IsPow2, unsigned ValueSize) {
       Alignment = 1;
     if (!isPowerOf2_64(Alignment))
       ReturnVal |= Error(AlignmentLoc, "alignment must be a power of 2");
+    if (!isUInt<32>(Alignment))
+      ReturnVal |= Error(AlignmentLoc, "alignment must be smaller than 2**32");
   }
 
   // Diagnose non-sensical max bytes to align.
@@ -3470,8 +3484,9 @@ bool AsmParser::parseDirectiveFile(SMLoc DirectiveLoc) {
       Source = StringRef(SourceBuf, SourceString.size());
     }
     if (FileNumber == 0) {
+      // Upgrade to Version 5 for assembly actions like clang -c a.s.
       if (Ctx.getDwarfVersion() < 5)
-        return Warning(DirectiveLoc, "file 0 not supported prior to DWARF-5");
+        Ctx.setDwarfVersion(5);
       getStreamer().emitDwarfFile0Directive(Directory, Filename, CKMem, Source);
     } else {
       Expected<unsigned> FileNumOrErr = getStreamer().tryEmitDwarfFileDirective(
@@ -4057,26 +4072,20 @@ bool AsmParser::parseDirectiveCFISections() {
   bool EH = false;
   bool Debug = false;
 
-  if (parseIdentifier(Name))
-    return TokError("Expected an identifier");
-
-  if (Name == ".eh_frame")
-    EH = true;
-  else if (Name == ".debug_frame")
-    Debug = true;
-
-  if (getLexer().is(AsmToken::Comma)) {
-    Lex();
-
-    if (parseIdentifier(Name))
-      return TokError("Expected an identifier");
-
-    if (Name == ".eh_frame")
-      EH = true;
-    else if (Name == ".debug_frame")
-      Debug = true;
+  if (!parseOptionalToken(AsmToken::EndOfStatement)) {
+    for (;;) {
+      if (parseIdentifier(Name))
+        return TokError("expected .eh_frame or .debug_frame");
+      if (Name == ".eh_frame")
+        EH = true;
+      else if (Name == ".debug_frame")
+        Debug = true;
+      if (parseOptionalToken(AsmToken::EndOfStatement))
+        break;
+      if (parseToken(AsmToken::Comma))
+        return true;
+    }
   }
-
   getStreamer().emitCFISections(EH, Debug);
   return false;
 }
@@ -4104,6 +4113,8 @@ bool AsmParser::parseDirectiveCFIStartProc() {
 /// parseDirectiveCFIEndProc
 /// ::= .cfi_endproc
 bool AsmParser::parseDirectiveCFIEndProc() {
+  if (parseToken(AsmToken::EndOfStatement))
+    return addErrorSuffix(" in '.cfi_endproc' directive");
   getStreamer().emitCFIEndProc();
   return false;
 }
@@ -5515,6 +5526,7 @@ void AsmParser::initializeDirectiveKindMap() {
   DirectiveKindMap[".print"] = DK_PRINT;
   DirectiveKindMap[".addrsig"] = DK_ADDRSIG;
   DirectiveKindMap[".addrsig_sym"] = DK_ADDRSIG_SYM;
+  DirectiveKindMap[".pseudoprobe"] = DK_PSEUDO_PROBE;
 }
 
 MCAsmMacro *AsmParser::parseMacroLikeBody(SMLoc DirectiveLoc) {
@@ -5770,6 +5782,69 @@ bool AsmParser::parseDirectiveAddrsigSym() {
   return false;
 }
 
+bool AsmParser::parseDirectivePseudoProbe() {
+  int64_t Guid;
+  int64_t Index;
+  int64_t Type;
+  int64_t Attr;
+
+  if (getLexer().is(AsmToken::Integer)) {
+    if (parseIntToken(Guid, "unexpected token in '.pseudoprobe' directive"))
+      return true;
+  }
+
+  if (getLexer().is(AsmToken::Integer)) {
+    if (parseIntToken(Index, "unexpected token in '.pseudoprobe' directive"))
+      return true;
+  }
+
+  if (getLexer().is(AsmToken::Integer)) {
+    if (parseIntToken(Type, "unexpected token in '.pseudoprobe' directive"))
+      return true;
+  }
+
+  if (getLexer().is(AsmToken::Integer)) {
+    if (parseIntToken(Attr, "unexpected token in '.pseudoprobe' directive"))
+      return true;
+  }
+
+  // Parse inline stack like @ GUID:11:12 @ GUID:1:11 @ GUID:3:21
+  MCPseudoProbeInlineStack InlineStack;
+
+  while (getLexer().is(AsmToken::At)) {
+    // eat @
+    Lex();
+
+    int64_t CallerGuid = 0;
+    if (getLexer().is(AsmToken::Integer)) {
+      if (parseIntToken(CallerGuid,
+                        "unexpected token in '.pseudoprobe' directive"))
+        return true;
+    }
+
+    // eat colon
+    if (getLexer().is(AsmToken::Colon))
+      Lex();
+
+    int64_t CallerProbeId = 0;
+    if (getLexer().is(AsmToken::Integer)) {
+      if (parseIntToken(CallerProbeId,
+                        "unexpected token in '.pseudoprobe' directive"))
+        return true;
+    }
+
+    InlineSite Site(CallerGuid, CallerProbeId);
+    InlineStack.push_back(Site);
+  }
+
+  if (parseToken(AsmToken::EndOfStatement,
+                 "unexpected token in '.pseudoprobe' directive"))
+    return true;
+
+  getStreamer().emitPseudoProbe(Guid, Index, Type, Attr, InlineStack);
+  return false;
+}
+
 // We are comparing pointers, but the pointers are relative to a single string.
 // Thus, this should always be deterministic.
 static int rewritesSort(const AsmRewrite *AsmRewriteA,
@@ -5891,7 +5966,7 @@ bool AsmParser::parseMSInlineAsm(
     // Consider implicit defs to be clobbers.  Think of cpuid and push.
     ArrayRef<MCPhysReg> ImpDefs(Desc.getImplicitDefs(),
                                 Desc.getNumImplicitDefs());
-    ClobberRegs.insert(ClobberRegs.end(), ImpDefs.begin(), ImpDefs.end());
+    llvm::append_range(ClobberRegs, ImpDefs);
   }
 
   // Set the number of Outputs and Inputs.

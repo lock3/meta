@@ -12,6 +12,7 @@ set(LIBCXX_SOURCES
   condition_variable.cpp
   condition_variable_destructor.cpp
   exception.cpp
+  format.cpp
   functional.cpp
   future.cpp
   hash.cpp
@@ -76,8 +77,13 @@ if(WIN32)
   list(APPEND LIBCXX_SOURCES
     support/win32/locale_win32.cpp
     support/win32/support.cpp
-    support/win32/thread_win32.cpp
     )
+
+  if (NOT LIBCXX_HAS_PTHREAD_API)
+    list(APPEND LIBCXX_SOURCES
+      support/win32/thread_win32.cpp
+      )
+  endif()
 elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "SunOS")
   list(APPEND LIBCXX_SOURCES
     support/solaris/mbsnrtowcs.inc
@@ -91,6 +97,7 @@ if (LIBCXX_ENABLE_FILESYSTEM)
     filesystem/filesystem_common.h
     filesystem/operations.cpp
     filesystem/directory_iterator.cpp
+    filesystem/posix_compat.h
     )
   # Filesystem uses __int128_t, which requires a definition of __muloi4 when
   # compiled with UBSAN. This definition is not provided by libgcc_s, but is
@@ -107,7 +114,7 @@ endif()
 if (LIBCXX_CONFIGURE_IDE)
   file(GLOB_RECURSE LIBCXX_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/../include/*)
   if(WIN32)
-    file( GLOB LIBCXX_WIN32_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/../include/support/win32/*.h)
+    file( GLOB LIBCXX_WIN32_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/../include/__support/win32/*.h)
     list(APPEND LIBCXX_HEADERS ${LIBCXX_WIN32_HEADERS})
   endif()
   # Force them all into the headers dir on MSVC, otherwise they end up at
@@ -176,9 +183,6 @@ split_list(LIBCXX_LINK_FLAGS)
 # Build the shared library.
 if (LIBCXX_ENABLE_SHARED)
   add_library(cxx_shared SHARED ${exclude_from_all} ${LIBCXX_SOURCES} ${LIBCXX_HEADERS})
-  if(COMMAND llvm_setup_rpath)
-    llvm_setup_rpath(cxx_shared)
-  endif()
   target_link_libraries(cxx_shared PUBLIC cxx-headers
                                    PRIVATE ${LIBCXX_LIBRARIES})
   set_target_properties(cxx_shared
@@ -216,9 +220,12 @@ if (LIBCXX_ENABLE_SHARED)
   endif()
 
   # Maybe re-export symbols from libc++abi
+  # In particular, we don't re-export the symbols if libc++abi is merged statically
+  # into libc++ because in that case there's no dylib to re-export from.
   if (APPLE AND (LIBCXX_CXX_ABI_LIBNAME STREQUAL "libcxxabi" OR
                  LIBCXX_CXX_ABI_LIBNAME STREQUAL "default")
-            AND NOT DEFINED LIBCXX_OSX_REEXPORT_LIBCXXABI_SYMBOLS)
+            AND NOT DEFINED LIBCXX_OSX_REEXPORT_LIBCXXABI_SYMBOLS
+            AND NOT LIBCXX_STATICALLY_LINK_ABI_IN_SHARED_LIBRARY)
     set(LIBCXX_OSX_REEXPORT_LIBCXXABI_SYMBOLS ON)
   endif()
 

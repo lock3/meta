@@ -61,7 +61,8 @@ SlabTuple indexSymbols(ASTContext &AST, std::shared_ptr<Preprocessor> PP,
   // We only need declarations, because we don't count references.
   IndexOpts.SystemSymbolFilter =
       index::IndexingOptions::SystemSymbolFilterKind::DeclarationsOnly;
-  IndexOpts.IndexFunctionLocals = false;
+  // We index function-local classes and its member functions only.
+  IndexOpts.IndexFunctionLocals = true;
   if (IsIndexMainAST) {
     // We only collect refs when indexing main AST.
     CollectorOpts.RefFilter = RefKind::All;
@@ -216,11 +217,11 @@ FileShardedIndex::getShard(llvm::StringRef Uri) const {
   return std::move(IF);
 }
 
-SlabTuple indexMainDecls(ParsedAST &AST, bool CollectMainFileRefs) {
+SlabTuple indexMainDecls(ParsedAST &AST) {
   return indexSymbols(
       AST.getASTContext(), AST.getPreprocessorPtr(),
       AST.getLocalTopLevelDecls(), &AST.getMacros(), AST.getCanonicalIncludes(),
-      /*IsIndexMainAST=*/true, AST.version(), CollectMainFileRefs);
+      /*IsIndexMainAST=*/true, AST.version(), /*CollectMainFileRefs=*/true);
 }
 
 SlabTuple indexHeaderSymbols(llvm::StringRef Version, ASTContext &AST,
@@ -234,6 +235,9 @@ SlabTuple indexHeaderSymbols(llvm::StringRef Version, ASTContext &AST,
                       /*IsIndexMainAST=*/false, Version,
                       /*CollectMainFileRefs=*/false);
 }
+
+FileSymbols::FileSymbols(IndexContents IdxContents)
+    : IdxContents(IdxContents) {}
 
 void FileSymbols::update(llvm::StringRef Key,
                          std::unique_ptr<SymbolSlab> Symbols,
@@ -266,18 +270,24 @@ FileSymbols::buildIndex(IndexType Type, DuplicateHandling DuplicateHandle,
   std::vector<std::shared_ptr<SymbolSlab>> SymbolSlabs;
   std::vector<std::shared_ptr<RefSlab>> RefSlabs;
   std::vector<std::shared_ptr<RelationSlab>> RelationSlabs;
+  llvm::StringSet<> Files;
   std::vector<RefSlab *> MainFileRefs;
   {
     std::lock_guard<std::mutex> Lock(Mutex);
-    for (const auto &FileAndSymbols : SymbolsSnapshot)
+    for (const auto &FileAndSymbols : SymbolsSnapshot) {
       SymbolSlabs.push_back(FileAndSymbols.second);
+      Files.insert(FileAndSymbols.first());
+    }
     for (const auto &FileAndRefs : RefsSnapshot) {
       RefSlabs.push_back(FileAndRefs.second.Slab);
+      Files.insert(FileAndRefs.first());
       if (FileAndRefs.second.CountReferences)
         MainFileRefs.push_back(RefSlabs.back().get());
     }
-    for (const auto &FileAndRelations : RelationsSnapshot)
+    for (const auto &FileAndRelations : RelationsSnapshot) {
+      Files.insert(FileAndRelations.first());
       RelationSlabs.push_back(FileAndRelations.second);
+    }
 
     if (Version)
       *Version = this->Version;
@@ -366,22 +376,20 @@ FileSymbols::buildIndex(IndexType Type, DuplicateHandling DuplicateHandle,
     StorageSize += Slab->bytes();
   for (const auto &RefSlab : RefSlabs)
     StorageSize += RefSlab->bytes();
-  for (const auto &RelationSlab : RelationSlabs)
-    StorageSize += RelationSlab->bytes();
 
   // Index must keep the slabs and contiguous ranges alive.
   switch (Type) {
   case IndexType::Light:
     return std::make_unique<MemIndex>(
         llvm::make_pointee_range(AllSymbols), std::move(AllRefs),
-        std::move(AllRelations),
+        std::move(AllRelations), std::move(Files), IdxContents,
         std::make_tuple(std::move(SymbolSlabs), std::move(RefSlabs),
                         std::move(RefsStorage), std::move(SymsStorage)),
         StorageSize);
   case IndexType::Heavy:
     return std::make_unique<dex::Dex>(
         llvm::make_pointee_range(AllSymbols), std::move(AllRefs),
-        std::move(AllRelations),
+        std::move(AllRelations), std::move(Files), IdxContents,
         std::make_tuple(std::move(SymbolSlabs), std::move(RefSlabs),
                         std::move(RefsStorage), std::move(SymsStorage)),
         StorageSize);
@@ -408,10 +416,11 @@ void FileSymbols::profile(MemoryTree &MT) const {
   }
 }
 
-FileIndex::FileIndex(bool UseDex, bool CollectMainFileRefs)
-    : MergedIndex(&MainFileIndex, &PreambleIndex), UseDex(UseDex),
-      CollectMainFileRefs(CollectMainFileRefs),
+FileIndex::FileIndex()
+    : MergedIndex(&MainFileIndex, &PreambleIndex),
+      PreambleSymbols(IndexContents::Symbols | IndexContents::Relations),
       PreambleIndex(std::make_unique<MemIndex>()),
+      MainFileSymbols(IndexContents::All),
       MainFileIndex(std::make_unique<MemIndex>()) {}
 
 void FileIndex::updatePreamble(PathRef Path, llvm::StringRef Version,
@@ -434,9 +443,8 @@ void FileIndex::updatePreamble(PathRef Path, llvm::StringRef Version,
         /*CountReferences=*/false);
   }
   size_t IndexVersion = 0;
-  auto NewIndex =
-      PreambleSymbols.buildIndex(UseDex ? IndexType::Heavy : IndexType::Light,
-                                 DuplicateHandling::PickOne, &IndexVersion);
+  auto NewIndex = PreambleSymbols.buildIndex(
+      IndexType::Heavy, DuplicateHandling::PickOne, &IndexVersion);
   {
     std::lock_guard<std::mutex> Lock(UpdateIndexMu);
     if (IndexVersion <= PreambleIndexVersion) {
@@ -453,7 +461,7 @@ void FileIndex::updatePreamble(PathRef Path, llvm::StringRef Version,
 }
 
 void FileIndex::updateMain(PathRef Path, ParsedAST &AST) {
-  auto Contents = indexMainDecls(AST, CollectMainFileRefs);
+  auto Contents = indexMainDecls(AST);
   MainFileSymbols.update(
       Path, std::make_unique<SymbolSlab>(std::move(std::get<0>(Contents))),
       std::make_unique<RefSlab>(std::move(std::get<1>(Contents))),

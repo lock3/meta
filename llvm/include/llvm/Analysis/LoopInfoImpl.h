@@ -17,6 +17,7 @@
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Dominators.h"
 
@@ -66,6 +67,13 @@ void LoopBase<BlockT, LoopT>::getExitBlocks(
       if (!contains(Succ))
         // Not in current loop? It must be an exit block.
         ExitBlocks.push_back(Succ);
+}
+
+template <class BlockT, class LoopT>
+bool LoopBase<BlockT, LoopT>::hasNoExitBlocks() const {
+  SmallVector<BlockT *, 8> ExitBlocks;
+  getExitBlocks(ExitBlocks);
+  return ExitBlocks.empty();
 }
 
 /// getExitBlock - If getExitBlocks would return exactly one block,
@@ -666,12 +674,10 @@ static void compareLoops(const LoopT *L, const LoopT *OtherL,
          "Mismatched basic blocks in the loops!");
 
   const SmallPtrSetImpl<const BlockT *> &BlocksSet = L->getBlocksSet();
-  const SmallPtrSetImpl<const BlockT *> &OtherBlocksSet = L->getBlocksSet();
+  const SmallPtrSetImpl<const BlockT *> &OtherBlocksSet =
+      OtherL->getBlocksSet();
   assert(BlocksSet.size() == OtherBlocksSet.size() &&
-         std::all_of(BlocksSet.begin(), BlocksSet.end(),
-                     [&OtherBlocksSet](const BlockT *BB) {
-                       return OtherBlocksSet.count(BB);
-                     }) &&
+         llvm::set_is_subset(BlocksSet, OtherBlocksSet) &&
          "Mismatched basic blocks in BlocksSets!");
 }
 #endif

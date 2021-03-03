@@ -21,6 +21,8 @@ using namespace mlir;
 
 namespace {
 struct FuncBufferizePass : public FuncBufferizeBase<FuncBufferizePass> {
+  using FuncBufferizeBase<FuncBufferizePass>::FuncBufferizeBase;
+
   void runOnOperation() override {
     auto module = getOperation();
     auto *context = &getContext();
@@ -35,14 +37,20 @@ struct FuncBufferizePass : public FuncBufferizeBase<FuncBufferizePass> {
              typeConverter.isLegal(&op.getBody());
     });
     populateCallOpTypeConversionPattern(patterns, context, typeConverter);
-    populateEliminateBufferizeMaterializationsPatterns(context, typeConverter,
-                                                       patterns);
-    target.addIllegalOp<TensorLoadOp, TensorToMemrefOp>();
+    target.addDynamicallyLegalOp<CallOp>(
+        [&](CallOp op) { return typeConverter.isLegal(op); });
 
-    // If all result types are legal, and all block arguments are legal (ensured
-    // by func conversion above), then all types in the program are legal.
+    populateBranchOpInterfaceTypeConversionPattern(patterns, context,
+                                                   typeConverter);
+    populateReturnOpTypeConversionPattern(patterns, context, typeConverter);
+    target.addLegalOp<ModuleOp, ModuleTerminatorOp, TensorLoadOp,
+                      TensorToMemrefOp>();
+
     target.markUnknownOpDynamicallyLegal([&](Operation *op) {
-      return typeConverter.isLegal(op->getResultTypes());
+      return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
+             isLegalForBranchOpInterfaceTypeConversionPattern(op,
+                                                              typeConverter) ||
+             isLegalForReturnOpTypeConversionPattern(op, typeConverter);
     });
 
     if (failed(applyFullConversion(module, target, std::move(patterns))))

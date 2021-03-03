@@ -17,7 +17,8 @@ JITLinkMemoryManager::~JITLinkMemoryManager() = default;
 JITLinkMemoryManager::Allocation::~Allocation() = default;
 
 Expected<std::unique_ptr<JITLinkMemoryManager::Allocation>>
-InProcessMemoryManager::allocate(const SegmentsRequestMap &Request) {
+InProcessMemoryManager::allocate(const JITLinkDylib *JD,
+                                 const SegmentsRequestMap &Request) {
 
   using AllocationMap = DenseMap<unsigned, sys::MemoryBlock>;
 
@@ -115,7 +116,7 @@ InProcessMemoryManager::allocate(const SegmentsRequestMap &Request) {
 
     sys::MemoryBlock SegMem(SlabRemaining.base(), SegmentSize);
     SlabRemaining = sys::MemoryBlock((char *)SlabRemaining.base() + SegmentSize,
-                                     SegmentSize);
+                                     SlabRemaining.allocatedSize() - SegmentSize);
 
     // Zero out the zero-fill memory.
     memset(static_cast<char *>(SegMem.base()) + Seg.getContentSize(), 0,
@@ -124,6 +125,8 @@ InProcessMemoryManager::allocate(const SegmentsRequestMap &Request) {
     // Record the block for this segment.
     Blocks[KV.first] = std::move(SegMem);
   }
+
+  assert(SlabRemaining.allocatedSize() >= 0 && "Mapping exceeds allocation");
   return std::unique_ptr<InProcessMemoryManager::Allocation>(
       new IPMMAlloc(std::move(Blocks)));
 }

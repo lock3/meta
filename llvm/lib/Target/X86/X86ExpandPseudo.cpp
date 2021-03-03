@@ -461,6 +461,45 @@ bool X86ExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
   case TargetOpcode::ICALL_BRANCH_FUNNEL:
     ExpandICallBranchFunnel(&MBB, MBBI);
     return true;
+  case X86::PTILELOADDV: {
+    for (unsigned i = 2; i > 0; --i)
+      MI.RemoveOperand(i);
+    MI.setDesc(TII->get(X86::TILELOADD));
+    return true;
+  }
+  case X86::PTDPBSSDV:
+  case X86::PTDPBSUDV:
+  case X86::PTDPBUSDV:
+  case X86::PTDPBUUDV:
+  case X86::PTDPBF16PSV: {
+    MI.untieRegOperand(4);
+    for (unsigned i = 3; i > 0; --i)
+      MI.RemoveOperand(i);
+    unsigned Opc;
+    switch (Opcode) {
+    case X86::PTDPBSSDV:   Opc = X86::TDPBSSD; break;
+    case X86::PTDPBSUDV:   Opc = X86::TDPBSUD; break;
+    case X86::PTDPBUSDV:   Opc = X86::TDPBUSD; break;
+    case X86::PTDPBUUDV:   Opc = X86::TDPBUUD; break;
+    case X86::PTDPBF16PSV: Opc = X86::TDPBF16PS; break;
+    default: llvm_unreachable("Impossible Opcode!");
+    }
+    MI.setDesc(TII->get(Opc));
+    MI.tieOperands(0, 1);
+    return true;
+  }
+  case X86::PTILESTOREDV: {
+    for (int i = 1; i >= 0; --i)
+      MI.RemoveOperand(i);
+    MI.setDesc(TII->get(X86::TILESTORED));
+    return true;
+  }
+  case X86::PTILEZEROV: {
+    for (int i = 2; i > 0; --i) // Remove row, col
+      MI.RemoveOperand(i);
+    MI.setDesc(TII->get(X86::TILEZERO));
+    return true;
+  }
   }
   llvm_unreachable("Previous switch has a fallthrough?");
 }

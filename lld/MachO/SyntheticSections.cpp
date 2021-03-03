@@ -19,8 +19,16 @@
 
 #include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Memory.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LEB128.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/SHA256.h"
+
+#if defined(__APPLE__)
+#include <sys/mman.h>
+#endif
 
 using namespace llvm;
 using namespace llvm::support;
@@ -50,15 +58,30 @@ uint64_t MachHeaderSection::getSize() const {
   return sizeof(MachO::mach_header_64) + sizeOfCmds + config->headerPad;
 }
 
+static uint32_t cpuSubtype() {
+  uint32_t subtype = target->cpuSubtype;
+
+  if (config->outputType == MachO::MH_EXECUTE && !config->staticLink &&
+      target->cpuSubtype == MachO::CPU_SUBTYPE_X86_64_ALL &&
+      config->platform.kind == MachO::PlatformKind::macOS &&
+      config->platform.minimum >= VersionTuple(10, 5))
+    subtype |= MachO::CPU_SUBTYPE_LIB64;
+
+  return subtype;
+}
+
 void MachHeaderSection::writeTo(uint8_t *buf) const {
   auto *hdr = reinterpret_cast<MachO::mach_header_64 *>(buf);
   hdr->magic = MachO::MH_MAGIC_64;
-  hdr->cputype = MachO::CPU_TYPE_X86_64;
-  hdr->cpusubtype = MachO::CPU_SUBTYPE_X86_64_ALL | MachO::CPU_SUBTYPE_LIB64;
+  hdr->cputype = target->cpuType;
+  hdr->cpusubtype = cpuSubtype();
   hdr->filetype = config->outputType;
   hdr->ncmds = loadCommands.size();
   hdr->sizeofcmds = sizeOfCmds;
-  hdr->flags = MachO::MH_NOUNDEFS | MachO::MH_DYLDLINK | MachO::MH_TWOLEVEL;
+  hdr->flags = MachO::MH_DYLDLINK;
+
+  if (config->namespaceKind == NamespaceKind::twolevel)
+    hdr->flags |= MachO::MH_NOUNDEFS | MachO::MH_TWOLEVEL;
 
   if (config->outputType == MachO::MH_DYLIB && !config->hasReexports)
     hdr->flags |= MachO::MH_NO_REEXPORTED_DYLIBS;
@@ -185,7 +208,7 @@ void RebaseSection::writeTo(uint8_t *buf) const {
 NonLazyPointerSectionBase::NonLazyPointerSectionBase(const char *segname,
                                                      const char *name)
     : SyntheticSection(segname, name) {
-  align = 8;
+  align = WordSize;
   flags = MachO::S_NON_LAZY_SYMBOL_POINTERS;
 }
 
@@ -212,7 +235,7 @@ struct Binding {
   OutputSegment *segment = nullptr;
   uint64_t offset = 0;
   int64_t addend = 0;
-  uint8_t ordinal = 0;
+  int16_t ordinal = 0;
 };
 } // namespace
 
@@ -224,7 +247,8 @@ struct Binding {
 // lastBinding.
 static void encodeBinding(const Symbol *sym, const OutputSection *osec,
                           uint64_t outSecOff, int64_t addend,
-                          Binding &lastBinding, raw_svector_ostream &os) {
+                          bool isWeakBinding, Binding &lastBinding,
+                          raw_svector_ostream &os) {
   using namespace llvm::MachO;
   OutputSegment *seg = osec->parent;
   uint64_t offset = osec->getSegmentOffset() + outSecOff;
@@ -246,8 +270,11 @@ static void encodeBinding(const Symbol *sym, const OutputSection *osec,
     lastBinding.addend = addend;
   }
 
-  os << static_cast<uint8_t>(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM)
-     << sym->getName() << '\0'
+  uint8_t flags = BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM;
+  if (!isWeakBinding && sym->isWeakRef())
+    flags |= BIND_SYMBOL_FLAGS_WEAK_IMPORT;
+
+  os << flags << sym->getName() << '\0'
      << static_cast<uint8_t>(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER)
      << static_cast<uint8_t>(BIND_OPCODE_DO_BIND);
   // DO_BIND causes dyld to both perform the binding and increment the offset
@@ -255,18 +282,22 @@ static void encodeBinding(const Symbol *sym, const OutputSection *osec,
 }
 
 // Non-weak bindings need to have their dylib ordinal encoded as well.
-static void encodeDylibOrdinal(const DylibSymbol *dysym, Binding &lastBinding,
-                               raw_svector_ostream &os) {
+static int16_t ordinalForDylibSymbol(const DylibSymbol &dysym) {
+  return config->namespaceKind == NamespaceKind::flat || dysym.isDynamicLookup()
+             ? MachO::BIND_SPECIAL_DYLIB_FLAT_LOOKUP
+             : dysym.getFile()->ordinal;
+}
+
+static void encodeDylibOrdinal(int16_t ordinal, raw_svector_ostream &os) {
   using namespace llvm::MachO;
-  if (lastBinding.ordinal != dysym->file->ordinal) {
-    if (dysym->file->ordinal <= BIND_IMMEDIATE_MASK) {
-      os << static_cast<uint8_t>(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM |
-                                 dysym->file->ordinal);
-    } else {
-      os << static_cast<uint8_t>(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
-      encodeULEB128(dysym->file->ordinal, os);
-    }
-    lastBinding.ordinal = dysym->file->ordinal;
+  if (ordinal <= 0) {
+    os << static_cast<uint8_t>(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM |
+                               (ordinal & BIND_IMMEDIATE_MASK));
+  } else if (ordinal <= BIND_IMMEDIATE_MASK) {
+    os << static_cast<uint8_t>(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | ordinal);
+  } else {
+    os << static_cast<uint8_t>(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
+    encodeULEB128(ordinal, os);
   }
 }
 
@@ -302,13 +333,18 @@ void BindingSection::finalizeContents() {
     return a.target.getVA() < b.target.getVA();
   });
   for (const BindingEntry &b : bindings) {
-    encodeDylibOrdinal(b.dysym, lastBinding, os);
+    int16_t ordinal = ordinalForDylibSymbol(*b.dysym);
+    if (ordinal != lastBinding.ordinal) {
+      encodeDylibOrdinal(ordinal, os);
+      lastBinding.ordinal = ordinal;
+    }
     if (auto *isec = b.target.section.dyn_cast<const InputSection *>()) {
       encodeBinding(b.dysym, isec->parent, isec->outSecOff + b.target.offset,
-                    b.addend, lastBinding, os);
+                    b.addend, /*isWeakBinding=*/false, lastBinding, os);
     } else {
       auto *osec = b.target.section.get<const OutputSection *>();
-      encodeBinding(b.dysym, osec, b.target.offset, b.addend, lastBinding, os);
+      encodeBinding(b.dysym, osec, b.target.offset, b.addend,
+                    /*isWeakBinding=*/false, lastBinding, os);
     }
   }
   if (!bindings.empty())
@@ -338,10 +374,11 @@ void WeakBindingSection::finalizeContents() {
   for (const WeakBindingEntry &b : bindings) {
     if (auto *isec = b.target.section.dyn_cast<const InputSection *>()) {
       encodeBinding(b.symbol, isec->parent, isec->outSecOff + b.target.offset,
-                    b.addend, lastBinding, os);
+                    b.addend, /*isWeakBinding=*/true, lastBinding, os);
     } else {
       auto *osec = b.target.section.get<const OutputSection *>();
-      encodeBinding(b.symbol, osec, b.target.offset, b.addend, lastBinding, os);
+      encodeBinding(b.symbol, osec, b.target.offset, b.addend,
+                    /*isWeakBinding=*/true, lastBinding, os);
     }
   }
   if (!bindings.empty() || !definitions.empty())
@@ -353,12 +390,10 @@ void WeakBindingSection::writeTo(uint8_t *buf) const {
 }
 
 bool macho::needsBinding(const Symbol *sym) {
-  if (isa<DylibSymbol>(sym)) {
+  if (isa<DylibSymbol>(sym))
     return true;
-  } else if (const auto *defined = dyn_cast<Defined>(sym)) {
-    if (defined->isWeakDef() && defined->isExternal())
-      return true;
-  }
+  if (const auto *defined = dyn_cast<Defined>(sym))
+    return defined->isExternalWeakDef();
   return false;
 }
 
@@ -371,20 +406,24 @@ void macho::addNonLazyBindingEntries(const Symbol *sym,
       in.weakBinding->addEntry(sym, section, offset, addend);
   } else if (auto *defined = dyn_cast<Defined>(sym)) {
     in.rebase->addEntry(section, offset);
-    if (defined->isWeakDef() && defined->isExternal())
+    if (defined->isExternalWeakDef())
       in.weakBinding->addEntry(sym, section, offset, addend);
-  } else if (isa<DSOHandle>(sym)) {
-    error("cannot bind to " + DSOHandle::name);
-  } else {
+  } else if (!isa<DSOHandle>(sym)) {
     // Undefined symbols are filtered out in scanRelocations(); we should never
     // get here
     llvm_unreachable("cannot bind to an undefined symbol");
   }
+  // TODO: understand the DSOHandle case better.
+  // Is it bindable?  Add a new test?
 }
 
 StubsSection::StubsSection()
     : SyntheticSection(segment_names::text, "__stubs") {
-  flags = MachO::S_SYMBOL_STUBS;
+  flags = MachO::S_SYMBOL_STUBS | MachO::S_ATTR_SOME_INSTRUCTIONS |
+          MachO::S_ATTR_PURE_INSTRUCTIONS;
+  // The stubs section comprises machine instructions, which are aligned to
+  // 4 bytes on the archs we care about.
+  align = 4;
   reserved2 = target->stubSize;
 }
 
@@ -408,7 +447,10 @@ bool StubsSection::addEntry(Symbol *sym) {
 }
 
 StubHelperSection::StubHelperSection()
-    : SyntheticSection(segment_names::text, "__stub_helper") {}
+    : SyntheticSection(segment_names::text, "__stub_helper") {
+  flags = MachO::S_ATTR_SOME_INSTRUCTIONS | MachO::S_ATTR_PURE_INSTRUCTIONS;
+  align = 4; // This section comprises machine instructions
+}
 
 uint64_t StubHelperSection::getSize() const {
   return target->stubHelperHeaderSize +
@@ -433,11 +475,13 @@ void StubHelperSection::setup() {
           "Needed to perform lazy binding.");
     return;
   }
+  stubBinder->refState = RefState::Strong;
   in.got->addEntry(stubBinder);
 
   inputSections.push_back(in.imageLoaderCache);
-  symtab->addDefined("__dyld_private", in.imageLoaderCache, 0,
-                     /*isWeakDef=*/false);
+  dyldPrivate = make<Defined>("__dyld_private", nullptr, in.imageLoaderCache, 0,
+                              /*isWeakDef=*/false,
+                              /*isExternal=*/false, /*isPrivateExtern=*/false);
 }
 
 ImageLoaderCacheSection::ImageLoaderCacheSection() {
@@ -446,11 +490,12 @@ ImageLoaderCacheSection::ImageLoaderCacheSection() {
   uint8_t *arr = bAlloc.Allocate<uint8_t>(WordSize);
   memset(arr, 0, WordSize);
   data = {arr, WordSize};
+  align = WordSize;
 }
 
 LazyPointerSection::LazyPointerSection()
     : SyntheticSection(segment_names::data, "__la_symbol_ptr") {
-  align = 8;
+  align = WordSize;
   flags = MachO::S_LAZY_SYMBOL_POINTERS;
 }
 
@@ -514,16 +559,13 @@ uint32_t LazyBindingSection::encode(const DylibSymbol &sym) {
   uint64_t offset = in.lazyPointers->addr - dataSeg->firstSection()->addr +
                     sym.stubsIndex * WordSize;
   encodeULEB128(offset, os);
-  if (sym.file->ordinal <= MachO::BIND_IMMEDIATE_MASK) {
-    os << static_cast<uint8_t>(MachO::BIND_OPCODE_SET_DYLIB_ORDINAL_IMM |
-                               sym.file->ordinal);
-  } else {
-    os << static_cast<uint8_t>(MachO::BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
-    encodeULEB128(sym.file->ordinal, os);
-  }
+  encodeDylibOrdinal(ordinalForDylibSymbol(sym), os);
 
-  os << static_cast<uint8_t>(MachO::BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM)
-     << sym.getName() << '\0'
+  uint8_t flags = MachO::BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM;
+  if (sym.isWeakRef())
+    flags |= MachO::BIND_SYMBOL_FLAGS_WEAK_IMPORT;
+
+  os << flags << sym.getName() << '\0'
      << static_cast<uint8_t>(MachO::BIND_OPCODE_DO_BIND)
      << static_cast<uint8_t>(MachO::BIND_OPCODE_DONE);
   return opstreamOffset;
@@ -542,7 +584,7 @@ void macho::prepareBranchTarget(Symbol *sym) {
       }
     }
   } else if (auto *defined = dyn_cast<Defined>(sym)) {
-    if (defined->isWeakDef() && defined->isExternal()) {
+    if (defined->isExternalWeakDef()) {
       if (in.stubs->addEntry(sym)) {
         in.rebase->addEntry(in.lazyPointers, sym->stubsIndex * WordSize);
         in.weakBinding->addEntry(sym, in.lazyPointers,
@@ -557,9 +599,10 @@ ExportSection::ExportSection()
 
 void ExportSection::finalizeContents() {
   trieBuilder.setImageBase(in.header->addr);
-  // TODO: We should check symbol visibility.
   for (const Symbol *sym : symtab->getSymbols()) {
     if (const auto *defined = dyn_cast<Defined>(sym)) {
+      if (defined->privateExtern)
+        continue;
       trieBuilder.addSymbol(*defined);
       hasWeakSymbol = hasWeakSymbol || sym->isWeakDef();
     }
@@ -574,37 +617,223 @@ SymtabSection::SymtabSection(StringTableSection &stringTableSection)
       stringTableSection(stringTableSection) {}
 
 uint64_t SymtabSection::getRawSize() const {
-  return symbols.size() * sizeof(structs::nlist_64);
+  return getNumSymbols() * sizeof(structs::nlist_64);
+}
+
+void SymtabSection::emitBeginSourceStab(DWARFUnit *compileUnit) {
+  StabsEntry stab(MachO::N_SO);
+  SmallString<261> dir(compileUnit->getCompilationDir());
+  StringRef sep = sys::path::get_separator();
+  // We don't use `path::append` here because we want an empty `dir` to result
+  // in an absolute path. `append` would give us a relative path for that case.
+  if (!dir.endswith(sep))
+    dir += sep;
+  stab.strx = stringTableSection.addString(
+      saver.save(dir + compileUnit->getUnitDIE().getShortName()));
+  stabs.emplace_back(std::move(stab));
+}
+
+void SymtabSection::emitEndSourceStab() {
+  StabsEntry stab(MachO::N_SO);
+  stab.sect = 1;
+  stabs.emplace_back(std::move(stab));
+}
+
+void SymtabSection::emitObjectFileStab(ObjFile *file) {
+  StabsEntry stab(MachO::N_OSO);
+  stab.sect = target->cpuSubtype;
+  SmallString<261> path(!file->archiveName.empty() ? file->archiveName
+                                                   : file->getName());
+  std::error_code ec = sys::fs::make_absolute(path);
+  if (ec)
+    fatal("failed to get absolute path for " + path);
+
+  if (!file->archiveName.empty())
+    path.append({"(", file->getName(), ")"});
+
+  stab.strx = stringTableSection.addString(saver.save(path.str()));
+  stab.desc = 1;
+  stab.value = file->modTime;
+  stabs.emplace_back(std::move(stab));
+}
+
+void SymtabSection::emitEndFunStab(Defined *defined) {
+  StabsEntry stab(MachO::N_FUN);
+  // FIXME this should be the size of the symbol. Using the section size in
+  // lieu is only correct if .subsections_via_symbols is set.
+  stab.value = defined->isec->getSize();
+  stabs.emplace_back(std::move(stab));
+}
+
+void SymtabSection::emitStabs() {
+  std::vector<Defined *> symbolsNeedingStabs;
+  for (const SymtabEntry &entry :
+       concat<SymtabEntry>(localSymbols, externalSymbols)) {
+    Symbol *sym = entry.sym;
+    if (auto *defined = dyn_cast<Defined>(sym)) {
+      if (defined->isAbsolute())
+        continue;
+      InputSection *isec = defined->isec;
+      ObjFile *file = dyn_cast_or_null<ObjFile>(isec->file);
+      if (!file || !file->compileUnit)
+        continue;
+      symbolsNeedingStabs.push_back(defined);
+    }
+  }
+
+  llvm::stable_sort(symbolsNeedingStabs, [&](Defined *a, Defined *b) {
+    return a->isec->file->id < b->isec->file->id;
+  });
+
+  // Emit STABS symbols so that dsymutil and/or the debugger can map address
+  // regions in the final binary to the source and object files from which they
+  // originated.
+  InputFile *lastFile = nullptr;
+  for (Defined *defined : symbolsNeedingStabs) {
+    InputSection *isec = defined->isec;
+    ObjFile *file = dyn_cast<ObjFile>(isec->file);
+    assert(file);
+
+    if (lastFile == nullptr || lastFile != file) {
+      if (lastFile != nullptr)
+        emitEndSourceStab();
+      lastFile = file;
+
+      emitBeginSourceStab(file->compileUnit);
+      emitObjectFileStab(file);
+    }
+
+    StabsEntry symStab;
+    symStab.sect = defined->isec->parent->index;
+    symStab.strx = stringTableSection.addString(defined->getName());
+    symStab.value = defined->getVA();
+
+    if (isCodeSection(isec)) {
+      symStab.type = MachO::N_FUN;
+      stabs.emplace_back(std::move(symStab));
+      emitEndFunStab(defined);
+    } else {
+      symStab.type = defined->isExternal() ? MachO::N_GSYM : MachO::N_STSYM;
+      stabs.emplace_back(std::move(symStab));
+    }
+  }
+
+  if (!stabs.empty())
+    emitEndSourceStab();
 }
 
 void SymtabSection::finalizeContents() {
-  // TODO support other symbol types
-  for (Symbol *sym : symtab->getSymbols()) {
-    if (isa<Defined>(sym) || sym->isInGot() || sym->isInStubs()) {
-      sym->symtabIndex = symbols.size();
-      symbols.push_back({sym, stringTableSection.addString(sym->getName())});
+  auto addSymbol = [&](std::vector<SymtabEntry> &symbols, Symbol *sym) {
+    uint32_t strx = stringTableSection.addString(sym->getName());
+    symbols.push_back({sym, strx});
+  };
+
+  // Local symbols aren't in the SymbolTable, so we walk the list of object
+  // files to gather them.
+  for (InputFile *file : inputFiles) {
+    if (auto *objFile = dyn_cast<ObjFile>(file)) {
+      for (Symbol *sym : objFile->symbols) {
+        // TODO: when we implement -dead_strip, we should filter out symbols
+        // that belong to dead sections.
+        if (auto *defined = dyn_cast<Defined>(sym)) {
+          if (!defined->isExternal()) {
+            StringRef name = defined->getName();
+            if (!name.startswith("l") && !name.startswith("L"))
+              addSymbol(localSymbols, sym);
+          }
+        }
+      }
     }
   }
+
+  // __dyld_private is a local symbol too. It's linker-created and doesn't
+  // exist in any object file.
+  if (Defined* dyldPrivate = in.stubHelper->dyldPrivate)
+    addSymbol(localSymbols, dyldPrivate);
+
+  for (Symbol *sym : symtab->getSymbols()) {
+    if (auto *defined = dyn_cast<Defined>(sym)) {
+      assert(defined->isExternal());
+      (void)defined;
+      addSymbol(externalSymbols, sym);
+    } else if (auto *dysym = dyn_cast<DylibSymbol>(sym)) {
+      if (dysym->isReferenced())
+        addSymbol(undefinedSymbols, sym);
+    }
+  }
+
+  emitStabs();
+  uint32_t symtabIndex = stabs.size();
+  for (const SymtabEntry &entry :
+       concat<SymtabEntry>(localSymbols, externalSymbols, undefinedSymbols)) {
+    entry.sym->symtabIndex = symtabIndex++;
+  }
+}
+
+uint32_t SymtabSection::getNumSymbols() const {
+  return stabs.size() + localSymbols.size() + externalSymbols.size() +
+         undefinedSymbols.size();
 }
 
 void SymtabSection::writeTo(uint8_t *buf) const {
   auto *nList = reinterpret_cast<structs::nlist_64 *>(buf);
-  for (const SymtabEntry &entry : symbols) {
+  // Emit the stabs entries before the "real" symbols. We cannot emit them
+  // after as that would render Symbol::symtabIndex inaccurate.
+  for (const StabsEntry &entry : stabs) {
     nList->n_strx = entry.strx;
-    // TODO support other symbol types
+    nList->n_type = entry.type;
+    nList->n_sect = entry.sect;
+    nList->n_desc = entry.desc;
+    nList->n_value = entry.value;
+    ++nList;
+  }
+
+  for (const SymtabEntry &entry : concat<const SymtabEntry>(
+           localSymbols, externalSymbols, undefinedSymbols)) {
+    nList->n_strx = entry.strx;
     // TODO populate n_desc with more flags
     if (auto *defined = dyn_cast<Defined>(entry.sym)) {
+      uint8_t scope = 0;
+      if (defined->privateExtern) {
+        // Private external -- dylib scoped symbol.
+        // Promote to non-external at link time.
+        assert(defined->isExternal() && "invalid input file");
+        scope = MachO::N_PEXT;
+      } else if (defined->isExternal()) {
+        // Normal global symbol.
+        scope = MachO::N_EXT;
+      } else {
+        // TU-local symbol from localSymbols.
+        scope = 0;
+      }
+
       if (defined->isAbsolute()) {
-        nList->n_type = MachO::N_EXT | MachO::N_ABS;
+        nList->n_type = scope | MachO::N_ABS;
         nList->n_sect = MachO::NO_SECT;
         nList->n_value = defined->value;
       } else {
-        nList->n_type = MachO::N_EXT | MachO::N_SECT;
+        nList->n_type = scope | MachO::N_SECT;
         nList->n_sect = defined->isec->parent->index;
         // For the N_SECT symbol type, n_value is the address of the symbol
-        nList->n_value = defined->value + defined->isec->getVA();
+        nList->n_value = defined->getVA();
       }
-      nList->n_desc |= defined->isWeakDef() ? MachO::N_WEAK_DEF : 0;
+      nList->n_desc |= defined->isExternalWeakDef() ? MachO::N_WEAK_DEF : 0;
+    } else if (auto *dysym = dyn_cast<DylibSymbol>(entry.sym)) {
+      uint16_t n_desc = nList->n_desc;
+      int16_t ordinal = ordinalForDylibSymbol(*dysym);
+      if (ordinal == MachO::BIND_SPECIAL_DYLIB_FLAT_LOOKUP)
+        MachO::SET_LIBRARY_ORDINAL(n_desc, MachO::DYNAMIC_LOOKUP_ORDINAL);
+      else if (ordinal == MachO::BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE)
+        MachO::SET_LIBRARY_ORDINAL(n_desc, MachO::EXECUTABLE_ORDINAL);
+      else {
+        assert(ordinal > 0);
+        MachO::SET_LIBRARY_ORDINAL(n_desc, static_cast<uint8_t>(ordinal));
+      }
+
+      nList->n_type = MachO::N_EXT;
+      n_desc |= dysym->isWeakDef() ? MachO::N_WEAK_DEF : 0;
+      n_desc |= dysym->isWeakRef() ? MachO::N_WEAK_REF : 0;
+      nList->n_desc = n_desc;
     }
     ++nList;
   }
@@ -635,18 +864,23 @@ void IndirectSymtabSection::finalizeContents() {
   in.stubs->reserved1 = in.lazyPointers->reserved1 = off;
 }
 
+static uint32_t indirectValue(const Symbol *sym) {
+  return sym->symtabIndex != UINT32_MAX ? sym->symtabIndex
+                                        : MachO::INDIRECT_SYMBOL_LOCAL;
+}
+
 void IndirectSymtabSection::writeTo(uint8_t *buf) const {
   uint32_t off = 0;
   for (const Symbol *sym : in.got->getEntries()) {
-    write32le(buf + off * sizeof(uint32_t), sym->symtabIndex);
+    write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
     ++off;
   }
   for (const Symbol *sym : in.tlvPointers->getEntries()) {
-    write32le(buf + off * sizeof(uint32_t), sym->symtabIndex);
+    write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
     ++off;
   }
   for (const Symbol *sym : in.stubs->getEntries()) {
-    write32le(buf + off * sizeof(uint32_t), sym->symtabIndex);
+    write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
     ++off;
   }
 }
@@ -656,7 +890,7 @@ StringTableSection::StringTableSection()
 
 uint32_t StringTableSection::addString(StringRef str) {
   uint32_t strx = size;
-  strings.push_back(str);
+  strings.push_back(str); // TODO: consider deduplicating strings
   size += str.size() + 1; // account for null terminator
   return strx;
 }
@@ -667,4 +901,94 @@ void StringTableSection::writeTo(uint8_t *buf) const {
     memcpy(buf + off, str.data(), str.size());
     off += str.size() + 1; // account for null terminator
   }
+}
+
+CodeSignatureSection::CodeSignatureSection()
+    : LinkEditSection(segment_names::linkEdit, section_names::codeSignature) {
+  align = 16; // required by libstuff
+  fileName = config->outputFile;
+  size_t slashIndex = fileName.rfind("/");
+  if (slashIndex != std::string::npos)
+    fileName = fileName.drop_front(slashIndex + 1);
+  allHeadersSize = alignTo<16>(fixedHeadersSize + fileName.size() + 1);
+  fileNamePad = allHeadersSize - fixedHeadersSize - fileName.size();
+}
+
+uint32_t CodeSignatureSection::getBlockCount() const {
+  return (fileOff + blockSize - 1) / blockSize;
+}
+
+uint64_t CodeSignatureSection::getRawSize() const {
+  return allHeadersSize + getBlockCount() * hashSize;
+}
+
+void CodeSignatureSection::writeHashes(uint8_t *buf) const {
+  uint8_t *code = buf;
+  uint8_t *codeEnd = buf + fileOff;
+  uint8_t *hashes = codeEnd + allHeadersSize;
+  while (code < codeEnd) {
+    StringRef block(reinterpret_cast<char *>(code),
+                    std::min(codeEnd - code, static_cast<ssize_t>(blockSize)));
+    SHA256 hasher;
+    hasher.update(block);
+    StringRef hash = hasher.final();
+    assert(hash.size() == hashSize);
+    memcpy(hashes, hash.data(), hashSize);
+    code += blockSize;
+    hashes += hashSize;
+  }
+#if defined(__APPLE__)
+  // This is macOS-specific work-around and makes no sense for any
+  // other host OS. See https://openradar.appspot.com/FB8914231
+  //
+  // The macOS kernel maintains a signature-verification cache to
+  // quickly validate applications at time of execve(2).  The trouble
+  // is that for the kernel creates the cache entry at the time of the
+  // mmap(2) call, before we have a chance to write either the code to
+  // sign or the signature header+hashes.  The fix is to invalidate
+  // all cached data associated with the output file, thus discarding
+  // the bogus prematurely-cached signature.
+  msync(buf, fileOff + getSize(), MS_INVALIDATE);
+#endif
+}
+
+void CodeSignatureSection::writeTo(uint8_t *buf) const {
+  using namespace llvm::MachO;
+  uint32_t signatureSize = static_cast<uint32_t>(getSize());
+  auto *superBlob = reinterpret_cast<CS_SuperBlob *>(buf);
+  write32be(&superBlob->magic, CSMAGIC_EMBEDDED_SIGNATURE);
+  write32be(&superBlob->length, signatureSize);
+  write32be(&superBlob->count, 1);
+  auto *blobIndex = reinterpret_cast<CS_BlobIndex *>(&superBlob[1]);
+  write32be(&blobIndex->type, CSSLOT_CODEDIRECTORY);
+  write32be(&blobIndex->offset, blobHeadersSize);
+  auto *codeDirectory =
+      reinterpret_cast<CS_CodeDirectory *>(buf + blobHeadersSize);
+  write32be(&codeDirectory->magic, CSMAGIC_CODEDIRECTORY);
+  write32be(&codeDirectory->length, signatureSize - blobHeadersSize);
+  write32be(&codeDirectory->version, CS_SUPPORTSEXECSEG);
+  write32be(&codeDirectory->flags, CS_ADHOC | CS_LINKER_SIGNED);
+  write32be(&codeDirectory->hashOffset,
+            sizeof(CS_CodeDirectory) + fileName.size() + fileNamePad);
+  write32be(&codeDirectory->identOffset, sizeof(CS_CodeDirectory));
+  codeDirectory->nSpecialSlots = 0;
+  write32be(&codeDirectory->nCodeSlots, getBlockCount());
+  write32be(&codeDirectory->codeLimit, fileOff);
+  codeDirectory->hashSize = static_cast<uint8_t>(hashSize);
+  codeDirectory->hashType = kSecCodeSignatureHashSHA256;
+  codeDirectory->platform = 0;
+  codeDirectory->pageSize = blockSizeShift;
+  codeDirectory->spare2 = 0;
+  codeDirectory->scatterOffset = 0;
+  codeDirectory->teamOffset = 0;
+  codeDirectory->spare3 = 0;
+  codeDirectory->codeLimit64 = 0;
+  OutputSegment *textSeg = getOrCreateOutputSegment(segment_names::text);
+  write64be(&codeDirectory->execSegBase, textSeg->fileOff);
+  write64be(&codeDirectory->execSegLimit, textSeg->fileSize);
+  write64be(&codeDirectory->execSegFlags,
+            config->outputType == MH_EXECUTE ? CS_EXECSEG_MAIN_BINARY : 0);
+  auto *id = reinterpret_cast<char *>(&codeDirectory[1]);
+  memcpy(id, fileName.begin(), fileName.size());
+  memset(id + fileName.size(), 0, fileNamePad);
 }

@@ -125,10 +125,19 @@ struct WebAssemblyOperand : public MCParsedAsmOperand {
       llvm_unreachable("Should be integer immediate or symbol!");
   }
 
-  void addFPImmOperands(MCInst &Inst, unsigned N) const {
+  void addFPImmf32Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     if (Kind == Float)
-      Inst.addOperand(MCOperand::createFPImm(Flt.Val));
+      Inst.addOperand(
+          MCOperand::createSFPImm(bit_cast<uint32_t>(float(Flt.Val))));
+    else
+      llvm_unreachable("Should be float immediate!");
+  }
+
+  void addFPImmf64Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    if (Kind == Float)
+      Inst.addOperand(MCOperand::createDFPImm(bit_cast<uint64_t>(Flt.Val)));
     else
       llvm_unreachable("Should be float immediate!");
   }
@@ -160,6 +169,21 @@ struct WebAssemblyOperand : public MCParsedAsmOperand {
   }
 };
 
+static MCSymbolWasm *GetOrCreateFunctionTableSymbol(MCContext &Ctx,
+                                                    const StringRef &Name) {
+  MCSymbolWasm *Sym = cast_or_null<MCSymbolWasm>(Ctx.lookupSymbol(Name));
+  if (Sym) {
+    if (!Sym->isFunctionTable())
+      Ctx.reportError(SMLoc(), "symbol is not a wasm funcref table");
+  } else {
+    Sym = cast<MCSymbolWasm>(Ctx.getOrCreateSymbol(Name));
+    Sym->setFunctionTable();
+    // The default function table is synthesized by the linker.
+    Sym->setUndefined();
+  }
+  return Sym;
+}
+
 class WebAssemblyAsmParser final : public MCTargetAsmParser {
   MCAsmParser &Parser;
   MCAsmLexer &Lexer;
@@ -176,7 +200,6 @@ class WebAssemblyAsmParser final : public MCTargetAsmParser {
   // guarantee that correct order.
   enum ParserState {
     FileStart,
-    Label,
     FunctionStart,
     FunctionLocals,
     Instructions,
@@ -190,15 +213,14 @@ class WebAssemblyAsmParser final : public MCTargetAsmParser {
     Block,
     Loop,
     Try,
+    CatchAll,
     If,
     Else,
     Undefined,
   };
   std::vector<NestingType> NestingStack;
 
-  // We track this to see if a .functype following a label is the same,
-  // as this is how we recognize the start of a function.
-  MCSymbol *LastLabel = nullptr;
+  MCSymbolWasm *DefaultFunctionTable = nullptr;
   MCSymbol *LastFunctionLabel = nullptr;
 
 public:
@@ -207,6 +229,15 @@ public:
       : MCTargetAsmParser(Options, STI, MII), Parser(Parser),
         Lexer(Parser.getLexer()) {
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+  }
+
+  void Initialize(MCAsmParser &Parser) override {
+    MCAsmParserExtension::Initialize(Parser);
+
+    DefaultFunctionTable = GetOrCreateFunctionTableSymbol(
+        getContext(), "__indirect_function_table");
+    if (!STI->checkFeatures("+reference-types"))
+      DefaultFunctionTable->setOmitFromLinkingSection();
   }
 
 #define GET_ASSEMBLER_HEADER
@@ -250,7 +281,9 @@ public:
     case Loop:
       return {"loop", "end_loop"};
     case Try:
-      return {"try", "end_try"};
+      return {"try", "end_try/delegate"};
+    case CatchAll:
+      return {"catch_all", "end_try"};
     case If:
       return {"if", "end_if"};
     case Else:
@@ -322,8 +355,6 @@ public:
         Type == "i32x4" || Type == "i64x2" || Type == "f32x4" ||
         Type == "f64x2")
       return wasm::ValType::V128;
-    if (Type == "exnref")
-      return wasm::ValType::EXNREF;
     if (Type == "funcref")
       return wasm::ValType::FUNCREF;
     if (Type == "externref")
@@ -339,7 +370,8 @@ public:
         .Case("f32", WebAssembly::BlockType::F32)
         .Case("f64", WebAssembly::BlockType::F64)
         .Case("v128", WebAssembly::BlockType::V128)
-        .Case("exnref", WebAssembly::BlockType::Exnref)
+        .Case("funcref", WebAssembly::BlockType::Funcref)
+        .Case("externref", WebAssembly::BlockType::Externref)
         .Case("void", WebAssembly::BlockType::Void)
         .Default(WebAssembly::BlockType::Invalid);
   }
@@ -407,7 +439,8 @@ public:
   bool checkForP2AlignIfLoadStore(OperandVector &Operands, StringRef InstName) {
     // FIXME: there is probably a cleaner way to do this.
     auto IsLoadStore = InstName.find(".load") != StringRef::npos ||
-                       InstName.find(".store") != StringRef::npos;
+                       InstName.find(".store") != StringRef::npos ||
+                       InstName.find("prefetch") != StringRef::npos;
     auto IsAtomic = InstName.find("atomic.") != StringRef::npos;
     if (IsLoadStore || IsAtomic) {
       // Parse load/store operands of the form: offset:p2align=align
@@ -454,6 +487,39 @@ public:
         WebAssemblyOperand::IntOp{static_cast<int64_t>(BT)}));
   }
 
+  bool addFunctionTableOperand(OperandVector &Operands, MCSymbolWasm *Sym,
+                               SMLoc StartLoc, SMLoc EndLoc) {
+    const auto *Val = MCSymbolRefExpr::create(Sym, getContext());
+    Operands.push_back(std::make_unique<WebAssemblyOperand>(
+        WebAssemblyOperand::Symbol, StartLoc, EndLoc,
+        WebAssemblyOperand::SymOp{Val}));
+    return false;
+  }
+
+  bool addFunctionTableOperand(OperandVector &Operands, StringRef TableName,
+                               SMLoc StartLoc, SMLoc EndLoc) {
+    return addFunctionTableOperand(
+        Operands, GetOrCreateFunctionTableSymbol(getContext(), TableName),
+        StartLoc, EndLoc);
+  }
+
+  bool addDefaultFunctionTableOperand(OperandVector &Operands, SMLoc StartLoc,
+                                      SMLoc EndLoc) {
+    if (STI->checkFeatures("+reference-types")) {
+      return addFunctionTableOperand(Operands, DefaultFunctionTable, StartLoc,
+                                     EndLoc);
+    } else {
+      // For the MVP there is at most one table whose number is 0, but we can't
+      // write a table symbol or issue relocations.  Instead we just ensure the
+      // table is live and write a zero.
+      getStreamer().emitSymbolAttribute(DefaultFunctionTable, MCSA_NoDeadStrip);
+      Operands.push_back(std::make_unique<WebAssemblyOperand>(
+          WebAssemblyOperand::Integer, StartLoc, EndLoc,
+          WebAssemblyOperand::IntOp{0}));
+      return false;
+    }
+  }
+
   bool ParseInstruction(ParseInstructionInfo & /*Info*/, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override {
     // Note: Name does NOT point into the sourcecode, but to a local, so
@@ -490,6 +556,7 @@ public:
     bool ExpectBlockType = false;
     bool ExpectFuncType = false;
     bool ExpectHeapType = false;
+    bool ExpectFunctionTable = false;
     if (Name == "block") {
       push(Block);
       ExpectBlockType = true;
@@ -510,10 +577,17 @@ public:
       if (pop(Name, Try))
         return true;
       push(Try);
+    } else if (Name == "catch_all") {
+      if (pop(Name, Try))
+        return true;
+      push(CatchAll);
     } else if (Name == "end_if") {
       if (pop(Name, If, Else))
         return true;
     } else if (Name == "end_try") {
+      if (pop(Name, Try, CatchAll))
+        return true;
+    } else if (Name == "delegate") {
       if (pop(Name, Try))
         return true;
     } else if (Name == "end_loop") {
@@ -529,6 +603,7 @@ public:
         return true;
     } else if (Name == "call_indirect" || Name == "return_call_indirect") {
       ExpectFuncType = true;
+      ExpectFunctionTable = true;
     } else if (Name == "ref.null") {
       ExpectHeapType = true;
     }
@@ -544,7 +619,7 @@ public:
         return true;
       // Got signature as block type, don't need more
       ExpectBlockType = false;
-      auto &Ctx = getStreamer().getContext();
+      auto &Ctx = getContext();
       // The "true" here will cause this to be a nameless symbol.
       MCSymbol *Sym = Ctx.createTempSymbol("typeindex", true);
       auto *WasmSym = cast<MCSymbolWasm>(Sym);
@@ -556,6 +631,16 @@ public:
       Operands.push_back(std::make_unique<WebAssemblyOperand>(
           WebAssemblyOperand::Symbol, Loc.getLoc(), Loc.getEndLoc(),
           WebAssemblyOperand::SymOp{Expr}));
+
+      // Allow additional operands after the signature, notably for
+      // call_indirect against a named table.
+      if (Lexer.isNot(AsmToken::EndOfStatement)) {
+        if (expect(AsmToken::Comma, ","))
+          return true;
+        if (Lexer.is(AsmToken::EndOfStatement)) {
+          return error("Unexpected trailing comma");
+        }
+      }
     }
 
     while (Lexer.isNot(AsmToken::EndOfStatement)) {
@@ -580,6 +665,11 @@ public:
           Operands.push_back(std::make_unique<WebAssemblyOperand>(
               WebAssemblyOperand::Integer, Id.getLoc(), Id.getEndLoc(),
               WebAssemblyOperand::IntOp{static_cast<int64_t>(HeapType)}));
+          Parser.Lex();
+        } else if (ExpectFunctionTable) {
+          if (addFunctionTableOperand(Operands, Id.getString(), Id.getLoc(),
+                                      Id.getEndLoc()))
+            return true;
           Parser.Lex();
         } else {
           // Assume this identifier is a label.
@@ -647,13 +737,14 @@ public:
       // Support blocks with no operands as default to void.
       addBlockTypeOperand(Operands, NameLoc, WebAssembly::BlockType::Void);
     }
+    if (ExpectFunctionTable && Operands.size() == 2) {
+      // If call_indirect doesn't specify a target table, supply one.
+      if (addDefaultFunctionTableOperand(Operands, NameLoc,
+                                         SMLoc::getFromPointer(Name.end())))
+        return true;
+    }
     Parser.Lex();
     return false;
-  }
-
-  void onLabelParsed(MCSymbol *Symbol) override {
-    LastLabel = Symbol;
-    CurrentState = Label;
   }
 
   bool parseSignature(wasm::WasmSignature *Signature) {
@@ -772,12 +863,12 @@ public:
       if (SymName.empty())
         return true;
       auto WasmSym = cast<MCSymbolWasm>(Ctx.getOrCreateSymbol(SymName));
-      if (CurrentState == Label && WasmSym == LastLabel) {
+      if (WasmSym->isDefined()) {
         // This .functype indicates a start of a function.
         if (ensureEmptyNestingStack())
           return true;
         CurrentState = FunctionStart;
-        LastFunctionLabel = LastLabel;
+        LastFunctionLabel = WasmSym;
         push(Function);
       }
       auto Signature = std::make_unique<wasm::WasmSignature>();
@@ -845,7 +936,7 @@ public:
 
     if (DirectiveID.getString() == ".local") {
       if (CurrentState != FunctionStart)
-        return error(".local directive should follow the start of a function",
+        return error(".local directive should follow the start of a function: ",
                      Lexer.getTok());
       SmallVector<wasm::ValType, 4> Locals;
       if (parseRegTypeList(Locals))
@@ -963,18 +1054,43 @@ public:
   }
 
   void doBeforeLabelEmit(MCSymbol *Symbol) override {
+    // Code below only applies to labels in text sections.
+    auto CWS = cast<MCSectionWasm>(getStreamer().getCurrentSection().first);
+    if (!CWS || !CWS->getKind().isText())
+      return;
+
+    auto WasmSym = cast<MCSymbolWasm>(Symbol);
+    // Unlike other targets, we don't allow data in text sections (labels
+    // declared with .type @object).
+    if (WasmSym->getType() == wasm::WASM_SYMBOL_TYPE_DATA) {
+      Parser.Error(Parser.getTok().getLoc(),
+                   "Wasm doesn\'t support data symbols in text sections");
+      return;
+    }
+
     // Start a new section for the next function automatically, since our
     // object writer expects each function to have its own section. This way
     // The user can't forget this "convention".
     auto SymName = Symbol->getName();
     if (SymName.startswith(".L"))
       return; // Local Symbol.
-    // Only create a new text section if we're already in one.
-    auto CWS = cast<MCSectionWasm>(getStreamer().getCurrentSection().first);
-    if (!CWS || !CWS->getKind().isText())
-      return;
+
+    // TODO: If the user explicitly creates a new function section, we ignore
+    // its name when we create this one. It would be nice to honor their
+    // choice, while still ensuring that we create one if they forget.
+    // (that requires coordination with WasmAsmParser::parseSectionDirective)
     auto SecName = ".text." + SymName;
-    auto WS = getContext().getWasmSection(SecName, SectionKind::getText());
+
+    auto *Group = CWS->getGroup();
+    // If the current section is a COMDAT, also set the flag on the symbol.
+    // TODO: Currently the only place that the symbols' comdat flag matters is
+    // for importing comdat functions. But there's no way to specify that in
+    // assembly currently.
+    if (Group)
+      WasmSym->setComdat(true);
+    auto *WS =
+        getContext().getWasmSection(SecName, SectionKind::getText(), Group,
+                                    MCContext::GenericSectionID, nullptr);
     getStreamer().SwitchSection(WS);
     // Also generate DWARF for this section if requested.
     if (getContext().getGenDwarfForAssembly())

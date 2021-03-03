@@ -83,13 +83,13 @@ static void genOMP(Fortran::lower::AbstractConverter &converter,
         converter.getCurrentLocation());
     break;
   case llvm::omp::Directive::OMPD_target_enter_data:
-    TODO("");
+    TODO(converter.getCurrentLocation(), "OMPD_target_enter_data");
   case llvm::omp::Directive::OMPD_target_exit_data:
-    TODO("");
+    TODO(converter.getCurrentLocation(), "OMPD_target_exit_data");
   case llvm::omp::Directive::OMPD_target_update:
-    TODO("");
+    TODO(converter.getCurrentLocation(), "OMPD_target_update");
   case llvm::omp::Directive::OMPD_ordered:
-    TODO("");
+    TODO(converter.getCurrentLocation(), "OMPD_ordered");
   }
 }
 
@@ -109,17 +109,21 @@ genOMP(Fortran::lower::AbstractConverter &converter,
                     std::get<std::optional<Fortran::parser::OmpObjectList>>(
                         flushConstruct.t))
               genObjectList(*ompObjectList, converter, operandRange);
-            if (std::get<std::optional<Fortran::parser::OmpFlushMemoryClause>>(
+            if (std::get<std::optional<
+                    std::list<Fortran::parser::OmpMemoryOrderClause>>>(
                     flushConstruct.t))
-              TODO("Handle OmpFlushMemoryClause");
+              TODO(converter.getCurrentLocation(),
+                   "Handle OmpMemoryOrderClause");
             converter.getFirOpBuilder().create<mlir::omp::FlushOp>(
                 converter.getCurrentLocation(), operandRange);
           },
           [&](const Fortran::parser::OpenMPCancelConstruct &cancelConstruct) {
-            TODO("");
+            TODO(converter.getCurrentLocation(), "OpenMPCancelConstruct");
           },
           [&](const Fortran::parser::OpenMPCancellationPointConstruct
-                  &cancellationPointConstruct) { TODO(""); },
+                  &cancellationPointConstruct) {
+            TODO(converter.getCurrentLocation(), "OpenMPCancelConstruct");
+          },
       },
       standaloneConstruct.u);
 }
@@ -147,8 +151,9 @@ genOMP(Fortran::lower::AbstractConverter &converter,
         std::get<Fortran::parser::OmpClauseList>(beginBlockDirective.t);
     for (const auto &clause : parallelOpClauseList.v) {
       if (const auto &ifClause =
-              std::get_if<Fortran::parser::OmpIfClause>(&clause.u)) {
-        auto &expr = std::get<Fortran::parser::ScalarLogicalExpr>(ifClause->t);
+              std::get_if<Fortran::parser::OmpClause::If>(&clause.u)) {
+        auto &expr =
+            std::get<Fortran::parser::ScalarLogicalExpr>(ifClause->v.t);
         ifClauseOperand = fir::getBase(
             converter.genExprValue(*Fortran::semantics::GetExpr(expr)));
       } else if (const auto &numThreadsClause =
@@ -190,8 +195,9 @@ genOMP(Fortran::lower::AbstractConverter &converter,
     // Handle attribute based clauses.
     for (const auto &clause : parallelOpClauseList.v) {
       if (const auto &defaultClause =
-              std::get_if<Fortran::parser::OmpDefaultClause>(&clause.u)) {
-        switch (defaultClause->v) {
+              std::get_if<Fortran::parser::OmpClause::Default>(&clause.u)) {
+        const auto &ompDefaultClause{defaultClause->v};
+        switch (ompDefaultClause.v) {
         case Fortran::parser::OmpDefaultClause::Type::Private:
           parallelOp.default_valAttr(firOpBuilder.getStringAttr(
               omp::stringifyClauseDefault(omp::ClauseDefault::defprivate)));
@@ -212,8 +218,9 @@ genOMP(Fortran::lower::AbstractConverter &converter,
         }
       }
       if (const auto &procBindClause =
-              std::get_if<Fortran::parser::OmpProcBindClause>(&clause.u)) {
-        switch (procBindClause->v) {
+              std::get_if<Fortran::parser::OmpClause::ProcBind>(&clause.u)) {
+        const auto &ompProcBindClause{procBindClause->v};
+        switch (ompProcBindClause.v) {
         case Fortran::parser::OmpProcBindClause::Type::Master:
           parallelOp.proc_bind_valAttr(
               firOpBuilder.getStringAttr(omp::stringifyClauseProcBindKind(
@@ -252,24 +259,37 @@ void Fortran::lower::genOpenMPConstruct(
             genOMP(converter, eval, standaloneConstruct);
           },
           [&](const Fortran::parser::OpenMPSectionsConstruct
-                  &sectionsConstruct) { TODO(""); },
+                  &sectionsConstruct) {
+            TODO(converter.getCurrentLocation(), "OpenMPSectionsConstruct");
+          },
           [&](const Fortran::parser::OpenMPLoopConstruct &loopConstruct) {
-            TODO("");
+            TODO(converter.getCurrentLocation(), "OpenMPLoopConstruct");
+          },
+          [&](const Fortran::parser::OpenMPDeclarativeAllocate
+                  &execAllocConstruct) {
+            TODO(converter.getCurrentLocation(), "OpenMPDeclarativeAllocate");
+          },
+          [&](const Fortran::parser::OpenMPExecutableAllocate
+                  &execAllocConstruct) {
+            TODO(converter.getCurrentLocation(), "OpenMPExecutableAllocate");
           },
           [&](const Fortran::parser::OpenMPBlockConstruct &blockConstruct) {
             genOMP(converter, eval, blockConstruct);
           },
           [&](const Fortran::parser::OpenMPAtomicConstruct &atomicConstruct) {
-            TODO("");
+            TODO(converter.getCurrentLocation(), "OpenMPAtomicConstruct");
           },
           [&](const Fortran::parser::OpenMPCriticalConstruct
-                  &criticalConstruct) { TODO(""); },
+                  &criticalConstruct) {
+            TODO(converter.getCurrentLocation(), "OpenMPCriticalConstruct");
+          },
       },
       ompConstruct.u);
 }
 
 void Fortran::lower::genOpenMPEndLoop(
-    Fortran::lower::AbstractConverter &, Fortran::lower::pft::Evaluation &,
+    Fortran::lower::AbstractConverter &converter,
+    Fortran::lower::pft::Evaluation &,
     const Fortran::parser::OmpEndLoopDirective &) {
-  TODO("");
+  TODO(converter.getCurrentLocation(), "OmpEndLoopDirective");
 }

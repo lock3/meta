@@ -8,7 +8,7 @@ declare void @sink(i32)
 
 define internal void @test(i32** %X) !dbg !2 {
 ; CHECK-LABEL: define {{[^@]+}}@test
-; CHECK-SAME: (i32** nocapture nonnull readonly align 8 dereferenceable(8) [[X:%.*]]) [[DBG3:!dbg !.*]] {
+; CHECK-SAME: (i32** nocapture noundef nonnull readonly align 8 dereferenceable(8) [[X:%.*]]) [[DBG3:!dbg !.*]] {
 ; CHECK-NEXT:    [[TMP1:%.*]] = load i32*, i32** [[X]], align 8
 ; CHECK-NEXT:    [[TMP2:%.*]] = load i32, i32* [[TMP1]], align 8
 ; CHECK-NEXT:    call void @sink(i32 [[TMP2]])
@@ -22,7 +22,7 @@ define internal void @test(i32** %X) !dbg !2 {
 
 %struct.pair = type { i32, i32 }
 
-define internal void @test_byval(%struct.pair* byval %P) {
+define internal void @test_byval(%struct.pair* byval(%struct.pair) %P) {
 ; CHECK-LABEL: define {{[^@]+}}@test_byval() {
 ; CHECK-NEXT:    call void @sink(i32 noundef 0)
 ; CHECK-NEXT:    ret void
@@ -39,8 +39,8 @@ define void @caller(i32** %Y, %struct.pair* %P) {
 ; IS__TUNIT____-NEXT:    ret void
 ;
 ; IS__CGSCC____-LABEL: define {{[^@]+}}@caller
-; IS__CGSCC____-SAME: (i32** nocapture nonnull readonly align 8 dereferenceable(8) [[Y:%.*]], %struct.pair* nocapture nofree readnone [[P:%.*]]) {
-; IS__CGSCC____-NEXT:    call void @test(i32** nocapture nonnull readonly align 8 dereferenceable(8) [[Y]]), [[DBG4:!dbg !.*]]
+; IS__CGSCC____-SAME: (i32** nocapture noundef nonnull readonly align 8 dereferenceable(8) [[Y:%.*]], %struct.pair* nocapture nofree readnone [[P:%.*]]) {
+; IS__CGSCC____-NEXT:    call void @test(i32** nocapture noundef nonnull readonly align 8 dereferenceable(8) [[Y]]), [[DBG4:!dbg !.*]]
 ; IS__CGSCC____-NEXT:    call void @test_byval(), [[DBG5:!dbg !.*]]
 ; IS__CGSCC____-NEXT:    ret void
 ;

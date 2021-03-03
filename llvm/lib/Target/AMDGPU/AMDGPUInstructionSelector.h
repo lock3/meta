@@ -13,13 +13,11 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_AMDGPUINSTRUCTIONSELECTOR_H
 #define LLVM_LIB_TARGET_AMDGPU_AMDGPUINSTRUCTIONSELECTOR_H
 
-#include "AMDGPU.h"
-#include "AMDGPUArgumentUsageInfo.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/Register.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsAMDGPU.h"
 
 namespace {
 #define GET_GLOBALISEL_PREDICATE_BITSET
@@ -37,6 +35,7 @@ struct ImageDimIntrinsicInfo;
 
 class AMDGPUInstrInfo;
 class AMDGPURegisterBankInfo;
+class AMDGPUTargetMachine;
 class GCNSubtarget;
 class MachineInstr;
 class MachineIRBuilder;
@@ -46,6 +45,7 @@ class RegisterBank;
 class SIInstrInfo;
 class SIMachineFunctionInfo;
 class SIRegisterInfo;
+class TargetRegisterClass;
 
 class AMDGPUInstructionSelector final : public InstructionSelector {
 private:
@@ -71,6 +71,8 @@ private:
     int64_t Imm;
     GEPInfo(const MachineInstr &GEP) : GEP(GEP), Imm(0) { }
   };
+
+  bool isSGPR(Register Reg) const;
 
   bool isInstrUniform(const MachineInstr &MI) const;
   bool isVCC(Register Reg, const MachineRegisterInfo &MRI) const;
@@ -199,6 +201,9 @@ private:
   selectGlobalSAddr(MachineOperand &Root) const;
 
   InstructionSelector::ComplexRendererFns
+  selectScratchSAddr(MachineOperand &Root) const;
+
+  InstructionSelector::ComplexRendererFns
   selectMUBUFScratchOffen(MachineOperand &Root) const;
   InstructionSelector::ComplexRendererFns
   selectMUBUFScratchOffset(MachineOperand &Root) const;
@@ -270,26 +275,6 @@ private:
   void renderTruncTImm(MachineInstrBuilder &MIB, const MachineInstr &MI,
                        int OpIdx) const;
 
-  void renderTruncTImm1(MachineInstrBuilder &MIB, const MachineInstr &MI,
-                        int OpIdx) const {
-    renderTruncTImm(MIB, MI, OpIdx);
-  }
-
-  void renderTruncTImm8(MachineInstrBuilder &MIB, const MachineInstr &MI,
-                        int OpIdx) const {
-    renderTruncTImm(MIB, MI, OpIdx);
-  }
-
-  void renderTruncTImm16(MachineInstrBuilder &MIB, const MachineInstr &MI,
-                        int OpIdx) const {
-    renderTruncTImm(MIB, MI, OpIdx);
-  }
-
-  void renderTruncTImm32(MachineInstrBuilder &MIB, const MachineInstr &MI,
-                        int OpIdx) const {
-    renderTruncTImm(MIB, MI, OpIdx);
-  }
-
   void renderNegateImm(MachineInstrBuilder &MIB, const MachineInstr &MI,
                        int OpIdx) const;
 
@@ -306,6 +291,9 @@ private:
                         int OpIdx) const;
   void renderExtractSWZ(MachineInstrBuilder &MIB, const MachineInstr &MI,
                         int OpIdx) const;
+  void renderExtractSCCB(MachineInstrBuilder &MIB, const MachineInstr &MI,
+                         int OpIdx) const;
+
   void renderFrameIndex(MachineInstrBuilder &MIB, const MachineInstr &MI,
                         int OpIdx) const;
 

@@ -19,29 +19,52 @@ using namespace clang::driver::tools;
 using namespace clang;
 using namespace llvm::opt;
 
+void Flang::AddFortranDialectOptions(const ArgList &Args,
+                                     ArgStringList &CmdArgs) const {
+  Args.AddAllArgs(CmdArgs,
+                  {options::OPT_ffixed_form, options::OPT_ffree_form,
+                   options::OPT_ffixed_line_length_EQ, options::OPT_fopenmp,
+                   options::OPT_fopenacc, options::OPT_finput_charset_EQ,
+                   options::OPT_fimplicit_none, options::OPT_fno_implicit_none,
+                   options::OPT_fbackslash, options::OPT_fno_backslash,
+                   options::OPT_flogical_abbreviations,
+                   options::OPT_fno_logical_abbreviations,
+                   options::OPT_fxor_operator, options::OPT_fno_xor_operator,
+                   options::OPT_falternative_parameter_statement});
+}
+
+void Flang::AddPreprocessingOptions(const ArgList &Args,
+                                    ArgStringList &CmdArgs) const {
+  Args.AddAllArgs(CmdArgs, {options::OPT_D, options::OPT_U, options::OPT_I});
+}
+
+void Flang::AddOtherOptions(const ArgList &Args, ArgStringList &CmdArgs) const {
+  Args.AddAllArgs(CmdArgs, options::OPT_module_dir);
+}
+
 void Flang::ConstructJob(Compilation &C, const JobAction &JA,
                          const InputInfo &Output, const InputInfoList &Inputs,
                          const ArgList &Args, const char *LinkingOutput) const {
   const auto &TC = getToolChain();
-  const llvm::Triple &Triple = TC.getEffectiveTriple();
-  const std::string &TripleStr = Triple.getTriple();
+  // TODO: Once code-generation is available, this will need to be commented
+  // out.
+  // const llvm::Triple &Triple = TC.getEffectiveTriple();
+  // const std::string &TripleStr = Triple.getTriple();
 
   ArgStringList CmdArgs;
 
+  // Invoke ourselves in -fc1 mode.
   CmdArgs.push_back("-fc1");
 
-  // TODO: Eventually all actions will require a triple (e.g. `-triple
-  // aarch64-unknown-linux-gnu`). However, `-triple` is currently not supported
-  // by `flang-new -fc1`, so we only add it selectively to actions that we
-  // don't support/execute just yet.
+  // TODO: Once code-generation is available, this will need to be commented
+  // out.
+  // Add the "effective" target triple.
+  // CmdArgs.push_back("-triple");
+  // CmdArgs.push_back(Args.MakeArgString(TripleStr));
+
   if (isa<PreprocessJobAction>(JA)) {
-    if (C.getArgs().hasArg(options::OPT_test_io))
-      CmdArgs.push_back("-test-io");
-    else
       CmdArgs.push_back("-E");
   } else if (isa<CompileJobAction>(JA) || isa<BackendJobAction>(JA)) {
-    CmdArgs.push_back("-triple");
-    CmdArgs.push_back(Args.MakeArgString(TripleStr));
     if (JA.getType() == types::TY_Nothing) {
       CmdArgs.push_back("-fsyntax-only");
     } else if (JA.getType() == types::TY_AST) {
@@ -58,12 +81,26 @@ void Flang::ConstructJob(Compilation &C, const JobAction &JA,
       assert(false && "Unexpected output type!");
     }
   } else if (isa<AssembleJobAction>(JA)) {
-    CmdArgs.push_back("-triple");
-    CmdArgs.push_back(Args.MakeArgString(TripleStr));
     CmdArgs.push_back("-emit-obj");
   } else {
     assert(false && "Unexpected action class for Flang tool.");
   }
+
+  const InputInfo &Input = Inputs[0];
+  types::ID InputType = Input.getType();
+
+  // Add preprocessing options like -I, -D, etc. if we are using the
+  // preprocessor (i.e. skip when dealing with e.g. binary files).
+  if (types::getPreprocessedType(InputType) != types::TY_INVALID)
+    AddPreprocessingOptions(Args, CmdArgs);
+
+  AddFortranDialectOptions(Args, CmdArgs);
+
+  // Add other compile options
+  AddOtherOptions(Args, CmdArgs);
+
+  // Forward -Xflang arguments to -fc1
+  Args.AddAllArgValues(CmdArgs, options::OPT_Xflang);
 
   if (Output.isFilename()) {
     CmdArgs.push_back("-o");
@@ -72,7 +109,6 @@ void Flang::ConstructJob(Compilation &C, const JobAction &JA,
     assert(Output.isNothing() && "Invalid output.");
   }
 
-  const InputInfo &Input = Inputs[0];
   assert(Input.isFilename() && "Invalid input.");
   CmdArgs.push_back(Input.getFilename());
 

@@ -18,10 +18,12 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "TestInterfaces.td"
 
 def Test_Dialect : Dialect {
   let name = "test";
-  let cppNamespace = "::mlir";
+  let cppNamespace = "::mlir::test";
+  let hasConstantMaterializer = 1;
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
   let hasRegionResultAttrVerify = 1;
@@ -89,8 +91,8 @@ def MultiTensorRankOf : TEST_Op<"multi_tensor_rank_of"> {
 }
 
 def TEST_TestType : DialectType<Test_Dialect,
-    CPred<"$_self.isa<::mlir::TestType>()">, "test">,
-    BuildableType<"$_builder.getType<::mlir::TestType>()">;
+    CPred<"$_self.isa<::mlir::test::TestType>()">, "test">,
+    BuildableType<"$_builder.getType<::mlir::test::TestType>()">;
 
 //===----------------------------------------------------------------------===//
 // Test Symbols
@@ -131,6 +133,12 @@ def VariadicWithSameOperandsResult :
               [SameOperandsAndResultType]> {
   let arguments = (ins Variadic<AnySignlessInteger>:$operands);
   let results = (outs AnySignlessInteger:$result);
+}
+
+def SameOperandsResultType : TEST_Op<
+    "same_operand_result_type", [SameOperandsAndResultType]> {
+  let arguments = (ins AnyTensor:$operand);
+  let results = (outs AnyTensor:$result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -314,7 +322,7 @@ def ConversionCallOp : TEST_Op<"conversion_call_op",
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() {
-      return getAttrOfType<SymbolRefAttr>("callee");
+      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
   }];
 }
@@ -348,7 +356,8 @@ def SameOperandElementTypeOp : TEST_Op<"same_operand_element_type",
   let results = (outs AnyType);
 }
 
-def SameOperandAndResultElementTypeOp : TEST_Op<"same_operand_and_result_element_type",
+def SameOperandAndResultElementTypeOp :
+    TEST_Op<"same_operand_and_result_element_type",
     [SameOperandsAndResultElementType]> {
   let arguments = (ins Variadic<AnyType>);
   let results = (outs Variadic<AnyType>);
@@ -366,6 +375,12 @@ def SameOperandAndResultShapeOp : TEST_Op<"same_operand_and_result_shape",
 
 def SameOperandAndResultTypeOp : TEST_Op<"same_operand_and_result_type",
     [SameOperandsAndResultType]> {
+  let arguments = (ins Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>);
+}
+
+def ElementwiseMappableOp : TEST_Op<"elementwise_mappable",
+    ElementwiseMappable.traits> {
   let arguments = (ins Variadic<AnyType>);
   let results = (outs Variadic<AnyType>);
 }
@@ -489,24 +504,10 @@ def OpWithInferTypeInterfaceOp : TEST_Op<"op_with_infer_type_if", [
   let results = (outs AnyTensor);
 }
 
-def InferTensorType : NativeOpTrait<"InferTensorType">;
 def OpWithShapedTypeInferTypeInterfaceOp : TEST_Op<"op_with_shaped_type_infer_type_if",
-  [
-     // Op implements infer type op interface.
-     InferTypeOpInterface,
-     // The op will have methods implementing the ShapedType type infer interface.
-     DeclareOpInterfaceMethods<InferShapedTypeOpInterface>,
-     // The op produces tensors and will use the ShapedType type infer interface
-     // along with knowledge that it is producing Tensors to infer shape.
-     InferTensorType
-   ]> {
+      InferTensorTypeWithReify.traits> {
   let arguments = (ins AnyTensor, AnyTensor);
   let results = (outs AnyTensor);
-
-  let extraClassDeclaration = [{
-    LogicalResult reifyReturnTypeShapes(OpBuilder &builder,
-                                        SmallVectorImpl<Value> &shapes);
-  }];
 }
 
 def IsNotScalar : Constraint<CPred<"$0.getType().getRank() != 0">>;
@@ -652,6 +653,11 @@ def OpNorm : TEST_Op<"op_norm", [MemRefsNormalizable]> {
 // Test for memrefs normalization of an op without normalizable memrefs.
 def OpNonNorm : TEST_Op<"op_nonnorm"> {
   let arguments = (ins AnyMemRef:$X, AnyMemRef:$Y);
+}
+// Test for memrefs normalization of an op that has normalizable memref results.
+def OpNormRet : TEST_Op<"op_norm_ret", [MemRefsNormalizable]> {
+  let arguments = (ins AnyMemRef:$X);
+  let results = (outs AnyMemRef:$Y, AnyMemRef:$Z);
 }
 
 // Test for memrefs normalization of an op with a reference to a function
@@ -803,7 +809,7 @@ def TestOpConstant : TEST_Op<"constant", [ConstantLike, NoSideEffect]> {
   let arguments = (ins AnyAttr:$value);
   let results = (outs AnyType);
   let extraClassDeclaration = [{
-    Attribute getValue() { return getAttr("value"); }
+    Attribute getValue() { return (*this)->getAttr("value"); }
   }];
 
   let hasFolder = 1;
@@ -878,6 +884,13 @@ def TestOpInPlaceFoldAnchor : TEST_Op<"op_in_place_fold_anchor"> {
 def TestOpInPlaceFold : TEST_Op<"op_in_place_fold"> {
   let arguments = (ins I32:$op, I32Attr:$attr);
   let results = (outs I32);
+  let hasFolder = 1;
+}
+
+// An op that always fold itself.
+def TestPassthroughFold : TEST_Op<"passthrough_fold"> {
+  let arguments = (ins AnyType:$op);
+  let results = (outs AnyType);
   let hasFolder = 1;
 }
 
@@ -987,7 +1000,7 @@ def ThreeResultOp : TEST_Op<"three_result"> {
   let results = (outs I32:$result1, F32:$result2, F32:$result3);
 }
 
-def AnotherThreeResultOp : TEST_Op<"another_three_result"> {
+def AnotherThreeResultOp : TEST_Op<"another_three_result", [DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let arguments = (ins MultiResultOpEnum:$kind);
   let results = (outs I32:$result1, F32:$result2, F32:$result3);
 }
@@ -1255,6 +1268,8 @@ def TestInvalidOp : TEST_Op<"invalid", [Terminator]>,
   Arguments<(ins Variadic<AnyType>)>;
 def TestTypeProducerOp : TEST_Op<"type_producer">,
   Results<(outs AnyType)>;
+def TestAnotherTypeProducerOp : TEST_Op<"another_type_producer">,
+  Results<(outs AnyType)>;
 def TestTypeConsumerOp : TEST_Op<"type_consumer">,
   Arguments<(ins AnyType)>;
 def TestValidOp : TEST_Op<"valid", [Terminator]>,
@@ -1270,11 +1285,21 @@ def TestMergeBlocksOp : TEST_Op<"merge_blocks"> {
   let results = (outs Variadic<AnyType>:$result);
 }
 
+def TestSignatureConversionUndoOp : TEST_Op<"signature_conversion_undo"> {
+  let regions = (region AnyRegion);
+}
+
 //===----------------------------------------------------------------------===//
 // Test parser.
 //===----------------------------------------------------------------------===//
 
-def WrappedKeywordOp : TEST_Op<"wrapped_keyword"> {
+def ParseIntegerLiteralOp : TEST_Op<"parse_integer_literal"> {
+  let results = (outs Variadic<Index>:$results);
+  let parser = [{ return ::parse$cppClass(parser, result); }];
+  let printer = [{ return ::print(p, *this); }];
+}
+
+def ParseWrappedKeywordOp : TEST_Op<"parse_wrapped_keyword"> {
   let arguments = (ins StrAttr:$keyword);
   let parser = [{ return ::parse$cppClass(parser, result); }];
   let printer = [{ return ::print(p, *this); }];
@@ -1374,7 +1399,8 @@ def AsmDialectInterfaceOp : TEST_Op<"asm_dialect_interface_op"> {
 
 def FormatLiteralOp : TEST_Op<"format_literal_op"> {
   let assemblyFormat = [{
-    `keyword_$.` `->` `:` `,` `=` `<` `>` `(` `)` `[` `]` ` ` `(` ` ` `)` ` ` attr-dict
+    `keyword_$.` `->` `:` `,` `=` `<` `>` `(` `)` `[` `]` `` `(` ` ` `)`
+    `?` `+` `*` `{` `\n` `}` attr-dict
   }];
 }
 
@@ -1472,6 +1498,19 @@ def FormatResultCOp : FormatResultBase<"c", [{
   functional-type($buildable_res, $result) attr-dict
 }]>;
 
+def FormatVariadicResult : TEST_Op<"format_variadic_result"> {
+  let results = (outs Variadic<I64>:$result);
+  let assemblyFormat = [{ `:` type($result) attr-dict}];
+}
+
+def FormatMultipleVariadicResults : TEST_Op<"format_multiple_variadic_results",
+                                            [AttrSizedResultSegments]> {
+  let results = (outs Variadic<I64>:$result0, Variadic<AnyType>:$result1);
+  let assemblyFormat = [{
+    `:` `(` type($result0) `)` `,` `(` type($result1) `)` attr-dict
+  }];
+}
+
 // Test various mixings of operand type formatting.
 class FormatOperandBase<string suffix, string fmt>
     : TEST_Op<"format_operand_" # suffix # "_op"> {
@@ -1500,6 +1539,19 @@ def FormatSuccessorAOp : TEST_Op<"format_successor_a_op", [Terminator]> {
   let assemblyFormat = "$targets attr-dict";
 }
 
+def FormatVariadicOperand : TEST_Op<"format_variadic_operand"> {
+  let arguments = (ins Variadic<I64>:$operand);
+  let assemblyFormat = [{ $operand `:` type($operand) attr-dict}];
+}
+
+def FormatMultipleVariadicOperands :
+    TEST_Op<"format_multiple_variadic_operands", [AttrSizedOperandSegments]> {
+  let arguments = (ins Variadic<I64>:$operand0, Variadic<AnyType>:$operand1);
+  let assemblyFormat = [{
+    ` ` `(` $operand0 `)` `,` `(` $operand1 `:` type($operand1) `)` attr-dict
+  }];
+}
+
 // Test various mixings of optional operand and result type formatting.
 class FormatOptionalOperandResultOpBase<string suffix, string fmt>
     : TEST_Op<"format_optional_operand_result_" # suffix # "_op",
@@ -1517,6 +1569,25 @@ def FormatOptionalOperandResultAOp : FormatOptionalOperandResultOpBase<"a", [{
 def FormatOptionalOperandResultBOp : FormatOptionalOperandResultOpBase<"b", [{
   (`(` $optional^ `:` type($optional) `)`)? `:` type($optional_res)
   (`[` $variadic^ `]`)? attr-dict
+}]>;
+
+// Test optional result type formatting.
+class FormatOptionalResultOpBase<string suffix, string fmt>
+    : TEST_Op<"format_optional_result_" # suffix # "_op",
+              [AttrSizedResultSegments]> {
+  let results = (outs Optional<I64>:$optional, Variadic<I64>:$variadic);
+  let assemblyFormat = fmt;
+}
+def FormatOptionalResultAOp : FormatOptionalResultOpBase<"a", [{
+  (`:` type($optional)^ `->` type($variadic))? attr-dict
+}]>;
+
+def FormatOptionalResultBOp : FormatOptionalResultOpBase<"b", [{
+  (`:` type($optional) `->` type($variadic)^)? attr-dict
+}]>;
+
+def FormatOptionalResultCOp : FormatOptionalResultOpBase<"c", [{
+  (`:` functional-type($optional, $variadic)^)? attr-dict
 }]>;
 
 def FormatTwoVariadicOperandsNoBuildableTypeOp
@@ -1546,6 +1617,11 @@ def FormatOptionalUnitAttrNoElide
     : TEST_Op<"format_optional_unit_attribute_no_elide"> {
   let arguments = (ins UnitAttr:$is_optional);
   let assemblyFormat = "($is_optional^)? attr-dict";
+}
+
+def FormatOptionalEnumAttr : TEST_Op<"format_optional_enum_attr"> {
+  let arguments = (ins OptionalAttr<SomeI64Enum>:$attr);
+  let assemblyFormat = "($attr^)? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1609,8 +1685,18 @@ def FormatCustomDirectiveResultsWithTypeRefs
       type($result), type($optResult), type($varResults)
     )
     custom<CustomDirectiveWithTypeRefs>(
-      type_ref($result), type_ref($optResult), type_ref($varResults)
+      ref(type($result)), ref(type($optResult)), ref(type($varResults))
     )
+    attr-dict
+  }];
+}
+
+def FormatCustomDirectiveWithOptionalOperandRef
+    : TEST_Op<"format_custom_directive_with_optional_operand_ref"> {
+  let arguments = (ins Optional<I64>:$optOperand);
+  let assemblyFormat = [{
+    ($optOperand^)? `:`
+    custom<CustomDirectiveOptionalOperandRef>(ref($optOperand))
     attr-dict
   }];
 }
@@ -1676,6 +1762,15 @@ def FormatTypesMatchVarOp : TEST_Op<"format_types_match_var", [
   let assemblyFormat = "attr-dict $value `:` type($value)";
 }
 
+def FormatTypesMatchVariadicOp : TEST_Op<"format_types_match_variadic", [
+    RangedTypesMatchWith<"result type matches operand", "value", "result",
+                         "llvm::make_range($_self.begin(), $_self.end())">
+  ]> {
+  let arguments = (ins Variadic<AnyType>:$value);
+  let results = (outs Variadic<AnyType>:$result);
+  let assemblyFormat = "attr-dict $value `:` type($value)";
+}
+
 def FormatTypesMatchAttrOp : TEST_Op<"format_types_match_attr", [
     TypesMatchWith<"result type matches constant", "value", "result", "$_self">
   ]> {
@@ -1689,7 +1784,8 @@ def FormatTypesMatchAttrOp : TEST_Op<"format_types_match_attr", [
 //===----------------------------------------------------------------------===//
 
 def SideEffectOp : TEST_Op<"side_effect_op",
-    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+     DeclareOpInterfaceMethods<TestEffectOpInterface>]> {
   let results = (outs AnyType:$result);
 }
 

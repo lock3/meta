@@ -9,9 +9,9 @@
 // This file contains the implementation of reduction with KMPC interface.
 //
 //===----------------------------------------------------------------------===//
+#pragma omp declare target
 
 #include "common/omptarget.h"
-#include "common/target_atomic.h"
 #include "target_impl.h"
 
 EXTERN
@@ -25,11 +25,11 @@ EXTERN int32_t __kmpc_shuffle_int32(int32_t val, int16_t delta, int16_t size) {
 }
 
 EXTERN int64_t __kmpc_shuffle_int64(int64_t val, int16_t delta, int16_t size) {
-   uint32_t lo, hi;
-   __kmpc_impl_unpack(val, lo, hi);
-   hi = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, hi, delta, size);
-   lo = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, lo, delta, size);
-   return __kmpc_impl_pack(lo, hi);
+  uint32_t lo, hi;
+  __kmpc_impl_unpack(val, lo, hi);
+  hi = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, hi, delta, size);
+  lo = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, lo, delta, size);
+  return __kmpc_impl_pack(lo, hi);
 }
 
 INLINE static void gpu_regular_warp_reduce(void *reduce_data,
@@ -84,16 +84,16 @@ static int32_t nvptx_parallel_reduce_nowait(
   uint32_t NumThreads = GetNumberOfOmpThreads(isSPMDExecutionMode);
   if (NumThreads == 1)
     return 1;
-  /*
-   * This reduce function handles reduction within a team. It handles
-   * parallel regions in both L1 and L2 parallelism levels. It also
-   * supports Generic, SPMD, and NoOMP modes.
-   *
-   * 1. Reduce within a warp.
-   * 2. Warp master copies value to warp 0 via shared memory.
-   * 3. Warp 0 reduces to a single value.
-   * 4. The reduced value is available in the thread that returns 1.
-   */
+    /*
+     * This reduce function handles reduction within a team. It handles
+     * parallel regions in both L1 and L2 parallelism levels. It also
+     * supports Generic, SPMD, and NoOMP modes.
+     *
+     * 1. Reduce within a warp.
+     * 2. Warp master copies value to warp 0 via shared memory.
+     * 3. Warp 0 reduces to a single value.
+     * 4. The reduced value is available in the thread that returns 1.
+     */
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
   uint32_t WarpsNeeded = (NumThreads + WARPSIZE - 1) / WARPSIZE;
@@ -183,6 +183,8 @@ INLINE static uint32_t roundToWarpsize(uint32_t s) {
   return (s & ~(unsigned)(WARPSIZE - 1));
 }
 
+INLINE static uint32_t kmpcMin(uint32_t x, uint32_t y) { return x < y ? x : y; }
+
 DEVICE static volatile uint32_t IterCnt = 0;
 DEVICE static volatile uint32_t Cnt = 0;
 EXTERN int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
@@ -206,8 +208,8 @@ EXTERN int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
                          : /*Master thread only*/ 1;
   uint32_t TeamId = GetBlockIdInKernel();
   uint32_t NumTeams = GetNumberOfBlocksInKernel();
-  static SHARED unsigned Bound;
-  static SHARED unsigned ChunkTeamCount;
+  static unsigned SHARED(Bound);
+  static unsigned SHARED(ChunkTeamCount);
 
   // Block progress for teams greater than the current upper
   // limit. We always only allow a number of teams less or equal
@@ -260,14 +262,14 @@ EXTERN int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
   //         by returning 1 in the thread holding the reduction result.
 
   // Check if this is the very last team.
-  unsigned NumRecs = __kmpc_impl_min(NumTeams, uint32_t(num_of_records));
+  unsigned NumRecs = kmpcMin(NumTeams, uint32_t(num_of_records));
   if (ChunkTeamCount == NumTeams - Bound - 1) {
     //
     // Last team processing.
     //
     if (ThreadId >= NumRecs)
       return 0;
-    NumThreads = roundToWarpsize(__kmpc_impl_min(NumThreads, NumRecs));
+    NumThreads = roundToWarpsize(kmpcMin(NumThreads, NumRecs));
     if (ThreadId >= NumThreads)
       return 0;
 
@@ -282,7 +284,7 @@ EXTERN int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
 
       // When we have more than [warpsize] number of threads
       // a block reduction is performed here.
-      uint32_t ActiveThreads = __kmpc_impl_min(NumRecs, NumThreads);
+      uint32_t ActiveThreads = kmpcMin(NumRecs, NumThreads);
       if (ActiveThreads > WARPSIZE) {
         uint32_t WarpsNeeded = (ActiveThreads + WARPSIZE - 1) / WARPSIZE;
         // Gather all the reduced values from each warp
@@ -312,3 +314,4 @@ EXTERN int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
   return 0;
 }
 
+#pragma omp end declare target

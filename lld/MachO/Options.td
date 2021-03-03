@@ -1,8 +1,41 @@
 include "llvm/Option/OptParser.td"
 
-def help : Flag<["-", "--"], "help">;
+// Flags that lld/MachO understands but ld64 doesn't. These take
+// '--' instead of '-' and use dashes instead of underscores, so
+// they don't collide with the ld64 compat options.
+def grp_lld : OptionGroup<"kind">, HelpText<"LLD-SPECIFIC">;
+
+def help : Flag<["-", "--"], "help">,
+    Group<grp_lld>;
 def help_hidden : Flag<["--"], "help-hidden">,
-  HelpText<"Display help for hidden options">;
+    HelpText<"Display help for hidden options">,
+    Group<grp_lld>;
+def color_diagnostics: Flag<["--"], "color-diagnostics">,
+    HelpText<"Alias for --color-diagnostics=always">,
+    Group<grp_lld>;
+def no_color_diagnostics: Flag<["--"], "no-color-diagnostics">,
+    HelpText<"Alias for --color-diagnostics=never">,
+    Group<grp_lld>;
+def color_diagnostics_eq: Joined<["--"], "color-diagnostics=">,
+    HelpText<"Use colors in diagnostics (default: auto)">,
+    MetaVarName<"[auto,always,never]">,
+    Group<grp_lld>;
+def reproduce: Separate<["--"], "reproduce">,
+    Group<grp_lld>;
+def reproduce_eq: Joined<["--"], "reproduce=">,
+    Alias<!cast<Separate>(reproduce)>,
+    HelpText<"Write tar file containing inputs and command to reproduce link">,
+    Group<grp_lld>;
+def version: Flag<["--"], "version">,
+    HelpText<"Display the version number and exit">,
+    Group<grp_lld>;
+def lto_legacy_pass_manager: Flag<["--"], "lto-legacy-pass-manager">,
+    HelpText<"Use the legacy pass manager in LLVM">,
+    Group<grp_lld>;
+def no_lto_legacy_pass_manager : Flag<["--"], "no-lto-legacy-pass-manager">,
+    HelpText<"Use the new pass manager in LLVM">,
+    Group<grp_lld>;
+
 
 // This is a complete Options.td compiled from Apple's ld(1) manpage
 // dated 2018-03-07 and cross checked with ld64 source code in repo
@@ -18,14 +51,12 @@ def grp_kind : OptionGroup<"kind">, HelpText<"OUTPUT KIND">;
 
 def execute : Flag<["-"], "execute">,
      HelpText<"Produce a main executable (default)">,
-     Flags<[HelpHidden]>,
      Group<grp_kind>;
 def dylib : Flag<["-"], "dylib">,
      HelpText<"Produce a shared library">,
      Group<grp_kind>;
 def bundle : Flag<["-"], "bundle">,
      HelpText<"Produce a bundle">,
-     Flags<[HelpHidden]>,
      Group<grp_kind>;
 def r : Flag<["-"], "r">,
      HelpText<"Merge multiple object files into one, retaining relocations">,
@@ -184,41 +215,6 @@ def no_order_data : Flag<["-"], "no_order_data">,
      HelpText<"Disable default reordering of global data accessed at launch time">,
      Flags<[HelpHidden]>,
      Group<grp_opts>;
-def platform_version : MultiArg<["-"], "platform_version", 3>,
-     MetaVarName<"<platform> <min_version> <sdk_version>">,
-     HelpText<"Platform (e.g., macos, ios, tvos, watchos, bridgeos, mac-catalyst, ios-sim, tvos-sim, watchos-sim, driverkit) and version numbers">,
-     Group<grp_opts>;
-def sdk_version : Separate<["-"], "sdk_version">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
-def macos_version_min : Separate<["-"], "macos_version_min">,
-     MetaVarName<"<version>">,
-     HelpText<"Oldest macOS version for which linked output is useable">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
-def macosx_version_min : Separate<["-"], "macosx_version_min">,
-     MetaVarName<"<version>">,
-     Alias<macos_version_min>,
-     HelpText<"Alias for -macos_version_min">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
-def ios_version_min : Separate<["-"], "ios_version_min">,
-     MetaVarName<"<version>">,
-     HelpText<"Oldest iOS version for which linked output is useable">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
-def ios_simulator_version_min : Separate<["-"], "ios_simulator_version_min">,
-     MetaVarName<"<version>">,
-     HelpText<"Oldest iOS simulator version for which linked output is useable">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
-def iphoneos_version_min : Separate<["-"], "iphoneos_version_min">,
-     MetaVarName<"<version>">,
-     Alias<ios_version_min>,
-     HelpText<"Alias for -ios_version_min">,
-     Flags<[HelpHidden]>,
-     Group<grp_opts>;
 def image_base : Separate<["-"], "image_base">,
      MetaVarName<"<address>">,
      HelpText<"Preferred hex load address for a dylib or bundle.">,
@@ -232,7 +228,6 @@ def seg1addr : Separate<["-"], "seg1addr">,
      Group<grp_opts>;
 def no_implicit_dylibs : Flag<["-"], "no_implicit_dylibs">,
      HelpText<"Do not optimize public dylib transitive symbol references">,
-     Flags<[HelpHidden]>,
      Group<grp_opts>;
 def exported_symbols_order : Separate<["-"], "exported_symbols_order">,
      MetaVarName<"<file>">,
@@ -251,6 +246,80 @@ def no_branch_islands : Flag<["-"], "no_branch_islands">,
      HelpText<"Disable infra for branches beyond the maximum branch distance.">,
      Flags<[HelpHidden]>,
      Group<grp_opts>;
+
+def grp_version : OptionGroup<"version">, HelpText<"VERSION TARGETING">;
+
+def platform_version : MultiArg<["-"], "platform_version", 3>,
+     MetaVarName<"<platform> <min_version> <sdk_version>">,
+     HelpText<"Platform (e.g., macos, ios, tvos, watchos, bridgeos, mac-catalyst, ios-sim, tvos-sim, watchos-sim, driverkit) and version numbers">,
+     Group<grp_version>;
+def sdk_version : Separate<["-"], "sdk_version">,
+     HelpText<"This option is undocumented in ld64">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def macos_version_min : Separate<["-"], "macos_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest macOS version for which linked output is usable">,
+     Group<grp_version>;
+def macosx_version_min : Separate<["-"], "macosx_version_min">,
+     MetaVarName<"<version>">,
+     Alias<macos_version_min>,
+     HelpText<"Alias for -macos_version_min">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def ios_version_min : Separate<["-"], "ios_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest iOS version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def ios_simulator_version_min : Separate<["-"], "ios_simulator_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest iOS simulator version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def iphoneos_version_min : Separate<["-"], "iphoneos_version_min">,
+     MetaVarName<"<version>">,
+     Alias<ios_version_min>,
+     HelpText<"Alias for -ios_version_min">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def maccatalyst_version_min : Separate<["-"], "maccatalyst_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest MacCatalyst version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def iosmac_version_min : Separate<["-"], "iosmac_version_min">,
+     MetaVarName<"<version>">,
+     Alias<maccatalyst_version_min>,
+     HelpText<"Alias for -maccatalyst_version_min">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def uikitformac_version_min : Separate<["-"], "uikitformac_version_min">,
+     MetaVarName<"<version>">,
+     Alias<maccatalyst_version_min>,
+     HelpText<"Alias for -maccatalyst_version_min">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def tvos_version_min : Separate<["-"], "tvos_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest tvOS version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def watchos_version_min : Separate<["-"], "watchos_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest watchOS version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def bridgeos_version_min : Separate<["-"], "bridgeos_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest bridgeOS version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
+def driverkit_version_min : Separate<["-"], "driverkit_version_min">,
+     MetaVarName<"<version>">,
+     HelpText<"Oldest DriverKit version for which linked output is usable">,
+     Flags<[HelpHidden]>,
+     Group<grp_version>;
 
 def grp_dylib : OptionGroup<"dylib">, HelpText<"DYNAMIC LIBRARIES (DYLIB)">;
 
@@ -277,7 +346,6 @@ def mark_dead_strippable_dylib : Flag<["-"], "mark_dead_strippable_dylib">,
 def compatibility_version : Separate<["-"], "compatibility_version">,
      MetaVarName<"<version>">,
      HelpText<"Compatibility <version> of this library">,
-     Flags<[HelpHidden]>,
      Group<grp_dylib>;
 def dylib_compatibility_version : Separate<["-"], "dylib_compatibility_version">,
      MetaVarName<"<version>">,
@@ -288,7 +356,6 @@ def dylib_compatibility_version : Separate<["-"], "dylib_compatibility_version">
 def current_version : Separate<["-"], "current_version">,
      MetaVarName<"<version>">,
      HelpText<"Current <version> of this library">,
-     Flags<[HelpHidden]>,
      Group<grp_dylib>;
 def dylib_current_version : Separate<["-"], "dylib_current_version">,
      MetaVarName<"<version>">,
@@ -301,11 +368,9 @@ def grp_main : OptionGroup<"main">, HelpText<"MAIN EXECUTABLE">;
 
 def pie : Flag<["-"], "pie">,
      HelpText<"Build a position independent executable (default for macOS 10.7 and later)">,
-     Flags<[HelpHidden]>,
      Group<grp_main>;
 def no_pie : Flag<["-"], "no_pie">,
      HelpText<"Do not build a position independent executable (default for macOS 10.6 and earlier)">,
-     Flags<[HelpHidden]>,
      Group<grp_main>;
 def pagezero_size : Separate<["-"], "pagezero_size">,
      MetaVarName<"<size>">,
@@ -331,13 +396,12 @@ def grp_bundle : OptionGroup<"bundle">, HelpText<"CREATING A BUNDLE">;
 def bundle_loader : Separate<["-"], "bundle_loader">,
      MetaVarName<"<executable>">,
      HelpText<"Resolve undefined symbols from <executable>">,
-     Flags<[HelpHidden]>,
      Group<grp_bundle>;
 
 def grp_object : OptionGroup<"object">, HelpText<"CREATING AN OBJECT FILE">;
 
 def keep_private_externs : Flag<["-"], "keep_private_externs">,
-     HelpText<"Do not convert private external symbols to static symbols">,
+     HelpText<"Do not convert private external symbols to static symbols (only valid with -r)">,
      Flags<[HelpHidden]>,
      Group<grp_object>;
 def d : Flag<["-"], "d">,
@@ -383,23 +447,22 @@ def alias_list : Separate<["-"], "alias_list">,
      Flags<[HelpHidden]>,
      Group<grp_resolve>;
 def flat_namespace : Flag<["-"], "flat_namespace">,
-     HelpText<"Resolve symbols from all dylibs, both direct & transitive. Do not record source libraries: dyld must re-search at runtime and use the first definition found">,
-     Flags<[HelpHidden]>,
+     HelpText<"Resolve symbols from all dylibs, both direct and transitive. Do not record source libraries: dyld must re-search at runtime and use the first definition found">,
+     Group<grp_resolve>;
+def twolevel_namespace : Flag<["-"], "twolevel_namespace">,
+     HelpText<"Make dyld look up symbols by (dylib,name) pairs (default)">,
      Group<grp_resolve>;
 def u : Separate<["-"], "u">,
      MetaVarName<"<symbol>">,
      HelpText<"Require that <symbol> be defined for the link to succeed">,
-     Flags<[HelpHidden]>,
      Group<grp_resolve>;
 def U : Separate<["-"], "U">,
      MetaVarName<"<symbol>">,
      HelpText<"Allow <symbol> to have no definition">,
-     Flags<[HelpHidden]>,
      Group<grp_resolve>;
 def undefined : Separate<["-"], "undefined">,
      MetaVarName<"<treatment>">,
      HelpText<"Handle undefined symbols according to <treatment>: error, warning, suppress, or dynamic_lookup (default is error)">,
-     Flags<[HelpHidden]>,
      Group<grp_resolve>;
 def rpath : Separate<["-"], "rpath">,
      MetaVarName<"<path>">,
@@ -414,8 +477,7 @@ def commons : Separate<["-"], "commons">,
 def grp_introspect : OptionGroup<"introspect">, HelpText<"INTROSPECTING THE LINKER">;
 
 def why_load : Flag<["-"], "why_load">,
-     HelpText<"Log the symbol that compels loading of each object file from a static library">,
-     Flags<[HelpHidden]>,
+     HelpText<"Log why each object file is loaded from a static library">,
      Group<grp_introspect>;
 def whyload : Flag<["-"], "whyload">,
      Alias<why_load>,
@@ -433,7 +495,6 @@ def print_statistics : Flag<["-"], "print_statistics">,
      Group<grp_introspect>;
 def t : Flag<["-"], "t">,
      HelpText<"Log every file the linker loads: object, archive, and dylib">,
-     Flags<[HelpHidden]>,
      Group<grp_introspect>;
 def whatsloaded : Flag<["-"], "whatsloaded">,
      HelpText<"Logs only the object files the linker loads">,
@@ -452,6 +513,9 @@ def dependency_info : Separate<["-"], "dependency_info">,
      MetaVarName<"<path>">,
      HelpText<"Dump dependency info">,
      Flags<[HelpHidden]>,
+     Group<grp_introspect>;
+def save_temps : Flag<["-"], "save-temps">,
+     HelpText<"Save intermediate LTO compilation results">,
      Group<grp_introspect>;
 
 def grp_symtab : OptionGroup<"symtab">, HelpText<"SYMBOL TABLE OPTIMIZATIONS">;
@@ -499,7 +563,14 @@ def bitcode_symbol_map : Separate<["-"], "bitcode_symbol_map">,
 def grp_rare : OptionGroup<"rare">, HelpText<"RARELY USED">;
 
 def v : Flag<["-"], "v">,
-     HelpText<"Print the linker version">,
+     HelpText<"Print the linker version and search paths in addition to linking">,
+     Group<grp_rare>;
+def adhoc_codesign : Flag<["-"], "adhoc_codesign">,
+     HelpText<"Write an ad-hoc code signature to the output file.">,
+     Flags<[HelpHidden]>,
+     Group<grp_rare>;
+def no_adhoc_codesign : Flag<["-"], "no_adhoc_codesign">,
+     HelpText<"Do not write an ad-hoc code signature to the output file.">,
      Group<grp_rare>;
 def version_details : Flag<["-"], "version_details">,
      HelpText<"Print the linker version in JSON form">,
@@ -557,12 +628,10 @@ def move_to_ro_segment : MultiArg<["-"], "move_to_ro_segment", 2>,
 def rename_section : MultiArg<["-"], "rename_section", 4>,
      MetaVarName<"<from_segment> <from_section> <to_segment> <to_section>">,
      HelpText<"Rename <from_segment>/<from_section> as <to_segment>/<to_section>">,
-     Flags<[HelpHidden]>,
      Group<grp_rare>;
 def rename_segment : MultiArg<["-"], "rename_segment", 2>,
      MetaVarName<"<from_segment> <to_segment>">,
      HelpText<"Rename <from_segment> as <to_segment>">,
-     Flags<[HelpHidden]>,
      Group<grp_rare>;
 def trace_symbol_layout : Flag<["-"], "trace_symbol_layout">,
      HelpText<"Show where and why symbols move, as specified by -move_to_ro_segment, -move_to_rw_segment, -rename_section, and -rename_segment">,
@@ -591,8 +660,7 @@ def no_application_extension : Flag<["-"], "no_application_extension">,
      Flags<[HelpHidden]>,
      Group<grp_rare>;
 def fatal_warnings : Flag<["-"], "fatal_warnings">,
-     HelpText<"Escalate warnings as errors">,
-     Flags<[HelpHidden]>,
+     HelpText<"Treat warnings as errors">,
      Group<grp_rare>;
 def no_eh_labels : Flag<["-"], "no_eh_labels">,
      HelpText<"In -r mode, suppress .eh labels in the __eh_frame section">,
@@ -663,7 +731,6 @@ def sub_library : Separate<["-"], "sub_library">,
 def sub_umbrella : Separate<["-"], "sub_umbrella">,
      MetaVarName<"<name>">,
      HelpText<"Re-export the framework as <name>">,
-     Flags<[HelpHidden]>,
      Group<grp_rare>;
 def allowable_client : Separate<["-"], "allowable_client">,
      MetaVarName<"<name>">,
@@ -828,12 +895,10 @@ def no_objc_category_merging : Flag<["-"], "no_objc_category_merging">,
 def object_path_lto : Separate<["-"], "object_path_lto">,
      MetaVarName<"<path>">,
      HelpText<"Retain any temporary mach-o file in <path> that would otherwise be deleted during LTO">,
-     Flags<[HelpHidden]>,
      Group<grp_rare>;
 def lto_library : Separate<["-"], "lto_library">,
      MetaVarName<"<path>">,
-     HelpText<"Override the default ../lib/libLTO.dylib as <path>">,
-     Flags<[HelpHidden]>,
+     HelpText<"Deprecated & ignored. LLD supports LTO directly, without using an external dylib.">,
      Group<grp_rare>;
 def cache_path_lto : Separate<["-"], "cache_path_lto">,
      MetaVarName<"<path>">,
@@ -865,7 +930,9 @@ def not_for_dyld_shared_cache : Flag<["-"], "not_for_dyld_shared_cache">,
      Group<grp_rare>;
 def mllvm : Separate<["-"], "mllvm">,
      HelpText<"Options to pass to LLVM">,
-     Flags<[HelpHidden]>,
+     Group<grp_rare>;
+def mcpu : Separate<["-"], "mcpu">,
+     HelpText<"Processor family target for LTO code generation">,
      Group<grp_rare>;
 
 def grp_deprecated : OptionGroup<"deprecated">, HelpText<"DEPRECATED">;
@@ -1092,9 +1159,7 @@ def debug_snapshot : Flag<["-"], "debug_snapshot">,
      Flags<[HelpHidden]>,
      Group<grp_undocumented>;
 def demangle : Flag<["-"], "demangle">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
+     HelpText<"Demangle symbol names in diagnostics">;
 def dyld_env : Flag<["-"], "dyld_env">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
@@ -1187,24 +1252,6 @@ def kexts_use_stubs : Flag<["-"], "kexts_use_stubs">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
      Group<grp_undocumented>;
-def maccatalyst_version_min : Flag<["-"], "maccatalyst_version_min">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
-def iosmac_version_min : Flag<["-"], "iosmac_version_min">,
-     Alias<maccatalyst_version_min>,
-     HelpText<"Alias for -maccatalyst_version_min">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
-def uikitformac_version_min : Flag<["-"], "uikitformac_version_min">,
-     Alias<maccatalyst_version_min>,
-     HelpText<"Alias for -maccatalyst_version_min">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
-def mcpu : Flag<["-"], "mcpu">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
 def no_compact_unwind : Flag<["-"], "no_compact_unwind">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
@@ -1233,10 +1280,6 @@ def random_uuid : Flag<["-"], "random_uuid">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
      Group<grp_undocumented>;
-def save_temps : Flag<["-"], "save-temps">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
 def simulator_support : Flag<["-"], "simulator_support">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
@@ -1254,10 +1297,6 @@ def text_exec : Flag<["-"], "text_exec">,
      Flags<[HelpHidden]>,
      Group<grp_undocumented>;
 def threaded_starts_section : Flag<["-"], "threaded_starts_section">,
-     HelpText<"This option is undocumented in ld64">,
-     Flags<[HelpHidden]>,
-     Group<grp_undocumented>;
-def twolevel_namespace : Flag<["-"], "twolevel_namespace">,
      HelpText<"This option is undocumented in ld64">,
      Flags<[HelpHidden]>,
      Group<grp_undocumented>;

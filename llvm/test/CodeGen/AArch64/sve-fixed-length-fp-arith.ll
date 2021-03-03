@@ -1,19 +1,19 @@
 ; RUN: llc -aarch64-sve-vector-bits-min=128  < %s | FileCheck %s -D#VBYTES=16  -check-prefix=NO_SVE
-; RUN: llc -aarch64-sve-vector-bits-min=256  < %s | FileCheck %s -D#VBYTES=32  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512,VBITS_LE_256
-; RUN: llc -aarch64-sve-vector-bits-min=384  < %s | FileCheck %s -D#VBYTES=32  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512,VBITS_LE_256
-; RUN: llc -aarch64-sve-vector-bits-min=512  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512
-; RUN: llc -aarch64-sve-vector-bits-min=640  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512
-; RUN: llc -aarch64-sve-vector-bits-min=768  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512
-; RUN: llc -aarch64-sve-vector-bits-min=896  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_1024,VBITS_LE_512
-; RUN: llc -aarch64-sve-vector-bits-min=1024 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1152 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1280 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1408 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1536 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1664 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1792 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=1920 < %s | FileCheck %s -D#VBYTES=128 -check-prefixes=CHECK,VBITS_LE_1024
-; RUN: llc -aarch64-sve-vector-bits-min=2048 < %s | FileCheck %s -D#VBYTES=256 -check-prefixes=CHECK
+; RUN: llc -aarch64-sve-vector-bits-min=256  < %s | FileCheck %s -D#VBYTES=32  -check-prefixes=CHECK,VBITS_LE_512,VBITS_LE_256
+; RUN: llc -aarch64-sve-vector-bits-min=384  < %s | FileCheck %s -D#VBYTES=32  -check-prefixes=CHECK,VBITS_LE_512,VBITS_LE_256
+; RUN: llc -aarch64-sve-vector-bits-min=512  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_512
+; RUN: llc -aarch64-sve-vector-bits-min=640  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_512
+; RUN: llc -aarch64-sve-vector-bits-min=768  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_512
+; RUN: llc -aarch64-sve-vector-bits-min=896  < %s | FileCheck %s -D#VBYTES=64  -check-prefixes=CHECK,VBITS_LE_512
+; RUN: llc -aarch64-sve-vector-bits-min=1024 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1152 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1280 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1408 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1536 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1664 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1792 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=1920 < %s | FileCheck %s -D#VBYTES=128
+; RUN: llc -aarch64-sve-vector-bits-min=2048 < %s | FileCheck %s -D#VBYTES=256
 
 ; VBYTES represents the useful byte size of a vector register from the code
 ; generator's point of view. It is clamped to power-of-2 values because
@@ -572,8 +572,8 @@ define void @fma_v16f16(<16 x half>* %a, <16 x half>* %b, <16 x half>* %c) #0 {
 ; CHECK-DAG: ld1h { [[OP1:z[0-9]+]].h }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1h { [[OP2:z[0-9]+]].h }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1h { [[OP3:z[0-9]+]].h }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].h, [[PG]]/m, [[OP1]].h, [[OP2]].h
-; CHECK: st1h { [[OP3]].h }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].h, [[PG]]/m, [[OP2]].h, [[OP3]].h
+; CHECK: st1h { [[OP1]].h }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <16 x half>, <16 x half>* %a
   %op2 = load <16 x half>, <16 x half>* %b
@@ -589,8 +589,8 @@ define void @fma_v32f16(<32 x half>* %a, <32 x half>* %b, <32 x half>* %c) #0 {
 ; CHECK-DAG: ld1h { [[OP1:z[0-9]+]].h }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1h { [[OP2:z[0-9]+]].h }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1h { [[OP3:z[0-9]+]].h }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].h, [[PG]]/m, [[OP1]].h, [[OP2]].h
-; CHECK: st1h { [[OP3]].h }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].h, [[PG]]/m, [[OP2]].h, [[OP3]].h
+; CHECK: st1h { [[OP1]].h }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <32 x half>, <32 x half>* %a
   %op2 = load <32 x half>, <32 x half>* %b
@@ -606,8 +606,8 @@ define void @fma_v64f16(<64 x half>* %a, <64 x half>* %b, <64 x half>* %c) #0 {
 ; CHECK-DAG: ld1h { [[OP1:z[0-9]+]].h }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1h { [[OP2:z[0-9]+]].h }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1h { [[OP3:z[0-9]+]].h }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].h, [[PG]]/m, [[OP1]].h, [[OP2]].h
-; CHECK: st1h { [[OP3]].h }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].h, [[PG]]/m, [[OP2]].h, [[OP3]].h
+; CHECK: st1h { [[OP1]].h }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <64 x half>, <64 x half>* %a
   %op2 = load <64 x half>, <64 x half>* %b
@@ -623,8 +623,8 @@ define void @fma_v128f16(<128 x half>* %a, <128 x half>* %b, <128 x half>* %c) #
 ; CHECK-DAG: ld1h { [[OP1:z[0-9]+]].h }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1h { [[OP2:z[0-9]+]].h }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1h { [[OP3:z[0-9]+]].h }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].h, [[PG]]/m, [[OP1]].h, [[OP2]].h
-; CHECK: st1h { [[OP3]].h }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].h, [[PG]]/m, [[OP2]].h, [[OP3]].h
+; CHECK: st1h { [[OP1]].h }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <128 x half>, <128 x half>* %a
   %op2 = load <128 x half>, <128 x half>* %b
@@ -658,8 +658,8 @@ define void @fma_v8f32(<8 x float>* %a, <8 x float>* %b, <8 x float>* %c) #0 {
 ; CHECK-DAG: ld1w { [[OP1:z[0-9]+]].s }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1w { [[OP2:z[0-9]+]].s }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1w { [[OP3:z[0-9]+]].s }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].s, [[PG]]/m, [[OP1]].s, [[OP2]].s
-; CHECK: st1w { [[OP3]].s }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].s, [[PG]]/m, [[OP2]].s, [[OP3]].s
+; CHECK: st1w { [[OP1]].s }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <8 x float>, <8 x float>* %a
   %op2 = load <8 x float>, <8 x float>* %b
@@ -675,8 +675,8 @@ define void @fma_v16f32(<16 x float>* %a, <16 x float>* %b, <16 x float>* %c) #0
 ; CHECK-DAG: ld1w { [[OP1:z[0-9]+]].s }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1w { [[OP2:z[0-9]+]].s }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1w { [[OP3:z[0-9]+]].s }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].s, [[PG]]/m, [[OP1]].s, [[OP2]].s
-; CHECK: st1w { [[OP3]].s }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].s, [[PG]]/m, [[OP2]].s, [[OP3]].s
+; CHECK: st1w { [[OP1]].s }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <16 x float>, <16 x float>* %a
   %op2 = load <16 x float>, <16 x float>* %b
@@ -692,8 +692,8 @@ define void @fma_v32f32(<32 x float>* %a, <32 x float>* %b, <32 x float>* %c) #0
 ; CHECK-DAG: ld1w { [[OP1:z[0-9]+]].s }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1w { [[OP2:z[0-9]+]].s }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1w { [[OP3:z[0-9]+]].s }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].s, [[PG]]/m, [[OP1]].s, [[OP2]].s
-; CHECK: st1w { [[OP3]].s }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].s, [[PG]]/m, [[OP2]].s, [[OP3]].s
+; CHECK: st1w { [[OP1]].s }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <32 x float>, <32 x float>* %a
   %op2 = load <32 x float>, <32 x float>* %b
@@ -709,8 +709,8 @@ define void @fma_v64f32(<64 x float>* %a, <64 x float>* %b, <64 x float>* %c) #0
 ; CHECK-DAG: ld1w { [[OP1:z[0-9]+]].s }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1w { [[OP2:z[0-9]+]].s }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1w { [[OP3:z[0-9]+]].s }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].s, [[PG]]/m, [[OP1]].s, [[OP2]].s
-; CHECK: st1w { [[OP3]].s }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].s, [[PG]]/m, [[OP2]].s, [[OP3]].s
+; CHECK: st1w { [[OP1]].s }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <64 x float>, <64 x float>* %a
   %op2 = load <64 x float>, <64 x float>* %b
@@ -744,8 +744,8 @@ define void @fma_v4f64(<4 x double>* %a, <4 x double>* %b, <4 x double>* %c) #0 
 ; CHECK-DAG: ld1d { [[OP1:z[0-9]+]].d }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1d { [[OP2:z[0-9]+]].d }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1d { [[OP3:z[0-9]+]].d }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].d, [[PG]]/m, [[OP1]].d, [[OP2]].d
-; CHECK: st1d { [[OP3]].d }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].d, [[PG]]/m, [[OP2]].d, [[OP3]].d
+; CHECK: st1d { [[OP1]].d }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <4 x double>, <4 x double>* %a
   %op2 = load <4 x double>, <4 x double>* %b
@@ -761,8 +761,8 @@ define void @fma_v8f64(<8 x double>* %a, <8 x double>* %b, <8 x double>* %c) #0 
 ; CHECK-DAG: ld1d { [[OP1:z[0-9]+]].d }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1d { [[OP2:z[0-9]+]].d }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1d { [[OP3:z[0-9]+]].d }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].d, [[PG]]/m, [[OP1]].d, [[OP2]].d
-; CHECK: st1d { [[OP3]].d }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].d, [[PG]]/m, [[OP2]].d, [[OP3]].d
+; CHECK: st1d { [[OP1]].d }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <8 x double>, <8 x double>* %a
   %op2 = load <8 x double>, <8 x double>* %b
@@ -778,8 +778,8 @@ define void @fma_v16f64(<16 x double>* %a, <16 x double>* %b, <16 x double>* %c)
 ; CHECK-DAG: ld1d { [[OP1:z[0-9]+]].d }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1d { [[OP2:z[0-9]+]].d }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1d { [[OP3:z[0-9]+]].d }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].d, [[PG]]/m, [[OP1]].d, [[OP2]].d
-; CHECK: st1d { [[OP3]].d }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].d, [[PG]]/m, [[OP2]].d, [[OP3]].d
+; CHECK: st1d { [[OP1]].d }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <16 x double>, <16 x double>* %a
   %op2 = load <16 x double>, <16 x double>* %b
@@ -795,8 +795,8 @@ define void @fma_v32f64(<32 x double>* %a, <32 x double>* %b, <32 x double>* %c)
 ; CHECK-DAG: ld1d { [[OP1:z[0-9]+]].d }, [[PG]]/z, [x0]
 ; CHECK-DAG: ld1d { [[OP2:z[0-9]+]].d }, [[PG]]/z, [x1]
 ; CHECK-DAG: ld1d { [[OP3:z[0-9]+]].d }, [[PG]]/z, [x2]
-; CHECK: fmla [[OP3]].d, [[PG]]/m, [[OP1]].d, [[OP2]].d
-; CHECK: st1d { [[OP3]].d }, [[PG]], [x0]
+; CHECK: fmad [[OP1]].d, [[PG]]/m, [[OP2]].d, [[OP3]].d
+; CHECK: st1d { [[OP1]].d }, [[PG]], [x0]
 ; CHECK: ret
   %op1 = load <32 x double>, <32 x double>* %a
   %op2 = load <32 x double>, <32 x double>* %b

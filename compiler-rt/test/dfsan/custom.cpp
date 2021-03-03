@@ -22,8 +22,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/epoll.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -116,6 +118,17 @@ void test_memcpy() {
   ASSERT_LABEL(str2[3], i_label);
 }
 
+void test_memmove() {
+  char str[] = "str1xx";
+  dfsan_set_label(i_label, &str[3], 1);
+
+  ASSERT_ZERO_LABEL(memmove(str + 2, str, 4));
+  assert(0 == memcmp(str + 2, "str1", 4));
+  for (int i = 0; i <= 4; ++i)
+    ASSERT_ZERO_LABEL(str[i]);
+  ASSERT_LABEL(str[5], i_label);
+}
+
 void test_memset() {
   char buf[8];
   int j = 'a';
@@ -140,6 +153,27 @@ void test_strcmp() {
 #else
   ASSERT_LABEL(rv, i_j_label);
 #endif
+}
+
+void test_strcat() {
+  char src[] = "world";
+  char dst[] = "hello \0    ";
+  char *p = dst;
+  dfsan_set_label(k_label, &p, sizeof(p));
+  dfsan_set_label(i_label, src, sizeof(src));
+  dfsan_set_label(j_label, dst, sizeof(dst));
+  char *ret = strcat(p, src);
+  ASSERT_LABEL(ret, k_label);
+  assert(ret == dst);
+  assert(strcmp(src, dst + 6) == 0);
+  for (int i = 0; i < 6; ++i) {
+    ASSERT_LABEL(dst[i], j_label);
+  }
+  for (int i = 6; i < strlen(dst); ++i) {
+    ASSERT_LABEL(dst[i], i_label);
+    assert(dfsan_get_label(dst[i]) == dfsan_get_label(src[i - 6]));
+  }
+  ASSERT_LABEL(dst[11], j_label);
 }
 
 void test_strlen() {
@@ -333,6 +367,99 @@ void test_calloc() {
   crv = (char *) calloc(4096, 1);
   ASSERT_ZERO_LABEL(crv[0]);
   free(crv);
+}
+
+void test_recvmmsg() {
+  int sockfds[2];
+  int ret = socketpair(AF_UNIX, SOCK_DGRAM, 0, sockfds);
+  assert(ret != -1);
+
+  // Setup messages to send.
+  struct mmsghdr smmsg[2] = {};
+  char sbuf0[] = "abcdefghijkl";
+  struct iovec siov0[2] = {{&sbuf0[0], 4}, {&sbuf0[4], 4}};
+  smmsg[0].msg_hdr.msg_iov = siov0;
+  smmsg[0].msg_hdr.msg_iovlen = 2;
+  char sbuf1[] = "1234567890";
+  struct iovec siov1[1] = {{&sbuf1[0], 7}};
+  smmsg[1].msg_hdr.msg_iov = siov1;
+  smmsg[1].msg_hdr.msg_iovlen = 1;
+
+  // Send messages.
+  int sent_msgs = sendmmsg(sockfds[0], smmsg, 2, 0);
+  assert(sent_msgs == 2);
+
+  // Setup receive buffers.
+  struct mmsghdr rmmsg[2] = {};
+  char rbuf0[128];
+  struct iovec riov0[2] = {{&rbuf0[0], 4}, {&rbuf0[4], 4}};
+  rmmsg[0].msg_hdr.msg_iov = riov0;
+  rmmsg[0].msg_hdr.msg_iovlen = 2;
+  char rbuf1[128];
+  struct iovec riov1[1] = {{&rbuf1[0], 16}};
+  rmmsg[1].msg_hdr.msg_iov = riov1;
+  rmmsg[1].msg_hdr.msg_iovlen = 1;
+  struct timespec timeout = {1, 1};
+  dfsan_set_label(i_label, rbuf0, sizeof(rbuf0));
+  dfsan_set_label(i_label, rbuf1, sizeof(rbuf1));
+  dfsan_set_label(i_label, &rmmsg[0].msg_len, sizeof(rmmsg[0].msg_len));
+  dfsan_set_label(i_label, &rmmsg[1].msg_len, sizeof(rmmsg[1].msg_len));
+  dfsan_set_label(i_label, &timeout, sizeof(timeout));
+
+  // Receive messages and check labels.
+  int received_msgs = recvmmsg(sockfds[1], rmmsg, 2, 0, &timeout);
+  assert(received_msgs == sent_msgs);
+  assert(rmmsg[0].msg_len == smmsg[0].msg_len);
+  assert(rmmsg[1].msg_len == smmsg[1].msg_len);
+  assert(memcmp(sbuf0, rbuf0, 8) == 0);
+  assert(memcmp(sbuf1, rbuf1, 7) == 0);
+  ASSERT_ZERO_LABEL(received_msgs);
+  ASSERT_ZERO_LABEL(rmmsg[0].msg_len);
+  ASSERT_ZERO_LABEL(rmmsg[1].msg_len);
+  ASSERT_READ_ZERO_LABEL(&rbuf0[0], 8);
+  ASSERT_READ_LABEL(&rbuf0[8], 1, i_label);
+  ASSERT_READ_ZERO_LABEL(&rbuf1[0], 7);
+  ASSERT_READ_LABEL(&rbuf1[7], 1, i_label);
+  ASSERT_LABEL(timeout.tv_sec, i_label);
+  ASSERT_LABEL(timeout.tv_nsec, i_label);
+
+  close(sockfds[0]);
+  close(sockfds[1]);
+}
+
+void test_recvmsg() {
+  int sockfds[2];
+  int ret = socketpair(AF_UNIX, SOCK_DGRAM, 0, sockfds);
+  assert(ret != -1);
+
+  char sbuf[] = "abcdefghijkl";
+  struct iovec siovs[2] = {{&sbuf[0], 4}, {&sbuf[4], 4}};
+  struct msghdr smsg = {};
+  smsg.msg_iov = siovs;
+  smsg.msg_iovlen = 2;
+
+  ssize_t sent = sendmsg(sockfds[0], &smsg, 0);
+  assert(sent > 0);
+
+  char rbuf[128];
+  struct iovec riovs[2] = {{&rbuf[0], 4}, {&rbuf[4], 4}};
+  struct msghdr rmsg = {};
+  rmsg.msg_iov = riovs;
+  rmsg.msg_iovlen = 2;
+
+  dfsan_set_label(i_label, rbuf, sizeof(rbuf));
+  dfsan_set_label(i_label, &rmsg, sizeof(rmsg));
+
+  ssize_t received = recvmsg(sockfds[1], &rmsg, 0);
+  assert(received == sent);
+  assert(memcmp(sbuf, rbuf, 8) == 0);
+  ASSERT_ZERO_LABEL(received);
+  ASSERT_READ_ZERO_LABEL(&rmsg, sizeof(rmsg));
+  ASSERT_READ_ZERO_LABEL(&rbuf[0], 8);
+  ASSERT_READ_LABEL(&rbuf[8], 1, i_label);
+
+  close(sockfds[0]);
+  close(sockfds[1]);
 }
 
 void test_read() {
@@ -638,6 +765,46 @@ void test_getpwuid_r() {
   ASSERT_READ_ZERO_LABEL(&pwd, 4);
 }
 
+void test_epoll_wait() {
+  // Set up a pipe to monitor with epoll.
+  int pipe_fds[2];
+  int ret = pipe(pipe_fds);
+  assert(ret != -1);
+
+  // Configure epoll to monitor the pipe.
+  int epfd = epoll_create1(0);
+  assert(epfd != -1);
+  struct epoll_event event;
+  event.events = EPOLLIN;
+  event.data.fd = pipe_fds[0];
+  ret = epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fds[0], &event);
+  assert(ret != -1);
+
+  // Test epoll_wait when no events have occurred.
+  event = {};
+  dfsan_set_label(i_label, &event, sizeof(event));
+  ret = epoll_wait(epfd, &event, /*maxevents=*/1, /*timeout=*/0);
+  assert(ret == 0);
+  assert(event.events == 0);
+  assert(event.data.fd == 0);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_READ_LABEL(&event, sizeof(event), i_label);
+
+  // Test epoll_wait when an event occurs.
+  write(pipe_fds[1], "x", 1);
+  ret = epoll_wait(epfd, &event, /*maxevents=*/1, /*timeout=*/0);
+  assert(ret == 1);
+  assert(event.events == EPOLLIN);
+  assert(event.data.fd == pipe_fds[0]);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_READ_ZERO_LABEL(&event, sizeof(event));
+
+  // Clean up.
+  close(epfd);
+  close(pipe_fds[0]);
+  close(pipe_fds[1]);
+}
+
 void test_poll() {
   struct pollfd fd;
   fd.fd = 0;
@@ -677,12 +844,70 @@ void test_sigemptyset() {
   ASSERT_READ_ZERO_LABEL(&set, sizeof(set));
 }
 
+static void SignalHandler(int signo) {}
+
+static void SignalAction(int signo, siginfo_t *si, void *uc) {}
+
 void test_sigaction() {
-  struct sigaction oldact;
-  dfsan_set_label(j_label, &oldact, 1);
-  int ret = sigaction(SIGUSR1, NULL, &oldact);
+  struct sigaction newact_with_sigaction = {};
+  newact_with_sigaction.sa_flags = SA_SIGINFO;
+  newact_with_sigaction.sa_sigaction = SignalAction;
+
+  // Set sigaction to be SignalAction, save the last one into origin_act
+  struct sigaction origin_act;
+  dfsan_set_label(j_label, &origin_act, 1);
+  int ret = sigaction(SIGUSR1, &newact_with_sigaction, &origin_act);
   assert(ret == 0);
-  ASSERT_READ_ZERO_LABEL(&oldact, sizeof(oldact));
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_READ_ZERO_LABEL(&origin_act, sizeof(origin_act));
+
+  struct sigaction newact_with_sighandler = {};
+  newact_with_sighandler.sa_handler = SignalHandler;
+
+  // Set sigaction to be SignalHandler, check the last one is SignalAction
+  struct sigaction oldact;
+  assert(0 == sigaction(SIGUSR1, &newact_with_sighandler, &oldact));
+  assert(oldact.sa_sigaction == SignalAction);
+  assert(oldact.sa_flags & SA_SIGINFO);
+
+  // Set SIG_IGN or SIG_DFL, and check the previous one is expected.
+  newact_with_sighandler.sa_handler = SIG_IGN;
+  assert(0 == sigaction(SIGUSR1, &newact_with_sighandler, &oldact));
+  assert(oldact.sa_handler == SignalHandler);
+  assert((oldact.sa_flags & SA_SIGINFO) == 0);
+
+  newact_with_sighandler.sa_handler = SIG_DFL;
+  assert(0 == sigaction(SIGUSR1, &newact_with_sighandler, &oldact));
+  assert(oldact.sa_handler == SIG_IGN);
+  assert((oldact.sa_flags & SA_SIGINFO) == 0);
+
+  // Restore sigaction to the orginal setting, check the last one is SignalHandler
+  assert(0 == sigaction(SIGUSR1, &origin_act, &oldact));
+  assert(oldact.sa_handler == SIG_DFL);
+  assert((oldact.sa_flags & SA_SIGINFO) == 0);
+}
+
+void test_signal() {
+  // Set signal to be SignalHandler, save the previous one into
+  // old_signal_handler.
+  sighandler_t old_signal_handler = signal(SIGHUP, SignalHandler);
+  ASSERT_ZERO_LABEL(old_signal_handler);
+
+  // Set SIG_IGN or SIG_DFL, and check the previous one is expected.
+  assert(SignalHandler == signal(SIGHUP, SIG_DFL));
+  assert(SIG_DFL == signal(SIGHUP, SIG_IGN));
+
+  // Restore signal to old_signal_handler.
+  assert(SIG_IGN == signal(SIGHUP, old_signal_handler));
+}
+
+void test_sigaltstack() {
+  stack_t old_altstack = {};
+  dfsan_set_label(j_label, &old_altstack, sizeof(old_altstack));
+  int ret = sigaltstack(NULL, &old_altstack);
+  assert(ret == 0);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_READ_ZERO_LABEL(&old_altstack, sizeof(old_altstack));
 }
 
 void test_gettimeofday() {
@@ -706,9 +931,17 @@ void test_pthread_create() {
   pthread_t pt;
   pthread_create(&pt, 0, pthread_create_test_cb, (void *)1);
   void *cbrv;
-  pthread_join(pt, &cbrv);
+  dfsan_set_label(i_label, &cbrv, sizeof(cbrv));
+  int ret = pthread_join(pt, &cbrv);
+  assert(ret == 0);
   assert(cbrv == (void *)2);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_ZERO_LABEL(cbrv);
 }
+
+// Tested by test_pthread_create().  This empty function is here to appease the
+// check-wrappers script.
+void test_pthread_join() {}
 
 int dl_iterate_phdr_test_cb(struct dl_phdr_info *info, size_t size,
                             void *data) {
@@ -721,6 +954,22 @@ int dl_iterate_phdr_test_cb(struct dl_phdr_info *info, size_t size,
 
 void test_dl_iterate_phdr() {
   dl_iterate_phdr(dl_iterate_phdr_test_cb, (void *)3);
+}
+
+// On glibc < 2.27, this symbol is not available.  Mark it weak so we can skip
+// testing in this case.
+__attribute__((weak)) extern "C" void _dl_get_tls_static_info(size_t *sizep,
+                                                              size_t *alignp);
+
+void test__dl_get_tls_static_info() {
+  if (!_dl_get_tls_static_info)
+    return;
+  size_t sizep = 0, alignp = 0;
+  dfsan_set_label(i_label, &sizep, sizeof(sizep));
+  dfsan_set_label(i_label, &alignp, sizeof(alignp));
+  _dl_get_tls_static_info(&sizep, &alignp);
+  ASSERT_ZERO_LABEL(sizep);
+  ASSERT_ZERO_LABEL(alignp);
 }
 
 void test_strrchr() {
@@ -852,6 +1101,69 @@ void test_socketpair() {
   assert(rv == 0);
   ASSERT_ZERO_LABEL(rv);
   ASSERT_READ_ZERO_LABEL(fd, sizeof(fd));
+}
+
+void test_getpeername() {
+  int sockfds[2];
+  int ret = socketpair(AF_UNIX, SOCK_DGRAM, 0, sockfds);
+  assert(ret != -1);
+
+  struct sockaddr addr = {};
+  socklen_t addrlen = sizeof(addr);
+  dfsan_set_label(i_label, &addr, addrlen);
+  dfsan_set_label(i_label, &addrlen, sizeof(addrlen));
+
+  ret = getpeername(sockfds[0], &addr, &addrlen);
+  assert(ret != -1);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_ZERO_LABEL(addrlen);
+  assert(addrlen < sizeof(addr));
+  ASSERT_READ_ZERO_LABEL(&addr, addrlen);
+  ASSERT_READ_LABEL(((char *)&addr) + addrlen, 1, i_label);
+
+  close(sockfds[0]);
+  close(sockfds[1]);
+}
+
+void test_getsockname() {
+  int sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+  assert(sockfd != -1);
+
+  struct sockaddr addr = {};
+  socklen_t addrlen = sizeof(addr);
+  dfsan_set_label(i_label, &addr, addrlen);
+  dfsan_set_label(i_label, &addrlen, sizeof(addrlen));
+
+  int ret = getsockname(sockfd, &addr, &addrlen);
+  assert(ret != -1);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_ZERO_LABEL(addrlen);
+  assert(addrlen < sizeof(addr));
+  ASSERT_READ_ZERO_LABEL(&addr, addrlen);
+  ASSERT_READ_LABEL(((char *)&addr) + addrlen, 1, i_label);
+
+  close(sockfd);
+}
+
+void test_getsockopt() {
+  int sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+  assert(sockfd != -1);
+
+  int optval[2] = {-1, -1};
+  socklen_t optlen = sizeof(optval);
+  dfsan_set_label(i_label, &optval, sizeof(optval));
+  dfsan_set_label(i_label, &optlen, sizeof(optlen));
+  int ret = getsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, &optlen);
+  assert(ret != -1);
+  assert(optlen == sizeof(int));
+  assert(optval[0] == 0);
+  assert(optval[1] == -1);
+  ASSERT_ZERO_LABEL(ret);
+  ASSERT_ZERO_LABEL(optlen);
+  ASSERT_ZERO_LABEL(optval[0]);
+  ASSERT_LABEL(optval[1], i_label);
+
+  close(sockfd);
 }
 
 void test_write() {
@@ -1020,6 +1332,7 @@ int main(void) {
   assert(i_j_label != j_label);
   assert(i_j_label != k_label);
 
+  test__dl_get_tls_static_info();
   test_bcmp();
   test_calloc();
   test_clock_gettime();
@@ -1027,29 +1340,39 @@ int main(void) {
   test_dfsan_set_write_callback();
   test_dl_iterate_phdr();
   test_dlopen();
+  test_epoll_wait();
   test_fgets();
   test_fstat();
   test_get_current_dir_name();
   test_getcwd();
   test_gethostname();
+  test_getpeername();
   test_getpwuid_r();
   test_getrlimit();
   test_getrusage();
+  test_getsockname();
+  test_getsockopt();
   test_gettimeofday();
   test_inet_pton();
   test_localtime_r();
   test_memchr();
   test_memcmp();
   test_memcpy();
+  test_memmove();
   test_memset();
   test_nanosleep();
   test_poll();
   test_pread();
   test_pthread_create();
+  test_pthread_join();
   test_read();
+  test_recvmmsg();
+  test_recvmsg();
   test_sched_getaffinity();
   test_select();
   test_sigaction();
+  test_signal();
+  test_sigaltstack();
   test_sigemptyset();
   test_snprintf();
   test_socketpair();
@@ -1058,6 +1381,7 @@ int main(void) {
   test_strcasecmp();
   test_strchr();
   test_strcmp();
+  test_strcat();
   test_strcpy();
   test_strdup();
   test_strlen();

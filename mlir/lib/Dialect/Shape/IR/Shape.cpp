@@ -9,11 +9,12 @@
 #include "mlir/Dialect/Shape/IR/Shape.h"
 
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Traits.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -31,10 +32,9 @@ RankedTensorType shape::getExtentTensorType(MLIRContext *ctx) {
 }
 
 static bool isErrorPropagationPossible(TypeRange operandTypes) {
-  for (Type ty : operandTypes)
-    if (ty.isa<SizeType>() || ty.isa<ShapeType>() || ty.isa<ValueShapeType>())
-      return true;
-  return false;
+  return llvm::any_of(operandTypes, [](Type ty) {
+    return ty.isa<SizeType, ShapeType, ValueShapeType>();
+  });
 }
 
 static LogicalResult verifySizeOrIndexOp(Operation *op) {
@@ -92,8 +92,7 @@ void ShapeDialect::initialize() {
 #define GET_OP_LIST
 #include "mlir/Dialect/Shape/IR/ShapeOps.cpp.inc"
       >();
-  addTypes<ComponentType, ElementType, ShapeType, SizeType, ValueShapeType,
-           WitnessType>();
+  addTypes<ShapeType, SizeType, ValueShapeType, WitnessType>();
   addInterfaces<ShapeInlinerInterface>();
   // Allow unknown operations during prototyping and testing. As the dialect is
   // still evolving it makes it simple to start with an unregistered ops and
@@ -112,7 +111,7 @@ Operation *ShapeDialect::materializeConstant(OpBuilder &builder,
     return builder.create<ConstSizeOp>(loc, type, value.cast<IntegerAttr>());
   if (type.isa<WitnessType>())
     return builder.create<ConstWitnessOp>(loc, type, value.cast<BoolAttr>());
-  if (type.isa<IndexType>())
+  if (ConstantOp::isBuildableWith(value, type))
     return builder.create<ConstantOp>(loc, type, value);
   return nullptr;
 }
@@ -123,10 +122,6 @@ Type ShapeDialect::parseType(DialectAsmParser &parser) const {
   if (parser.parseKeyword(&keyword))
     return Type();
 
-  if (keyword == "component")
-    return ComponentType::get(getContext());
-  if (keyword == "element")
-    return ElementType::get(getContext());
   if (keyword == "shape")
     return ShapeType::get(getContext());
   if (keyword == "size")
@@ -143,13 +138,61 @@ Type ShapeDialect::parseType(DialectAsmParser &parser) const {
 /// Print a type registered to this dialect.
 void ShapeDialect::printType(Type type, DialectAsmPrinter &os) const {
   TypeSwitch<Type>(type)
-      .Case<ComponentType>([&](Type) { os << "component"; })
-      .Case<ElementType>([&](Type) { os << "element"; })
       .Case<ShapeType>([&](Type) { os << "shape"; })
       .Case<SizeType>([&](Type) { os << "size"; })
       .Case<ValueShapeType>([&](Type) { os << "value_shape"; })
       .Case<WitnessType>([&](Type) { os << "witness"; })
       .Default([](Type) { llvm_unreachable("unexpected 'shape' type kind"); });
+}
+
+LogicalResult ShapeDialect::verifyOperationAttribute(Operation *op,
+                                                     NamedAttribute attribute) {
+  // Verify shape.lib attribute.
+  if (attribute.first == "shape.lib") {
+    if (!op->hasTrait<OpTrait::SymbolTable>())
+      return op->emitError(
+          "shape.lib attribute may only be on op implementing SymbolTable");
+
+    if (auto symbolRef = attribute.second.dyn_cast<SymbolRefAttr>()) {
+      auto *symbol = SymbolTable::lookupSymbolIn(op, symbolRef);
+      if (!symbol)
+        return op->emitError("shape function library ")
+               << symbolRef << " not found";
+      return isa<shape::FunctionLibraryOp>(symbol)
+                 ? success()
+                 : op->emitError()
+                       << symbolRef << " required to be shape function library";
+    }
+
+    if (auto arr = attribute.second.dyn_cast<ArrayAttr>()) {
+      // Verify all entries are function libraries and mappings in libraries
+      // refer to unique ops.
+      DenseSet<Identifier> key;
+      for (auto it : arr) {
+        if (!it.isa<SymbolRefAttr>())
+          return op->emitError(
+              "only SymbolRefAttr allowed in shape.lib attribute array");
+
+        auto shapeFnLib = dyn_cast<shape::FunctionLibraryOp>(
+            SymbolTable::lookupSymbolIn(op, it.cast<SymbolRefAttr>()));
+        if (!shapeFnLib)
+          return op->emitError()
+                 << it << " does not refer to FunctionLibraryOp";
+        for (auto mapping : shapeFnLib.mapping()) {
+          if (!key.insert(mapping.first).second) {
+            return op->emitError("only one op to shape mapping allowed, found "
+                                 "multiple for `")
+                   << mapping.first << "`";
+          }
+        }
+      }
+      return success();
+    }
+
+    return op->emitError("only SymbolRefAttr or array of SymbolRefAttrs "
+                         "allowed as shape.lib attribute");
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -207,7 +250,7 @@ static void print(OpAsmPrinter &p, AssumingOp op) {
   p.printRegion(op.doRegion(),
                 /*printEntryBlockArgs=*/false,
                 /*printBlockTerminators=*/yieldsResults);
-  p.printOptionalAttrDict(op.getAttrs());
+  p.printOptionalAttrDict(op->getAttrs());
 }
 
 namespace {
@@ -271,6 +314,12 @@ void AssumingOp::inlineRegionIntoParent(AssumingOp &op,
 //===----------------------------------------------------------------------===//
 // AssumingAllOp
 //===----------------------------------------------------------------------===//
+
+void AssumingAllOp::getCanonicalizationPatterns(
+    OwningRewritePatternList &patterns, MLIRContext *context) {
+  patterns.insert<AssumingAllOneOp>(context);
+}
+
 OpFoldResult AssumingAllOp::fold(ArrayRef<Attribute> operands) {
   // Iterate in reverse to first handle all constant operands. They are
   // guaranteed to be the tail of the inputs because this is commutative.
@@ -289,7 +338,7 @@ OpFoldResult AssumingAllOp::fold(ArrayRef<Attribute> operands) {
       return a;
   }
   // If this is reached, all inputs were statically known passing.
-  return BoolAttr::get(true, getContext());
+  return BoolAttr::get(getContext(), true);
 }
 
 static LogicalResult verify(AssumingAllOp op) {
@@ -308,10 +357,14 @@ OpFoldResult BroadcastOp::fold(ArrayRef<Attribute> operands) {
   if (!operands[1])
     return nullptr;
 
+  // TODO: Support folding with more than 2 input shapes
+  if (shapes().size() > 2)
+    return nullptr;
+
   auto rhsShape = llvm::to_vector<6>(
       operands[1].cast<DenseIntElementsAttr>().getValues<int64_t>());
   if (rhsShape.empty())
-    return lhs();
+    return shapes()[0];
 
   if (!operands[0])
     return nullptr;
@@ -319,7 +372,7 @@ OpFoldResult BroadcastOp::fold(ArrayRef<Attribute> operands) {
   auto lhsShape = llvm::to_vector<6>(
       operands[0].cast<DenseIntElementsAttr>().getValues<int64_t>());
   if (lhsShape.empty())
-    return rhs();
+    return shapes()[1];
 
   SmallVector<int64_t, 6> resultShape;
   // If the shapes are not compatible, we can't fold it.
@@ -328,6 +381,14 @@ OpFoldResult BroadcastOp::fold(ArrayRef<Attribute> operands) {
     return nullptr;
   Builder builder(getContext());
   return builder.getIndexTensorAttr(resultShape);
+}
+
+static LogicalResult verify(BroadcastOp op) {
+  // Ensure that AssumingAllOp contains at least one operand
+  if (op.getNumOperands() < 2)
+    return op.emitOpError("required at least 2 input shapes");
+
+  return verifyShapeOrExtentTensorOp(op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -354,7 +415,7 @@ OpFoldResult ConcatOp::fold(ArrayRef<Attribute> operands) {
 
 static void print(OpAsmPrinter &p, ConstShapeOp &op) {
   p << "shape.const_shape ";
-  p.printOptionalAttrDict(op.getAttrs(), /*elidedAttrs=*/{"shape"});
+  p.printOptionalAttrDict(op->getAttrs(), /*elidedAttrs=*/{"shape"});
   p << "[";
   interleaveComma(op.shape().getValues<int64_t>(), p,
                   [&](int64_t i) { p << i; });
@@ -394,6 +455,11 @@ static ParseResult parseConstShapeOp(OpAsmParser &parser,
 
 OpFoldResult ConstShapeOp::fold(ArrayRef<Attribute>) { return shapeAttr(); }
 
+void ConstShapeOp::getCanonicalizationPatterns(
+    OwningRewritePatternList &patterns, MLIRContext *context) {
+  patterns.insert<TensorCastConstShape>(context);
+}
+
 //===----------------------------------------------------------------------===//
 // CstrBroadcastableOp
 //===----------------------------------------------------------------------===//
@@ -424,39 +490,60 @@ void CstrBroadcastableOp::getCanonicalizationPatterns(
   patterns.insert<CstrBroadcastableEqOps>(context);
 }
 
-OpFoldResult CstrBroadcastableOp::fold(ArrayRef<Attribute> operands) {
-  // Both operands are not needed if one is a scalar.
-  if (operands[0] &&
-      operands[0].cast<DenseIntElementsAttr>().getNumElements() == 0)
-    return BoolAttr::get(true, getContext());
-  if (operands[1] &&
-      operands[1].cast<DenseIntElementsAttr>().getNumElements() == 0)
-    return BoolAttr::get(true, getContext());
-
-  if (operands[0] && operands[1]) {
-    auto lhsShape = llvm::to_vector<6>(
-        operands[0].cast<DenseIntElementsAttr>().getValues<int64_t>());
-    auto rhsShape = llvm::to_vector<6>(
-        operands[1].cast<DenseIntElementsAttr>().getValues<int64_t>());
-    SmallVector<int64_t, 6> resultShape;
-    if (OpTrait::util::staticallyKnownBroadcastable(lhsShape, rhsShape))
-      return BoolAttr::get(true, getContext());
+// Return true if there is exactly one attribute not representing a scalar
+// broadcast.
+static bool hasAtMostSingleNonScalar(ArrayRef<Attribute> attributes) {
+  bool nonScalarSeen = false;
+  for (Attribute a : attributes) {
+    if (!a || a.cast<DenseIntElementsAttr>().getNumElements() != 0) {
+      if (nonScalarSeen)
+        return false;
+      nonScalarSeen = true;
+    }
   }
+  return true;
+}
+
+OpFoldResult CstrBroadcastableOp::fold(ArrayRef<Attribute> operands) {
+  // No broadcasting is needed if all operands but one are scalar.
+  if (hasAtMostSingleNonScalar(operands))
+    return BoolAttr::get(getContext(), true);
+
+  if ([&] {
+        SmallVector<SmallVector<int64_t, 6>, 6> extents;
+        for (const auto &operand : operands) {
+          if (!operand)
+            return false;
+          extents.push_back(llvm::to_vector<6>(
+              operand.cast<DenseIntElementsAttr>().getValues<int64_t>()));
+        }
+        return OpTrait::util::staticallyKnownBroadcastable(extents);
+      }())
+    return BoolAttr::get(getContext(), true);
 
   // Lastly, see if folding can be completed based on what constraints are known
   // on the input shapes.
-  SmallVector<int64_t, 6> lhsShape, rhsShape;
-  if (failed(getShapeVec(lhs(), lhsShape)))
-    return nullptr;
-  if (failed(getShapeVec(rhs(), rhsShape)))
-    return nullptr;
-
-  if (OpTrait::util::staticallyKnownBroadcastable(lhsShape, rhsShape))
-    return BoolAttr::get(true, getContext());
+  if ([&] {
+        SmallVector<SmallVector<int64_t, 6>, 6> extents;
+        for (const auto &shape : shapes()) {
+          extents.emplace_back();
+          if (failed(getShapeVec(shape, extents.back())))
+            return false;
+        }
+        return OpTrait::util::staticallyKnownBroadcastable(extents);
+      }())
+    return BoolAttr::get(getContext(), true);
 
   // Because a failing witness result here represents an eventual assertion
   // failure, we do not replace it with a constant witness.
   return nullptr;
+}
+
+static LogicalResult verify(CstrBroadcastableOp op) {
+  // Ensure that AssumingAllOp contains at least one operand
+  if (op.getNumOperands() < 2)
+    return op.emitOpError("required at least 2 input shapes");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -472,7 +559,7 @@ void CstrEqOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
 OpFoldResult CstrEqOp::fold(ArrayRef<Attribute> operands) {
   if (llvm::all_of(operands,
                    [&](Attribute a) { return a && a == operands[0]; }))
-    return BoolAttr::get(true, getContext());
+    return BoolAttr::get(getContext(), true);
 
   // Because a failing witness result here represents an eventual assertion
   // failure, we do not try to replace it with a constant witness. Similarly, we
@@ -514,17 +601,43 @@ OpFoldResult CstrRequireOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// DivOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult DivOp::fold(ArrayRef<Attribute> operands) {
+  auto lhs = operands[0].dyn_cast_or_null<IntegerAttr>();
+  if (!lhs)
+    return nullptr;
+  auto rhs = operands[1].dyn_cast_or_null<IntegerAttr>();
+  if (!rhs)
+    return nullptr;
+
+  // Division in APInt does not follow floor(lhs, rhs) when the result is
+  // negative. Rather, APInt rounds toward zero.
+  APInt quotient, remainder;
+  APInt::sdivrem(lhs.getValue(), rhs.getValue(), quotient, remainder);
+  if (quotient.isNegative() && !remainder.isNullValue()) {
+    quotient -= 1;
+  }
+
+  Type indexTy = IndexType::get(getContext());
+  return IntegerAttr::get(indexTy, quotient);
+}
+
+//===----------------------------------------------------------------------===//
 // ShapeEqOp
 //===----------------------------------------------------------------------===//
 
 OpFoldResult ShapeEqOp::fold(ArrayRef<Attribute> operands) {
+  if (lhs() == rhs())
+    return BoolAttr::get(getContext(), true);
   auto lhs = operands[0].dyn_cast_or_null<DenseIntElementsAttr>();
   if (lhs == nullptr)
     return {};
   auto rhs = operands[1].dyn_cast_or_null<DenseIntElementsAttr>();
   if (rhs == nullptr)
     return {};
-  return BoolAttr::get(lhs == rhs, getContext());
+  return BoolAttr::get(getContext(), lhs == rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -556,6 +669,65 @@ OpFoldResult FromExtentsOp::fold(ArrayRef<Attribute> operands) {
     extents.push_back(attr.cast<IntegerAttr>().getInt());
   Builder builder(getContext());
   return builder.getIndexTensorAttr(extents);
+}
+
+//===----------------------------------------------------------------------===//
+// FunctionLibraryOp
+//===----------------------------------------------------------------------===//
+
+void FunctionLibraryOp::build(OpBuilder &builder, OperationState &result,
+                              StringRef name) {
+  ensureTerminator(*result.addRegion(), builder, result.location);
+  result.attributes.push_back(builder.getNamedAttr(
+      ::mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(name)));
+}
+
+FuncOp FunctionLibraryOp::getShapeFunction(Operation *op) {
+  auto attr = mapping()
+                  .get(op->getName().getIdentifier())
+                  .dyn_cast_or_null<FlatSymbolRefAttr>();
+  if (!attr)
+    return nullptr;
+  return lookupSymbol<FuncOp>(attr);
+}
+
+ParseResult parseFunctionLibraryOp(OpAsmParser &parser,
+                                   OperationState &result) {
+  // Parse the op name.
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, ::mlir::SymbolTable::getSymbolAttrName(),
+                             result.attributes))
+    return failure();
+
+  if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
+    return failure();
+
+  auto *bodyRegion = result.addRegion();
+  if (parser.parseRegion(*bodyRegion))
+    return failure();
+
+  FunctionLibraryOp::ensureTerminator(*bodyRegion, parser.getBuilder(),
+                                      result.location);
+  if (parser.parseKeyword("mapping"))
+    return failure();
+
+  DictionaryAttr mappingAttr;
+  if (parser.parseAttribute(mappingAttr,
+                            parser.getBuilder().getType<NoneType>(), "mapping",
+                            result.attributes))
+    return failure();
+  return success();
+}
+
+void print(OpAsmPrinter &p, FunctionLibraryOp op) {
+  p << op.getOperationName() << ' ';
+  p.printSymbolName(op.getName());
+  p.printOptionalAttrDictWithKeyword(
+      op->getAttrs(), {SymbolTable::getSymbolAttrName(), "mapping"});
+  p.printRegion(op.getOperation()->getRegion(0), /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/false);
+  p << " mapping ";
+  p.printAttributeWithoutType(op.mappingAttr());
 }
 
 //===----------------------------------------------------------------------===//
@@ -594,6 +766,17 @@ void GetExtentOp::build(OpBuilder &builder, OperationState &result, Value shape,
         builder.create<ConstantOp>(loc, builder.getIndexType(), dimAttr);
     build(builder, result, builder.getIndexType(), shape, dim);
   }
+}
+
+//===----------------------------------------------------------------------===//
+// IsBroadcastableOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(IsBroadcastableOp op) {
+  // Ensure that AssumingAllOp contains at least one operand
+  if (op.getNumOperands() < 2)
+    return op.emitOpError("required at least 2 input shapes");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -762,7 +945,7 @@ void SizeToIndexOp::getCanonicalizationPatterns(
 //===----------------------------------------------------------------------===//
 
 static LogicalResult verify(shape::YieldOp op) {
-  auto *parentOp = op.getParentOp();
+  auto *parentOp = op->getParentOp();
   auto results = parentOp->getResults();
   auto operands = op.getOperands();
 
@@ -917,7 +1100,7 @@ static void print(OpAsmPrinter &p, ReduceOp op) {
     << ") : " << op.shape().getType();
   p.printOptionalArrowTypeList(op.getResultTypes());
   p.printRegion(op.region());
-  p.printOptionalAttrDict(op.getAttrs());
+  p.printOptionalAttrDict(op->getAttrs());
 }
 
 #define GET_OP_CLASSES

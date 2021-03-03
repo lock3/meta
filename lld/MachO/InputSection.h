@@ -21,36 +21,26 @@ class InputFile;
 class InputSection;
 class OutputSection;
 class Symbol;
+class Defined;
 
 struct Reloc {
-  uint8_t type;
-  bool pcrel;
-  uint8_t length;
+  uint8_t type = llvm::MachO::GENERIC_RELOC_INVALID;
+  bool pcrel = false;
+  uint8_t length = 0;
   // The offset from the start of the subsection that this relocation belongs
   // to.
-  uint32_t offset;
+  uint32_t offset = 0;
   // Adding this offset to the address of the referent symbol or subsection
   // gives the destination that this relocation refers to.
-  uint64_t addend;
-  llvm::PointerUnion<Symbol *, InputSection *> referent;
+  uint64_t addend = 0;
+  llvm::PointerUnion<Symbol *, InputSection *> referent = nullptr;
 };
-
-inline bool isZeroFill(uint8_t flags) {
-  return llvm::MachO::isVirtualSection(flags & llvm::MachO::SECTION_TYPE);
-}
-
-inline bool isThreadLocalVariables(uint8_t flags) {
-  return (flags & llvm::MachO::SECTION_TYPE) ==
-         llvm::MachO::S_THREAD_LOCAL_VARIABLES;
-}
 
 class InputSection {
 public:
   virtual ~InputSection() = default;
   virtual uint64_t getSize() const { return data.size(); }
-  virtual uint64_t getFileSize() const {
-    return isZeroFill(flags) ? 0 : getSize();
-  }
+  virtual uint64_t getFileSize() const;
   uint64_t getFileOffset() const;
   uint64_t getVA() const;
 
@@ -70,6 +60,31 @@ public:
   ArrayRef<uint8_t> data;
   std::vector<Reloc> relocs;
 };
+
+inline uint8_t sectionType(uint32_t flags) {
+  return flags & llvm::MachO::SECTION_TYPE;
+}
+
+inline bool isZeroFill(uint32_t flags) {
+  return llvm::MachO::isVirtualSection(sectionType(flags));
+}
+
+inline bool isThreadLocalVariables(uint32_t flags) {
+  return sectionType(flags) == llvm::MachO::S_THREAD_LOCAL_VARIABLES;
+}
+
+// These sections contain the data for initializing thread-local variables.
+inline bool isThreadLocalData(uint32_t flags) {
+  return sectionType(flags) == llvm::MachO::S_THREAD_LOCAL_REGULAR ||
+         sectionType(flags) == llvm::MachO::S_THREAD_LOCAL_ZEROFILL;
+}
+
+inline bool isDebugSection(uint32_t flags) {
+  return (flags & llvm::MachO::SECTION_ATTRIBUTES_USR) ==
+         llvm::MachO::S_ATTR_DEBUG;
+}
+
+bool isCodeSection(InputSection *);
 
 extern std::vector<InputSection *> inputSections;
 

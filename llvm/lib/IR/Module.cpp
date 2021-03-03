@@ -509,6 +509,11 @@ unsigned Module::getDwarfVersion() const {
   return cast<ConstantInt>(Val->getValue())->getZExtValue();
 }
 
+bool Module::isDwarf64() const {
+  auto *Val = cast_or_null<ConstantAsMetadata>(getModuleFlag("DWARF64"));
+  return Val && cast<ConstantInt>(Val->getValue())->isOne();
+}
+
 unsigned Module::getCodeViewFlag() const {
   auto *Val = cast_or_null<ConstantAsMetadata>(getModuleFlag("CodeView"));
   if (!Val)
@@ -582,7 +587,7 @@ void Module::setProfileSummary(Metadata *M, ProfileSummary::Kind Kind) {
     setModuleFlag(ModFlagBehavior::Error, "ProfileSummary", M);
 }
 
-Metadata *Module::getProfileSummary(bool IsCS) {
+Metadata *Module::getProfileSummary(bool IsCS) const {
   return (IsCS ? getModuleFlag("CSProfileSummary")
                : getModuleFlag("ProfileSummary"));
 }
@@ -599,13 +604,6 @@ bool Module::getSemanticInterposition() const {
 
 void Module::setSemanticInterposition(bool SI) {
   addModuleFlag(ModFlagBehavior::Error, "SemanticInterposition", SI);
-}
-
-bool Module::noSemanticInterposition() const {
-  // Conservatively require an explicit zero value for now.
-  Metadata *MF = getModuleFlag("SemanticInterposition");
-  auto *Val = cast_or_null<ConstantAsMetadata>(MF);
-  return Val && cast<ConstantInt>(Val->getValue())->getZExtValue() == 0;
 }
 
 void Module::setOwnedMemoryBuffer(std::unique_ptr<MemoryBuffer> MB) {
@@ -661,7 +659,7 @@ VersionTuple Module::getSDKVersion() const {
 }
 
 GlobalVariable *llvm::collectUsedGlobalVariables(
-    const Module &M, SmallPtrSetImpl<GlobalValue *> &Set, bool CompilerUsed) {
+    const Module &M, SmallVectorImpl<GlobalValue *> &Vec, bool CompilerUsed) {
   const char *Name = CompilerUsed ? "llvm.compiler.used" : "llvm.used";
   GlobalVariable *GV = M.getGlobalVariable(Name);
   if (!GV || !GV->hasInitializer())
@@ -670,7 +668,7 @@ GlobalVariable *llvm::collectUsedGlobalVariables(
   const ConstantArray *Init = cast<ConstantArray>(GV->getInitializer());
   for (Value *Op : Init->operands()) {
     GlobalValue *G = cast<GlobalValue>(Op->stripPointerCasts());
-    Set.insert(G);
+    Vec.push_back(G);
   }
   return GV;
 }

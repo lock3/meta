@@ -82,8 +82,8 @@ DILocation *DILocation::getMergedLocations(ArrayRef<const DILocation *> Locs) {
   if (Locs.size() == 1)
     return Locs[0];
   auto *Merged = Locs[0];
-  for (auto I = std::next(Locs.begin()), E = Locs.end(); I != E; ++I) {
-    Merged = getMergedLocation(Merged, *I);
+  for (const DILocation *L : llvm::drop_begin(Locs)) {
+    Merged = getMergedLocation(Merged, L);
     if (Merged == nullptr)
       break;
   }
@@ -926,14 +926,14 @@ DIModule *DIModule::getImpl(LLVMContext &Context, Metadata *File,
                             Metadata *Scope, MDString *Name,
                             MDString *ConfigurationMacros,
                             MDString *IncludePath, MDString *APINotesFile,
-                            unsigned LineNo, StorageType Storage,
+                            unsigned LineNo, bool IsDecl, StorageType Storage,
                             bool ShouldCreate) {
   assert(isCanonical(Name) && "Expected canonical MDString");
   DEFINE_GETIMPL_LOOKUP(DIModule, (File, Scope, Name, ConfigurationMacros,
-                                   IncludePath, APINotesFile, LineNo));
+                                   IncludePath, APINotesFile, LineNo, IsDecl));
   Metadata *Ops[] = {File,        Scope,       Name, ConfigurationMacros,
                      IncludePath, APINotesFile};
-  DEFINE_GETIMPL_STORE(DIModule, (LineNo), Ops);
+  DEFINE_GETIMPL_STORE(DIModule, (LineNo, IsDecl), Ops);
 }
 
 DITemplateTypeParameter *
@@ -1111,9 +1111,9 @@ bool DIExpression::isValid() const {
       // entry values of a simple register location. One reason for this is that
       // we currently can't calculate the size of the resulting DWARF block for
       // other expressions.
-      return I->get() == expr_op_begin()->get() && I->getArg(0) == 1 &&
-             getNumElements() == 2;
+      return I->get() == expr_op_begin()->get() && I->getArg(0) == 1;
     }
+    case dwarf::DW_OP_LLVM_implicit_pointer:
     case dwarf::DW_OP_LLVM_convert:
     case dwarf::DW_OP_LLVM_tag_offset:
     case dwarf::DW_OP_constu:
@@ -1278,9 +1278,10 @@ DIExpression *DIExpression::prependOpcodes(const DIExpression *Expr,
 
   if (EntryValue) {
     Ops.push_back(dwarf::DW_OP_LLVM_entry_value);
-    // Add size info needed for entry value expression.
-    // Add plus one for target register operand.
-    Ops.push_back(Expr->getNumElements() + 1);
+    // Use a block size of 1 for the target register operand.  The
+    // DWARF backend currently cannot emit entry values with a block
+    // size > 1.
+    Ops.push_back(1);
   }
 
   // If there are no ops to prepend, do not even add the DW_OP_stack_value.

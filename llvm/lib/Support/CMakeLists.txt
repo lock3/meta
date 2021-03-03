@@ -36,6 +36,10 @@ elseif( CMAKE_HOST_UNIX )
   if( FUCHSIA )
     set(system_libs ${system_libs} zircon)
   endif()
+  if ( HAIKU )
+    add_definitions(-D_BSD_SOURCE)
+    set(system_libs ${system_libs} bsd)
+  endif()
 endif( MSVC OR MINGW )
 
 # Delay load shell32.dll if possible to speed up process startup.
@@ -128,6 +132,7 @@ add_llvm_component_library(LLVMSupport
   GraphWriter.cpp
   Hashing.cpp
   InitLLVM.cpp
+  InstructionCost.cpp
   IntEqClasses.cpp
   IntervalMap.cpp
   ItaniumManglingCanonicalizer.cpp
@@ -157,6 +162,7 @@ add_llvm_component_library(LLVMSupport
   ScaledNumber.cpp
   ScopedPrinter.cpp
   SHA1.cpp
+  SHA256.cpp
   Signposts.cpp
   SmallPtrSet.cpp
   SmallVector.cpp
@@ -222,7 +228,12 @@ add_llvm_component_library(LLVMSupport
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/ADT
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Support
   ${Backtrace_INCLUDE_DIRS}
-  LINK_LIBS ${system_libs} ${imported_libs} ${delayload_flags}
+
+  LINK_LIBS
+  ${system_libs} ${imported_libs} ${delayload_flags}
+
+  LINK_COMPONENTS
+  Demangle
   )
 
 set(llvm_system_libs ${system_libs})

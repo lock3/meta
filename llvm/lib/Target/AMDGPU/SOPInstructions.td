@@ -195,7 +195,9 @@ def : GCNPat <
 def S_BREV_B32 : SOP1_32 <"s_brev_b32",
   [(set i32:$sdst, (bitreverse i32:$src0))]
 >;
-def S_BREV_B64 : SOP1_64 <"s_brev_b64">;
+def S_BREV_B64 : SOP1_64 <"s_brev_b64",
+  [(set i64:$sdst, (bitreverse i64:$src0))]
+>;
 
 let Defs = [SCC] in {
 def S_BCNT0_I32_B32 : SOP1_32 <"s_bcnt0_i32_b32">;
@@ -1118,6 +1120,7 @@ let isTerminator = 1 in {
 def S_ENDPGM : SOPP_Pseudo<"s_endpgm", (ins EndpgmImm:$simm16), "$simm16"> {
   let isBarrier = 1;
   let isReturn = 1;
+  let hasSideEffects = 1;
 }
 
 def S_ENDPGM_SAVED : SOPP_Pseudo<"s_endpgm_saved", (ins)> {
@@ -1225,7 +1228,8 @@ def S_WAKEUP : SOPP_Pseudo <"s_wakeup", (ins) > {
 let mayLoad = 0, mayStore = 0, hasSideEffects = 1 in
 def S_WAITCNT : SOPP_Pseudo <"s_waitcnt" , (ins WAIT_FLAG:$simm16), "$simm16",
     [(int_amdgcn_s_waitcnt timm:$simm16)]>;
-def S_SETHALT : SOPP_Pseudo <"s_sethalt" , (ins i16imm:$simm16), "$simm16">;
+def S_SETHALT : SOPP_Pseudo <"s_sethalt" , (ins i32imm:$simm16), "$simm16",
+    [(int_amdgcn_s_sethalt timm:$simm16)]>;
 def S_SETKILL : SOPP_Pseudo <"s_setkill" , (ins i16imm:$simm16), "$simm16">;
 
 // On SI the documentation says sleep for approximately 64 * low 2
@@ -1299,7 +1303,7 @@ let SubtargetPredicate = isGFX10Plus in {
     SOPP_Pseudo<"s_inst_prefetch", (ins s16imm:$simm16), "$simm16">;
   def S_CLAUSE :
     SOPP_Pseudo<"s_clause", (ins s16imm:$simm16), "$simm16">;
-  def S_WAITCNT_IDLE :
+  def S_WAIT_IDLE :
     SOPP_Pseudo <"s_wait_idle", (ins), ""> {
       let simm16 = 0;
       let fixed_imm = 1;
@@ -1325,6 +1329,11 @@ let SubtargetPredicate = isGFX10Plus in {
 
 def : GCNPat <
   (AMDGPUendpgm),
+    (S_ENDPGM (i16 0))
+>;
+
+def : GCNPat <
+  (int_amdgcn_endpgm),
     (S_ENDPGM (i16 0))
 >;
 
@@ -1753,7 +1762,7 @@ defm S_ENDPGM_ORDERED_PS_DONE   : SOPP_Real_32_gfx8_gfx9_gfx10<0x01e>;
 defm S_CODE_END                 : SOPP_Real_32_gfx10<0x01f>;
 defm S_INST_PREFETCH            : SOPP_Real_32_gfx10<0x020>;
 defm S_CLAUSE                   : SOPP_Real_32_gfx10<0x021>;
-defm S_WAITCNT_IDLE             : SOPP_Real_32_gfx10<0x022>;
+defm S_WAIT_IDLE                : SOPP_Real_32_gfx10<0x022>;
 defm S_WAITCNT_DEPCTR           : SOPP_Real_32_gfx10<0x023>;
 defm S_ROUND_MODE               : SOPP_Real_32_gfx10<0x024>;
 defm S_DENORM_MODE              : SOPP_Real_32_gfx10<0x025>;

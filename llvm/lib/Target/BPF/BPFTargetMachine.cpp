@@ -12,6 +12,7 @@
 
 #include "BPFTargetMachine.h"
 #include "BPF.h"
+#include "BPFTargetTransformInfo.h"
 #include "MCTargetDesc/BPFMCAsmInfo.h"
 #include "TargetInfo/BPFTargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
@@ -57,9 +58,7 @@ static std::string computeDataLayout(const Triple &TT) {
 }
 
 static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {
-  if (!RM.hasValue())
-    return Reloc::PIC_;
-  return *RM;
+  return RM.getValueOr(Reloc::PIC_);
 }
 
 BPFTargetMachine::BPFTargetMachine(const Target &T, const Triple &TT,
@@ -125,21 +124,31 @@ void BPFTargetMachine::adjustPassManager(PassManagerBuilder &Builder) {
 
 void BPFTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB,
                                                     bool DebugPassManager) {
-  PB.registerPipelineStartEPCallback([=](ModulePassManager &MPM) {
-    FunctionPassManager FPM(DebugPassManager);
-    FPM.addPass(BPFAbstractMemberAccessPass(this));
-    FPM.addPass(BPFPreserveDITypePass());
-    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-  });
+  PB.registerPipelineStartEPCallback(
+      [=](ModulePassManager &MPM, PassBuilder::OptimizationLevel) {
+        FunctionPassManager FPM(DebugPassManager);
+        FPM.addPass(BPFAbstractMemberAccessPass(this));
+        FPM.addPass(BPFPreserveDITypePass());
+        MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+      });
   PB.registerPeepholeEPCallback([=](FunctionPassManager &FPM,
                                     PassBuilder::OptimizationLevel Level) {
     FPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().hoistCommonInsts(true)));
   });
+  PB.registerPipelineEarlySimplificationEPCallback(
+      [=](ModulePassManager &MPM, PassBuilder::OptimizationLevel) {
+        MPM.addPass(BPFAdjustOptPass());
+      });
 }
 
 void BPFPassConfig::addIRPasses() {
   addPass(createBPFCheckAndAdjustIR());
   TargetPassConfig::addIRPasses();
+}
+
+TargetTransformInfo
+BPFTargetMachine::getTargetTransformInfo(const Function &F) {
+  return TargetTransformInfo(BPFTTIImpl(this, F));
 }
 
 // Install an instruction selector pass using

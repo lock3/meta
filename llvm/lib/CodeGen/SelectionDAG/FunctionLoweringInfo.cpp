@@ -333,14 +333,23 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf,
 
   else if (Personality == EHPersonality::Wasm_CXX) {
     WasmEHFuncInfo &EHInfo = *MF->getWasmEHFuncInfo();
-    // Map all BB references in the WinEH data to MBBs.
-    DenseMap<BBOrMBB, BBOrMBB> NewMap;
-    for (auto &KV : EHInfo.EHPadUnwindMap) {
+    // Map all BB references in the Wasm EH data to MBBs.
+    DenseMap<BBOrMBB, BBOrMBB> SrcToUnwindDest;
+    for (auto &KV : EHInfo.SrcToUnwindDest) {
       const auto *Src = KV.first.get<const BasicBlock *>();
-      const auto *Dst = KV.second.get<const BasicBlock *>();
-      NewMap[MBBMap[Src]] = MBBMap[Dst];
+      const auto *Dest = KV.second.get<const BasicBlock *>();
+      SrcToUnwindDest[MBBMap[Src]] = MBBMap[Dest];
     }
-    EHInfo.EHPadUnwindMap = std::move(NewMap);
+    EHInfo.SrcToUnwindDest = std::move(SrcToUnwindDest);
+    DenseMap<BBOrMBB, SmallPtrSet<BBOrMBB, 4>> UnwindDestToSrcs;
+    for (auto &KV : EHInfo.UnwindDestToSrcs) {
+      const auto *Dest = KV.first.get<const BasicBlock *>();
+      UnwindDestToSrcs[MBBMap[Dest]] = SmallPtrSet<BBOrMBB, 4>();
+      for (const auto &P : KV.second)
+        UnwindDestToSrcs[MBBMap[Dest]].insert(
+            MBBMap[P.get<const BasicBlock *>()]);
+    }
+    EHInfo.UnwindDestToSrcs = std::move(UnwindDestToSrcs);
   }
 }
 
@@ -458,8 +467,7 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
   if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
     APInt Val = CI->getValue().zextOrTrunc(BitWidth);
     DestLOI.NumSignBits = Val.getNumSignBits();
-    DestLOI.Known.Zero = ~Val;
-    DestLOI.Known.One = Val;
+    DestLOI.Known = KnownBits::makeConstant(Val);
   } else {
     assert(ValueMap.count(V) && "V should have been placed in ValueMap when its"
                                 "CopyToReg node was created.");
@@ -509,8 +517,7 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
       return;
     }
     DestLOI.NumSignBits = std::min(DestLOI.NumSignBits, SrcLOI->NumSignBits);
-    DestLOI.Known.Zero &= SrcLOI->Known.Zero;
-    DestLOI.Known.One &= SrcLOI->Known.One;
+    DestLOI.Known = KnownBits::commonBits(DestLOI.Known, SrcLOI->Known);
   }
 }
 

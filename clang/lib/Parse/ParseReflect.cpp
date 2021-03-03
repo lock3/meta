@@ -74,7 +74,7 @@ ParsedReflectionOperand Parser::ParseCXXReflectionOperand() {
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     // FIXME: Create a new DeclaratorContext?
     TypeResult T =
-      ParseTypeName(nullptr, DeclaratorContext::TemplateArgContext);
+      ParseTypeName(nullptr, DeclaratorContext::TemplateArg);
     if (T.isInvalid()) {
       return ParsedReflectionOperand();
     }

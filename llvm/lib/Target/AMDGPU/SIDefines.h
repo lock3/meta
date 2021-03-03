@@ -33,26 +33,27 @@ enum : uint64_t {
   VOP2 = 1 << 8,
   VOPC = 1 << 9,
 
- // TODO: Should this be spilt into VOP3 a and b?
+  // TODO: Should this be spilt into VOP3 a and b?
   VOP3 = 1 << 10,
   VOP3P = 1 << 12,
 
   VINTRP = 1 << 13,
   SDWA = 1 << 14,
   DPP = 1 << 15,
+  TRANS = 1 << 16,
 
   // Memory instruction formats.
-  MUBUF = 1 << 16,
-  MTBUF = 1 << 17,
-  SMRD = 1 << 18,
-  MIMG = 1 << 19,
-  EXP = 1 << 20,
-  FLAT = 1 << 21,
-  DS = 1 << 22,
+  MUBUF = 1 << 17,
+  MTBUF = 1 << 18,
+  SMRD = 1 << 19,
+  MIMG = 1 << 20,
+  EXP = 1 << 21,
+  FLAT = 1 << 22,
+  DS = 1 << 23,
 
   // Pseudo instruction formats.
-  VGPRSpill = 1 << 23,
-  SGPRSpill = 1 << 24,
+  VGPRSpill = 1 << 24,
+  SGPRSpill = 1 << 25,
 
   // High bits - other information.
   VM_CNT = UINT64_C(1) << 32,
@@ -105,7 +106,13 @@ enum : uint64_t {
   IsDOT = UINT64_C(1) << 55,
 
   // FLAT instruction accesses FLAT_SCRATCH segment.
-  IsFlatScratch = UINT64_C(1) << 56
+  IsFlatScratch = UINT64_C(1) << 56,
+
+  // Atomic without return.
+  IsAtomicNoRet = UINT64_C(1) << 57,
+
+  // Atomic with return.
+  IsAtomicRet = UINT64_C(1) << 58
 };
 
 // v_cmp_class_* etc. use a 10-bit mask for what operation is checked.
@@ -135,6 +142,8 @@ namespace AMDGPU {
     OPERAND_REG_IMM_FP16,
     OPERAND_REG_IMM_V2FP16,
     OPERAND_REG_IMM_V2INT16,
+    OPERAND_REG_IMM_V2INT32,
+    OPERAND_REG_IMM_V2FP32,
 
     /// Operands with register or inline constant
     OPERAND_REG_INLINE_C_INT16,
@@ -143,25 +152,30 @@ namespace AMDGPU {
     OPERAND_REG_INLINE_C_FP16,
     OPERAND_REG_INLINE_C_FP32,
     OPERAND_REG_INLINE_C_FP64,
-    OPERAND_REG_INLINE_C_V2FP16,
     OPERAND_REG_INLINE_C_V2INT16,
+    OPERAND_REG_INLINE_C_V2FP16,
+    OPERAND_REG_INLINE_C_V2INT32,
+    OPERAND_REG_INLINE_C_V2FP32,
 
     /// Operands with an AccVGPR register or inline constant
     OPERAND_REG_INLINE_AC_INT16,
     OPERAND_REG_INLINE_AC_INT32,
     OPERAND_REG_INLINE_AC_FP16,
     OPERAND_REG_INLINE_AC_FP32,
-    OPERAND_REG_INLINE_AC_V2FP16,
+    OPERAND_REG_INLINE_AC_FP64,
     OPERAND_REG_INLINE_AC_V2INT16,
+    OPERAND_REG_INLINE_AC_V2FP16,
+    OPERAND_REG_INLINE_AC_V2INT32,
+    OPERAND_REG_INLINE_AC_V2FP32,
 
     OPERAND_REG_IMM_FIRST = OPERAND_REG_IMM_INT32,
-    OPERAND_REG_IMM_LAST = OPERAND_REG_IMM_V2INT16,
+    OPERAND_REG_IMM_LAST = OPERAND_REG_IMM_V2FP32,
 
     OPERAND_REG_INLINE_C_FIRST = OPERAND_REG_INLINE_C_INT16,
-    OPERAND_REG_INLINE_C_LAST = OPERAND_REG_INLINE_AC_V2INT16,
+    OPERAND_REG_INLINE_C_LAST = OPERAND_REG_INLINE_AC_V2FP32,
 
     OPERAND_REG_INLINE_AC_FIRST = OPERAND_REG_INLINE_AC_INT16,
-    OPERAND_REG_INLINE_AC_LAST = OPERAND_REG_INLINE_AC_V2INT16,
+    OPERAND_REG_INLINE_AC_LAST = OPERAND_REG_INLINE_AC_V2FP32,
 
     OPERAND_SRC_FIRST = OPERAND_REG_IMM_INT32,
     OPERAND_SRC_LAST = OPERAND_REG_INLINE_C_LAST,
@@ -246,8 +260,8 @@ enum : unsigned {
   SGPR_MAX_GFX10 = 105,
   TTMP_VI_MIN = 112,
   TTMP_VI_MAX = 123,
-  TTMP_GFX9_GFX10_MIN = 108,
-  TTMP_GFX9_GFX10_MAX = 123,
+  TTMP_GFX9PLUS_MIN = 108,
+  TTMP_GFX9PLUS_MAX = 123,
   INLINE_INTEGER_C_MIN = 128,
   INLINE_INTEGER_C_POSITIVE_MAX = 192, // 64
   INLINE_INTEGER_C_MAX = 208,
@@ -267,10 +281,16 @@ namespace SendMsg { // Encoding of SIMM16 used in s_sendmsg* insns.
 enum Id { // Message ID, width(4) [3:0].
   ID_UNKNOWN_ = -1,
   ID_INTERRUPT = 1,
-  ID_GS,
-  ID_GS_DONE,
-  ID_GS_ALLOC_REQ = 9,
-  ID_GET_DOORBELL = 10,
+  ID_GS = 2,
+  ID_GS_DONE = 3,
+  ID_SAVEWAVE = 4,           // added in GFX8
+  ID_STALL_WAVE_GEN = 5,     // added in GFX9
+  ID_HALT_WAVES = 6,         // added in GFX9
+  ID_ORDERED_PS_DONE = 7,    // added in GFX9
+  ID_EARLY_PRIM_DEALLOC = 8, // added in GFX9, removed in GFX10
+  ID_GS_ALLOC_REQ = 9,       // added in GFX9
+  ID_GET_DOORBELL = 10,      // added in GFX9
+  ID_GET_DDID = 11,          // added in GFX10
   ID_SYSMSG = 15,
   ID_GAPS_LAST_, // Indicate that sequence has gaps.
   ID_GAPS_FIRST_ = ID_INTERRUPT,
@@ -288,16 +308,16 @@ enum Op { // Both GS and SYS operation IDs.
   OP_MASK_ = (((1 << OP_WIDTH_) - 1) << OP_SHIFT_),
   // GS operations are encoded in bits 5:4
   OP_GS_NOP = 0,
-  OP_GS_CUT,
-  OP_GS_EMIT,
-  OP_GS_EMIT_CUT,
+  OP_GS_CUT = 1,
+  OP_GS_EMIT = 2,
+  OP_GS_EMIT_CUT = 3,
   OP_GS_LAST_,
   OP_GS_FIRST_ = OP_GS_NOP,
   // SYS operations are encoded in bits 6:4
   OP_SYS_ECC_ERR_INTERRUPT = 1,
-  OP_SYS_REG_RD,
-  OP_SYS_HOST_TRAP_ACK,
-  OP_SYS_TTRACE_PC,
+  OP_SYS_REG_RD = 2,
+  OP_SYS_HOST_TRAP_ACK = 3,
+  OP_SYS_TTRACE_PC = 4,
   OP_SYS_LAST_,
   OP_SYS_FIRST_ = OP_SYS_ECC_ERR_INTERRUPT,
 };
@@ -673,6 +693,8 @@ enum DppCtrl : unsigned {
   BCAST31           = 0x143,
   DPP_UNUSED8_FIRST = 0x144,
   DPP_UNUSED8_LAST  = 0x14F,
+  ROW_NEWBCAST_FIRST= 0x150,
+  ROW_NEWBCAST_LAST = 0x15F,
   ROW_SHARE_FIRST   = 0x150,
   ROW_SHARE_LAST    = 0x15F,
   ROW_XMASK_FIRST   = 0x160,
@@ -688,6 +710,44 @@ enum DppFiMode {
 };
 
 } // namespace DPP
+
+namespace Exp {
+
+enum Target : unsigned {
+  ET_MRT0 = 0,
+  ET_MRT7 = 7,
+  ET_MRTZ = 8,
+  ET_NULL = 9,
+  ET_POS0 = 12,
+  ET_POS3 = 15,
+  ET_POS4 = 16,          // GFX10+
+  ET_POS_LAST = ET_POS4, // Highest pos used on any subtarget
+  ET_PRIM = 20,          // GFX10+
+  ET_PARAM0 = 32,
+  ET_PARAM31 = 63,
+
+  ET_NULL_MAX_IDX = 0,
+  ET_MRTZ_MAX_IDX = 0,
+  ET_PRIM_MAX_IDX = 0,
+  ET_MRT_MAX_IDX = 7,
+  ET_POS_MAX_IDX = 4,
+  ET_PARAM_MAX_IDX = 31,
+
+  ET_INVALID = 255,
+};
+
+} // namespace Exp
+
+namespace VOP3PEncoding {
+
+enum OpSel : uint64_t {
+  OP_SEL_HI_0 = UINT64_C(1) << 59,
+  OP_SEL_HI_1 = UINT64_C(1) << 60,
+  OP_SEL_HI_2 = UINT64_C(1) << 14,
+};
+
+} // namespace VOP3PEncoding
+
 } // namespace AMDGPU
 
 #define R_00B028_SPI_SHADER_PGM_RSRC1_PS                                0x00B028

@@ -289,9 +289,8 @@ GVN::Expression GVN::ValueTable::createExpr(Instruction *I) {
   Expression e;
   e.type = I->getType();
   e.opcode = I->getOpcode();
-  for (Instruction::op_iterator OI = I->op_begin(), OE = I->op_end();
-       OI != OE; ++OI)
-    e.varargs.push_back(lookupOrAdd(*OI));
+  for (Use &Op : I->operands())
+    e.varargs.push_back(lookupOrAdd(Op));
   if (I->isCommutative()) {
     // Ensure that commutative instructions that only differ by a permutation
     // of their operands get the same value number by sorting the operand value
@@ -362,13 +361,10 @@ GVN::Expression GVN::ValueTable::createExtractvalueExpr(ExtractValueInst *EI) {
   // Not a recognised intrinsic. Fall back to producing an extract value
   // expression.
   e.opcode = EI->getOpcode();
-  for (Instruction::op_iterator OI = EI->op_begin(), OE = EI->op_end();
-       OI != OE; ++OI)
-    e.varargs.push_back(lookupOrAdd(*OI));
+  for (Use &Op : EI->operands())
+    e.varargs.push_back(lookupOrAdd(Op));
 
-  for (ExtractValueInst::idx_iterator II = EI->idx_begin(), IE = EI->idx_end();
-         II != IE; ++II)
-    e.varargs.push_back(*II);
+  append_range(e.varargs, EI->indices());
 
   return e;
 }
@@ -683,10 +679,9 @@ PreservedAnalyses GVN::run(Function &F, FunctionAnalysisManager &AM) {
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 LLVM_DUMP_METHOD void GVN::dump(DenseMap<uint32_t, Value*>& d) const {
   errs() << "{\n";
-  for (DenseMap<uint32_t, Value*>::iterator I = d.begin(),
-       E = d.end(); I != E; ++I) {
-      errs() << I->first << "\n";
-      I->second->dump();
+  for (auto &I : d) {
+    errs() << I.first << "\n";
+    I.second->dump();
   }
   errs() << "}\n";
 }
@@ -1472,13 +1467,14 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
     return false;
   }
 
+  bool Changed = false;
   // If this load follows a GEP, see if we can PRE the indices before analyzing.
   if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(LI->getOperand(0))) {
     for (GetElementPtrInst::op_iterator OI = GEP->idx_begin(),
                                         OE = GEP->idx_end();
          OI != OE; ++OI)
       if (Instruction *I = dyn_cast<Instruction>(OI->get()))
-        performScalarPRE(I);
+        Changed |= performScalarPRE(I);
   }
 
   // Step 2: Analyze the availability of the load
@@ -1489,7 +1485,7 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
   // If we have no predecessors that produce a known value for this load, exit
   // early.
   if (ValuesPerBlock.empty())
-    return false;
+    return Changed;
 
   // Step 3: Eliminate fully redundancy.
   //
@@ -1521,12 +1517,12 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
 
   // Step 4: Eliminate partial redundancy.
   if (!isPREEnabled() || !isLoadPREEnabled())
-    return false;
+    return Changed;
   if (!isLoadInLoopPREEnabled() && this->LI &&
       this->LI->getLoopFor(LI->getParent()))
-    return false;
+    return Changed;
 
-  return PerformLoadPRE(LI, ValuesPerBlock, UnavailableBlocks);
+  return Changed || PerformLoadPRE(LI, ValuesPerBlock, UnavailableBlocks);
 }
 
 static bool impliesEquivalanceIfTrue(CmpInst* Cmp) {
@@ -1605,12 +1601,35 @@ bool GVN::processAssumeIntrinsic(IntrinsicInst *IntrinsicI) {
                                  Constant::getNullValue(Int8Ty->getPointerTo()),
                                  IntrinsicI);
       if (MSSAU) {
+        const MemoryUseOrDef *FirstNonDom = nullptr;
+        const auto *AL =
+            MSSAU->getMemorySSA()->getBlockAccesses(IntrinsicI->getParent());
+
+        // If there are accesses in the current basic block, find the first one
+        // that does not come before NewS. The new memory access is inserted
+        // after the found access or before the terminator if no such access is
+        // found.
+        if (AL) {
+          for (auto &Acc : *AL) {
+            if (auto *Current = dyn_cast<MemoryUseOrDef>(&Acc))
+              if (!Current->getMemoryInst()->comesBefore(NewS)) {
+                FirstNonDom = Current;
+                break;
+              }
+          }
+        }
+
         // This added store is to null, so it will never executed and we can
         // just use the LiveOnEntry def as defining access.
-        auto *NewDef = MSSAU->createMemoryAccessInBB(
-            NewS, MSSAU->getMemorySSA()->getLiveOnEntryDef(), NewS->getParent(),
-            MemorySSA::BeforeTerminator);
-        MSSAU->insertDef(cast<MemoryDef>(NewDef), /*RenameUses=*/true);
+        auto *NewDef =
+            FirstNonDom ? MSSAU->createMemoryAccessBefore(
+                              NewS, MSSAU->getMemorySSA()->getLiveOnEntryDef(),
+                              const_cast<MemoryUseOrDef *>(FirstNonDom))
+                        : MSSAU->createMemoryAccessInBB(
+                              NewS, MSSAU->getMemorySSA()->getLiveOnEntryDef(),
+                              NewS->getParent(), MemorySSA::BeforeTerminator);
+
+        MSSAU->insertDef(cast<MemoryDef>(NewDef), /*RenameUses=*/false);
       }
     }
     if (isAssumeWithEmptyBundle(*IntrinsicI))
@@ -1754,7 +1773,7 @@ bool GVN::processLoad(LoadInst *L) {
       MSSAU->removeMemoryAccess(L);
     ++NumGVNLoad;
     reportLoadElim(L, AvailableValue, ORE);
-    // Tell MDA to rexamine the reused pointer since we might have more
+    // Tell MDA to reexamine the reused pointer since we might have more
     // information after forwarding it.
     if (MD && AvailableValue->getType()->isPtrOrPtrVectorTy())
       MD->invalidateCachedPointerInfo(AvailableValue);
@@ -1830,8 +1849,8 @@ bool GVN::ValueTable::areCallValsEqual(uint32_t Num, uint32_t NewNum,
       MD->getNonLocalCallDependency(Call);
 
   // Check to see if the Call has no function local clobber.
-  for (unsigned i = 0; i < deps.size(); i++) {
-    if (deps[i].getResult().isNonFuncLocal())
+  for (const NonLocalDepEntry &D : deps) {
+    if (D.getResult().isNonFuncLocal())
       return true;
   }
   return false;
@@ -1896,11 +1915,8 @@ uint32_t GVN::ValueTable::phiTranslateImpl(const BasicBlock *Pred,
 /// again.
 void GVN::ValueTable::eraseTranslateCacheEntry(uint32_t Num,
                                                const BasicBlock &CurrBlock) {
-  for (const BasicBlock *Pred : predecessors(&CurrBlock)) {
-    auto FindRes = PhiTranslateTable.find({Num, Pred});
-    if (FindRes != PhiTranslateTable.end())
-      PhiTranslateTable.erase(FindRes);
-  }
+  for (const BasicBlock *Pred : predecessors(&CurrBlock))
+    PhiTranslateTable.erase({Num, Pred});
 }
 
 // In order to find a leader for a given value number at a
@@ -2064,8 +2080,8 @@ bool GVN::propagateEquality(Value *LHS, Value *RHS, const BasicBlockEdge &Root,
     // If "A && B" is known true then both A and B are known true.  If "A || B"
     // is known false then both A and B are known false.
     Value *A, *B;
-    if ((isKnownTrue && match(LHS, m_And(m_Value(A), m_Value(B)))) ||
-        (isKnownFalse && match(LHS, m_Or(m_Value(A), m_Value(B))))) {
+    if ((isKnownTrue && match(LHS, m_LogicalAnd(m_Value(A), m_Value(B)))) ||
+        (isKnownFalse && match(LHS, m_LogicalOr(m_Value(A), m_Value(B))))) {
       Worklist.push_back(std::make_pair(A, RHS));
       Worklist.push_back(std::make_pair(B, RHS));
       continue;
@@ -2654,9 +2670,11 @@ BasicBlock *GVN::splitCriticalEdges(BasicBlock *Pred, BasicBlock *Succ) {
   BasicBlock *BB = SplitCriticalEdge(
       Pred, Succ,
       CriticalEdgeSplittingOptions(DT, LI, MSSAU).unsetPreserveLoopSimplify());
-  if (MD)
-    MD->invalidateCachedPredecessors();
-  InvalidBlockRPONumbers = true;
+  if (BB) {
+    if (MD)
+      MD->invalidateCachedPredecessors();
+    InvalidBlockRPONumbers = true;
+  }
   return BB;
 }
 
@@ -2665,14 +2683,20 @@ BasicBlock *GVN::splitCriticalEdges(BasicBlock *Pred, BasicBlock *Succ) {
 bool GVN::splitCriticalEdges() {
   if (toSplit.empty())
     return false;
+
+  bool Changed = false;
   do {
     std::pair<Instruction *, unsigned> Edge = toSplit.pop_back_val();
-    SplitCriticalEdge(Edge.first, Edge.second,
-                      CriticalEdgeSplittingOptions(DT, LI, MSSAU));
+    Changed |= SplitCriticalEdge(Edge.first, Edge.second,
+                                 CriticalEdgeSplittingOptions(DT, LI, MSSAU)) !=
+               nullptr;
   } while (!toSplit.empty());
-  if (MD) MD->invalidateCachedPredecessors();
-  InvalidBlockRPONumbers = true;
-  return true;
+  if (Changed) {
+    if (MD)
+      MD->invalidateCachedPredecessors();
+    InvalidBlockRPONumbers = true;
+  }
+  return Changed;
 }
 
 /// Executes one iteration of GVN
@@ -2708,9 +2732,8 @@ void GVN::verifyRemoved(const Instruction *Inst) const {
 
   // Walk through the value number scope to make sure the instruction isn't
   // ferreted away in it.
-  for (DenseMap<uint32_t, LeaderTableEntry>::const_iterator
-       I = LeaderTable.begin(), E = LeaderTable.end(); I != E; ++I) {
-    const LeaderTableEntry *Node = &I->second;
+  for (const auto &I : LeaderTable) {
+    const LeaderTableEntry *Node = &I.second;
     assert(Node->Val != Inst && "Inst still in value numbering scope!");
 
     while (Node->Next) {
@@ -2768,21 +2791,18 @@ void GVN::addDeadBlock(BasicBlock *BB) {
 
   // For the dead blocks' live successors, update their phi nodes by replacing
   // the operands corresponding to dead blocks with UndefVal.
-  for(SmallSetVector<BasicBlock *, 4>::iterator I = DF.begin(), E = DF.end();
-        I != E; I++) {
-    BasicBlock *B = *I;
+  for (BasicBlock *B : DF) {
     if (DeadBlocks.count(B))
       continue;
 
     // First, split the critical edges. This might also create additional blocks
     // to preserve LoopSimplify form and adjust edges accordingly.
-    SmallVector<BasicBlock *, 4> Preds(pred_begin(B), pred_end(B));
+    SmallVector<BasicBlock *, 4> Preds(predecessors(B));
     for (BasicBlock *P : Preds) {
       if (!DeadBlocks.count(P))
         continue;
 
-      if (llvm::any_of(successors(P),
-                       [B](BasicBlock *Succ) { return Succ == B; }) &&
+      if (llvm::is_contained(successors(P), B) &&
           isCriticalEdge(P->getTerminator(), B)) {
         if (BasicBlock *S = splitCriticalEdges(P, B))
           DeadBlocks.insert(P = S);

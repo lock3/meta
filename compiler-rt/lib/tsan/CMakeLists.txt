@@ -113,6 +113,10 @@ set(TSAN_HEADERS
 set(TSAN_RUNTIME_LIBRARIES)
 add_compiler_rt_component(tsan)
 
+if("${CMAKE_C_FLAGS}" MATCHES "-Wno-(error=)?unused-command-line-argument")
+  set(EXTRA_CFLAGS "-Wno-error=unused-command-line-argument ${EXTRA_CFLAGS}")
+endif()
+
 if(APPLE)
   # Ideally we would check the SDK version for the actual platform we are
   # building for here.  To make our lifes easier we assume the host SDK setup is
@@ -156,6 +160,7 @@ if(APPLE)
   set(BUILDGO_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/go/buildgo.sh)
   add_custom_target(GotsanRuntimeCheck
     COMMAND env "CC=${CMAKE_C_COMPILER} ${OSX_SYSROOT_FLAG}"
+            EXTRA_CFLAGS=${EXTRA_CFLAGS}
             IN_TMPDIR=1 SILENT=1 ${BUILDGO_SCRIPT}
     DEPENDS tsan ${BUILDGO_SCRIPT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
@@ -170,6 +175,7 @@ else()
       set(BUILDGO_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/go/buildgo.sh)
       add_custom_target(GotsanRuntimeCheck
         COMMAND env "CC=${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_ARG1}"
+                EXTRA_CFLAGS=${EXTRA_CFLAGS}
                 IN_TMPDIR=1 SILENT=1 ${BUILDGO_SCRIPT}
         DEPENDS clang_rt.tsan-${arch} ${BUILDGO_SCRIPT}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
@@ -181,6 +187,7 @@ else()
       set(BUILDGO_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/go/buildgo.sh)
       add_custom_target(GotsanRuntimeCheck
 	COMMAND env "CC=${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_ARG1}"
+		EXTRA_CFLAGS=${EXTRA_CFLAGS} 
 		IN_TMPDIR=1 SILENT=1 ${BUILDGO_SCRIPT}
 	DEPENDS clang_rt.tsan-${arch} ${BUILDGO_SCRIPT}
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
@@ -192,6 +199,7 @@ else()
       set(BUILDGO_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/go/buildgo.sh)
       add_custom_target(GotsanRuntimeCheck
 	COMMAND env "CC=${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_ARG1}"
+		EXTRA_CFLAGS=${EXTRA_CFLAGS} 
 		IN_TMPDIR=1 SILENT=1 ${BUILDGO_SCRIPT}
 	DEPENDS clang_rt.tsan-${arch} ${BUILDGO_SCRIPT}
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
@@ -236,21 +244,6 @@ else()
                           clang_rt.tsan-${arch}-symbols
                           clang_rt.tsan_cxx-${arch}-symbols)
   endforeach()
-endif()
-
-# Make sure that non-platform-specific files don't include any system headers.
-# FreeBSD/NetBSD do not install a number of Clang-provided headers for the
-# compiler in the base system due to incompatibilities between FreeBSD/NetBSD's
-# and Clang's versions. As a workaround do not use --sysroot=. on FreeBSD/NetBSD
-# until this is addressed.
-if(COMPILER_RT_HAS_SYSROOT_FLAG AND NOT CMAKE_SYSTEM_NAME MATCHES "FreeBSD"
-   AND NOT CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-  file(GLOB _tsan_generic_sources rtl/tsan*)
-  file(GLOB _tsan_platform_sources rtl/tsan*posix* rtl/tsan*mac*
-                                   rtl/tsan*linux*)
-  list(REMOVE_ITEM _tsan_generic_sources ${_tsan_platform_sources})
-  set_source_files_properties(${_tsan_generic_sources}
-    PROPERTIES COMPILE_FLAGS "--sysroot=.")
 endif()
 
 # Build libcxx instrumented with TSan.

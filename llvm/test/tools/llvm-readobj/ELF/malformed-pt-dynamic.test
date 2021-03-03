@@ -137,10 +137,10 @@ Sections:
     Entries:
       - Tag:   DT_NULL
         Value: 0
+  - Type: SectionHeaderTable
+    NoHeaders: [[NOHEADERS=false]]
 ProgramHeaders:
   - Type:     PT_DYNAMIC
     FileSize: [[FILESIZE=<none>]]
-    Sections:
-      - Section: .dynamic
-SectionHeaderTable:
-  NoHeaders: [[NOHEADERS=false]]
+    FirstSec: .dynamic
+    LastSec:  .dynamic

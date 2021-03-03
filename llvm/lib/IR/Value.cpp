@@ -430,6 +430,18 @@ void Value::takeName(Value *V) {
     ST->reinsertValue(this);
 }
 
+#ifndef NDEBUG
+std::string Value::getNameOrAsOperand() const {
+  if (!getName().empty())
+    return std::string(getName());
+
+  std::string BBName;
+  raw_string_ostream OS(BBName);
+  printAsOperand(OS, false);
+  return OS.str();
+}
+#endif
+
 void Value::assertModuleIsMaterializedImpl() const {
 #ifndef NDEBUG
   const GlobalValue *GV = dyn_cast<GlobalValue>(this);
@@ -539,7 +551,7 @@ enum PointerStripKind {
   PSK_ZeroIndices,
   PSK_ZeroIndicesAndAliases,
   PSK_ZeroIndicesSameRepresentation,
-  PSK_ZeroIndicesAndInvariantGroups,
+  PSK_ForAliasAnalysis,
   PSK_InBoundsConstantIndices,
   PSK_InBounds
 };
@@ -565,7 +577,7 @@ static const Value *stripPointerCastsAndOffsets(
       case PSK_ZeroIndices:
       case PSK_ZeroIndicesAndAliases:
       case PSK_ZeroIndicesSameRepresentation:
-      case PSK_ZeroIndicesAndInvariantGroups:
+      case PSK_ForAliasAnalysis:
         if (!GEP->hasAllZeroIndices())
           return V;
         break;
@@ -590,6 +602,9 @@ static const Value *stripPointerCastsAndOffsets(
       V = cast<Operator>(V)->getOperand(0);
     } else if (StripKind == PSK_ZeroIndicesAndAliases && isa<GlobalAlias>(V)) {
       V = cast<GlobalAlias>(V)->getAliasee();
+    } else if (StripKind == PSK_ForAliasAnalysis && isa<PHINode>(V) &&
+               cast<PHINode>(V)->getNumIncomingValues() == 1) {
+      V = cast<PHINode>(V)->getIncomingValue(0);
     } else {
       if (const auto *Call = dyn_cast<CallBase>(V)) {
         if (const Value *RV = Call->getReturnedArgOperand()) {
@@ -599,7 +614,7 @@ static const Value *stripPointerCastsAndOffsets(
         // The result of launder.invariant.group must alias it's argument,
         // but it can't be marked with returned attribute, that's why it needs
         // special case.
-        if (StripKind == PSK_ZeroIndicesAndInvariantGroups &&
+        if (StripKind == PSK_ForAliasAnalysis &&
             (Call->getIntrinsicID() == Intrinsic::launder_invariant_group ||
              Call->getIntrinsicID() == Intrinsic::strip_invariant_group)) {
           V = Call->getArgOperand(0);
@@ -631,8 +646,8 @@ const Value *Value::stripInBoundsConstantOffsets() const {
   return stripPointerCastsAndOffsets<PSK_InBoundsConstantIndices>(this);
 }
 
-const Value *Value::stripPointerCastsAndInvariantGroups() const {
-  return stripPointerCastsAndOffsets<PSK_ZeroIndicesAndInvariantGroups>(this);
+const Value *Value::stripPointerCastsForAliasAnalysis() const {
+  return stripPointerCastsAndOffsets<PSK_ForAliasAnalysis>(this);
 }
 
 const Value *Value::stripAndAccumulateConstantOffsets(

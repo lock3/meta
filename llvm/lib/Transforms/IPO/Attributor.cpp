@@ -24,6 +24,7 @@
 #include "llvm/Analysis/MemorySSAUpdater.h"
 #include "llvm/Analysis/MustExecute.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/NoFolder.h"
@@ -1174,6 +1175,10 @@ ChangeStatus Attributor::manifestAttributes() {
 }
 
 void Attributor::identifyDeadInternalFunctions() {
+  // Early exit if we don't intend to delete functions.
+  if (!DeleteFns)
+    return;
+
   // Identify dead internal functions and delete them. This happens outside
   // the other fixpoint analysis as we might treat potentially dead functions
   // as live to lower the number of iterations. If they happen to be dead, the
@@ -1251,6 +1256,17 @@ ChangeStatus Attributor::cleanupIR() {
       if (!isa<PHINode>(I) && !ToBeDeletedInsts.count(I) &&
           isInstructionTriviallyDead(I))
         DeadInsts.push_back(I);
+    }
+    if (isa<UndefValue>(NewV) && isa<CallBase>(U->getUser())) {
+      auto *CB = cast<CallBase>(U->getUser());
+      if (CB->isArgOperand(U)) {
+        unsigned Idx = CB->getArgOperandNo(U);
+        CB->removeParamAttr(Idx, Attribute::NoUndef);
+        Function *Fn = CB->getCalledFunction();
+        assert(Fn && "Expected callee when call argument is replaced!");
+        if (Fn->arg_size() > Idx)
+          Fn->removeParamAttr(Idx, Attribute::NoUndef);
+      }
     }
     if (isa<Constant>(NewV) && isa<BranchInst>(U->getUser())) {
       Instruction *UserI = cast<Instruction>(U->getUser());
@@ -1515,7 +1531,8 @@ static Function *internalizeFunction(Function &F) {
   SmallVector<ReturnInst *, 8> Returns;
 
   // Copy the body of the original function to the new one
-  CloneFunctionInto(Copied, &F, VMap, /* ModuleLevelChanges */ false, Returns);
+  CloneFunctionInto(Copied, &F, VMap, CloneFunctionChangeType::LocalChangesOnly,
+                    Returns);
 
   // Set the linakage and visibility late as CloneFunctionInto has some implicit
   // requirements.
@@ -1909,6 +1926,10 @@ void InformationCache::initializeInformationCache(const Function &CF,
     InlineableFunctions.insert(&F);
 }
 
+AAResults *InformationCache::getAAResultsForFunction(const Function &F) {
+  return AG.getAnalysis<AAManager>(F);
+}
+
 InformationCache::FunctionInfo::~FunctionInfo() {
   // The instruction vectors are allocated using a BumpPtrAllocator, we need to
   // manually destroy them.
@@ -2271,7 +2292,8 @@ void AbstractAttribute::printWithDeps(raw_ostream &OS) const {
 static bool runAttributorOnFunctions(InformationCache &InfoCache,
                                      SetVector<Function *> &Functions,
                                      AnalysisGetter &AG,
-                                     CallGraphUpdater &CGUpdater) {
+                                     CallGraphUpdater &CGUpdater,
+                                     bool DeleteFns) {
   if (Functions.empty())
     return false;
 
@@ -2280,7 +2302,8 @@ static bool runAttributorOnFunctions(InformationCache &InfoCache,
 
   // Create an Attributor and initially empty information cache that is filled
   // while we identify default attribute opportunities.
-  Attributor A(Functions, InfoCache, CGUpdater);
+  Attributor A(Functions, InfoCache, CGUpdater, /* Allowed */ nullptr,
+               DeleteFns);
 
   // Create shallow wrappers for all functions that are not IPO amendable
   if (AllowShallowWrappers)
@@ -2383,7 +2406,8 @@ PreservedAnalyses AttributorPass::run(Module &M, ModuleAnalysisManager &AM) {
   CallGraphUpdater CGUpdater;
   BumpPtrAllocator Allocator;
   InformationCache InfoCache(M, AG, Allocator, /* CGSCC */ nullptr);
-  if (runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater)) {
+  if (runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater,
+                               /* DeleteFns */ true)) {
     // FIXME: Think about passes we will preserve and add them here.
     return PreservedAnalyses::none();
   }
@@ -2410,7 +2434,8 @@ PreservedAnalyses AttributorCGSCCPass::run(LazyCallGraph::SCC &C,
   CGUpdater.initialize(CG, C, AM, UR);
   BumpPtrAllocator Allocator;
   InformationCache InfoCache(M, AG, Allocator, /* CGSCC */ &Functions);
-  if (runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater)) {
+  if (runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater,
+                               /* DeleteFns */ false)) {
     // FIXME: Think about passes we will preserve and add them here.
     PreservedAnalyses PA;
     PA.preserve<FunctionAnalysisManagerCGSCCProxy>();
@@ -2455,7 +2480,7 @@ template <> struct DOTGraphTraits<AADepGraph *> : public DefaultDOTGraphTraits {
 
   static std::string getNodeLabel(const AADepGraphNode *Node,
                                   const AADepGraph *DG) {
-    std::string AAString = "";
+    std::string AAString;
     raw_string_ostream O(AAString);
     Node->print(O);
     return AAString;
@@ -2485,7 +2510,8 @@ struct AttributorLegacyPass : public ModulePass {
     CallGraphUpdater CGUpdater;
     BumpPtrAllocator Allocator;
     InformationCache InfoCache(M, AG, Allocator, /* CGSCC */ nullptr);
-    return runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater);
+    return runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater,
+                                    /* DeleteFns*/ true);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
@@ -2521,7 +2547,8 @@ struct AttributorCGSCCLegacyPass : public CallGraphSCCPass {
     Module &M = *Functions.back()->getParent();
     BumpPtrAllocator Allocator;
     InformationCache InfoCache(M, AG, Allocator, /* CGSCC */ &Functions);
-    return runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater);
+    return runAttributorOnFunctions(InfoCache, Functions, AG, CGUpdater,
+                                    /* DeleteFns */ false);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {

@@ -14,6 +14,7 @@
 
 #include "flang/Common/Fortran.h"
 #include "flang/Evaluate/expression.h"
+#include "flang/Evaluate/shape.h"
 #include "flang/Evaluate/type.h"
 #include "flang/Evaluate/variable.h"
 #include "flang/Parser/message.h"
@@ -30,9 +31,15 @@ class DerivedTypeSpec;
 class Scope;
 class Symbol;
 
+// Note: Here ProgramUnit includes internal subprograms while TopLevelUnit
+// does not. "program-unit" in the Fortran standard matches TopLevelUnit.
+const Scope &GetTopLevelUnitContaining(const Scope &);
+const Scope &GetTopLevelUnitContaining(const Symbol &);
+const Scope &GetProgramUnitContaining(const Scope &);
+const Scope &GetProgramUnitContaining(const Symbol &);
+
 const Scope *FindModuleContaining(const Scope &);
-const Scope *FindProgramUnitContaining(const Scope &);
-const Scope *FindProgramUnitContaining(const Symbol &);
+const Scope *FindModuleFileContaining(const Scope &);
 const Scope *FindPureProcedureContaining(const Scope &);
 const Scope *FindPureProcedureContaining(const Symbol &);
 const Symbol *FindPointerComponent(const Scope &);
@@ -97,7 +104,15 @@ bool IsIsoCType(const DerivedTypeSpec *);
 bool IsEventTypeOrLockType(const DerivedTypeSpec *);
 bool IsOrContainsEventOrLockComponent(const Symbol &);
 bool CanBeTypeBoundProc(const Symbol *);
-bool IsInitialized(const Symbol &, bool ignoreDATAstatements = false);
+// Does a non-PARAMETER symbol have explicit initialization with =value or
+// =>target in its declaration, or optionally in a DATA statement? (Being
+// ALLOCATABLE or having a derived type with default component initialization
+// doesn't count; it must be a variable initialization that implies the SAVE
+// attribute, or a derived type component default value.)
+bool IsStaticallyInitialized(const Symbol &, bool ignoreDATAstatements = false);
+// Is the symbol explicitly or implicitly initialized in any way?
+bool IsInitialized(const Symbol &, bool ignoreDATAstatements = false,
+    const Symbol *derivedType = nullptr);
 bool HasIntrinsicTypeName(const Symbol &);
 bool IsSeparateModuleProcedureInterface(const Symbol *);
 bool IsAutomatic(const Symbol &);
@@ -545,5 +560,12 @@ private:
 // Return the (possibly null) name of the ConstructNode
 const std::optional<parser::Name> &MaybeGetNodeName(
     const ConstructNode &construct);
+
+// Convert evaluate::GetShape() result into an ArraySpec
+std::optional<ArraySpec> ToArraySpec(
+    evaluate::FoldingContext &, const evaluate::Shape &);
+std::optional<ArraySpec> ToArraySpec(
+    evaluate::FoldingContext &, const std::optional<evaluate::Shape> &);
+
 } // namespace Fortran::semantics
 #endif // FORTRAN_SEMANTICS_TOOLS_H_

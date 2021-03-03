@@ -12,8 +12,8 @@
 #include "mlir/Dialect/Quant/QuantizeUtils.h"
 #include "mlir/Dialect/Quant/UniformSupport.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
@@ -96,7 +96,7 @@ void ConvertConstPass::runOnFunction() {
   auto func = getFunction();
   auto *context = &getContext();
   patterns.insert<QuantizedConstRewrite>(context);
-  applyPatternsAndFoldGreedily(func, std::move(patterns));
+  (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
 }
 
 std::unique_ptr<OperationPass<FuncOp>> mlir::quant::createConvertConstPass() {

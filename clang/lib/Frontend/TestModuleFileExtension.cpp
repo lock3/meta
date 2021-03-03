@@ -127,3 +127,11 @@ TestModuleFileExtension::createExtensionReader(
   return std::unique_ptr<ModuleFileExtensionReader>(
                                                     new TestModuleFileExtension::Reader(this, Stream));
 }
+
+std::string TestModuleFileExtension::str() const {
+  std::string Buffer;
+  llvm::raw_string_ostream OS(Buffer);
+  OS << BlockName << ":" << MajorVersion << ":" << MinorVersion << ":" << Hashed
+     << ":" << UserInfo;
+  return OS.str();
+}

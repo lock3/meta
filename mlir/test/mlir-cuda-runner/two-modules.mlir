@@ -1,4 +1,10 @@
-// RUN: mlir-cuda-runner %s --shared-libs=%cuda_wrapper_library_dir/libcuda-runtime-wrappers%shlibext,%linalg_test_lib_dir/libmlir_runner_utils%shlibext --entry-point-result=void | FileCheck %s
+// RUN: mlir-cuda-runner %s \
+// RUN:   -gpu-to-cubin="gpu-binary-annotation=nvvm.cubin" \
+// RUN:   -gpu-to-llvm="gpu-binary-annotation=nvvm.cubin" \
+// RUN:   --shared-libs=%cuda_wrapper_library_dir/libcuda-runtime-wrappers%shlibext \
+// RUN:   --shared-libs=%linalg_test_lib_dir/libmlir_runner_utils%shlibext \
+// RUN:   --entry-point-result=void \
+// RUN: | FileCheck %s
 
 // CHECK: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 func @main() {
@@ -25,4 +31,4 @@ func @main() {
   return
 }
 
-func @print_memref_i32(%memref : memref<*xi32>)
+func private @print_memref_i32(%memref : memref<*xi32>)

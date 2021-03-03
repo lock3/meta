@@ -716,9 +716,8 @@ void LoopReroll::DAGRootTracker::collectInLoopUserSet(
       }
 
     // We also want to collect single-user "feeder" values.
-    for (User::op_iterator OI = I->op_begin(),
-         OIE = I->op_end(); OI != OIE; ++OI) {
-      if (Instruction *Op = dyn_cast<Instruction>(*OI))
+    for (Use &U : I->operands()) {
+      if (Instruction *Op = dyn_cast<Instruction>(U))
         if (Op->hasOneUse() && L->contains(Op) && !Exclude.count(Op) &&
             !Final.count(Op))
           Queue.push_back(Op);
@@ -1096,7 +1095,7 @@ LoopReroll::DAGRootTracker::nextInstr(int Val, UsesTy &In,
                                       UsesTy::iterator *StartI) {
   UsesTy::iterator I = StartI ? *StartI : In.begin();
   while (I != In.end() && (I->second.test(Val) == 0 ||
-                           Exclude.count(I->first) != 0))
+                           Exclude.contains(I->first)))
     ++I;
   return I;
 }

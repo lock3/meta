@@ -171,16 +171,19 @@ struct ExtractionZone {
   //
   // This performs a partial AST traversal proportional to the size of the
   // enclosing function, so it is possibly expensive.
-  bool requiresHoisting(const SourceManager &SM) const {
+  bool requiresHoisting(const SourceManager &SM,
+                        const HeuristicResolver *Resolver) const {
     // First find all the declarations that happened inside extraction zone.
     llvm::SmallSet<const Decl *, 1> DeclsInExtZone;
     for (auto *RootStmt : RootStmts) {
-      findExplicitReferences(RootStmt,
-                             [&DeclsInExtZone](const ReferenceLoc &Loc) {
-                               if (!Loc.IsDecl)
-                                 return;
-                               DeclsInExtZone.insert(Loc.Targets.front());
-                             });
+      findExplicitReferences(
+          RootStmt,
+          [&DeclsInExtZone](const ReferenceLoc &Loc) {
+            if (!Loc.IsDecl)
+              return;
+            DeclsInExtZone.insert(Loc.Targets.front());
+          },
+          Resolver);
     }
     // Early exit without performing expensive traversal below.
     if (DeclsInExtZone.empty())
@@ -191,15 +194,18 @@ struct ExtractionZone {
                                        ZoneRange.getEnd()))
         continue;
       bool HasPostUse = false;
-      findExplicitReferences(S, [&](const ReferenceLoc &Loc) {
-        if (HasPostUse ||
-            SM.isBeforeInTranslationUnit(Loc.NameLoc, ZoneRange.getEnd()))
-          return;
-        HasPostUse =
-            llvm::any_of(Loc.Targets, [&DeclsInExtZone](const Decl *Target) {
-              return DeclsInExtZone.contains(Target);
-            });
-      });
+      findExplicitReferences(
+          S,
+          [&](const ReferenceLoc &Loc) {
+            if (HasPostUse ||
+                SM.isBeforeInTranslationUnit(Loc.NameLoc, ZoneRange.getEnd()))
+              return;
+            HasPostUse = llvm::any_of(Loc.Targets,
+                                      [&DeclsInExtZone](const Decl *Target) {
+                                        return DeclsInExtZone.contains(Target);
+                                      });
+          },
+          Resolver);
       if (HasPostUse)
         return true;
     }
@@ -708,6 +714,27 @@ tooling::Replacement createFunctionDefinition(const NewFunction &ExtractedFunc,
   return tooling::Replacement(SM, ExtractedFunc.InsertionPoint, 0, FunctionDef);
 }
 
+// Returns true if ExtZone contains any ReturnStmts.
+bool hasReturnStmt(const ExtractionZone &ExtZone) {
+  class ReturnStmtVisitor
+      : public clang::RecursiveASTVisitor<ReturnStmtVisitor> {
+  public:
+    bool VisitReturnStmt(ReturnStmt *Return) {
+      Found = true;
+      return false; // We found the answer, abort the scan.
+    }
+    bool Found = false;
+  };
+
+  ReturnStmtVisitor V;
+  for (const Stmt *RootStmt : ExtZone.RootStmts) {
+    V.TraverseStmt(const_cast<Stmt *>(RootStmt));
+    if (V.Found)
+      break;
+  }
+  return V.Found;
+}
+
 bool ExtractFunction::prepare(const Selection &Inputs) {
   const LangOptions &LangOpts = Inputs.AST->getLangOpts();
   if (!LangOpts.CPlusPlus)
@@ -715,8 +742,12 @@ bool ExtractFunction::prepare(const Selection &Inputs) {
   const Node *CommonAnc = Inputs.ASTSelection.commonAncestor();
   const SourceManager &SM = Inputs.AST->getSourceManager();
   auto MaybeExtZone = findExtractionZone(CommonAnc, SM, LangOpts);
+  if (!MaybeExtZone ||
+      (hasReturnStmt(*MaybeExtZone) && !alwaysReturns(*MaybeExtZone)))
+    return false;
+
   // FIXME: Get rid of this check once we support hoisting.
-  if (!MaybeExtZone || MaybeExtZone->requiresHoisting(SM))
+  if (MaybeExtZone->requiresHoisting(SM, Inputs.AST->getHeuristicResolver()))
     return false;
 
   ExtZone = std::move(*MaybeExtZone);

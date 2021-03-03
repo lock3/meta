@@ -15,6 +15,7 @@
 #include "lldb/Initialization/SystemInitializerCommon.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Target/ProcessTrace.h"
+#include "lldb/Utility/Reproducer.h"
 #include "lldb/Utility/Timer.h"
 #include "llvm/Support/TargetSelect.h"
 
@@ -28,14 +29,35 @@
 #define LLDB_PLUGIN(p) LLDB_PLUGIN_DECLARE(p)
 #include "Plugins/Plugins.def"
 
+#if LLDB_ENABLE_PYTHON
+#include "Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.h"
+
+constexpr lldb_private::HostInfo::SharedLibraryDirectoryHelper
+    *g_shlib_dir_helper =
+        lldb_private::ScriptInterpreterPython::SharedLibraryDirectoryHelper;
+
+#else
+constexpr lldb_private::HostInfo::SharedLibraryDirectoryHelper
+    *g_shlib_dir_helper = 0;
+#endif
+
 using namespace lldb_private;
 
-SystemInitializerFull::SystemInitializerFull() = default;
+SystemInitializerFull::SystemInitializerFull()
+    : SystemInitializerCommon(g_shlib_dir_helper) {}
 SystemInitializerFull::~SystemInitializerFull() = default;
 
 llvm::Error SystemInitializerFull::Initialize() {
-  if (auto e = SystemInitializerCommon::Initialize())
-    return e;
+  llvm::Error error = SystemInitializerCommon::Initialize();
+  if (error) {
+    // During active replay, the ::Initialize call is replayed like any other
+    // SB API call and the return value is ignored. Since we can't intercept
+    // this, we terminate here before the uninitialized debugger inevitably
+    // crashes.
+    if (repro::Reproducer::Instance().IsReplaying())
+      llvm::report_fatal_error(std::move(error));
+    return error;
+  }
 
   // Initialize LLVM and Clang
   llvm::InitializeAllTargets();
@@ -60,9 +82,6 @@ llvm::Error SystemInitializerFull::Initialize() {
 }
 
 void SystemInitializerFull::Terminate() {
-  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-  Timer scoped_timer(func_cat, LLVM_PRETTY_FUNCTION);
-
   Debugger::SettingsTerminate();
 
   // Terminate plug-ins in core LLDB

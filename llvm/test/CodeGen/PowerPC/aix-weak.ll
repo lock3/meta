@@ -1,10 +1,10 @@
-; RUN: llc -verify-machineinstrs -mtriple powerpc-ibm-aix-xcoff -mcpu=pwr4 \
+; RUN: llc -verify-machineinstrs -mtriple powerpc-ibm-aix-xcoff -xcoff-traceback-table=false -mcpu=pwr4 \
 ; RUN: -mattr=-altivec -data-sections=false < %s | FileCheck --check-prefixes=COMMON,BIT32 %s
 
-; RUN: llc -verify-machineinstrs -mtriple powerpc64-ibm-aix-xcoff -mcpu=pwr4 \
+; RUN: llc -verify-machineinstrs -mtriple powerpc64-ibm-aix-xcoff -xcoff-traceback-table=false -mcpu=pwr4 \
 ; RUN: -mattr=-altivec -data-sections=false < %s | FileCheck --check-prefixes=COMMON,BIT64 %s
 
-; RUN: llc -verify-machineinstrs -mtriple powerpc-ibm-aix-xcoff -mcpu=pwr4 \
+; RUN: llc -verify-machineinstrs -mtriple powerpc-ibm-aix-xcoff -xcoff-traceback-table=false -mcpu=pwr4 \
 ; RUN: -mattr=-altivec -data-sections=false -filetype=obj -o %t.o < %s
 ; RUN: llvm-readobj --symbols %t.o | FileCheck --check-prefix=CHECKSYM %s
 
@@ -100,6 +100,16 @@ entry:
 
 
 ; CHECKSYM:      Symbols [
+; CHECKSYM-NEXT:   Symbol {
+; CHECKSYM-NEXT:     Index: 0
+; CHECKSYM-NEXT:     Name: .file
+; CHECKSYM-NEXT:     Value (SymbolTableIndex): 0x0
+; CHECKSYM-NEXT:     Section: N_DEBUG
+; CHECKSYM-NEXT:     Source Language ID: TB_C (0x0)
+; CHECKSYM-NEXT:     CPU Version ID: 0x0
+; CHECKSYM-NEXT:     StorageClass: C_FILE (0x67)
+; CHECKSYM-NEXT:     NumberOfAuxEntries: 0
+; CHECKSYM-NEXT:   }
 ; CHECKSYM-NEXT:   Symbol {
 ; CHECKSYM-NEXT:     Index: [[#Index:]]
 ; CHECKSYM-NEXT:     Name: .text

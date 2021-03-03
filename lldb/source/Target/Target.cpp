@@ -128,13 +128,10 @@ Target::~Target() {
   DeleteCurrentProcess();
 }
 
-void Target::PrimeFromDummyTarget(Target *target) {
-  if (!target)
-    return;
+void Target::PrimeFromDummyTarget(Target &target) {
+  m_stop_hooks = target.m_stop_hooks;
 
-  m_stop_hooks = target->m_stop_hooks;
-
-  for (const auto &breakpoint_sp : target->m_breakpoint_list.Breakpoints()) {
+  for (const auto &breakpoint_sp : target.m_breakpoint_list.Breakpoints()) {
     if (breakpoint_sp->IsInternal())
       continue;
 
@@ -143,14 +140,14 @@ void Target::PrimeFromDummyTarget(Target *target) {
     AddBreakpoint(std::move(new_bp), false);
   }
 
-  for (auto bp_name_entry : target->m_breakpoint_names) {
+  for (auto bp_name_entry : target.m_breakpoint_names) {
 
     BreakpointName *new_bp_name = new BreakpointName(*bp_name_entry.second);
     AddBreakpointName(new_bp_name);
   }
 
   m_frame_recognizer_manager_up = std::make_unique<StackFrameRecognizerManager>(
-      *target->m_frame_recognizer_manager_up);
+      *target.m_frame_recognizer_manager_up);
 }
 
 void Target::Dump(Stream *s, lldb::DescriptionLevel description_level) {
@@ -202,12 +199,13 @@ void Target::DeleteCurrentProcess() {
 
 const lldb::ProcessSP &Target::CreateProcess(ListenerSP listener_sp,
                                              llvm::StringRef plugin_name,
-                                             const FileSpec *crash_file) {
+                                             const FileSpec *crash_file,
+                                             bool can_connect) {
   if (!listener_sp)
     listener_sp = GetDebugger().GetListener();
   DeleteCurrentProcess();
   m_process_sp = Process::FindPlugin(shared_from_this(), plugin_name,
-                                     listener_sp, crash_file);
+                                     listener_sp, crash_file, can_connect);
   return m_process_sp;
 }
 
@@ -1402,9 +1400,7 @@ void Target::SetExecutableModule(ModuleSP &executable_sp,
   ClearModules(false);
 
   if (executable_sp) {
-    static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-    Timer scoped_timer(func_cat,
-                       "Target::SetExecutableModule (executable = '%s')",
+    LLDB_SCOPED_TIMERF("Target::SetExecutableModule (executable = '%s')",
                        executable_sp->GetFileSpec().GetPath().c_str());
 
     const bool notify = true;
@@ -2978,7 +2974,7 @@ Status Target::Launch(ProcessLaunchInfo &launch_info, Stream *stream) {
     } else {
       // Use a Process plugin to construct the process.
       const char *plugin_name = launch_info.GetProcessPluginName();
-      CreateProcess(launch_info.GetListener(), plugin_name, nullptr);
+      CreateProcess(launch_info.GetListener(), plugin_name, nullptr, false);
     }
 
     // Since we didn't have a platform launch the process, launch it here.
@@ -3106,7 +3102,7 @@ Status Target::Attach(ProcessAttachInfo &attach_info, Stream *stream) {
       const char *plugin_name = attach_info.GetProcessPluginName();
       process_sp =
           CreateProcess(attach_info.GetListenerForProcess(GetDebugger()),
-                        plugin_name, nullptr);
+                        plugin_name, nullptr, false);
       if (process_sp == nullptr) {
         error.SetErrorStringWithFormat(
             "failed to create process using plugin %s",
@@ -3353,7 +3349,7 @@ Target::StopHookCommandLine::HandleStop(ExecutionContext &exc_ctx,
   // Force Async:
   bool old_async = debugger.GetAsyncExecution();
   debugger.SetAsyncExecution(true);
-  debugger.GetCommandInterpreter().HandleCommands(GetCommands(), &exc_ctx,
+  debugger.GetCommandInterpreter().HandleCommands(GetCommands(), exc_ctx,
                                                   options, result);
   debugger.SetAsyncExecution(old_async);
   lldb::ReturnStatus status = result.GetStatus();
@@ -3518,6 +3514,28 @@ static constexpr OptionEnumValueElement g_x86_dis_flavor_value_types[] = {
     },
 };
 
+static constexpr OptionEnumValueElement g_import_std_module_value_types[] = {
+    {
+        eImportStdModuleFalse,
+        "false",
+        "Never import the 'std' C++ module in the expression parser.",
+    },
+    {
+        eImportStdModuleFallback,
+        "fallback",
+        "Retry evaluating expressions with an imported 'std' C++ module if they"
+        " failed to parse without the module. This allows evaluating more "
+        "complex expressions involving C++ standard library types."
+    },
+    {
+        eImportStdModuleTrue,
+        "true",
+        "Always import the 'std' C++ module. This allows evaluating more "
+        "complex expressions involving C++ standard library types. This feature"
+        " is experimental."
+    },
+};
+
 static constexpr OptionEnumValueElement g_hex_immediate_style_values[] = {
     {
         Disassembler::eHexStyleC,
@@ -3597,15 +3615,10 @@ enum {
   ePropertyExperimental,
 };
 
-class TargetOptionValueProperties : public OptionValueProperties {
+class TargetOptionValueProperties
+    : public Cloneable<TargetOptionValueProperties, OptionValueProperties> {
 public:
-  TargetOptionValueProperties(ConstString name) : OptionValueProperties(name) {}
-
-  // This constructor is used when creating TargetOptionValueProperties when it
-  // is part of a new lldb_private::Target instance. It will copy all current
-  // global property values as needed
-  TargetOptionValueProperties(const TargetPropertiesSP &target_properties_sp)
-      : OptionValueProperties(*target_properties_sp->GetValueProperties()) {}
+  TargetOptionValueProperties(ConstString name) : Cloneable(name) {}
 
   const Property *GetPropertyAtIndex(const ExecutionContext *exe_ctx,
                                      bool will_modify,
@@ -3636,11 +3649,12 @@ enum {
 #include "TargetPropertiesEnum.inc"
 };
 
-class TargetExperimentalOptionValueProperties : public OptionValueProperties {
+class TargetExperimentalOptionValueProperties
+    : public Cloneable<TargetExperimentalOptionValueProperties,
+                       OptionValueProperties> {
 public:
   TargetExperimentalOptionValueProperties()
-      : OptionValueProperties(
-            ConstString(Properties::GetExperimentalSettingsName())) {}
+      : Cloneable(ConstString(Properties::GetExperimentalSettingsName())) {}
 };
 
 TargetExperimentalProperties::TargetExperimentalProperties()
@@ -3653,8 +3667,8 @@ TargetExperimentalProperties::TargetExperimentalProperties()
 TargetProperties::TargetProperties(Target *target)
     : Properties(), m_launch_info(), m_target(target) {
   if (target) {
-    m_collection_sp = std::make_shared<TargetOptionValueProperties>(
-        Target::GetGlobalProperties());
+    m_collection_sp =
+        OptionValueProperties::CreateLocalCopy(*Target::GetGlobalProperties());
 
     // Set callbacks to update launch_info whenever "settins set" updated any
     // of these properties
@@ -3971,10 +3985,10 @@ bool TargetProperties::GetEnableAutoImportClangModules() const {
       nullptr, idx, g_target_properties[idx].default_uint_value != 0);
 }
 
-bool TargetProperties::GetEnableImportStdModule() const {
+ImportStdModule TargetProperties::GetImportStdModule() const {
   const uint32_t idx = ePropertyImportStdModule;
-  return m_collection_sp->GetPropertyAtIndexAsBoolean(
-      nullptr, idx, g_target_properties[idx].default_uint_value != 0);
+  return (ImportStdModule)m_collection_sp->GetPropertyAtIndexAsEnumeration(
+      nullptr, idx, g_target_properties[idx].default_uint_value);
 }
 
 bool TargetProperties::GetEnableAutoApplyFixIts() const {
@@ -4182,8 +4196,7 @@ void TargetProperties::SetNonStopModeEnabled(bool b) {
   m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, b);
 }
 
-const ProcessLaunchInfo &TargetProperties::GetProcessLaunchInfo() {
-  m_launch_info.SetArg0(GetArg0()); // FIXME: Arg0 callback doesn't work
+const ProcessLaunchInfo &TargetProperties::GetProcessLaunchInfo() const {
   return m_launch_info;
 }
 
@@ -4287,6 +4300,17 @@ void TargetProperties::DisableSTDIOValueChangedCallback() {
     m_launch_info.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
   else
     m_launch_info.GetFlags().Clear(lldb::eLaunchFlagDisableSTDIO);
+}
+
+bool TargetProperties::GetDebugUtilityExpression() const {
+  const uint32_t idx = ePropertyDebugUtilityExpression;
+  return m_collection_sp->GetPropertyAtIndexAsBoolean(
+      nullptr, idx, g_target_properties[idx].default_uint_value != 0);
+}
+
+void TargetProperties::SetDebugUtilityExpression(bool debug) {
+  const uint32_t idx = ePropertyDebugUtilityExpression;
+  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, debug);
 }
 
 // Target::TargetEventData

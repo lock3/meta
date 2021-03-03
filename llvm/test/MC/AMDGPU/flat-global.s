@@ -1,9 +1,9 @@
-// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx900 -show-encoding %s | FileCheck -check-prefix=GFX9 -check-prefix=GCN %s
-// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx900 2>&1 %s | FileCheck -check-prefix=GFX9-ERR -check-prefix=GCNERR --implicit-check-not=error: %s
-// RUN: not llvm-mc -arch=amdgcn -mcpu=tonga 2>&1 %s | FileCheck -check-prefix=VI-ERR -check-prefix=GCNERR --implicit-check-not=error: %s
+// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx900 -show-encoding %s | FileCheck --check-prefixes=GFX9,GCN %s
+// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx900 2>&1 %s | FileCheck -check-prefix=GFX9-ERR --implicit-check-not=error: %s
+// RUN: not llvm-mc -arch=amdgcn -mcpu=tonga 2>&1 %s | FileCheck -check-prefix=VI-ERR --implicit-check-not=error: %s
 
-// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx1010 -show-encoding %s | FileCheck --check-prefixes=GFX10 %s
-// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx1010 %s 2>&1 | FileCheck --check-prefixes=GFX10-ERR --implicit-check-not=error: %s
+// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx1010 -show-encoding %s | FileCheck --check-prefix=GFX10 %s
+// RUN: not llvm-mc -arch=amdgcn -mcpu=gfx1010 %s 2>&1 | FileCheck --check-prefix=GFX10-ERR --implicit-check-not=error: %s
 
 global_load_ubyte v1, v[3:4], off
 // GFX10: encoding: [0x00,0x80,0x20,0xdc,0x03,0x00,0x7d,0x01]
@@ -12,7 +12,7 @@ global_load_ubyte v1, v[3:4], off
 
 global_load_ubyte v1, v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x20,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_sbyte v1, v[3:4], off
@@ -22,7 +22,7 @@ global_load_sbyte v1, v[3:4], off
 
 global_load_sbyte v1, v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x24,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_ushort v1, v[3:4], off
@@ -32,7 +32,7 @@ global_load_ushort v1, v[3:4], off
 
 global_load_ushort v1, v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x28,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_sshort v1, v[3:4], off
@@ -42,7 +42,7 @@ global_load_sshort v1, v[3:4], off
 
 global_load_sshort v1, v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x2c,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_dword v1, v[3:4], off
@@ -52,7 +52,7 @@ global_load_dword v1, v[3:4], off
 
 global_load_dword v1, v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x30,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_dwordx2 v[1:2], v[3:4], off
@@ -62,7 +62,7 @@ global_load_dwordx2 v[1:2], v[3:4], off
 
 global_load_dwordx2 v[1:2], v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x34,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_dwordx3 v[1:3], v[3:4], off
@@ -72,7 +72,7 @@ global_load_dwordx3 v[1:3], v[3:4], off
 
 global_load_dwordx3 v[1:3], v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x3c,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_load_dwordx4 v[1:4], v[3:4], off
@@ -82,10 +82,9 @@ global_load_dwordx4 v[1:4], v[3:4], off
 
 global_load_dwordx4 v[1:4], v[3:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x38,0xdc,0x03,0x00,0x7d,0x01]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
-// FIXME: VI error should be instruction nto supported
 global_load_dword v1, v[3:4], off offset:0
 // GFX10: encoding: [0x00,0x80,0x30,0xdc,0x03,0x00,0x7d,0x01]
 // GFX9: global_load_dword v1, v[3:4], off    ; encoding: [0x00,0x80,0x50,0xdc,0x03,0x00,0x7f,0x01]
@@ -123,7 +122,7 @@ global_store_byte v[3:4], v1, off
 
 global_store_byte v[3:4], v1, off dlc
 // GFX10: encoding: [0x00,0x90,0x60,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_short v[3:4], v1, off
@@ -133,7 +132,7 @@ global_store_short v[3:4], v1, off
 
 global_store_short v[3:4], v1, off dlc
 // GFX10: encoding: [0x00,0x90,0x68,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_dword v[3:4], v1, off
@@ -143,7 +142,7 @@ global_store_dword v[3:4], v1, off
 
 global_store_dword v[3:4], v1, off dlc
 // GFX10: encoding: [0x00,0x90,0x70,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_dwordx2 v[3:4], v[1:2], off
@@ -153,7 +152,7 @@ global_store_dwordx2 v[3:4], v[1:2], off
 
 global_store_dwordx2 v[3:4], v[1:2], off dlc
 // GFX10: encoding: [0x00,0x90,0x74,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_dwordx3 v[3:4], v[1:3], off
@@ -163,7 +162,7 @@ global_store_dwordx3 v[3:4], v[1:3], off
 
 global_store_dwordx3 v[3:4], v[1:3], off dlc
 // GFX10: encoding: [0x00,0x90,0x7c,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_dwordx4 v[3:4], v[1:4], off
@@ -173,7 +172,7 @@ global_store_dwordx4 v[3:4], v[1:4], off
 
 global_store_dwordx4 v[3:4], v[1:4], off dlc
 // GFX10: encoding: [0x00,0x90,0x78,0xdc,0x03,0x01,0x7d,0x00]
-// GFX9-ERR: error: failed parsing operand
+// GFX9-ERR: error: dlc modifier is not supported on this GPU
 // VI-ERR: error: instruction not supported on this GPU
 
 global_store_dword v[3:4], v1, off offset:12
@@ -232,9 +231,69 @@ global_atomic_cmpswap v[3:4], v[5:6], off
 // GFX9: global_atomic_cmpswap v[3:4], v[5:6], off ; encoding: [0x00,0x80,0x04,0xdd,0x03,0x05,0x7f,0x00]
 // VI-ERR: error: instruction not supported on this GPU
 
-global_atomic_cmpswap_x2 v[3:4], v[5:8], off
-// GFX10: encoding: [0x00,0x80,0x44,0xdd,0x03,0x05,0x7d,0x00]
-// GFX9: global_atomic_cmpswap_x2 v[3:4], v[5:8], off ; encoding: [0x00,0x80,0x84,0xdd,0x03,0x05,0x7f,0x00]
+global_atomic_cmpswap v1, v[3:4], v[5:6], off glc
+// GFX10: encoding: [0x00,0x80,0xc5,0xdc,0x03,0x05,0x7d,0x01]
+// GFX9: global_atomic_cmpswap v1, v[3:4], v[5:6], off glc ; encoding: [0x00,0x80,0x05,0xdd,0x03,0x05,0x7f,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v3, v[5:6], s[2:3] glc
+// GFX10: encoding: [0x00,0x80,0xc5,0xdc,0x03,0x05,0x02,0x01]
+// GFX9: global_atomic_cmpswap v1, v3, v[5:6], s[2:3] glc ; encoding: [0x00,0x80,0x05,0xdd,0x03,0x05,0x02,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v[2:3], v[4:5], off offset:-1 glc
+// GCN: global_atomic_cmpswap v1, v[2:3], v[4:5], off offset:-1 glc ; encoding: [0xff,0x9f,0x05,0xdd,0x02,0x04,0x7f,0x01]
+// GFX10: global_atomic_cmpswap v1, v[2:3], v[4:5], off offset:-1 glc ; encoding: [0xff,0x8f,0xc5,0xdc,0x02,0x04,0x7d,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v[2:3], v[254:255], off offset:-1 glc
+// GCN: global_atomic_cmpswap v1, v[2:3], v[254:255], off offset:-1 glc ; encoding: [0xff,0x9f,0x05,0xdd,0x02,0xfe,0x7f,0x01]
+// GFX10: global_atomic_cmpswap v1, v[2:3], v[254:255], off offset:-1 glc ; encoding: [0xff,0x8f,0xc5,0xdc,0x02,0xfe,0x7d,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v2, v[4:5], s[2:3] offset:-1 glc
+// GCN: global_atomic_cmpswap v1, v2, v[4:5], s[2:3] offset:-1 glc ; encoding: [0xff,0x9f,0x05,0xdd,0x02,0x04,0x02,0x01]
+// GFX10: global_atomic_cmpswap v1, v2, v[4:5], s[2:3] offset:-1 glc ; encoding: [0xff,0x8f,0xc5,0xdc,0x02,0x04,0x02,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v[2:3], v[4:5], off glc
+// GCN: global_atomic_cmpswap v1, v[2:3], v[4:5], off glc ; encoding: [0x00,0x80,0x05,0xdd,0x02,0x04,0x7f,0x01]
+// GFX10: global_atomic_cmpswap v1, v[2:3], v[4:5], off glc ; encoding: [0x00,0x80,0xc5,0xdc,0x02,0x04,0x7d,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[5:6], v[7:10], off
+// GFX10: encoding: [0x00,0x80,0x44,0xdd,0x05,0x07,0x7d,0x00]
+// GFX9: global_atomic_cmpswap_x2 v[5:6], v[7:10], off ; encoding: [0x00,0x80,0x84,0xdd,0x05,0x07,0x7f,0x00]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off glc
+// GFX10: encoding: [0x00,0x80,0x45,0xdd,0x05,0x07,0x7d,0x01]
+// GFX9: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off glc ; encoding: [0x00,0x80,0x85,0xdd,0x05,0x07,0x7f,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v5, v[7:10], s[2:3] glc
+// GFX10: encoding: [0x00,0x80,0x45,0xdd,0x05,0x07,0x02,0x01]
+// GFX9: global_atomic_cmpswap_x2 v[1:2], v5, v[7:10], s[2:3] glc ; encoding: [0x00,0x80,0x85,0xdd,0x05,0x07,0x02,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off offset:-1 glc
+// GCN: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off offset:-1 glc ; encoding: [0xff,0x9f,0x85,0xdd,0x05,0x07,0x7f,0x01]
+// GFX10: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off offset:-1 glc ; encoding: [0xff,0x8f,0x45,0xdd,0x05,0x07,0x7d,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v[5:6], v[252:255], off offset:-1 glc
+// GCN: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[252:255], off offset:-1 glc ; encoding: [0xff,0x9f,0x85,0xdd,0x05,0xfc,0x7f,0x01]
+// GFX10: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[252:255], off offset:-1 glc ; encoding: [0xff,0x8f,0x45,0xdd,0x05,0xfc,0x7d,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v5, v[252:255], s[2:3] offset:-1 glc
+// GCN: global_atomic_cmpswap_x2 v[1:2], v5, v[252:255], s[2:3] offset:-1 glc ; encoding: [0xff,0x9f,0x85,0xdd,0x05,0xfc,0x02,0x01]
+// GFX10: global_atomic_cmpswap_x2 v[1:2], v5, v[252:255], s[2:3] offset:-1 glc ; encoding: [0xff,0x8f,0x45,0xdd,0x05,0xfc,0x02,0x01]
+// VI-ERR: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off glc
+// GCN: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off glc ; encoding: [0x00,0x80,0x85,0xdd,0x05,0x07,0x7f,0x01]
+// GFX10: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off glc ; encoding: [0x00,0x80,0x45,0xdd,0x05,0x07,0x7d,0x01]
 // VI-ERR: error: instruction not supported on this GPU
 
 global_atomic_swap v[3:4], v5, off
@@ -362,9 +421,29 @@ global_atomic_cmpswap v[3:4], v[5:6], off offset:-16
 // GFX9: global_atomic_cmpswap v[3:4], v[5:6], off offset:-16 ; encoding: [0xf0,0x9f,0x04,0xdd,0x03,0x05,0x7f,0x00]
 // VI-ERR: :1: error: instruction not supported on this GPU
 
-global_atomic_cmpswap_x2 v[3:4], v[5:8], off offset:-16
-// GFX10: encoding: [0xf0,0x8f,0x44,0xdd,0x03,0x05,0x7d,0x00]
-// GFX9: global_atomic_cmpswap_x2 v[3:4], v[5:8], off offset:-16 ; encoding: [0xf0,0x9f,0x84,0xdd,0x03,0x05,0x7f,0x00]
+global_atomic_cmpswap v1, v[3:4], v[5:6], off offset:-16 glc
+// GFX10: encoding: [0xf0,0x8f,0xc5,0xdc,0x03,0x05,0x7d,0x01]
+// GFX9: global_atomic_cmpswap v1, v[3:4], v[5:6], off offset:-16 glc ; encoding: [0xf0,0x9f,0x05,0xdd,0x03,0x05,0x7f,0x01]
+// VI-ERR: :1: error: instruction not supported on this GPU
+
+global_atomic_cmpswap v1, v3, v[5:6], s[2:3] offset:-16 glc
+// GFX10: encoding: [0xf0,0x8f,0xc5,0xdc,0x03,0x05,0x02,0x01]
+// GFX9: global_atomic_cmpswap v1, v3, v[5:6], s[2:3] offset:-16 glc ; encoding: [0xf0,0x9f,0x05,0xdd,0x03,0x05,0x02,0x01]
+// VI-ERR: :1: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[5:6], v[7:10], off offset:-16
+// GFX10: encoding: [0xf0,0x8f,0x44,0xdd,0x05,0x07,0x7d,0x00]
+// GFX9: global_atomic_cmpswap_x2 v[5:6], v[7:10], off offset:-16 ; encoding: [0xf0,0x9f,0x84,0xdd,0x05,0x07,0x7f,0x00]
+// VI-ERR: :1: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off offset:-16 glc
+// GFX10: encoding: [0xf0,0x8f,0x45,0xdd,0x05,0x07,0x7d,0x01]
+// GFX9: global_atomic_cmpswap_x2 v[1:2], v[5:6], v[7:10], off offset:-16 glc ; encoding: [0xf0,0x9f,0x85,0xdd,0x05,0x07,0x7f,0x01]
+// VI-ERR: :1: error: instruction not supported on this GPU
+
+global_atomic_cmpswap_x2 v[1:2], v5, v[7:10], s[2:3] offset:-16 glc
+// GFX10: encoding: [0xf0,0x8f,0x45,0xdd,0x05,0x07,0x02,0x01]
+// GFX9: global_atomic_cmpswap_x2 v[1:2], v5, v[7:10], s[2:3] offset:-16 glc ; encoding: [0xf0,0x9f,0x85,0xdd,0x05,0x07,0x02,0x01]
 // VI-ERR: :1: error: instruction not supported on this GPU
 
 global_atomic_swap v[3:4], v5, off offset:-16

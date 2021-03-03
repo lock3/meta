@@ -5,10 +5,6 @@
 
 cmake_minimum_required(VERSION 3.13.4)
 
-if(POLICY CMP0075)
-  cmake_policy(SET CMP0075 NEW)
-endif()
-
 # Check if compiler-rt is built as a standalone project.
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR COMPILER_RT_STANDALONE_BUILD)
   project(CompilerRT C CXX ASM)
@@ -119,22 +115,10 @@ if ("${COMPILER_RT_DEFAULT_TARGET_TRIPLE}" MATCHES ".*hf$")
     CHECK_SYMBOL_EXISTS (__thumb__ "" COMPILER_RT_ARM_THUMB)
   endif()
 endif()
-
-set(ANDROID_HAS_ELF_TLS 0)
 if ("${COMPILER_RT_DEFAULT_TARGET_TRIPLE}" MATCHES ".*android.*")
   set(ANDROID 1)
-  CHECK_CXX_SOURCE_COMPILES("
-int main() {
-#if __ANDROID_API__ >= 28
-    return 0;
-#else
-  #error NO_ELF_TLS
-  return 1;
-#endif
-}
-  " ANDROID_HAS_ELF_TLS)
-  string(REGEX MATCH "-target(=| +)[^ ]+android([0-9]+)" ANDROID_API_LEVEL "${CMAKE_C_FLAGS}")
-  set(ANDROID_API_LEVEL ${CMAKE_MATCH_2}) 
+  string(REGEX MATCH "-target(=| +)[^ ]+android[a-z]*([0-9]+)" ANDROID_API_LEVEL "${CMAKE_C_FLAGS}")
+  set(ANDROID_API_LEVEL ${CMAKE_MATCH_2})
 endif()
 pythonize_bool(ANDROID)
 
@@ -289,9 +273,9 @@ if(NOT COMPILER_RT_HAS_FUNC_SYMBOL)
 endif()
 
 # Provide some common commmandline flags for Sanitizer runtimes.
-if(ANDROID_HAS_ELF_TLS)
+if("${ANDROID_API_LEVEL}" GREATER_EQUAL 28)
   list(APPEND SANITIZER_COMMON_CFLAGS -fno-emulated-tls)
-  list(APPEND COMPILER_RT_TEST_COMPILER_CFLAGS -fno-emulated-tls)
+  string(APPEND COMPILER_RT_TEST_COMPILER_CFLAGS " -fno-emulated-tls")
 endif()
 if(NOT WIN32)
   append_list_if(COMPILER_RT_HAS_FPIC_FLAG -fPIC SANITIZER_COMMON_CFLAGS)
@@ -469,8 +453,8 @@ append_list_if(COMPILER_RT_HAS_NOSTDINCXX_FLAG -nostdinc++ SANITIZER_COMMON_CFLA
 append_list_if(COMPILER_RT_HAS_NOSTDLIBXX_FLAG -nostdlib++ SANITIZER_COMMON_LINK_FLAGS)
 
 # Remove -stdlib= which is unused when passing -nostdinc++...
-string(REGEX MATCHALL "-stdlib=[a-zA-Z+]*" stdlib_flag ${CMAKE_CXX_FLAGS})
-string(REGEX REPLACE "-stdlib=[a-zA-Z+]*" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+string(REGEX MATCHALL "-stdlib=[a-zA-Z+]*" stdlib_flag "${CMAKE_CXX_FLAGS}")
+string(REGEX REPLACE "-stdlib=[a-zA-Z+]*" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 # ...we need it to build some runtimes and tests so readd it where appropriate.
 list(APPEND COMPILER_RT_COMMON_CFLAGS ${stdlib_flag})

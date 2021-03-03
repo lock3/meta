@@ -9,10 +9,11 @@
 // Wrapper implementation to some functions natively supported by the GPU.
 //
 //===----------------------------------------------------------------------===//
+#pragma omp declare target
 
-#include "common/support.h"
 #include "common/debug.h"
 #include "common/omptarget.h"
+#include "common/support.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Execution Parameters
@@ -57,9 +58,7 @@ DEVICE bool checkSPMDMode(kmp_Ident *loc) {
   return isSPMDMode();
 }
 
-DEVICE bool checkGenericMode(kmp_Ident *loc) {
-  return !checkSPMDMode(loc);
-}
+DEVICE bool checkGenericMode(kmp_Ident *loc) { return !checkSPMDMode(loc); }
 
 DEVICE bool checkRuntimeUninitialized(kmp_Ident *loc) {
   if (!loc)
@@ -106,7 +105,9 @@ DEVICE bool checkRuntimeInitialized(kmp_Ident *loc) {
 //      If NumThreads is 1024, master id is 992.
 //
 // Called in Generic Execution Mode only.
-DEVICE int GetMasterThreadID() { return (GetNumberOfThreadsInBlock() - 1) & ~(WARPSIZE - 1); }
+DEVICE int GetMasterThreadID() {
+  return (GetNumberOfThreadsInBlock() - 1) & ~(WARPSIZE - 1);
+}
 
 // The last warp is reserved for the master; other warps are workers.
 // Called in Generic Execution Mode only.
@@ -264,3 +265,4 @@ DEVICE char *GetTeamsReductionScratchpad() {
   return static_cast<char *>(ReductionScratchpadPtr) + 256;
 }
 
+#pragma omp end declare target

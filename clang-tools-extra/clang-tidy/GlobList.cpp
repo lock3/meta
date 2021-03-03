@@ -14,7 +14,7 @@ using namespace tidy;
 
 // Returns true if GlobList starts with the negative indicator ('-'), removes it
 // from the GlobList.
-static bool ConsumeNegativeIndicator(StringRef &GlobList) {
+static bool consumeNegativeIndicator(StringRef &GlobList) {
   GlobList = GlobList.trim(" \r\n");
   if (GlobList.startswith("-")) {
     GlobList = GlobList.substr(1);
@@ -25,7 +25,7 @@ static bool ConsumeNegativeIndicator(StringRef &GlobList) {
 
 // Converts first glob from the comma-separated list of globs to Regex and
 // removes it and the trailing comma from the GlobList.
-static llvm::Regex ConsumeGlob(StringRef &GlobList) {
+static llvm::Regex consumeGlob(StringRef &GlobList) {
   StringRef UntrimmedGlob = GlobList.substr(0, GlobList.find(','));
   StringRef Glob = UntrimmedGlob.trim(' ');
   GlobList = GlobList.substr(UntrimmedGlob.size() + 1);
@@ -34,7 +34,7 @@ static llvm::Regex ConsumeGlob(StringRef &GlobList) {
   for (char C : Glob) {
     if (C == '*')
       RegexText.push_back('.');
-    else if (MetaChars.find(C) != StringRef::npos)
+    else if (MetaChars.contains(C))
       RegexText.push_back('\\');
     RegexText.push_back(C);
   }
@@ -43,19 +43,21 @@ static llvm::Regex ConsumeGlob(StringRef &GlobList) {
 }
 
 GlobList::GlobList(StringRef Globs) {
+  Items.reserve(Globs.count(',') + 1);
   do {
     GlobListItem Item;
-    Item.IsPositive = !ConsumeNegativeIndicator(Globs);
-    Item.Regex = ConsumeGlob(Globs);
+    Item.IsPositive = !consumeNegativeIndicator(Globs);
+    Item.Regex = consumeGlob(Globs);
     Items.push_back(std::move(Item));
   } while (!Globs.empty());
 }
 
-bool GlobList::contains(StringRef S) {
-  bool Contains = false;
-  for (const GlobListItem &Item : Items) {
+bool GlobList::contains(StringRef S) const {
+  // Iterating the container backwards as the last match determins if S is in
+  // the list.
+  for (const GlobListItem &Item : llvm::reverse(Items)) {
     if (Item.Regex.match(S))
-      Contains = Item.IsPositive;
+      return Item.IsPositive;
   }
-  return Contains;
+  return false;
 }

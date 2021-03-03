@@ -8,8 +8,8 @@
 
 #include "mlir/Dialect/PDLInterp/IR/PDLInterp.h"
 #include "mlir/Dialect/PDL/IR/PDLTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/StandardTypes.h"
 
 using namespace mlir;
 using namespace mlir::pdl_interp;
@@ -92,7 +92,7 @@ static ParseResult parseCreateOperationOp(OpAsmParser &p,
 
 static void print(OpAsmPrinter &p, CreateOperationOp op) {
   p << "pdl_interp.create_operation ";
-  p.printOptionalAttrDict(op.getAttrs(),
+  p.printOptionalAttrDict(op->getAttrs(),
                           {"attributeNames", "name", "operand_segment_sizes"});
   p << '"' << op.name() << "\"(" << op.operands() << ')';
 

@@ -204,6 +204,8 @@ public:
   ReflectionOperand(CXXBaseSpecifier *B)
     : Kind(BaseSpecifier), Data(B) { }
 
+  ReflectionOperand(const APValue &V);
+
   /// Returns the kind of reflection.
   ReflectionOpKind getKind() const { return Kind; }
 

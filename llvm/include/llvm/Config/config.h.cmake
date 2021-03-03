@@ -58,6 +58,12 @@
 /* Define if dladdr() is available on this platform. */
 #cmakedefine HAVE_DLADDR ${HAVE_DLADDR}
 
+/* Define to 1 if we can register EH frames on this platform. */
+#cmakedefine HAVE_REGISTER_FRAME ${HAVE_REGISTER_FRAME}
+
+/* Define to 1 if we can deregister EH frames on this platform. */
+#cmakedefine HAVE_DEREGISTER_FRAME ${HAVE_DEREGISTER_FRAME}
+
 /* Define to 1 if you have the <errno.h> header file. */
 #cmakedefine HAVE_ERRNO_H ${HAVE_ERRNO_H}
 
@@ -129,6 +135,9 @@
 
 /* Define to 1 if you have the `mallinfo' function. */
 #cmakedefine HAVE_MALLINFO ${HAVE_MALLINFO}
+
+/* Define to 1 if you have the `mallinfo2' function. */
+#cmakedefine HAVE_MALLINFO2 ${HAVE_MALLINFO2}
 
 /* Define to 1 if you have the <malloc/malloc.h> header file. */
 #cmakedefine HAVE_MALLOC_MALLOC_H ${HAVE_MALLOC_MALLOC_H}
@@ -343,5 +352,7 @@
 
 /* Whether Timers signpost passes in Xcode Instruments */
 #cmakedefine01 LLVM_SUPPORT_XCODE_SIGNPOSTS
+
+#cmakedefine HAVE_PROC_PID_RUSAGE 1
 
 #endif

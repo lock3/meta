@@ -24,6 +24,7 @@
 #include "SourceCode.h"
 #include "TestFS.h"
 #include "TestTU.h"
+#include "TidyProvider.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -183,9 +184,6 @@ TEST(ParsedASTTest,
     template <>
     int foo<bool> = 0;
   )cpp";
-  // FIXME: Auto-completion in a template requires disabling delayed template
-  // parsing.
-  TU.ExtraArgs.push_back("-fno-delayed-template-parsing");
 
   auto AST = TU.build();
   EXPECT_THAT(
@@ -250,7 +248,7 @@ TEST(ParsedASTTest, NoCrashOnTokensWithTidyCheck) {
   TestTU TU;
   // this check runs the preprocessor, we need to make sure it does not break
   // our recording logic.
-  TU.ClangTidyChecks = "modernize-use-trailing-return-type";
+  TU.ClangTidyProvider = addTidyChecks("modernize-use-trailing-return-type");
   TU.Code = "inline int foo() {}";
 
   auto AST = TU.build();
@@ -340,10 +338,10 @@ TEST(ParsedASTTest, CollectsMainFileMacroExpansions) {
   std::vector<Position> MacroExpansionPositions;
   for (const auto &SIDToRefs : AST.getMacros().MacroRefs) {
     for (const auto &R : SIDToRefs.second)
-      MacroExpansionPositions.push_back(R.start);
+      MacroExpansionPositions.push_back(R.Rng.start);
   }
   for (const auto &R : AST.getMacros().UnknownMacros)
-    MacroExpansionPositions.push_back(R.start);
+    MacroExpansionPositions.push_back(R.Rng.start);
   EXPECT_THAT(MacroExpansionPositions,
               testing::UnorderedElementsAreArray(TestCase.points()));
 }
@@ -375,7 +373,7 @@ TEST(ParsedASTTest, ReplayPreambleForTidyCheckers) {
     void InclusionDirective(SourceLocation HashLoc, const Token &IncludeTok,
                             StringRef FileName, bool IsAngled,
                             CharSourceRange FilenameRange, const FileEntry *,
-                            StringRef, StringRef, const Module *,
+                            StringRef, StringRef, const clang::Module *,
                             SrcMgr::CharacteristicKind) override {
       Includes.emplace_back(SM, HashLoc, IncludeTok, FileName, IsAngled,
                             FilenameRange);
@@ -406,7 +404,7 @@ TEST(ParsedASTTest, ReplayPreambleForTidyCheckers) {
       "replay-preamble-module", "");
   TestTU TU;
   // This check records inclusion directives replayed by clangd.
-  TU.ClangTidyChecks = "replay-preamble-check";
+  TU.ClangTidyProvider = addTidyChecks("replay-preamble-check");
   llvm::Annotations Test(R"cpp(
     $hash^#$include[[import]] $filebegin^"$filerange[[bar.h]]"
     $hash^#$include[[include_next]] $filebegin^"$filerange[[baz.h]]"

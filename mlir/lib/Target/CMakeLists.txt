@@ -1,3 +1,6 @@
+add_subdirectory(SPIRV)
+add_subdirectory(LLVMIR)
+
 add_mlir_translation_library(MLIRTargetLLVMIRModuleTranslation
   LLVMIR/DebugTranslation.cpp
   LLVMIR/ModuleTranslation.cpp
@@ -21,25 +24,6 @@ add_mlir_translation_library(MLIRTargetLLVMIRModuleTranslation
   MLIRTranslation
   )
 
-add_mlir_translation_library(MLIRTargetAVX512
-  LLVMIR/LLVMAVX512Intr.cpp
-
-  ADDITIONAL_HEADER_DIRS
-  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Target/LLVMIR
-
-  DEPENDS
-  MLIRLLVMAVX512ConversionsIncGen
-
-  LINK_COMPONENTS
-  Core
-
-  LINK_LIBS PUBLIC
-  MLIRIR
-  MLIRLLVMAVX512
-  MLIRLLVMIR
-  MLIRTargetLLVMIRModuleTranslation
-  )
-
 add_mlir_translation_library(MLIRTargetLLVMIR
   LLVMIR/ConvertFromLLVMIR.cpp
   LLVMIR/ConvertToLLVMIR.cpp
@@ -52,45 +36,12 @@ add_mlir_translation_library(MLIRTargetLLVMIR
   IRReader
 
   LINK_LIBS PUBLIC
-  MLIRTargetLLVMIRModuleTranslation
-  )
-
-add_mlir_translation_library(MLIRTargetNVVMIR
-  LLVMIR/ConvertToNVVMIR.cpp
-
-  ADDITIONAL_HEADER_DIRS
-  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Target/LLVMIR
-
-  DEPENDS
-  intrinsics_gen
-
-  LINK_COMPONENTS
-  Core
-
-  LINK_LIBS PUBLIC
-  MLIRGPU
-  MLIRIR
-  MLIRLLVMIR
-  MLIRNVVMIR
-  MLIRTargetLLVMIRModuleTranslation
-  )
-
-add_mlir_translation_library(MLIRTargetROCDLIR
-  LLVMIR/ConvertToROCDLIR.cpp
-
-  ADDITIONAL_HEADER_DIRS
-  ${MLIR_MAIN_INCLUDE_DIR}/mlir/Target/LLVMIR
-
-  DEPENDS
-  intrinsics_gen
-
-  LINK_COMPONENTS
-  Core
-
-  LINK_LIBS PUBLIC
-  MLIRGPU
-  MLIRIR
-  MLIRLLVMIR
-  MLIRROCDLIR
+  MLIRLLVMArmNeonToLLVMIRTranslation
+  MLIRLLVMArmSVEToLLVMIRTranslation
+  MLIRLLVMAVX512ToLLVMIRTranslation
+  MLIRLLVMToLLVMIRTranslation
+  MLIRNVVMToLLVMIRTranslation
+  MLIROpenMPToLLVMIRTranslation
+  MLIRROCDLToLLVMIRTranslation
   MLIRTargetLLVMIRModuleTranslation
   )

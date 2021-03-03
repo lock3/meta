@@ -181,7 +181,7 @@ static isl_printer *cbPrintFor(__isl_take isl_printer *Printer,
   if (DD)
     Printer = printLine(Printer, DepDisPragmaStr, DD);
 
-  if (IslAstInfo::isInnermostParallel(Node))
+  if (IslAstInfo::isInnermostParallel(isl::manage_copy(Node)))
     Printer = printLine(Printer, SimdPragmaStr + BrokenReductionsStr);
 
   if (IslAstInfo::isExecutedInParallel(Node))
@@ -481,7 +481,7 @@ static void walkAstForStatistics(__isl_keep isl_ast_node *Ast) {
           NumForLoops++;
           if (IslAstInfo::isParallel(Node))
             NumParallel++;
-          if (IslAstInfo::isInnermostParallel(Node))
+          if (IslAstInfo::isInnermostParallel(isl::manage_copy(Node)))
             NumInnermostParallel++;
           if (IslAstInfo::isOutermostParallel(Node))
             NumOutermostParallel++;
@@ -587,37 +587,36 @@ __isl_give isl_ast_expr *IslAstInfo::getRunCondition() {
   return Ast.getRunCondition();
 }
 
-IslAstUserPayload *IslAstInfo::getNodePayload(__isl_keep isl_ast_node *Node) {
-  isl_id *Id = isl_ast_node_get_annotation(Node);
+IslAstUserPayload *IslAstInfo::getNodePayload(const isl::ast_node &Node) {
+  isl::id Id = Node.get_annotation();
   if (!Id)
     return nullptr;
-  IslAstUserPayload *Payload = (IslAstUserPayload *)isl_id_get_user(Id);
-  isl_id_free(Id);
+  IslAstUserPayload *Payload = (IslAstUserPayload *)Id.get_user();
   return Payload;
 }
 
 bool IslAstInfo::isInnermost(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload && Payload->IsInnermost;
 }
 
 bool IslAstInfo::isParallel(__isl_keep isl_ast_node *Node) {
-  return IslAstInfo::isInnermostParallel(Node) ||
+  return IslAstInfo::isInnermostParallel(isl::manage_copy(Node)) ||
          IslAstInfo::isOutermostParallel(Node);
 }
 
-bool IslAstInfo::isInnermostParallel(__isl_keep isl_ast_node *Node) {
+bool IslAstInfo::isInnermostParallel(const isl::ast_node &Node) {
   IslAstUserPayload *Payload = getNodePayload(Node);
   return Payload && Payload->IsInnermostParallel;
 }
 
 bool IslAstInfo::isOutermostParallel(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload && Payload->IsOutermostParallel;
 }
 
 bool IslAstInfo::isReductionParallel(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload && Payload->IsReductionParallel;
 }
 
@@ -642,31 +641,61 @@ bool IslAstInfo::isExecutedInParallel(__isl_keep isl_ast_node *Node) {
 
 __isl_give isl_union_map *
 IslAstInfo::getSchedule(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload ? isl_ast_build_get_schedule(Payload->Build) : nullptr;
 }
 
 __isl_give isl_pw_aff *
 IslAstInfo::getMinimalDependenceDistance(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload ? Payload->MinimalDependenceDistance.copy() : nullptr;
 }
 
 IslAstInfo::MemoryAccessSet *
 IslAstInfo::getBrokenReductions(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload ? &Payload->BrokenReductions : nullptr;
 }
 
 isl_ast_build *IslAstInfo::getBuild(__isl_keep isl_ast_node *Node) {
-  IslAstUserPayload *Payload = getNodePayload(Node);
+  IslAstUserPayload *Payload = getNodePayload(isl::manage_copy(Node));
   return Payload ? Payload->Build : nullptr;
+}
+
+static std::unique_ptr<IslAstInfo> runIslAst(
+    Scop &Scop,
+    function_ref<const Dependences &(Dependences::AnalysisLevel)> GetDeps) {
+  // Skip SCoPs in case they're already handled by PPCGCodeGeneration.
+  if (Scop.isToBeSkipped())
+    return {};
+
+  ScopsProcessed++;
+
+  const Dependences &D = GetDeps(Dependences::AL_Statement);
+
+  if (D.getSharedIslCtx() != Scop.getSharedIslCtx()) {
+    LLVM_DEBUG(
+        dbgs() << "Got dependence analysis for different SCoP/isl_ctx\n");
+    return {};
+  }
+
+  std::unique_ptr<IslAstInfo> Ast = std::make_unique<IslAstInfo>(Scop, D);
+
+  LLVM_DEBUG({
+    if (Ast)
+      Ast->print(dbgs());
+  });
+
+  return Ast;
 }
 
 IslAstInfo IslAstAnalysis::run(Scop &S, ScopAnalysisManager &SAM,
                                ScopStandardAnalysisResults &SAR) {
-  return {S, SAM.getResult<DependenceAnalysis>(S, SAR).getDependences(
-                 Dependences::AL_Statement)};
+  auto GetDeps = [&](Dependences::AnalysisLevel Lvl) -> const Dependences & {
+    return SAM.getResult<DependenceAnalysis>(S, SAR).getDependences(Lvl);
+  };
+
+  return std::move(*runIslAst(S, GetDeps).release());
 }
 
 static __isl_give isl_printer *cbPrintUser(__isl_take isl_printer *P,
@@ -785,25 +814,12 @@ PreservedAnalyses IslAstPrinterPass::run(Scop &S, ScopAnalysisManager &SAM,
 void IslAstInfoWrapperPass::releaseMemory() { Ast.reset(); }
 
 bool IslAstInfoWrapperPass::runOnScop(Scop &Scop) {
-  // Skip SCoPs in case they're already handled by PPCGCodeGeneration.
-  if (Scop.isToBeSkipped())
-    return false;
+  auto GetDeps = [this](Dependences::AnalysisLevel Lvl) -> const Dependences & {
+    return getAnalysis<DependenceInfo>().getDependences(Lvl);
+  };
 
-  ScopsProcessed++;
+  Ast = runIslAst(Scop, GetDeps);
 
-  const Dependences &D =
-      getAnalysis<DependenceInfo>().getDependences(Dependences::AL_Statement);
-
-  if (D.getSharedIslCtx() != Scop.getSharedIslCtx()) {
-    LLVM_DEBUG(
-        dbgs() << "Got dependence analysis for different SCoP/isl_ctx\n");
-    Ast.reset();
-    return false;
-  }
-
-  Ast.reset(new IslAstInfo(Scop, D));
-
-  LLVM_DEBUG(printScop(dbgs(), Scop));
   return false;
 }
 
@@ -817,6 +833,8 @@ void IslAstInfoWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 void IslAstInfoWrapperPass::printScop(raw_ostream &OS, Scop &S) const {
+  OS << "Printing analysis 'Polly - Generate an AST of the SCoP (isl)'"
+     << S.getName() << "' in function '" << S.getFunction().getName() << "':\n";
   if (Ast)
     Ast->print(OS);
 }

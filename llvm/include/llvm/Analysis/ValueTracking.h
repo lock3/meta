@@ -582,6 +582,8 @@ constexpr unsigned MaxAnalysisRecursionDepth = 6;
   /// poison.
   /// Formally, given I = `r = op v1 v2 .. vN`, propagatesPoison returns true
   /// if, for all i, r is evaluated to poison or op raises UB if vi = poison.
+  /// If vi is a vector or an aggregate and r is a single value, any poison
+  /// element in vi should make r poison or raise UB.
   /// To filter out operands that raise UB on poison, you can use
   /// getGuaranteedNonPoisonOp.
   bool propagatesPoison(const Operator *I);
@@ -590,6 +592,11 @@ constexpr unsigned MaxAnalysisRecursionDepth = 6;
   /// if I is executed and that operand has a poison value.
   void getGuaranteedNonPoisonOps(const Instruction *I,
                                  SmallPtrSetImpl<const Value *> &Ops);
+  /// Insert operands of I into Ops such that I will trigger undefined behavior
+  /// if I is executed and that operand is not a well-defined value
+  /// (i.e. has undef bits or poison).
+  void getGuaranteedWellDefinedOps(const Instruction *I,
+                                   SmallPtrSetImpl<const Value *> &Ops);
 
   /// Return true if the given instruction must trigger undefined behavior
   /// when I is executed with any operands which appear in KnownPoison holding
@@ -619,6 +626,11 @@ constexpr unsigned MaxAnalysisRecursionDepth = 6;
   /// operands.
   bool canCreateUndefOrPoison(const Operator *Op);
   bool canCreatePoison(const Operator *Op);
+
+  /// Return true if V is poison given that ValAssumedPoison is already poison.
+  /// For example, if ValAssumedPoison is `icmp X, 10` and V is `icmp X, 5`,
+  /// impliesPoison returns true.
+  bool impliesPoison(const Value *ValAssumedPoison, const Value *V);
 
   /// Return true if this function can prove that V does not have undef bits
   /// and is never poison. If V is an aggregate value or vector, check whether
@@ -735,6 +747,22 @@ constexpr unsigned MaxAnalysisRecursionDepth = 6;
   /// Intrinsic::not_intrinsic.
   std::pair<Intrinsic::ID, bool>
   canConvertToMinOrMaxIntrinsic(ArrayRef<Value *> VL);
+
+  /// Attempt to match a simple first order recurrence cycle of the form:
+  ///   %iv = phi Ty [%Start, %Entry], [%Inc, %backedge]
+  ///   %inc = binop %iv, %step
+  /// OR
+  ///   %iv = phi Ty [%Start, %Entry], [%Inc, %backedge]
+  ///   %inc = binop %step, %iv
+  ///
+  /// WARNING: For non-commutative operators, we will match both forms.  This
+  /// results in some odd recurrence structures.  Callers may wish to filter
+  /// out recurrences where the phi is not the LHS of the returned operator.
+  ///
+  /// NOTE: This is intentional simple.  If you want the ability to analyze
+  /// non-trivial loop conditons, see ScalarEvolution instead.
+  bool matchSimpleRecurrence(const PHINode *P, BinaryOperator *&BO,
+                             Value *&Start, Value *&Step);
 
   /// Return true if RHS is known to be implied true by LHS.  Return false if
   /// RHS is known to be implied false by LHS.  Otherwise, return None if no

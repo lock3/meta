@@ -1273,11 +1273,11 @@ static void InjectFunctionDefinition(InjectionContext *Ctx,
 static ConstexprSpecKind Transform(ConstexprModifier Modifier) {
   switch(Modifier) {
   case ConstexprModifier::Constexpr:
-    return CSK_constexpr;
+    return ConstexprSpecKind::Constexpr;
   case ConstexprModifier::Consteval:
-    return CSK_consteval;
+    return ConstexprSpecKind::Consteval;
   case ConstexprModifier::Constinit:
-    return CSK_constinit;
+    return ConstexprSpecKind::Constinit;
   default:
     llvm_unreachable("Invalid constexpr modifier transformation");
   }
@@ -1767,7 +1767,7 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // Can't make
   if (GetModifiers().modifyConstexpr()) {
     SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field) <<
-        Transform(GetModifiers().getConstexprModifier());
+        static_cast<int>(Transform(GetModifiers().getConstexprModifier()));
     Field->setInvalidDecl(true);
   }
 
@@ -1872,7 +1872,8 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D, F FinishBody) {
     } else {
       ConstexprSpecKind SpecKind = Transform(Modifier);
       if (isa<CXXDestructorDecl>(Method)) {
-        SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor) << SpecKind;
+        SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor) <<
+            static_cast<int>(SpecKind);
         Method->setInvalidDecl(true);
       }
       Method->setConstexprKind(SpecKind);
@@ -3812,7 +3813,7 @@ ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
                            FunctionTy, FunctionTyInfo, SC_None,
                            /*isInlineSpecified=*/false,
                            /*hasWrittenPrototype=*/true,
-                           /*ConstexprKind=*/CSK_consteval,
+                           ConstexprSpecKind::Consteval,
                            /*TrailingRequiresClause=*/nullptr);
   Function->setImplicit();
   Function->setMetaprogram();

@@ -11,11 +11,12 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_OPENMP_CONSTANTS_H
-#define LLVM_OPENMP_CONSTANTS_H
+#ifndef LLVM_FRONTEND_OPENMP_OMPCONSTANTS_H
+#define LLVM_FRONTEND_OPENMP_OMPCONSTANTS_H
 
 #include "llvm/ADT/BitmaskEnum.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Frontend/OpenMP/OMP.h.inc"
 
 namespace llvm {
@@ -79,8 +80,35 @@ enum class IdentFlag {
 #define OMP_IDENT_FLAG(Enum, ...) constexpr auto Enum = omp::IdentFlag::Enum;
 #include "llvm/Frontend/OpenMP/OMPKinds.def"
 
+/// Helper to describe assume clauses.
+struct AssumptionClauseMappingInfo {
+  /// The identifier describing the (beginning of the) clause.
+  llvm::StringLiteral Identifier;
+  /// Flag to determine if the identifier is a full name or the start of a name.
+  bool StartsWith;
+  /// Flag to determine if a directive lists follows.
+  bool HasDirectiveList;
+  /// Flag to determine if an expression follows.
+  bool HasExpression;
+};
+
+/// All known assume clauses.
+static constexpr AssumptionClauseMappingInfo AssumptionClauseMappings[] = {
+#define OMP_ASSUME_CLAUSE(Identifier, StartsWith, HasDirectiveList,            \
+                          HasExpression)                                       \
+  {Identifier, StartsWith, HasDirectiveList, HasExpression},
+#include "llvm/Frontend/OpenMP/OMPKinds.def"
+};
+
+inline std::string getAllAssumeClauseOptions() {
+  std::string S;
+  for (const AssumptionClauseMappingInfo &ACMI : AssumptionClauseMappings)
+    S += (S.empty() ? "'" : "', '") + ACMI.Identifier.str();
+  return S + "'";
+}
+
 } // end namespace omp
 
 } // end namespace llvm
 
-#endif // LLVM_OPENMP_CONSTANTS_H
+#endif // LLVM_FRONTEND_OPENMP_OMPCONSTANTS_H

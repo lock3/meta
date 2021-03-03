@@ -1,4 +1,4 @@
-! RUN: %S/test_errors.sh %s %t %f18 -fopenmp
+! RUN: %S/test_errors.sh %s %t %flang -fopenmp
 use omp_lib
 ! Check OpenMP 2.13.6 atomic Construct
 
@@ -33,6 +33,17 @@ use omp_lib
   a = a + 1
 
   !$omp atomic
+  a = a + 1
+  !ERROR: expected 'UPDATE'
+  !ERROR: expected 'WRITE'
+  !ERROR: expected 'CAPTURE'
+  !ERROR: expected 'READ'
+  !$omp atomic num_threads(4)
+  a = a + 1
+
+  !ERROR: expected end of line
+  !ERROR: expected end of line
+  !$omp atomic capture num_threads(4)
   a = a + 1
 
   !$omp atomic relaxed

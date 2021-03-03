@@ -27,11 +27,22 @@
 #include "Config.h"
 #include "ConfigFragment.h"
 #include "ConfigProvider.h"
+#include "Diagnostics.h"
+#include "Features.inc"
+#include "TidyProvider.h"
 #include "support/Logger.h"
+#include "support/Path.h"
 #include "support/Trace.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/SMLoc.h"
@@ -91,9 +102,11 @@ struct FragmentCompiler {
   // Normalized Fragment::SourceInfo::Directory.
   std::string FragmentDirectory;
 
-  llvm::Optional<llvm::Regex> compileRegex(const Located<std::string> &Text) {
+  llvm::Optional<llvm::Regex>
+  compileRegex(const Located<std::string> &Text,
+               llvm::Regex::RegexFlags Flags = llvm::Regex::NoFlags) {
     std::string Anchored = "^(" + *Text + ")$";
-    llvm::Regex Result(Anchored);
+    llvm::Regex Result(Anchored, Flags);
     std::string RegexError;
     if (!Result.isValid(RegexError)) {
       diag(Error, "Invalid regex " + Anchored + ": " + RegexError, Text.Range);
@@ -102,13 +115,34 @@ struct FragmentCompiler {
     return Result;
   }
 
+  llvm::Optional<std::string> makeAbsolute(Located<std::string> Path,
+                                           llvm::StringLiteral Description,
+                                           llvm::sys::path::Style Style) {
+    if (llvm::sys::path::is_absolute(*Path))
+      return *Path;
+    if (FragmentDirectory.empty()) {
+      diag(Error,
+           llvm::formatv(
+               "{0} must be an absolute path, because this fragment is not "
+               "associated with any directory.",
+               Description)
+               .str(),
+           Path.Range);
+      return llvm::None;
+    }
+    llvm::SmallString<256> AbsPath = llvm::StringRef(*Path);
+    llvm::sys::fs::make_absolute(FragmentDirectory, AbsPath);
+    llvm::sys::path::native(AbsPath, Style);
+    return AbsPath.str().str();
+  }
+
   // Helper with similar API to StringSwitch, for parsing enum values.
   template <typename T> class EnumSwitch {
     FragmentCompiler &Outer;
     llvm::StringRef EnumName;
     const Located<std::string> &Input;
     llvm::Optional<T> Result;
-    llvm::SmallVector<llvm::StringLiteral, 8> ValidValues;
+    llvm::SmallVector<llvm::StringLiteral> ValidValues;
 
   public:
     EnumSwitch(llvm::StringRef EnumName, const Located<std::string> &In,
@@ -157,15 +191,22 @@ struct FragmentCompiler {
     compile(std::move(F.If));
     compile(std::move(F.CompileFlags));
     compile(std::move(F.Index));
+    compile(std::move(F.Diagnostics));
   }
 
   void compile(Fragment::IfBlock &&F) {
     if (F.HasUnrecognizedCondition)
       Out.Conditions.push_back([&](const Params &) { return false; });
 
+#ifdef CLANGD_PATH_CASE_INSENSITIVE
+    llvm::Regex::RegexFlags Flags = llvm::Regex::IgnoreCase;
+#else
+    llvm::Regex::RegexFlags Flags = llvm::Regex::NoFlags;
+#endif
+
     auto PathMatch = std::make_unique<std::vector<llvm::Regex>>();
     for (auto &Entry : F.PathMatch) {
-      if (auto RE = compileRegex(Entry))
+      if (auto RE = compileRegex(Entry, Flags))
         PathMatch->push_back(std::move(*RE));
     }
     if (!PathMatch->empty()) {
@@ -186,7 +227,7 @@ struct FragmentCompiler {
 
     auto PathExclude = std::make_unique<std::vector<llvm::Regex>>();
     for (auto &Entry : F.PathExclude) {
-      if (auto RE = compileRegex(Entry))
+      if (auto RE = compileRegex(Entry, Flags))
         PathExclude->push_back(std::move(*RE));
     }
     if (!PathExclude->empty()) {
@@ -230,6 +271,36 @@ struct FragmentCompiler {
         });
       });
     }
+
+    if (F.CompilationDatabase) {
+      llvm::Optional<Config::CDBSearchSpec> Spec;
+      if (**F.CompilationDatabase == "Ancestors") {
+        Spec.emplace();
+        Spec->Policy = Config::CDBSearchSpec::Ancestors;
+      } else if (**F.CompilationDatabase == "None") {
+        Spec.emplace();
+        Spec->Policy = Config::CDBSearchSpec::NoCDBSearch;
+      } else {
+        if (auto Path =
+                makeAbsolute(*F.CompilationDatabase, "CompilationDatabase",
+                             llvm::sys::path::Style::native)) {
+          // Drop trailing slash to put the path in canonical form.
+          // Should makeAbsolute do this?
+          llvm::StringRef Rel = llvm::sys::path::relative_path(*Path);
+          if (!Rel.empty() && llvm::sys::path::is_separator(Rel.back()))
+            Path->pop_back();
+
+          Spec.emplace();
+          Spec->Policy = Config::CDBSearchSpec::FixedDir;
+          Spec->FixedCDBPath = std::move(Path);
+        }
+      }
+      if (Spec)
+        Out.Apply.push_back(
+            [Spec(std::move(*Spec))](const Params &, Config &C) {
+              C.CompileFlags.CDBSearch = Spec;
+            });
+    }
   }
 
   void compile(Fragment::IndexBlock &&F) {
@@ -242,6 +313,83 @@ struct FragmentCompiler {
         Out.Apply.push_back(
             [Val](const Params &, Config &C) { C.Index.Background = *Val; });
     }
+    if (F.External)
+      compile(std::move(**F.External), F.External->Range);
+  }
+
+  void compile(Fragment::IndexBlock::ExternalBlock &&External,
+               llvm::SMRange BlockRange) {
+#ifndef CLANGD_ENABLE_REMOTE
+    if (External.Server) {
+      diag(Error, "Clangd isn't compiled with remote index support, ignoring "
+                  "Server." External.Server->Range);
+      External.Server.reset();
+    }
+#endif
+    // Make sure exactly one of the Sources is set.
+    unsigned SourceCount =
+        External.File.hasValue() + External.Server.hasValue();
+    if (SourceCount != 1) {
+      diag(Error, "Exactly one of File or Server must be set.", BlockRange);
+      return;
+    }
+    Config::ExternalIndexSpec Spec;
+    if (External.Server) {
+      Spec.Kind = Config::ExternalIndexSpec::Server;
+      Spec.Location = std::move(**External.Server);
+    } else if (External.File) {
+      Spec.Kind = Config::ExternalIndexSpec::File;
+      auto AbsPath = makeAbsolute(std::move(*External.File), "File",
+                                  llvm::sys::path::Style::native);
+      if (!AbsPath)
+        return;
+      Spec.Location = std::move(*AbsPath);
+    }
+    // Make sure MountPoint is an absolute path with forward slashes.
+    if (!External.MountPoint)
+      External.MountPoint.emplace(FragmentDirectory);
+    if ((**External.MountPoint).empty()) {
+      diag(Error, "A mountpoint is required.", BlockRange);
+      return;
+    }
+    auto AbsPath = makeAbsolute(std::move(*External.MountPoint), "MountPoint",
+                                llvm::sys::path::Style::posix);
+    if (!AbsPath)
+      return;
+    Spec.MountPoint = std::move(*AbsPath);
+    Out.Apply.push_back([Spec(std::move(Spec))](const Params &P, Config &C) {
+      if (P.Path.empty() || !pathStartsWith(Spec.MountPoint, P.Path,
+                                            llvm::sys::path::Style::posix))
+        return;
+      C.Index.External = Spec;
+      // Disable background indexing for the files under the mountpoint.
+      // Note that this will overwrite statements in any previous fragments
+      // (including the current one).
+      C.Index.Background = Config::BackgroundPolicy::Skip;
+    });
+  }
+
+  void compile(Fragment::DiagnosticsBlock &&F) {
+    std::vector<llvm::StringRef> Normalized;
+    for (const auto &Suppressed : F.Suppress) {
+      if (*Suppressed == "*") {
+        Out.Apply.push_back([&](const Params &, Config &C) {
+          C.Diagnostics.SuppressAll = true;
+          C.Diagnostics.Suppress.clear();
+        });
+        return;
+      }
+      Normalized.push_back(normalizeSuppressedCode(*Suppressed));
+    }
+    if (!Normalized.empty())
+      Out.Apply.push_back([Normalized](const Params &, Config &C) {
+        if (C.Diagnostics.SuppressAll)
+          return;
+        for (llvm::StringRef N : Normalized)
+          C.Diagnostics.Suppress.insert(N);
+      });
+
+    compile(std::move(F.ClangTidy));
   }
 
   void compile(Fragment::StyleBlock &&F) {
@@ -261,6 +409,57 @@ struct FragmentCompiler {
             C.Style.FullyQualifiedNamespaces.begin(),
             FullyQualifiedNamespaces.begin(), FullyQualifiedNamespaces.end());
       });
+    }
+  }
+
+  void appendTidyCheckSpec(std::string &CurSpec,
+                           const Located<std::string> &Arg, bool IsPositive) {
+    StringRef Str = StringRef(*Arg).trim();
+    // Don't support negating here, its handled if the item is in the Add or
+    // Remove list.
+    if (Str.startswith("-") || Str.contains(',')) {
+      diag(Error, "Invalid clang-tidy check name", Arg.Range);
+      return;
+    }
+    if (!Str.contains('*') && !isRegisteredTidyCheck(Str)) {
+      diag(Warning,
+           llvm::formatv("clang-tidy check '{0}' was not found", Str).str(),
+           Arg.Range);
+      return;
+    }
+    CurSpec += ',';
+    if (!IsPositive)
+      CurSpec += '-';
+    CurSpec += Str;
+  }
+
+  void compile(Fragment::DiagnosticsBlock::ClangTidyBlock &&F) {
+    std::string Checks;
+    for (auto &CheckGlob : F.Add)
+      appendTidyCheckSpec(Checks, CheckGlob, true);
+
+    for (auto &CheckGlob : F.Remove)
+      appendTidyCheckSpec(Checks, CheckGlob, false);
+
+    if (!Checks.empty())
+      Out.Apply.push_back(
+          [Checks = std::move(Checks)](const Params &, Config &C) {
+            C.Diagnostics.ClangTidy.Checks.append(
+                Checks,
+                C.Diagnostics.ClangTidy.Checks.empty() ? /*skip comma*/ 1 : 0,
+                std::string::npos);
+          });
+    if (!F.CheckOptions.empty()) {
+      std::vector<std::pair<std::string, std::string>> CheckOptions;
+      for (auto &Opt : F.CheckOptions)
+        CheckOptions.emplace_back(std::move(*Opt.first),
+                                  std::move(*Opt.second));
+      Out.Apply.push_back(
+          [CheckOptions = std::move(CheckOptions)](const Params &, Config &C) {
+            for (auto &StringPair : CheckOptions)
+              C.Diagnostics.ClangTidy.CheckOptions.insert_or_assign(
+                  StringPair.first, StringPair.second);
+          });
     }
   }
 

@@ -3087,7 +3087,6 @@ public:
     // This is container for the immediate that we will create the constant
     // pool from
     addExpr(Inst, getConstantPoolImm());
-    return;
   }
 
   void addMemTBBOperands(MCInst &Inst, unsigned N) const {
@@ -6240,10 +6239,9 @@ bool ARMAsmParser::parsePrefix(ARMMCExpr::VariantKind &RefKind) {
   StringRef IDVal = Parser.getTok().getIdentifier();
 
   const auto &Prefix =
-      std::find_if(std::begin(PrefixEntries), std::end(PrefixEntries),
-                   [&IDVal](const PrefixEntry &PE) {
-                      return PE.Spelling == IDVal;
-                   });
+      llvm::find_if(PrefixEntries, [&IDVal](const PrefixEntry &PE) {
+        return PE.Spelling == IDVal;
+      });
   if (Prefix == std::end(PrefixEntries)) {
     Error(Parser.getTok().getLoc(), "unexpected prefix in operand");
     return true;
@@ -7660,6 +7658,33 @@ bool ARMAsmParser::validateInstruction(MCInst &Inst,
                    "source register and base register can't be identical");
     return false;
   }
+  case ARM::t2LDR_PRE_imm:
+  case ARM::t2LDR_POST_imm:
+  case ARM::t2STR_PRE_imm:
+  case ARM::t2STR_POST_imm: {
+    // Rt must be different from Rn.
+    const unsigned Rt = MRI->getEncodingValue(Inst.getOperand(0).getReg());
+    const unsigned Rn = MRI->getEncodingValue(Inst.getOperand(1).getReg());
+
+    if (Rt == Rn)
+      return Error(Operands[3]->getStartLoc(),
+                   "destination register and base register can't be identical");
+    if (Inst.getOpcode() == ARM::t2LDR_POST_imm ||
+        Inst.getOpcode() == ARM::t2STR_POST_imm) {
+      int Imm = Inst.getOperand(2).getImm();
+      if (Imm > 255 || Imm < -255)
+        return Error(Operands[5]->getStartLoc(),
+                     "operand must be in range [-255, 255]");
+    }
+    if (Inst.getOpcode() == ARM::t2STR_PRE_imm ||
+        Inst.getOpcode() == ARM::t2STR_POST_imm) {
+      if (Inst.getOperand(0).getReg() == ARM::PC) {
+        return Error(Operands[3]->getStartLoc(),
+                     "operand must be a register in range [r0, r14]");
+      }
+    }
+    return false;
+  }
   case ARM::LDR_PRE_IMM:
   case ARM::LDR_PRE_REG:
   case ARM::t2LDR_PRE:
@@ -7925,7 +7950,10 @@ bool ARMAsmParser::validateInstruction(MCInst &Inst,
     break;
   case ARM::t2B: {
     int op = (Operands[2]->isImm()) ? 2 : 3;
-    if (!static_cast<ARMOperand &>(*Operands[op]).isSignedOffset<24, 1>())
+    ARMOperand &Operand = static_cast<ARMOperand &>(*Operands[op]);
+    // Delay the checks of symbolic expressions until they are resolved.
+    if (!isa<MCBinaryExpr>(Operand.getImm()) &&
+        !Operand.isSignedOffset<24, 1>())
       return Error(Operands[op]->getStartLoc(), "branch target out of range");
     break;
   }
@@ -8624,6 +8652,34 @@ bool ARMAsmParser::processInstruction(MCInst &Inst,
     }
     TmpInst.addOperand(Inst.getOperand(3));
     TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+  // Aliases for imm syntax of LDR instructions.
+  case ARM::t2LDR_PRE_imm:
+  case ARM::t2LDR_POST_imm: {
+    MCInst TmpInst;
+    TmpInst.setOpcode(Inst.getOpcode() == ARM::t2LDR_PRE_imm ? ARM::t2LDR_PRE
+                                                             : ARM::t2LDR_POST);
+    TmpInst.addOperand(Inst.getOperand(0)); // Rt
+    TmpInst.addOperand(Inst.getOperand(4)); // Rt_wb
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // imm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    Inst = TmpInst;
+    return true;
+  }
+  // Aliases for imm syntax of STR instructions.
+  case ARM::t2STR_PRE_imm:
+  case ARM::t2STR_POST_imm: {
+    MCInst TmpInst;
+    TmpInst.setOpcode(Inst.getOpcode() == ARM::t2STR_PRE_imm ? ARM::t2STR_PRE
+                                                             : ARM::t2STR_POST);
+    TmpInst.addOperand(Inst.getOperand(4)); // Rt_wb
+    TmpInst.addOperand(Inst.getOperand(0)); // Rt
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // imm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
     Inst = TmpInst;
     return true;
   }
@@ -10309,11 +10365,14 @@ bool ARMAsmParser::processInstruction(MCInst &Inst,
         !HasWideQualifier) {
       // The operands aren't the same for tMOV[S]r... (no cc_out)
       MCInst TmpInst;
-      TmpInst.setOpcode(Inst.getOperand(4).getReg() ? ARM::tMOVSr : ARM::tMOVr);
+      unsigned Op = Inst.getOperand(4).getReg() ? ARM::tMOVSr : ARM::tMOVr;
+      TmpInst.setOpcode(Op);
       TmpInst.addOperand(Inst.getOperand(0));
       TmpInst.addOperand(Inst.getOperand(1));
-      TmpInst.addOperand(Inst.getOperand(2));
-      TmpInst.addOperand(Inst.getOperand(3));
+      if (Op == ARM::tMOVr) {
+        TmpInst.addOperand(Inst.getOperand(2));
+        TmpInst.addOperand(Inst.getOperand(3));
+      }
       Inst = TmpInst;
       return true;
     }

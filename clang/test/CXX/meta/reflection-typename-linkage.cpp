@@ -18,7 +18,7 @@ void test1() {
 // CHECK:    call i32 @_Z14get_typename_tIiERTReTyT_ES0_(i32 1)
 
 
-// CHECK: define i32 @_Z7get_numv() #0 {
+// CHECK: define dso_local i32 @_Z7get_numv() #0 {
 typename [: ^int :] get_num() { return 1; }
 
 struct Foo {
@@ -26,5 +26,5 @@ struct Foo {
   int y = 0;
 };
 
-// CHECK: define linkonce_odr void @_ZN3FooC2Ev(%struct.Foo* %this)
+// CHECK: define linkonce_odr void @_ZN3FooC2Ev(%struct.Foo* nonnull dereferenceable(8) %this)
 typename [: ^Foo :] get_foo() { return Foo(); }

@@ -375,6 +375,29 @@ namespace clang {
 
 using namespace clang;
 
+static ReflectionOperand::ReflectionOpKind
+toReflectionOperandKind(ReflectionKind RK) {
+  switch (RK) {
+  case RK_invalid:
+    return ReflectionOperand::Invalid;
+  case RK_declaration:
+    return ReflectionOperand::Declaration;
+  case RK_type:
+    return ReflectionOperand::Type;
+  case RK_expression:
+    return ReflectionOperand::Expression;
+  case RK_base_specifier:
+    return ReflectionOperand::BaseSpecifier;
+  case RK_fragment:
+    llvm_unreachable("fragments cannot be reflection operands");
+  }
+  llvm_unreachable("invalid reflection kind");
+}
+
+ReflectionOperand::ReflectionOperand(const APValue &V)
+    : Kind(toReflectionOperandKind(V.getReflectionKind())),
+      Data(const_cast<void *>(V.getOpaqueReflectionValue())) { }
+
 /// Returns an APValue-packaged truth value.
 static APValue makeBool(ASTContext &C, bool B) {
   return APValue(C.MakeIntValue(B, C.BoolTy));

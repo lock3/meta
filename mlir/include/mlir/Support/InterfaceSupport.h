@@ -16,7 +16,6 @@
 #include "mlir/Support/TypeID.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/TypeName.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
 namespace detail {
@@ -75,19 +74,6 @@ public:
   using InterfaceBase =
       Interface<ConcreteType, ValueT, Traits, BaseType, BaseTrait>;
 
-  Interface(ValueT t = ValueT())
-      : BaseType(t), impl(t ? ConcreteType::getInterfaceFor(t) : nullptr) {
-    assert((!t || impl) &&
-           "instantiating an interface with an unregistered operation");
-  }
-
-  /// Support 'classof' by checking if the given object defines the concrete
-  /// interface.
-  static bool classof(ValueT t) { return ConcreteType::getInterfaceFor(t); }
-
-  /// Define an accessor for the ID of this interface.
-  static TypeID getInterfaceID() { return TypeID::get<ConcreteType>(); }
-
   /// This is a special trait that registers a given interface with an object.
   template <typename ConcreteT>
   struct Trait : public BaseTrait<ConcreteT, Trait> {
@@ -96,6 +82,28 @@ public:
     /// Define an accessor for the ID of this interface.
     static TypeID getInterfaceID() { return TypeID::get<ConcreteType>(); }
   };
+
+  /// Construct an interface from an instance of the value type.
+  Interface(ValueT t = ValueT())
+      : BaseType(t), impl(t ? ConcreteType::getInterfaceFor(t) : nullptr) {
+    assert((!t || impl) && "expected value to provide interface instance");
+  }
+
+  /// Construct an interface instance from a type that implements this
+  /// interface's trait.
+  template <typename T, typename std::enable_if_t<
+                            std::is_base_of<Trait<T>, T>::value> * = nullptr>
+  Interface(T t)
+      : BaseType(t), impl(t ? ConcreteType::getInterfaceFor(t) : nullptr) {
+    assert((!t || impl) && "expected value to provide interface instance");
+  }
+
+  /// Support 'classof' by checking if the given object defines the concrete
+  /// interface.
+  static bool classof(ValueT t) { return ConcreteType::getInterfaceFor(t); }
+
+  /// Define an accessor for the ID of this interface.
+  static TypeID getInterfaceID() { return TypeID::get<ConcreteType>(); }
 
 protected:
   /// Get the raw concept in the correct derived concept type.
@@ -144,10 +152,8 @@ class InterfaceMap {
 public:
   InterfaceMap(InterfaceMap &&) = default;
   ~InterfaceMap() {
-    if (interfaces) {
-      for (auto &it : *interfaces)
-        free(it.second);
-    }
+    for (auto &it : interfaces)
+      free(it.second);
   }
 
   /// Construct an InterfaceMap with the given set of template types. For
@@ -174,15 +180,22 @@ public:
   /// Returns an instance of the concept object for the given interface if it
   /// was registered to this map, null otherwise.
   template <typename T> typename T::Concept *lookup() const {
-    void *inst = interfaces ? interfaces->lookup(T::getInterfaceID()) : nullptr;
-    return reinterpret_cast<typename T::Concept *>(inst);
+    return reinterpret_cast<typename T::Concept *>(lookup(T::getInterfaceID()));
   }
 
 private:
+  /// Compare two TypeID instances by comparing the underlying pointer.
+  static bool compare(TypeID lhs, TypeID rhs) {
+    return lhs.getAsOpaquePointer() < rhs.getAsOpaquePointer();
+  }
+
   InterfaceMap() = default;
   InterfaceMap(MutableArrayRef<std::pair<TypeID, void *>> elements)
-      : interfaces(std::make_unique<llvm::SmallDenseMap<TypeID, void *>>(
-            elements.begin(), elements.end())) {}
+      : interfaces(elements.begin(), elements.end()) {
+    llvm::sort(interfaces, [](const auto &lhs, const auto &rhs) {
+      return compare(lhs.first, rhs.first);
+    });
+  }
 
   template <typename... Ts>
   static InterfaceMap getImpl(std::tuple<Ts...> *) {
@@ -192,9 +205,17 @@ private:
     return InterfaceMap(elements);
   }
 
-  /// The internal map of interfaces. This is constructed statically for each
-  /// set of interfaces.
-  std::unique_ptr<llvm::SmallDenseMap<TypeID, void *>> interfaces;
+  /// Returns an instance of the concept object for the given interface id if it
+  /// was registered to this map, null otherwise.
+  void *lookup(TypeID id) const {
+    auto it = llvm::lower_bound(interfaces, id, [](const auto &it, TypeID id) {
+      return compare(it.first, id);
+    });
+    return (it != interfaces.end() && it->first == id) ? it->second : nullptr;
+  }
+
+  /// A list of interface instances, sorted by TypeID.
+  SmallVector<std::pair<TypeID, void *>> interfaces;
 };
 
 } // end namespace detail

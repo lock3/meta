@@ -17,13 +17,11 @@
 #define GET_REGINFO_HEADER
 #include "AMDGPUGenRegisterInfo.inc"
 
-#include "SIDefines.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
-
 namespace llvm {
 
 class GCNSubtarget;
 class LiveIntervals;
+class RegisterBank;
 class SIMachineFunctionInfo;
 
 class SIRegisterInfo final : public AMDGPUGenRegisterInfo {
@@ -96,9 +94,8 @@ public:
 
   bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
 
-  void materializeFrameBaseRegister(MachineBasicBlock *MBB, Register BaseReg,
-                                    int FrameIdx,
-                                    int64_t Offset) const override;
+  Register materializeFrameBaseRegister(MachineBasicBlock *MBB, int FrameIdx,
+                                        int64_t Offset) const override;
 
   void resolveFrameIndex(MachineInstr &MI, Register BaseReg,
                          int64_t Offset) const override;
@@ -137,8 +134,13 @@ public:
     return getEncodingValue(Reg) & 0xff;
   }
 
-  static const TargetRegisterClass *getVGPRClassForBitWidth(unsigned BitWidth);
-  static const TargetRegisterClass *getAGPRClassForBitWidth(unsigned BitWidth);
+  LLVM_READONLY
+  const TargetRegisterClass *getVGPRClassForBitWidth(unsigned BitWidth) const;
+
+  LLVM_READONLY
+  const TargetRegisterClass *getAGPRClassForBitWidth(unsigned BitWidth) const;
+
+  LLVM_READONLY
   static const TargetRegisterClass *getSGPRClassForBitWidth(unsigned BitWidth);
 
   /// Return the 'base' register class for this register.
@@ -155,14 +157,7 @@ public:
     return isSGPRClass(getRegClass(RCID));
   }
 
-  bool isSGPRReg(const MachineRegisterInfo &MRI, Register Reg) const {
-    const TargetRegisterClass *RC;
-    if (Reg.isVirtual())
-      RC = MRI.getRegClass(Reg);
-    else
-      RC = getPhysRegClass(Reg);
-    return isSGPRClass(RC);
-  }
+  bool isSGPRReg(const MachineRegisterInfo &MRI, Register Reg) const;
 
   /// \returns true if this class contains only AGPR registers
   bool isAGPRClass(const TargetRegisterClass *RC) const {
@@ -192,11 +187,20 @@ public:
   const TargetRegisterClass *
   getEquivalentSGPRClass(const TargetRegisterClass *VRC) const;
 
-  /// \returns The register class that is used for a sub-register of \p RC for
-  /// the given \p SubIdx.  If \p SubIdx equals NoSubRegister, \p RC will
-  /// be returned.
+  /// \returns The canonical register class that is used for a sub-register of
+  /// \p RC for the given \p SubIdx.  If \p SubIdx equals NoSubRegister, \p RC
+  /// will be returned.
   const TargetRegisterClass *getSubRegClass(const TargetRegisterClass *RC,
                                             unsigned SubIdx) const;
+
+  /// Returns a register class which is compatible with \p SuperRC, such that a
+  /// subregister exists with class \p SubRC with subregister index \p
+  /// SubIdx. If this is impossible (e.g., an unaligned subregister index within
+  /// a register tuple), return null.
+  const TargetRegisterClass *
+  getCompatibleSubRegClass(const TargetRegisterClass *SuperRC,
+                           const TargetRegisterClass *SubRC,
+                           unsigned SubIdx) const;
 
   bool shouldRewriteCopySrc(const TargetRegisterClass *DefRC,
                             unsigned DefSubReg,
@@ -205,11 +209,7 @@ public:
 
   /// \returns True if operands defined with this operand type can accept
   /// a literal constant (i.e. any 32-bit immediate).
-  bool opCanUseLiteralConstant(unsigned OpType) const {
-    // TODO: 64-bit operands have extending behavior from 32-bit literal.
-    return OpType >= AMDGPU::OPERAND_REG_IMM_FIRST &&
-           OpType <= AMDGPU::OPERAND_REG_IMM_LAST;
-  }
+  bool opCanUseLiteralConstant(unsigned OpType) const;
 
   /// \returns True if operands defined with this operand type can accept
   /// an inline constant. i.e. An integer value in the range (-16, 64) or
@@ -282,6 +282,10 @@ public:
                     : &AMDGPU::SReg_64_XEXECRegClass;
   }
 
+  // Return the appropriate register class to use for 64-bit VGPRs for the
+  // subtarget.
+  const TargetRegisterClass *getVGPR64Class() const;
+
   MCRegister getVCC() const;
 
   const TargetRegisterClass *getRegClass(unsigned RCID) const;
@@ -293,6 +297,8 @@ public:
                                 LiveIntervals *LIS) const;
 
   const uint32_t *getAllVGPRRegMask() const;
+  const uint32_t *getAllAGPRRegMask() const;
+  const uint32_t *getAllVectorRegMask() const;
   const uint32_t *getAllAllocatableSRegMask() const;
 
   // \returns number of 32 bit registers covered by a \p LM
@@ -324,6 +330,10 @@ public:
   /// of the subtarget.
   ArrayRef<MCPhysReg> getAllSGPR128(const MachineFunction &MF) const;
 
+  /// Return all SGPR64 which satisfy the waves per execution unit requirement
+  /// of the subtarget.
+  ArrayRef<MCPhysReg> getAllSGPR64(const MachineFunction &MF) const;
+
   /// Return all SGPR32 which satisfy the waves per execution unit requirement
   /// of the subtarget.
   ArrayRef<MCPhysReg> getAllSGPR32(const MachineFunction &MF) const;
@@ -334,7 +344,6 @@ private:
                            int Index,
                            Register ValueReg,
                            bool ValueIsKill,
-                           MCRegister ScratchRsrcReg,
                            MCRegister ScratchOffsetReg,
                            int64_t InstrOffset,
                            MachineMemOperand *MMO,

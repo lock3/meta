@@ -163,8 +163,8 @@ lldb::addr_t AppleGetPendingItemsHandler::SetupGetPendingItemsFunction(
 
       // Next make the runner function for our implementation utility function.
       Status error;
-      TypeSystemClang *clang_ast_context =
-          TypeSystemClang::GetScratch(thread.GetProcess()->GetTarget());
+      TypeSystemClang *clang_ast_context = ScratchTypeSystemClang::GetForTarget(
+          thread.GetProcess()->GetTarget());
       CompilerType get_pending_items_return_type =
           clang_ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
       get_pending_items_caller =
@@ -215,7 +215,8 @@ AppleGetPendingItemsHandler::GetPendingItems(Thread &thread, addr_t queue,
   lldb::StackFrameSP thread_cur_frame = thread.GetStackFrameAtIndex(0);
   ProcessSP process_sp(thread.CalculateProcess());
   TargetSP target_sp(thread.CalculateTarget());
-  TypeSystemClang *clang_ast_context = TypeSystemClang::GetScratch(*target_sp);
+  TypeSystemClang *clang_ast_context =
+      ScratchTypeSystemClang::GetForTarget(*target_sp);
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYSTEM_RUNTIME));
 
   GetPendingItemsReturnInfo return_value;
@@ -260,26 +261,26 @@ AppleGetPendingItemsHandler::GetPendingItems(Thread &thread, addr_t queue,
   CompilerType clang_void_ptr_type =
       clang_ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
   Value return_buffer_ptr_value;
-  return_buffer_ptr_value.SetValueType(Value::eValueTypeScalar);
+  return_buffer_ptr_value.SetValueType(Value::ValueType::Scalar);
   return_buffer_ptr_value.SetCompilerType(clang_void_ptr_type);
 
   CompilerType clang_int_type = clang_ast_context->GetBasicType(eBasicTypeInt);
   Value debug_value;
-  debug_value.SetValueType(Value::eValueTypeScalar);
+  debug_value.SetValueType(Value::ValueType::Scalar);
   debug_value.SetCompilerType(clang_int_type);
 
   CompilerType clang_uint64_type =
       clang_ast_context->GetBasicType(eBasicTypeUnsignedLongLong);
   Value queue_value;
-  queue_value.SetValueType(Value::eValueTypeScalar);
+  queue_value.SetValueType(Value::ValueType::Scalar);
   queue_value.SetCompilerType(clang_uint64_type);
 
   Value page_to_free_value;
-  page_to_free_value.SetValueType(Value::eValueTypeScalar);
+  page_to_free_value.SetValueType(Value::ValueType::Scalar);
   page_to_free_value.SetCompilerType(clang_void_ptr_type);
 
   Value page_to_free_size_value;
-  page_to_free_size_value.SetValueType(Value::eValueTypeScalar);
+  page_to_free_size_value.SetValueType(Value::ValueType::Scalar);
   page_to_free_size_value.SetCompilerType(clang_uint64_type);
 
   std::lock_guard<std::mutex> guard(m_get_pending_items_retbuffer_mutex);

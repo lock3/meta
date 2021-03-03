@@ -42,10 +42,6 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/MemoryLocation.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instruction.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 #include <cstdint>
@@ -56,9 +52,17 @@
 namespace llvm {
 
 class AnalysisUsage;
+class AtomicCmpXchgInst;
 class BasicAAResult;
 class BasicBlock;
+class CatchPadInst;
+class CatchReturnInst;
 class DominatorTree;
+class FenceInst;
+class Function;
+class InvokeInst;
+class PreservedAnalyses;
+class TargetLibraryInfo;
 class Value;
 
 /// The possible results of an alias query.
@@ -340,20 +344,81 @@ createModRefInfo(const FunctionModRefBehavior FMRB) {
 /// The information stored in an `AAQueryInfo` is currently limitted to the
 /// caches used by BasicAA, but can further be extended to fit other AA needs.
 class AAQueryInfo {
+  /// Storage for estimated relative offsets between two partially aliased
+  /// values. Used to optimize out redundant parts of loads/stores (in GVN/DSE).
+  /// These users cannot process quite complicated addresses (e.g. GEPs with
+  /// non-constant offsets). Used by BatchAAResults only.
+  bool CacheOffsets = false;
+  SmallDenseMap<std::pair<std::pair<const Value *, const Value *>,
+                          std::pair<uint64_t, uint64_t>>,
+                int64_t, 4>
+      ClobberOffsets;
+
 public:
   using LocPair = std::pair<MemoryLocation, MemoryLocation>;
-  using AliasCacheT = SmallDenseMap<LocPair, AliasResult, 8>;
+  struct CacheEntry {
+    AliasResult Result;
+    /// Number of times a NoAlias assumption has been used.
+    /// 0 for assumptions that have not been used, -1 for definitive results.
+    int NumAssumptionUses;
+    /// Whether this is a definitive (non-assumption) result.
+    bool isDefinitive() const { return NumAssumptionUses < 0; }
+  };
+  using AliasCacheT = SmallDenseMap<LocPair, CacheEntry, 8>;
   AliasCacheT AliasCache;
 
   using IsCapturedCacheT = SmallDenseMap<const Value *, bool, 8>;
   IsCapturedCacheT IsCapturedCache;
 
-  AAQueryInfo() : AliasCache(), IsCapturedCache() {}
+  /// Query depth used to distinguish recursive queries.
+  unsigned Depth = 0;
 
-  AliasResult updateResult(const LocPair &Locs, AliasResult Result) {
-    auto It = AliasCache.find(Locs);
-    assert(It != AliasCache.end() && "Entry must have existed");
-    return It->second = Result;
+  /// How many active NoAlias assumption uses there are.
+  int NumAssumptionUses = 0;
+
+  /// Location pairs for which an assumption based result is currently stored.
+  /// Used to remove all potentially incorrect results from the cache if an
+  /// assumption is disproven.
+  SmallVector<AAQueryInfo::LocPair, 4> AssumptionBasedResults;
+
+  AAQueryInfo(bool CacheOffsets = false)
+      : CacheOffsets(CacheOffsets), ClobberOffsets(), AliasCache(),
+        IsCapturedCache() {}
+
+  /// Create a new AAQueryInfo based on this one, but with the cache cleared.
+  /// This is used for recursive queries across phis, where cache results may
+  /// not be valid.
+  AAQueryInfo withEmptyCache() {
+    AAQueryInfo NewAAQI;
+    NewAAQI.Depth = Depth;
+    return NewAAQI;
+  }
+
+  Optional<int64_t> getClobberOffset(const Value *Ptr1, const Value *Ptr2,
+                                     uint64_t Size1, uint64_t Size2) const {
+    assert(CacheOffsets && "Clobber offset cached in batch mode only!");
+    const bool Swapped = Ptr1 > Ptr2;
+    if (Swapped) {
+      std::swap(Ptr1, Ptr2);
+      std::swap(Size1, Size2);
+    }
+    const auto IOff = ClobberOffsets.find({{Ptr1, Ptr2}, {Size1, Size2}});
+    if (IOff != ClobberOffsets.end())
+      return Swapped ? -IOff->second : IOff->second;
+    return None;
+  }
+
+  void setClobberOffset(const Value *Ptr1, const Value *Ptr2, uint64_t Size1,
+                        uint64_t Size2, int64_t Offset) {
+    // Cache offset for batch mode only.
+    if (!CacheOffsets)
+      return;
+    if (Ptr1 > Ptr2) {
+      std::swap(Ptr1, Ptr2);
+      std::swap(Size1, Size2);
+      Offset = -Offset;
+    }
+    ClobberOffsets[{{Ptr1, Ptr2}, {Size1, Size2}}] = Offset;
   }
 };
 
@@ -407,7 +472,8 @@ public:
 
   /// A convenience wrapper around the primary \c alias interface.
   AliasResult alias(const Value *V1, const Value *V2) {
-    return alias(V1, LocationSize::unknown(), V2, LocationSize::unknown());
+    return alias(MemoryLocation::getBeforeOrAfter(V1),
+                 MemoryLocation::getBeforeOrAfter(V2));
   }
 
   /// A trivial helper function to check to see if the specified pointers are
@@ -424,7 +490,8 @@ public:
 
   /// A convenience wrapper around the \c isNoAlias helper interface.
   bool isNoAlias(const Value *V1, const Value *V2) {
-    return isNoAlias(MemoryLocation(V1), MemoryLocation(V2));
+    return isNoAlias(MemoryLocation::getBeforeOrAfter(V1),
+                     MemoryLocation::getBeforeOrAfter(V2));
   }
 
   /// A trivial helper function to check to see if the specified pointers are
@@ -446,7 +513,7 @@ public:
   /// A convenience wrapper around the primary \c pointsToConstantMemory
   /// interface.
   bool pointsToConstantMemory(const Value *P, bool OrLocal = false) {
-    return pointsToConstantMemory(MemoryLocation(P), OrLocal);
+    return pointsToConstantMemory(MemoryLocation::getBeforeOrAfter(P), OrLocal);
   }
 
   /// @}
@@ -539,7 +606,7 @@ public:
   /// write at most from objects pointed to by their pointer-typed arguments
   /// (with arbitrary offsets).
   static bool onlyAccessesArgPointees(FunctionModRefBehavior MRB) {
-    return !(MRB & FMRL_Anywhere & ~FMRL_ArgumentPointees);
+    return !((unsigned)MRB & FMRL_Anywhere & ~FMRL_ArgumentPointees);
   }
 
   /// Checks if functions with the specified behavior are known to potentially
@@ -547,26 +614,27 @@ public:
   /// (with arbitrary offsets).
   static bool doesAccessArgPointees(FunctionModRefBehavior MRB) {
     return isModOrRefSet(createModRefInfo(MRB)) &&
-           (MRB & FMRL_ArgumentPointees);
+           ((unsigned)MRB & FMRL_ArgumentPointees);
   }
 
   /// Checks if functions with the specified behavior are known to read and
   /// write at most from memory that is inaccessible from LLVM IR.
   static bool onlyAccessesInaccessibleMem(FunctionModRefBehavior MRB) {
-    return !(MRB & FMRL_Anywhere & ~FMRL_InaccessibleMem);
+    return !((unsigned)MRB & FMRL_Anywhere & ~FMRL_InaccessibleMem);
   }
 
   /// Checks if functions with the specified behavior are known to potentially
   /// read or write from memory that is inaccessible from LLVM IR.
   static bool doesAccessInaccessibleMem(FunctionModRefBehavior MRB) {
-    return isModOrRefSet(createModRefInfo(MRB)) && (MRB & FMRL_InaccessibleMem);
+    return isModOrRefSet(createModRefInfo(MRB)) &&
+             ((unsigned)MRB & FMRL_InaccessibleMem);
   }
 
   /// Checks if functions with the specified behavior are known to read and
   /// write at most from memory that is inaccessible from LLVM IR or objects
   /// pointed to by their pointer-typed arguments (with arbitrary offsets).
   static bool onlyAccessesInaccessibleOrArgMem(FunctionModRefBehavior MRB) {
-    return !(MRB & FMRL_Anywhere &
+    return !((unsigned)MRB & FMRL_Anywhere &
              ~(FMRL_InaccessibleMem | FMRL_ArgumentPointees));
   }
 
@@ -766,40 +834,7 @@ private:
                            AAQueryInfo &AAQI);
   ModRefInfo getModRefInfo(const Instruction *I,
                            const Optional<MemoryLocation> &OptLoc,
-                           AAQueryInfo &AAQIP) {
-    if (OptLoc == None) {
-      if (const auto *Call = dyn_cast<CallBase>(I)) {
-        return createModRefInfo(getModRefBehavior(Call));
-      }
-    }
-
-    const MemoryLocation &Loc = OptLoc.getValueOr(MemoryLocation());
-
-    switch (I->getOpcode()) {
-    case Instruction::VAArg:
-      return getModRefInfo((const VAArgInst *)I, Loc, AAQIP);
-    case Instruction::Load:
-      return getModRefInfo((const LoadInst *)I, Loc, AAQIP);
-    case Instruction::Store:
-      return getModRefInfo((const StoreInst *)I, Loc, AAQIP);
-    case Instruction::Fence:
-      return getModRefInfo((const FenceInst *)I, Loc, AAQIP);
-    case Instruction::AtomicCmpXchg:
-      return getModRefInfo((const AtomicCmpXchgInst *)I, Loc, AAQIP);
-    case Instruction::AtomicRMW:
-      return getModRefInfo((const AtomicRMWInst *)I, Loc, AAQIP);
-    case Instruction::Call:
-      return getModRefInfo((const CallInst *)I, Loc, AAQIP);
-    case Instruction::Invoke:
-      return getModRefInfo((const InvokeInst *)I, Loc, AAQIP);
-    case Instruction::CatchPad:
-      return getModRefInfo((const CatchPadInst *)I, Loc, AAQIP);
-    case Instruction::CatchRet:
-      return getModRefInfo((const CatchReturnInst *)I, Loc, AAQIP);
-    default:
-      return ModRefInfo::NoModRef;
-    }
-  }
+                           AAQueryInfo &AAQIP);
 
   class Concept;
 
@@ -827,7 +862,8 @@ class BatchAAResults {
   AAQueryInfo AAQI;
 
 public:
-  BatchAAResults(AAResults &AAR) : AA(AAR), AAQI() {}
+  BatchAAResults(AAResults &AAR, bool CacheOffsets = false)
+      : AA(AAR), AAQI(CacheOffsets) {}
   AliasResult alias(const MemoryLocation &LocA, const MemoryLocation &LocB) {
     return AA.alias(LocA, LocB, AAQI);
   }
@@ -860,6 +896,8 @@ public:
     return alias(MemoryLocation(V1, LocationSize::precise(1)),
                  MemoryLocation(V2, LocationSize::precise(1))) == MustAlias;
   }
+  Optional<int64_t> getClobberOffset(const MemoryLocation &LocA,
+                                     const MemoryLocation &LocB) const;
 };
 
 /// Temporary typedef for legacy code that uses a generic \c AliasAnalysis
@@ -1120,9 +1158,6 @@ public:
 /// Return true if this pointer is returned by a noalias function.
 bool isNoAliasCall(const Value *V);
 
-/// Return true if this is an argument with the noalias attribute.
-bool isNoAliasArgument(const Value *V);
-
 /// Return true if this pointer refers to a distinct and identifiable object.
 /// This returns true for:
 ///    Global Variables and Functions (but not Global Aliases)
@@ -1170,12 +1205,7 @@ public:
     ResultGetters.push_back(&getModuleAAResultImpl<AnalysisT>);
   }
 
-  Result run(Function &F, FunctionAnalysisManager &AM) {
-    Result R(AM.getResult<TargetLibraryAnalysis>(F));
-    for (auto &Getter : ResultGetters)
-      (*Getter)(F, AM, R);
-    return R;
-  }
+  Result run(Function &F, FunctionAnalysisManager &AM);
 
 private:
   friend AnalysisInfoMixin<AAManager>;

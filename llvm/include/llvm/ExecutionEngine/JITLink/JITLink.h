@@ -251,6 +251,12 @@ public:
   /// Returns an iterator to the new next element.
   edge_iterator removeEdge(edge_iterator I) { return Edges.erase(I); }
 
+  /// Returns the address of the fixup for the given edge, which is equal to
+  /// this block's address plus the edge's offset.
+  JITTargetAddress getFixupAddress(const Edge &E) const {
+    return getAddress() + E.getOffset();
+  }
+
 private:
   static constexpr uint64_t MaxAlignmentOffset = (1ULL << 57) - 1;
 
@@ -786,14 +792,17 @@ public:
                                  Section::const_block_iterator, const Block *,
                                  getSectionConstBlocks>;
 
-  LinkGraph(std::string Name, unsigned PointerSize,
+  LinkGraph(std::string Name, const Triple &TT, unsigned PointerSize,
             support::endianness Endianness)
-      : Name(std::move(Name)), PointerSize(PointerSize),
+      : Name(std::move(Name)), TT(TT), PointerSize(PointerSize),
         Endianness(Endianness) {}
 
   /// Returns the name of this graph (usually the name of the original
   /// underlying MemoryBuffer).
-  const std::string &getName() { return Name; }
+  const std::string &getName() const { return Name; }
+
+  /// Returns the target triple for this Graph.
+  const Triple &getTargetTriple() const { return TT; }
 
   /// Returns the pointer size for use in this graph.
   unsigned getPointerSize() const { return PointerSize; }
@@ -801,8 +810,37 @@ public:
   /// Returns the endianness of content in this graph.
   support::endianness getEndianness() const { return Endianness; }
 
+  /// Allocate a copy of the given string using the LinkGraph's allocator.
+  /// This can be useful when renaming symbols or adding new content to the
+  /// graph.
+  StringRef allocateString(StringRef Source) {
+    auto *AllocatedBuffer = Allocator.Allocate<char>(Source.size());
+    llvm::copy(Source, AllocatedBuffer);
+    return StringRef(AllocatedBuffer, Source.size());
+  }
+
+  /// Allocate a copy of the given string using the LinkGraph's allocator.
+  /// This can be useful when renaming symbols or adding new content to the
+  /// graph.
+  ///
+  /// Note: This Twine-based overload requires an extra string copy and an
+  /// extra heap allocation for large strings. The StringRef overload should
+  /// be preferred where possible.
+  StringRef allocateString(Twine Source) {
+    SmallString<256> TmpBuffer;
+    auto SourceStr = Source.toStringRef(TmpBuffer);
+    auto *AllocatedBuffer = Allocator.Allocate<char>(SourceStr.size());
+    llvm::copy(SourceStr, AllocatedBuffer);
+    return StringRef(AllocatedBuffer, SourceStr.size());
+  }
+
   /// Create a section with the given name, protection flags, and alignment.
   Section &createSection(StringRef Name, sys::Memory::ProtectionFlags Prot) {
+    assert(llvm::find_if(Sections,
+                         [&](std::unique_ptr<Section> &Sec) {
+                           return Sec->getName() == Name;
+                         }) == Sections.end() &&
+           "Duplicate section name");
     std::unique_ptr<Section> Sec(new Section(Name, Prot, Sections.size()));
     Sections.push_back(std::move(Sec));
     return *Sections.back();
@@ -974,6 +1012,10 @@ public:
     assert(ExternalSymbols.count(&Sym) && "Symbol is not in the externals set");
     ExternalSymbols.erase(&Sym);
     Addressable &Base = *Sym.Base;
+    assert(llvm::find_if(ExternalSymbols,
+                         [&](Symbol *AS) { return AS->Base == &Base; }) ==
+               ExternalSymbols.end() &&
+           "Base addressable still in use");
     destroySymbol(Sym);
     destroyAddressable(Base);
   }
@@ -986,6 +1028,10 @@ public:
            "Symbol is not in the absolute symbols set");
     AbsoluteSymbols.erase(&Sym);
     Addressable &Base = *Sym.Base;
+    assert(llvm::find_if(ExternalSymbols,
+                         [&](Symbol *AS) { return AS->Base == &Base; }) ==
+               ExternalSymbols.end() &&
+           "Base addressable still in use");
     destroySymbol(Sym);
     destroyAddressable(Base);
   }
@@ -1023,6 +1069,7 @@ private:
   BumpPtrAllocator Allocator;
 
   std::string Name;
+  Triple TT;
   unsigned PointerSize;
   support::endianness Endianness;
   SectionList Sections;
@@ -1195,21 +1242,37 @@ struct PassConfiguration {
   /// Notable use cases: Building GOT, stub, and TLV symbols.
   LinkGraphPassList PostPrunePasses;
 
+  /// Post-allocation passes.
+  ///
+  /// These passes are called on the graph after memory has been allocated and
+  /// defined nodes have been assigned their final addresses, but before the
+  /// context has been notified of these addresses. At this point externals
+  /// have not been resolved, and symbol content has not yet been copied into
+  /// working memory.
+  ///
+  /// Notable use cases: Setting up data structures associated with addresses
+  /// of defined symbols (e.g. a mapping of __dso_handle to JITDylib* for the
+  /// JIT runtime) -- using a PostAllocationPass for this ensures that the
+  /// data structures are in-place before any query for resolved symbols
+  /// can complete.
+  LinkGraphPassList PostAllocationPasses;
+
   /// Pre-fixup passes.
   ///
   /// These passes are called on the graph after memory has been allocated,
-  /// content copied into working memory, and nodes have been assigned their
-  /// final addresses.
+  /// content copied into working memory, and all nodes (including externals)
+  /// have been assigned their final addresses, but before any fixups have been
+  /// applied.
   ///
   /// Notable use cases: Late link-time optimizations like GOT and stub
   /// elimination.
-  LinkGraphPassList PostAllocationPasses;
+  LinkGraphPassList PreFixupPasses;
 
   /// Post-fixup passes.
   ///
   /// These passes are called on the graph after block contents has been copied
-  /// to working memory, and fixups applied. Graph nodes have been updated to
-  /// their final target vmaddrs.
+  /// to working memory, and fixups applied. Blocks have been updated to point
+  /// to their fixed up content.
   ///
   /// Notable use cases: Testing and validation.
   LinkGraphPassList PostFixupPasses;
@@ -1259,15 +1322,17 @@ class JITLinkContext {
 public:
   using LookupMap = DenseMap<StringRef, SymbolLookupFlags>;
 
+  /// Create a JITLinkContext.
+  JITLinkContext(const JITLinkDylib *JD) : JD(JD) {}
+
   /// Destroy a JITLinkContext.
   virtual ~JITLinkContext();
 
+  /// Return the JITLinkDylib that this link is targeting, if any.
+  const JITLinkDylib *getJITLinkDylib() const { return JD; }
+
   /// Return the MemoryManager to be used for this link.
   virtual JITLinkMemoryManager &getMemoryManager() = 0;
-
-  /// Returns a StringRef for the object buffer.
-  /// This method can not be called once takeObjectBuffer has been called.
-  virtual MemoryBufferRef getObjectBuffer() const = 0;
 
   /// Notify this context that linking failed.
   /// Called by JITLink if linking cannot be completed.
@@ -1313,16 +1378,25 @@ public:
   /// Called by JITLink to modify the pass pipeline prior to linking.
   /// The default version performs no modification.
   virtual Error modifyPassConfig(const Triple &TT, PassConfiguration &Config);
+
+private:
+  const JITLinkDylib *JD = nullptr;
 };
 
 /// Marks all symbols in a graph live. This can be used as a default,
 /// conservative mark-live implementation.
 Error markAllSymbolsLive(LinkGraph &G);
 
-/// Basic JITLink implementation.
+/// Create a LinkGraph from the given object buffer.
 ///
-/// This function will use sensible defaults for GOT and Stub handling.
-void jitLink(std::unique_ptr<JITLinkContext> Ctx);
+/// Note: The graph does not take ownership of the underlying buffer, nor copy
+/// its contents. The caller is responsible for ensuring that the object buffer
+/// outlives the graph.
+Expected<std::unique_ptr<LinkGraph>>
+createLinkGraphFromObject(MemoryBufferRef ObjectBuffer);
+
+/// Link the given graph.
+void link(std::unique_ptr<LinkGraph> G, std::unique_ptr<JITLinkContext> Ctx);
 
 } // end namespace jitlink
 } // end namespace llvm

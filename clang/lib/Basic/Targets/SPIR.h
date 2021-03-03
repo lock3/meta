@@ -100,10 +100,12 @@ public:
   void setSupportedOpenCLOpts() override {
     // Assume all OpenCL extensions and optional core features are supported
     // for SPIR since it is a generic target.
-    getSupportedOpenCLOpts().supportAll();
+    supportAllOpenCLOpts();
   }
 
   bool hasExtIntType() const override { return true; }
+
+  bool hasInt128Type() const override { return false; }
 };
 class LLVM_LIBRARY_VISIBILITY SPIR32TargetInfo : public SPIRTargetInfo {
 public:

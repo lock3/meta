@@ -77,6 +77,8 @@ define void @func_add_constant_to_fi_i32() #0 {
 
 ; A user the materialized frame index can't be meaningfully folded
 ; into.
+; FIXME: Should use s_mul but the frame index always gets materialized into a
+; vgpr
 
 ; GCN-LABEL: {{^}}func_other_fi_user_i32:
 
@@ -85,7 +87,7 @@ define void @func_add_constant_to_fi_i32() #0 {
 ; GFX9-MUBUF:   v_lshrrev_b32_e64 v0, 6, s32
 ; GFX9-FLATSCR: v_mov_b32_e32 v0, s32
 
-; GCN-NEXT: v_mul_u32_u24_e32 v0, 9, v0
+; GCN-NEXT: v_mul_lo_u32 v0, v0, 9
 ; GCN-NOT: v_mov
 ; GCN: ds_write_b32 v0, v0
 define void @func_other_fi_user_i32() #0 {
@@ -107,8 +109,8 @@ define void @func_store_private_arg_i32_ptr(i32 addrspace(5)* %ptr) #0 {
 
 ; GCN-LABEL: {{^}}func_load_private_arg_i32_ptr:
 ; GCN: s_waitcnt
-; MUBUF-NEXT:        buffer_load_dword v0, v0, s[0:3], 0 offen{{$}}
-; GFX9-FLATSCR-NEXT: scratch_load_dword v0, v0, off{{$}}
+; MUBUF-NEXT:        buffer_load_dword v0, v0, s[0:3], 0 offen glc{{$}}
+; GFX9-FLATSCR-NEXT: scratch_load_dword v0, v0, off glc{{$}}
 define void @func_load_private_arg_i32_ptr(i32 addrspace(5)* %ptr) #0 {
   %val = load volatile i32, i32 addrspace(5)* %ptr
   ret void
@@ -128,7 +130,7 @@ define void @func_load_private_arg_i32_ptr(i32 addrspace(5)* %ptr) #0 {
 
 ; GCN-NOT: v_mov
 ; GCN: ds_write_b32 v0, v0
-define void @void_func_byval_struct_i8_i32_ptr({ i8, i32 } addrspace(5)* byval %arg0) #0 {
+define void @void_func_byval_struct_i8_i32_ptr({ i8, i32 } addrspace(5)* byval({ i8, i32 }) %arg0) #0 {
   %gep0 = getelementptr inbounds { i8, i32 }, { i8, i32 } addrspace(5)* %arg0, i32 0, i32 0
   %gep1 = getelementptr inbounds { i8, i32 }, { i8, i32 } addrspace(5)* %arg0, i32 0, i32 1
   %load1 = load i32, i32 addrspace(5)* %gep1
@@ -142,7 +144,7 @@ define void @void_func_byval_struct_i8_i32_ptr({ i8, i32 } addrspace(5)* byval %
 ; MUBUF-NEXT: buffer_load_dword v1, off, s[0:3], s32 offset:4
 ; GFX9-FLATSCR-NEXT: scratch_load_ubyte v0, off, s32
 ; GFX9-FLATSCR-NEXT: scratch_load_dword v1, off, s32 offset:4
-define void @void_func_byval_struct_i8_i32_ptr_value({ i8, i32 } addrspace(5)* byval %arg0) #0 {
+define void @void_func_byval_struct_i8_i32_ptr_value({ i8, i32 } addrspace(5)* byval({ i8, i32 }) %arg0) #0 {
   %gep0 = getelementptr inbounds { i8, i32 }, { i8, i32 } addrspace(5)* %arg0, i32 0, i32 0
   %gep1 = getelementptr inbounds { i8, i32 }, { i8, i32 } addrspace(5)* %arg0, i32 0, i32 1
   %load0 = load i8, i8 addrspace(5)* %gep0
@@ -162,14 +164,14 @@ define void @void_func_byval_struct_i8_i32_ptr_value({ i8, i32 } addrspace(5)* b
 ; GCN: s_and_saveexec_b64
 
 ; CI: v_add_i32_e32 [[GEP:v[0-9]+]], vcc, 4, [[SHIFT]]
-; CI: buffer_load_dword v{{[0-9]+}}, off, s[0:3], s32 offset:4{{$}}
+; CI: buffer_load_dword v{{[0-9]+}}, off, s[0:3], s32 offset:4 glc{{$}}
 
 ; GFX9: v_add_u32_e32 [[GEP:v[0-9]+]], 4, [[SP]]
-; GFX9-MUBUF:   buffer_load_dword v{{[0-9]+}}, off, s[0:3], s32 offset:4{{$}}
-; GFX9-FLATSCR: scratch_load_dword v{{[0-9]+}}, [[SP]], off offset:4{{$}}
+; GFX9-MUBUF:   buffer_load_dword v{{[0-9]+}}, off, s[0:3], s32 offset:4 glc{{$}}
+; GFX9-FLATSCR: scratch_load_dword v{{[0-9]+}}, off, s32 offset:4 glc{{$}}
 
 ; GCN: ds_write_b32 v{{[0-9]+}}, [[GEP]]
-define void @void_func_byval_struct_i8_i32_ptr_nonentry_block({ i8, i32 } addrspace(5)* byval %arg0, i32 %arg2) #0 {
+define void @void_func_byval_struct_i8_i32_ptr_nonentry_block({ i8, i32 } addrspace(5)* byval({ i8, i32 }) %arg0, i32 %arg2) #0 {
   %cmp = icmp eq i32 %arg2, 0
   br i1 %cmp, label %bb, label %ret
 
@@ -197,7 +199,7 @@ ret:
 ; GFX9-FLATSCR-DAG: s_add_u32 [[SZ:[^,]+]], s32, 0x200
 ; GFX9-FLATSCR:     v_mov_b32_e32 [[VZ:v[0-9]+]], [[SZ]]
 
-; GCN: v_mul_u32_u24_e32 [[VZ]], 9, [[VZ]]
+; GCN: v_mul_lo_u32 [[VZ]], [[VZ]], 9
 ; GCN: ds_write_b32 v0, [[VZ]]
 define void @func_other_fi_user_non_inline_imm_offset_i32() #0 {
   %alloca0 = alloca [128 x i32], align 4, addrspace(5)
@@ -223,7 +225,7 @@ define void @func_other_fi_user_non_inline_imm_offset_i32() #0 {
 ; GFX9-FLATSCR-DAG: s_add_u32 [[SZ:[^,]+]], s32, 0x200
 ; GFX9-FLATSCR:     v_mov_b32_e32 [[VZ:v[0-9]+]], [[SZ]]
 
-; GCN: v_mul_u32_u24_e32 [[VZ]], 9, [[VZ]]
+; GCN: v_mul_lo_u32 [[VZ]], [[VZ]], 9
 ; GCN: ds_write_b32 v0, [[VZ]]
 define void @func_other_fi_user_non_inline_imm_offset_i32_vcc_live() #0 {
   %alloca0 = alloca [128 x i32], align 4, addrspace(5)

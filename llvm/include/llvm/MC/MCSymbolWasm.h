@@ -14,10 +14,11 @@
 namespace llvm {
 
 class MCSymbolWasm : public MCSymbol {
-  wasm::WasmSymbolType Type = wasm::WASM_SYMBOL_TYPE_DATA;
+  Optional<wasm::WasmSymbolType> Type;
   bool IsWeak = false;
   bool IsHidden = false;
   bool IsComdat = false;
+  bool OmitFromLinkingSection = false;
   mutable bool IsUsedInInitArray = false;
   mutable bool IsUsedInGOT = false;
   Optional<StringRef> ImportModule;
@@ -41,12 +42,15 @@ public:
   void setSize(const MCExpr *SS) { SymbolSize = SS; }
 
   bool isFunction() const { return Type == wasm::WASM_SYMBOL_TYPE_FUNCTION; }
-  bool isData() const { return Type == wasm::WASM_SYMBOL_TYPE_DATA; }
+  // Data is the default value if not set.
+  bool isData() const { return !Type || Type == wasm::WASM_SYMBOL_TYPE_DATA; }
   bool isGlobal() const { return Type == wasm::WASM_SYMBOL_TYPE_GLOBAL; }
   bool isTable() const { return Type == wasm::WASM_SYMBOL_TYPE_TABLE; }
   bool isSection() const { return Type == wasm::WASM_SYMBOL_TYPE_SECTION; }
   bool isEvent() const { return Type == wasm::WASM_SYMBOL_TYPE_EVENT; }
-  wasm::WasmSymbolType getType() const { return Type; }
+
+  Optional<wasm::WasmSymbolType> getType() const { return Type; }
+
   void setType(wasm::WasmSymbolType type) { Type = type; }
 
   bool isExported() const {
@@ -72,6 +76,12 @@ public:
   bool isComdat() const { return IsComdat; }
   void setComdat(bool isComdat) { IsComdat = isComdat; }
 
+  // wasm-ld understands a finite set of symbol types.  This flag allows the
+  // compiler to avoid emitting symbol table entries that would confuse the
+  // linker, unless the user specifically requests the feature.
+  bool omitFromLinkingSection() const { return OmitFromLinkingSection; }
+  void setOmitFromLinkingSection() { OmitFromLinkingSection = true; }
+
   bool hasImportModule() const { return ImportModule.hasValue(); }
   StringRef getImportModule() const {
     if (ImportModule.hasValue())
@@ -96,6 +106,15 @@ public:
   StringRef getExportName() const { return ExportName.getValue(); }
   void setExportName(StringRef Name) { ExportName = Name; }
 
+  bool isFunctionTable() const {
+    return isTable() && hasTableType() &&
+           getTableType() == wasm::ValType::FUNCREF;
+  }
+  void setFunctionTable() {
+    setType(wasm::WASM_SYMBOL_TYPE_TABLE);
+    setTableType(wasm::ValType::FUNCREF);
+  }
+
   void setUsedInGOT() const { IsUsedInGOT = true; }
   bool isUsedInGOT() const { return IsUsedInGOT; }
 
@@ -111,8 +130,9 @@ public:
   }
   void setGlobalType(wasm::WasmGlobalType GT) { GlobalType = GT; }
 
-  const wasm::ValType &getTableType() const {
-    assert(TableType.hasValue());
+  bool hasTableType() const { return TableType.hasValue(); }
+  wasm::ValType getTableType() const {
+    assert(hasTableType());
     return TableType.getValue();
   }
   void setTableType(wasm::ValType TT) { TableType = TT; }

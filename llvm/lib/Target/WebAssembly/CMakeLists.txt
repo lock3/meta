@@ -1,3 +1,5 @@
+add_llvm_component_group(WebAssembly)
+
 set(LLVM_TARGET_DEFINITIONS WebAssembly.td)
 
 tablegen(LLVM WebAssemblyGenAsmMatcher.inc -gen-asm-matcher)
@@ -20,6 +22,7 @@ add_llvm_target(WebAssemblyCodeGen
   WebAssemblyCFGSort.cpp
   WebAssemblyDebugFixup.cpp
   WebAssemblyDebugValueManager.cpp
+  WebAssemblyHandleEHTerminatePads.cpp
   WebAssemblyLateEHPrepare.cpp
   WebAssemblyExceptionInfo.cpp
   WebAssemblyExplicitLocals.cpp
@@ -58,6 +61,24 @@ add_llvm_target(WebAssemblyCodeGen
 
   DEPENDS
   intrinsics_gen
+
+  LINK_COMPONENTS
+  Analysis
+  AsmPrinter
+  BinaryFormat
+  CodeGen
+  Core
+  MC
+  Scalar
+  SelectionDAG
+  Support
+  Target
+  TransformUtils
+  WebAssemblyDesc
+  WebAssemblyInfo
+
+  ADD_TO_COMPONENT
+  WebAssembly
 )
 
 add_subdirectory(AsmParser)
