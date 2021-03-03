@@ -273,7 +273,6 @@ public:
   void VisitCXXFunctionalCastExpr(const CXXFunctionalCastExpr *Node);
   void VisitCXXStaticCastExpr(const CXXStaticCastExpr *Node);
   void VisitCXXUnresolvedConstructExpr(const CXXUnresolvedConstructExpr *Node);
-  void VisitCXXRequiredTypeType(const CXXRequiredTypeType *T);
   void VisitCXXConstructExpr(const CXXConstructExpr *Node);
   void VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *Node);
   void VisitCXXNewExpr(const CXXNewExpr *Node);
@@ -319,10 +318,6 @@ public:
   void VisitInjectedClassNameType(const InjectedClassNameType *T);
   void VisitObjCInterfaceType(const ObjCInterfaceType *T);
   void VisitPackExpansionType(const PackExpansionType *T);
-  void VisitInParameterType(const InParameterType *T);
-  void VisitOutParameterType(const OutParameterType *T);
-  void VisitInOutParameterType(const InOutParameterType *T);
-  void VisitMoveParameterType(const MoveParameterType *T);
 
   void VisitLabelDecl(const LabelDecl *D);
   void VisitTypedefDecl(const TypedefDecl *D);
@@ -345,7 +340,6 @@ public:
   void VisitNamespaceDecl(const NamespaceDecl *D);
   void VisitUsingDirectiveDecl(const UsingDirectiveDecl *D);
   void VisitNamespaceAliasDecl(const NamespaceAliasDecl *D);
-  void VisitCXXRequiredDeclaratorDecl(const CXXRequiredDeclaratorDecl *D);
   void VisitTypeAliasDecl(const TypeAliasDecl *D);
   void VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D);
   void VisitCXXRecordDecl(const CXXRecordDecl *D);

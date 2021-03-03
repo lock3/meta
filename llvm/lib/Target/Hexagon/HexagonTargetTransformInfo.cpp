@@ -36,7 +36,7 @@ static cl::opt<bool> EmitLookupTables("hexagon-emit-lookup-tables",
   cl::desc("Control lookup table emission on Hexagon target"));
 
 static cl::opt<bool> HexagonMaskedVMem("hexagon-masked-vmem", cl::init(true),
-  cl::Hidden, cl::desc("Enable loop vectorizer for HVX"));
+  cl::Hidden, cl::desc("Enable masked loads/stores for HVX"));
 
 // Constant "cost factor" to make floating point operations more expensive
 // in terms of vectorization cost. This isn't the best way, but it should
@@ -80,8 +80,10 @@ void HexagonTTIImpl::getPeelingPreferences(Loop *L, ScalarEvolution &SE,
   }
 }
 
-bool HexagonTTIImpl::shouldFavorPostInc() const {
-  return true;
+TTI::AddressingModeKind
+HexagonTTIImpl::getPreferredAddressingMode(const Loop *L,
+                                           ScalarEvolution *SE) const {
+  return TTI::AMK_PostIndexed;
 }
 
 /// --- Vector TTI begin ---
@@ -104,8 +106,10 @@ unsigned HexagonTTIImpl::getMinVectorRegisterBitWidth() const {
   return useHVX() ? ST.getVectorLength()*8 : 32;
 }
 
-unsigned HexagonTTIImpl::getMinimumVF(unsigned ElemWidth) const {
-  return (8 * ST.getVectorLength()) / ElemWidth;
+ElementCount HexagonTTIImpl::getMinimumVF(unsigned ElemWidth,
+                                          bool IsScalable) const {
+  assert(!IsScalable && "Scalable VFs are not supported for Hexagon");
+  return ElementCount::getFixed((8 * ST.getVectorLength()) / ElemWidth);
 }
 
 unsigned HexagonTTIImpl::getScalarizationOverhead(VectorType *Ty,
@@ -114,9 +118,10 @@ unsigned HexagonTTIImpl::getScalarizationOverhead(VectorType *Ty,
   return BaseT::getScalarizationOverhead(Ty, DemandedElts, Insert, Extract);
 }
 
-unsigned HexagonTTIImpl::getOperandsScalarizationOverhead(
-      ArrayRef<const Value*> Args, unsigned VF) {
-  return BaseT::getOperandsScalarizationOverhead(Args, VF);
+unsigned
+HexagonTTIImpl::getOperandsScalarizationOverhead(ArrayRef<const Value *> Args,
+                                                 ArrayRef<Type *> Tys) {
+  return BaseT::getOperandsScalarizationOverhead(Args, Tys);
 }
 
 unsigned HexagonTTIImpl::getCallInstrCost(Function *F, Type *RetTy,

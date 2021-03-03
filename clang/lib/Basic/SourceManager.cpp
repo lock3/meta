@@ -115,23 +115,6 @@ ContentCache::getBufferOrNone(DiagnosticsEngine &Diag, FileManager &FM,
   // return paths.
   IsBufferInvalid = true;
 
-  // Check that the file's size fits in an 'unsigned' (with room for a
-  // past-the-end value). This is deeply regrettable, but various parts of
-  // Clang (including elsewhere in this file!) use 'unsigned' to represent file
-  // offsets, line numbers, string literal lengths, and so on, and fail
-  // miserably on large source files.
-  if ((uint64_t)ContentsEntry->getSize() >=
-      std::numeric_limits<unsigned>::max()) {
-    if (Diag.isDiagnosticInFlight())
-      Diag.SetDelayedDiagnostic(diag::err_file_too_large,
-                                ContentsEntry->getName());
-    else
-      Diag.Report(Loc, diag::err_file_too_large)
-        << ContentsEntry->getName();
-
-    return None;
-  }
-
   auto BufferOrError = FM.getBufferForFile(ContentsEntry, IsFileVolatile);
 
   // If we were unable to open the file, then we are in an inconsistent
@@ -153,9 +136,31 @@ ContentCache::getBufferOrNone(DiagnosticsEngine &Diag, FileManager &FM,
 
   Buffer = std::move(*BufferOrError);
 
-  // Check that the file's size is the same as in the file entry (which may
+  // Check that the file's size fits in an 'unsigned' (with room for a
+  // past-the-end value). This is deeply regrettable, but various parts of
+  // Clang (including elsewhere in this file!) use 'unsigned' to represent file
+  // offsets, line numbers, string literal lengths, and so on, and fail
+  // miserably on large source files.
+  //
+  // Note: ContentsEntry could be a named pipe, in which case
+  // ContentsEntry::getSize() could have the wrong size. Use
+  // MemoryBuffer::getBufferSize() instead.
+  if (Buffer->getBufferSize() >= std::numeric_limits<unsigned>::max()) {
+    if (Diag.isDiagnosticInFlight())
+      Diag.SetDelayedDiagnostic(diag::err_file_too_large,
+                                ContentsEntry->getName());
+    else
+      Diag.Report(Loc, diag::err_file_too_large)
+        << ContentsEntry->getName();
+
+    return None;
+  }
+
+  // Unless this is a named pipe (in which case we can handle a mismatch),
+  // check that the file's size is the same as in the file entry (which may
   // have come from a stat cache).
-  if (Buffer->getBufferSize() != (size_t)ContentsEntry->getSize()) {
+  if (!ContentsEntry->isNamedPipe() &&
+      Buffer->getBufferSize() != (size_t)ContentsEntry->getSize()) {
     if (Diag.isDiagnosticInFlight())
       Diag.SetDelayedDiagnostic(diag::err_file_modified,
                                 ContentsEntry->getName());
@@ -380,10 +385,8 @@ void SourceManager::initializeForReplay(const SourceManager &Old) {
   }
 }
 
-ContentCache &SourceManager::getOrCreateContentCache(const FileEntry *FileEnt,
+ContentCache &SourceManager::getOrCreateContentCache(FileEntryRef FileEnt,
                                                      bool isSystemFile) {
-  assert(FileEnt && "Didn't specify a file entry to use?");
-
   // Do we already have information about this file?
   ContentCache *&Entry = FileInfos[FileEnt];
   if (Entry)
@@ -409,6 +412,7 @@ ContentCache &SourceManager::getOrCreateContentCache(const FileEntry *FileEnt,
 
   Entry->IsFileVolatile = UserFilesAreVolatile && !isSystemFile;
   Entry->IsTransient = FilesAreTransient;
+  Entry->BufferOverridden |= FileEnt.isNamedPipe();
 
   return *Entry;
 }
@@ -528,19 +532,22 @@ FileID SourceManager::createFileID(const FileEntry *SourceFile,
                                    SourceLocation IncludePos,
                                    SrcMgr::CharacteristicKind FileCharacter,
                                    int LoadedID, unsigned LoadedOffset) {
-  assert(SourceFile && "Null source file!");
-  SrcMgr::ContentCache &IR =
-      getOrCreateContentCache(SourceFile, isSystem(FileCharacter));
-  return createFileIDImpl(IR, SourceFile->getName(), IncludePos, FileCharacter,
-                          LoadedID, LoadedOffset);
+  return createFileID(SourceFile->getLastRef(), IncludePos, FileCharacter,
+                      LoadedID, LoadedOffset);
 }
 
 FileID SourceManager::createFileID(FileEntryRef SourceFile,
                                    SourceLocation IncludePos,
                                    SrcMgr::CharacteristicKind FileCharacter,
                                    int LoadedID, unsigned LoadedOffset) {
-  SrcMgr::ContentCache &IR = getOrCreateContentCache(&SourceFile.getFileEntry(),
+  SrcMgr::ContentCache &IR = getOrCreateContentCache(SourceFile,
                                                      isSystem(FileCharacter));
+
+  // If this is a named pipe, immediately load the buffer to ensure subsequent
+  // calls to ContentCache::getSize() are accurate.
+  if (IR.ContentsEntry->isNamedPipe())
+    (void)IR.getBufferOrNone(Diag, getFileManager(), SourceLocation());
+
   return createFileIDImpl(IR, SourceFile.getName(), IncludePos, FileCharacter,
                           LoadedID, LoadedOffset);
 }
@@ -673,13 +680,13 @@ SourceManager::createExpansionLocImpl(const ExpansionInfo &Info,
 
 llvm::Optional<llvm::MemoryBufferRef>
 SourceManager::getMemoryBufferForFileOrNone(const FileEntry *File) {
-  SrcMgr::ContentCache &IR = getOrCreateContentCache(File);
+  SrcMgr::ContentCache &IR = getOrCreateContentCache(File->getLastRef());
   return IR.getBufferOrNone(Diag, getFileManager(), SourceLocation());
 }
 
 void SourceManager::overrideFileContents(
     const FileEntry *SourceFile, std::unique_ptr<llvm::MemoryBuffer> Buffer) {
-  SrcMgr::ContentCache &IR = getOrCreateContentCache(SourceFile);
+  SrcMgr::ContentCache &IR = getOrCreateContentCache(SourceFile->getLastRef());
 
   IR.setBuffer(std::move(Buffer));
   IR.BufferOverridden = true;
@@ -698,23 +705,21 @@ void SourceManager::overrideFileContents(const FileEntry *SourceFile,
   getOverriddenFilesInfo().OverriddenFiles[SourceFile] = NewFile;
 }
 
-const FileEntry *
-SourceManager::bypassFileContentsOverride(const FileEntry &File) {
-  assert(isFileOverridden(&File));
-  llvm::Optional<FileEntryRef> BypassFile =
-      FileMgr.getBypassFile(File.getLastRef());
+Optional<FileEntryRef>
+SourceManager::bypassFileContentsOverride(FileEntryRef File) {
+  assert(isFileOverridden(&File.getFileEntry()));
+  llvm::Optional<FileEntryRef> BypassFile = FileMgr.getBypassFile(File);
 
   // If the file can't be found in the FS, give up.
   if (!BypassFile)
-    return nullptr;
+    return None;
 
-  const FileEntry *FE = &BypassFile->getFileEntry();
-  (void)getOrCreateContentCache(FE);
-  return FE;
+  (void)getOrCreateContentCache(*BypassFile);
+  return BypassFile;
 }
 
 void SourceManager::setFileIsTransient(const FileEntry *File) {
-  getOrCreateContentCache(File).IsTransient = true;
+  getOrCreateContentCache(File->getLastRef()).IsTransient = true;
 }
 
 Optional<StringRef>
@@ -1265,13 +1270,16 @@ LineOffsetMapping LineOffsetMapping::get(llvm::MemoryBufferRef Buffer,
   const std::size_t BufLen = End - Buf;
   unsigned I = 0;
   while (I < BufLen) {
-    if (Buf[I] == '\n') {
-      LineOffsets.push_back(I + 1);
-    } else if (Buf[I] == '\r') {
-      // If this is \r\n, skip both characters.
-      if (I + 1 < BufLen && Buf[I + 1] == '\n')
-        ++I;
-      LineOffsets.push_back(I + 1);
+    // Use a fast check to catch both newlines
+    if (LLVM_UNLIKELY(Buf[I] <= std::max('\n', '\r'))) {
+      if (Buf[I] == '\n') {
+        LineOffsets.push_back(I + 1);
+      } else if (Buf[I] == '\r') {
+        // If this is \r\n, skip both characters.
+        if (I + 1 < BufLen && Buf[I + 1] == '\n')
+          ++I;
+        LineOffsets.push_back(I + 1);
+      }
     }
     ++I;
   }

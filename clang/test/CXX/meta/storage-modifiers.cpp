@@ -10,7 +10,7 @@ namespace make_static_test {
 
   struct New {
     consteval {
-      auto refl = reflexpr(Existing);
+      auto refl = ^Existing;
 
       // Fields
       auto field_1 = __reflect(query_get_begin, refl);
@@ -31,7 +31,7 @@ namespace make_static_aborted_test {
 
   struct New {
     consteval {
-      auto refl = reflexpr(Existing);
+      auto refl = ^Existing;
 
       // Fields
       auto field_1 = __reflect(query_get_begin, refl);

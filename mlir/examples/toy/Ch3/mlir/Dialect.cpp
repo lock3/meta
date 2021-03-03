@@ -14,8 +14,8 @@
 #include "toy/Dialect.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/StandardTypes.h"
 
 using namespace mlir;
 using namespace mlir::toy;
@@ -121,7 +121,7 @@ static mlir::ParseResult parseConstantOp(mlir::OpAsmParser &parser,
 /// strings, attributes, operands, types, etc.
 static void print(mlir::OpAsmPrinter &printer, ConstantOp op) {
   printer << "toy.constant ";
-  printer.printOptionalAttrDict(op.getAttrs(), /*elidedAttrs=*/{"value"});
+  printer.printOptionalAttrDict(op->getAttrs(), /*elidedAttrs=*/{"value"});
   printer << op.value();
 }
 
@@ -191,7 +191,7 @@ void MulOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 static mlir::LogicalResult verify(ReturnOp op) {
   // We know that the parent operation is a function, because of the 'HasParent'
   // trait attached to the operation definition.
-  auto function = cast<FuncOp>(op.getParentOp());
+  auto function = cast<FuncOp>(op->getParentOp());
 
   /// ReturnOps can only have a single optional operand.
   if (op.getNumOperands() > 1)

@@ -159,7 +159,9 @@ static void CheckArrayDesignatorSyntax(Parser &P, SourceLocation Loc,
 ///
 /// \p CodeCompleteCB is called with Designation parsed so far.
 ExprResult Parser::ParseInitializerWithPotentialDesignator(
-    llvm::function_ref<void(const Designation &)> CodeCompleteCB) {
+    DesignatorCompletionInfo DesignatorCompletion) {
+  if (!getPreprocessor().isCodeCompletionEnabled())
+    DesignatorCompletion.PreferredBaseType = QualType(); // skip field lookup
 
   // If this is the old-style GNU extension:
   //   designation ::= identifier ':'
@@ -183,6 +185,8 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
 
     Designation D;
     D.AddDesignator(Designator::getField(FieldName, SourceLocation(), NameLoc));
+    PreferredType.enterDesignatedInitializer(
+        Tok.getLocation(), DesignatorCompletion.PreferredBaseType, D);
     return Actions.ActOnDesignatedInitializer(D, ColonLoc, true,
                                               ParseInitializer());
   }
@@ -199,7 +203,8 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
       SourceLocation DotLoc = ConsumeToken();
 
       if (Tok.is(tok::code_completion)) {
-        CodeCompleteCB(Desig);
+        Actions.CodeCompleteDesignator(DesignatorCompletion.PreferredBaseType,
+                                       DesignatorCompletion.InitExprs, Desig);
         cutOffParsing();
         return ExprError();
       }
@@ -388,6 +393,8 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
   // Handle a normal designator sequence end, which is an equal.
   if (Tok.is(tok::equal)) {
     SourceLocation EqualLoc = ConsumeToken();
+    PreferredType.enterDesignatedInitializer(
+        Tok.getLocation(), DesignatorCompletion.PreferredBaseType, Desig);
     return Actions.ActOnDesignatedInitializer(Desig, EqualLoc, false,
                                               ParseInitializer());
   }
@@ -396,6 +403,8 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator(
   // direct-list-initialization of the aggregate element. We allow this as an
   // extension from C++11 onwards (when direct-list-initialization was added).
   if (Tok.is(tok::l_brace) && getLangOpts().CPlusPlus11) {
+    PreferredType.enterDesignatedInitializer(
+        Tok.getLocation(), DesignatorCompletion.PreferredBaseType, Desig);
     return Actions.ActOnDesignatedInitializer(Desig, SourceLocation(), false,
                                               ParseBraceInitializer());
   }
@@ -453,9 +462,9 @@ ExprResult Parser::ParseBraceInitializer() {
       Actions, EnterExpressionEvaluationContext::InitList);
 
   bool InitExprsOk = true;
-  auto CodeCompleteDesignation = [&](const Designation &D) {
-    Actions.CodeCompleteDesignator(PreferredType.get(T.getOpenLocation()),
-                                   InitExprs, D);
+  DesignatorCompletionInfo DesignatorCompletion{
+      InitExprs,
+      PreferredType.get(T.getOpenLocation()),
   };
 
   while (1) {
@@ -472,16 +481,11 @@ ExprResult Parser::ParseBraceInitializer() {
 
     // Parse: designation[opt] initializer
 
-    bool VariadicReifier = isVariadicReifier();
-    llvm::SmallVector<Expr *, 4> ExpandedExprs;
-
     // If we know that this cannot be a designation, just parse the nested
     // initializer directly.
     ExprResult SubElt;
     if (MayBeDesignationStart())
-      SubElt = ParseInitializerWithPotentialDesignator(CodeCompleteDesignation);
-    else if (VariadicReifier)
-      InitExprsOk = !ParseVariadicReifier(ExpandedExprs);
+      SubElt = ParseInitializerWithPotentialDesignator(DesignatorCompletion);
     else
       SubElt = ParseInitializer();
 
@@ -491,14 +495,9 @@ ExprResult Parser::ParseBraceInitializer() {
     SubElt = Actions.CorrectDelayedTyposInExpr(SubElt.get());
 
     // If we couldn't parse the subelement, bail out.
-    if (SubElt.isUsable()) {
-      InitExprs.push_back(SubElt.get());
-    } else if(VariadicReifier) {
-      InitExprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
-
-      if(!InitExprsOk)
-        SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch);
-    } else {
+    if (!SubElt.isUsable() ||
+        Actions.tryExpandNonDependentPack(SubElt.get(), /*IsCall=*/false,
+                                          InitExprs)) {
       InitExprsOk = false;
 
       // We have two ways to try to recover from this error: if the code looks
@@ -566,9 +565,9 @@ bool Parser::ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
     return false;
   }
 
-  auto CodeCompleteDesignation = [&](const Designation &D) {
-    Actions.CodeCompleteDesignator(PreferredType.get(Braces.getOpenLocation()),
-                                   InitExprs, D);
+  DesignatorCompletionInfo DesignatorCompletion{
+      InitExprs,
+      PreferredType.get(Braces.getOpenLocation()),
   };
   while (!isEofOrEom()) {
     trailingComma = false;
@@ -576,7 +575,7 @@ bool Parser::ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
     // initializer directly.
     ExprResult SubElt;
     if (MayBeDesignationStart())
-      SubElt = ParseInitializerWithPotentialDesignator(CodeCompleteDesignation);
+      SubElt = ParseInitializerWithPotentialDesignator(DesignatorCompletion);
     else
       SubElt = ParseInitializer();
 
@@ -584,9 +583,9 @@ bool Parser::ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
       SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
 
     // If we couldn't parse the subelement, bail out.
-    if (!SubElt.isInvalid())
-      InitExprs.push_back(SubElt.get());
-    else
+    if (SubElt.isInvalid() ||
+        Actions.tryExpandNonDependentPack(SubElt.get(), /*IsCall=*/false,
+                                          InitExprs))
       InitExprsOk = false;
 
     if (Tok.is(tok::comma)) {

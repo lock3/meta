@@ -58,14 +58,14 @@ struct ConstantAggregateBuilderUtils {
   }
 
   llvm::Constant *getPadding(CharUnits PadSize) const {
-    llvm::Type *Ty = CGM.Int8Ty;
+    llvm::Type *Ty = CGM.CharTy;
     if (PadSize > CharUnits::One())
       Ty = llvm::ArrayType::get(Ty, PadSize.getQuantity());
     return llvm::UndefValue::get(Ty);
   }
 
   llvm::Constant *getZeroes(CharUnits ZeroSize) const {
-    llvm::Type *Ty = llvm::ArrayType::get(CGM.Int8Ty, ZeroSize.getQuantity());
+    llvm::Type *Ty = llvm::ArrayType::get(CGM.CharTy, ZeroSize.getQuantity());
     return llvm::ConstantAggregateZero::get(Ty);
   }
 };
@@ -1069,7 +1069,7 @@ public:
 
       assert(CurSize <= TotalSize && "Union size mismatch!");
       if (unsigned NumPadBytes = TotalSize - CurSize) {
-        llvm::Type *Ty = CGM.Int8Ty;
+        llvm::Type *Ty = CGM.CharTy;
         if (NumPadBytes > 1)
           Ty = llvm::ArrayType::get(Ty, NumPadBytes);
 
@@ -1096,7 +1096,6 @@ public:
     case CK_NonAtomicToAtomic:
     case CK_NoOp:
     case CK_ConstructorConversion:
-    case CK_ParameterQualification:
       return Visit(subExpr, destType);
 
     case CK_IntToOCLSampler:
@@ -1172,7 +1171,6 @@ public:
     case CK_IntegralToFixedPoint:
     case CK_ZeroToOCLOpaqueType:
       return nullptr;
-
     case CK_ReflectionToBoolean:
       llvm_unreachable("reflection emitted as runtime value");
     }

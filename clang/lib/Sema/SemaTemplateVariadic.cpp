@@ -57,7 +57,10 @@ namespace {
       if (T->getDepth() < DepthLimit)
         Unexpanded.push_back({T, Loc});
     }
-
+    void addUnexpanded(const PackSplice *PS,
+                       SourceRange Range = {}) {
+      Unexpanded.push_back({PS, Range});
+    }
   public:
     explicit CollectUnexpandedParameterPacksVisitor(
         SmallVectorImpl<UnexpandedParameterPack> &Unexpanded)
@@ -94,6 +97,16 @@ namespace {
       if (E->getDecl()->isParameterPack())
         addUnexpanded(E->getDecl(), E->getLocation());
 
+      return true;
+    }
+
+    bool TraversePackSplice(const PackSplice *PS) {
+      addUnexpanded(PS);
+      return true;
+    }
+
+    bool TraversePackSpliceLoc(PackSpliceLoc PSLoc) {
+      addUnexpanded(PSLoc.getPackSplice(), PSLoc.getSourceRange());
       return true;
     }
 
@@ -349,7 +362,7 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     }
   }
 
-  SmallVector<SourceLocation, 4> Locations;
+  SmallVector<SourceRange, 4> Locations;
   SmallVector<IdentifierInfo *, 4> Names;
   llvm::SmallPtrSet<IdentifierInfo *, 4> NamesKnown;
 
@@ -358,8 +371,12 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     if (const TemplateTypeParmType *TTP
           = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>())
       Name = TTP->getIdentifier();
+    else if (auto *ND = Unexpanded[I].first.dyn_cast<NamedDecl *>())
+      Name = ND->getIdentifier();
+#ifndef NDEBUG
     else
-      Name = Unexpanded[I].first.get<NamedDecl *>()->getIdentifier();
+      assert(Unexpanded[I].first.is<const PackSplice *>());
+#endif
 
     if (Name && NamesKnown.insert(Name).second)
       Names.push_back(Name);
@@ -374,7 +391,7 @@ Sema::DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
     DB << Names[I];
 
   for (unsigned I = 0, N = Locations.size(); I != N; ++I)
-    DB << SourceRange(Locations[I]);
+    DB << Locations[I];
   return true;
 }
 
@@ -584,9 +601,25 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
     }
 
     return Arg.getTemplatePackExpansion(EllipsisLoc);
-  case ParsedTemplateArgument::Dependent:
-    llvm_unreachable("Pack expansion is not valid for "
-                     "dependent template arguments");
+
+  case ParsedTemplateArgument::PackSplice: {
+    // FIXME: We could conceivably check to see if a non-dependent operand
+    // is expandable at this point and diagnose early if it isn't.
+    //
+    // Given that the "machinery" to check this currently generates
+    // the logic for expansion, and we'll still get a diagnostic, with
+    // adequate information very shortly when we try to expand any
+    // non-dependent TemplateArguments, we probably don't want to do
+    // that here (yet?).
+    //
+    // Performing the actual expansion here in non-dependent contexts
+    // also seems far too heavy handed, and will necessarily pull in a
+    // lot of semantic detail into what really is more of a parsing
+    // structure.
+    return ParsedTemplateArgument(Arg.getPackSpliceOperand(), Arg.getLocation(),
+                                  EllipsisLoc);
+  }
+
   }
   llvm_unreachable("Unhandled template argument kind?");
 }
@@ -676,14 +709,30 @@ bool Sema::CheckParameterPacksForExpansion(
     bool &RetainExpansion, Optional<unsigned> &NumExpansions) {
   ShouldExpand = true;
   RetainExpansion = false;
-  std::pair<IdentifierInfo *, SourceLocation> FirstPack;
+  std::pair<IdentifierInfo *, SourceRange> FirstPack;
   bool HaveFirstPack = false;
   Optional<unsigned> NumPartialExpansions;
-  SourceLocation PartiallySubstitutedPackLoc;
+  SourceRange PartiallySubstitutedPackLoc;
 
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
                                                   i != end; ++i) {
+    if (auto *PS = i->first.dyn_cast<const PackSplice *>()) {
+      // If this is a dependent pack splice, we don't have what we
+      // need yet.
+      if (!PS->isExpanded()) {
+        ShouldExpand = false;
+        continue;
+      }
+
+      // If this is a fully or partially resolved pack splice, we
+      // should be able to get some details about this expansion.
+      if (CheckCXXPackSpliceForExpansion(PS, ShouldExpand, NumExpansions))
+        return true;
+
+      continue;
+    }
+
     // Compute the depth and index for this parameter pack.
     unsigned Depth = 0, Index = 0;
     IdentifierInfo *Name;
@@ -772,7 +821,7 @@ bool Sema::CheckParameterPacksForExpansion(
       if (HaveFirstPack)
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict)
           << FirstPack.first << Name << *NumExpansions << NewPackSize
-          << SourceRange(FirstPack.second) << SourceRange(i->second);
+          << FirstPack.second << i->second;
       else
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict_multilevel)
           << Name << *NumExpansions << NewPackSize
@@ -796,7 +845,7 @@ bool Sema::CheckParameterPacksForExpansion(
           CurrentInstantiationScope->getPartiallySubstitutedPack();
       Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict_partial)
         << PartialPack << *NumPartialExpansions << *NumExpansions
-        << SourceRange(PartiallySubstitutedPackLoc);
+        << PartiallySubstitutedPackLoc;
       return true;
     }
 
@@ -811,26 +860,47 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(QualType T,
   QualType Pattern = cast<PackExpansionType>(T)->getPattern();
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseType(Pattern);
+  if (SubstPacks(Unexpanded, TemplateArgs))
+    return None;
 
   Optional<unsigned> Result;
-  for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
+  for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
+                                                 end = Unexpanded.end();
+                                                  i != end; ++i) {
+    if (auto *PS = i->first.dyn_cast<const PackSplice *>()) {
+      // If this is a dependent pack splice, we don't have what we need yet.
+      if (!PS->isExpanded()) {
+        return None;
+      }
+
+      Optional<unsigned> NumExpansions = getNumArgumentsInExpansion(PS);
+      if (!NumExpansions)
+        return None;
+
+      assert((!Result || *Result == *NumExpansions) &&
+             "inconsistent pack sizes");
+      Result = NumExpansions;
+
+      continue;
+    }
+
     // Compute the depth and index for this parameter pack.
     unsigned Depth;
     unsigned Index;
 
     if (const TemplateTypeParmType *TTP
-          = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>()) {
+          = i->first.dyn_cast<const TemplateTypeParmType *>()) {
       Depth = TTP->getDepth();
       Index = TTP->getIndex();
     } else {
-      NamedDecl *ND = Unexpanded[I].first.get<NamedDecl *>();
+      NamedDecl *ND = i->first.get<NamedDecl *>();
       if (isa<VarDecl>(ND)) {
         // Function parameter pack or init-capture pack.
         typedef LocalInstantiationScope::DeclArgumentPack DeclArgumentPack;
 
         llvm::PointerUnion<Decl *, DeclArgumentPack *> *Instantiation
           = CurrentInstantiationScope->findInstantiationOf(
-                                        Unexpanded[I].first.get<NamedDecl *>());
+                                        i->first.get<NamedDecl *>());
         if (Instantiation->is<Decl*>())
           // The pattern refers to an unexpanded pack. We're not ready to expand
           // this pack yet.
@@ -874,6 +944,8 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
 
   case TST_typeofExpr:
   case TST_decltype:
+  case TST_type_splice:
+  case TST_type_pack_splice:
   case TST_extint:
     if (DS.getRepAsExpr() &&
         DS.getRepAsExpr()->containsUnexpandedParameterPack())
@@ -1087,15 +1159,13 @@ Sema::getTemplateArgumentPackExpansionPattern(
                                PatternTSInfo);
   }
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
     PackExpansionExpr *Expansion
       = cast<PackExpansionExpr>(Argument.getAsExpr());
     Expr *Pattern = Expansion->getPattern();
     Ellipsis = Expansion->getEllipsisLoc();
     NumExpansions = Expansion->getNumExpansions();
-    return TemplateArgumentLoc(TemplateArgument(Pattern, TemplateArgKind),
-                               Pattern);
+    return TemplateArgumentLoc(TemplateArgument(Pattern), Pattern);
   }
 
   case TemplateArgument::TemplateExpansion:
@@ -1104,6 +1174,18 @@ Sema::getTemplateArgumentPackExpansionPattern(
     return TemplateArgumentLoc(Context, Argument.getPackExpansionPattern(),
                                OrigLoc.getTemplateQualifierLoc(),
                                OrigLoc.getTemplateNameLoc());
+
+  case TemplateArgument::PackSplice: {
+    TemplateArgumentLocInfo LocInfo = OrigLoc.getLocInfo();
+
+    Ellipsis = LocInfo.getPackSpliceExpansionEllipsisLoc();
+    // FIXME: Should we try to set NumExpansions here?
+    return TemplateArgumentLoc(Context, Argument.getPackExpansionPattern(),
+                               LocInfo.getPackSpliceIntroductionEllipsisLoc(),
+                               LocInfo.getPackSpliceSBELoc(),
+                               LocInfo.getPackSpliceSEELoc(),
+                               LocInfo.getPackSpliceExpansionEllipsisLoc());
+  }
 
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
@@ -1134,7 +1216,6 @@ Optional<unsigned> Sema::getFullyPackExpandedSize(TemplateArgument Arg) {
       return None;
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (auto *Subst =
             dyn_cast<SubstNonTypeTemplateParmPackExpr>(Arg.getAsExpr()))
@@ -1162,6 +1243,7 @@ Optional<unsigned> Sema::getFullyPackExpandedSize(TemplateArgument Arg) {
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
   case TemplateArgument::Null:
+  case TemplateArgument::PackSplice:
     return None;
   }
 

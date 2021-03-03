@@ -291,7 +291,6 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXCompositeExpansionStmtClass:
   case Stmt::CXXPackExpansionStmtClass:
   case Stmt::CXXInjectionStmtClass:
-  case Stmt::CXXBaseInjectionStmtClass:
     // FIXME: These should be exposed.
     K = CXCursor_UnexposedStmt;
     break;
@@ -323,12 +322,11 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXReflectPrintLiteralExprClass:
   case Stmt::CXXReflectPrintReflectionExprClass:
   case Stmt::CXXReflectDumpReflectionExprClass:
-  case Stmt::CXXIdExprExprClass:
-  case Stmt::CXXMemberIdExprExprClass:
-  case Stmt::CXXValueOfExprClass:
+  case Stmt::CXXExprSpliceExprClass:
+  case Stmt::CXXMemberExprSpliceExprClass:
+  case Stmt::CXXPackSpliceExprClass:
   case Stmt::CXXDependentSpliceIdExprClass:
   case Stmt::CXXConcatenateExprClass:
-  case Stmt::CXXDependentVariadicReifierExprClass:
   case Stmt::CXXSelectMemberExprClass:
   case Stmt::CXXSelectPackExprClass:
   case Stmt::CXXStdInitializerListExprClass:
@@ -363,7 +361,6 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXFragmentExprClass:
   case Stmt::CXXFragmentCaptureExprClass:
   case Stmt::CXXInjectedValueExprClass:
-  case Stmt::CXXParameterInfoExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 
@@ -672,6 +669,9 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
   case Stmt::OMPSimdDirectiveClass:
     K = CXCursor_OMPSimdDirective;
+    break;
+  case Stmt::OMPTileDirectiveClass:
+    K = CXCursor_OMPTileDirective;
     break;
   case Stmt::OMPForDirectiveClass:
     K = CXCursor_OMPForDirective;
@@ -1411,8 +1411,8 @@ enum CXTemplateArgumentKind clang_Cursor_getTemplateArgumentKind(CXCursor C,
     return CXTemplateArgumentKind_Expression;
   case TemplateArgument::Pack:
     return CXTemplateArgumentKind_Pack;
-  case TemplateArgument::Reflected:
-    return CXTemplateArgumentKind_Reflected;
+  case TemplateArgument::PackSplice:
+    return CXTemplateArgumentKind_PackSplice;
   }
 
   return CXTemplateArgumentKind_Invalid;

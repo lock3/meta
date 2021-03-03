@@ -1,5 +1,5 @@
 ====================================================
-Extra Clang Tools 12.0.0 (In-Progress) Release Notes
+Extra Clang Tools 13.0.0 (In-Progress) Release Notes
 ====================================================
 
 .. contents::
@@ -10,7 +10,7 @@ Written by the `LLVM Team <https://llvm.org/>`_
 
 .. warning::
 
-   These are in-progress notes for the upcoming Extra Clang Tools 12 release.
+   These are in-progress notes for the upcoming Extra Clang Tools 13 release.
    Release notes for previous releases can be found on
    `the Download Page <https://releases.llvm.org/download.html>`_.
 
@@ -18,7 +18,7 @@ Introduction
 ============
 
 This document contains the release notes for the Extra Clang Tools, part of the
-Clang release 12.0.0. Here we describe the status of the Extra Clang Tools in
+Clang release 13.0.0. Here we describe the status of the Extra Clang Tools in
 some detail, including major improvements from the previous release and new
 feature work. All LLVM releases may be downloaded from the `LLVM releases web
 site <https://llvm.org/releases/>`_.
@@ -32,7 +32,7 @@ main Clang web page, this document applies to the *next* release, not
 the current one. To see the release notes for a specific release, please
 see the `releases page <https://llvm.org/releases/>`_.
 
-What's New in Extra Clang Tools 12.0.0?
+What's New in Extra Clang Tools 13.0.0?
 =======================================
 
 Some of the major new features and improvements to Extra Clang Tools are listed
@@ -67,29 +67,21 @@ The improvements are...
 Improvements to clang-tidy
 --------------------------
 
-- Checks that allow configuring names of headers to include now support wrapping
-  the include in angle brackets to create a system include. For example,
-  :doc:`cppcoreguidelines-init-variables
-  <clang-tidy/checks/cppcoreguidelines-init-variables>` and
-  :doc:`modernize-make-unique <clang-tidy/checks/modernize-make-unique>`.
+- The `run-clang-tidy.py` helper script is now installed in `bin/` as
+  `run-clang-tidy`. It was previously installed in `share/clang/`.
 
-New modules
-^^^^^^^^^^^
-
-- New ``altera`` module.
-
-  Includes checks related to OpenCL for FPGA coding guidelines, based on the
-  `Altera SDK for OpenCL: Best Practices Guide
-  <https://www.altera.com/en_US/pdfs/literature/hb/opencl-sdk/aocl_optimization_guide.pdf>`_.
+- Added command line option `--fix-notes` to apply fixes found in notes
+  attached to warnings. These are typically cases where we are less confident
+  the fix will have the desired effect.
 
 New checks
 ^^^^^^^^^^
 
-- New :doc:`altera-struct-pack-align
-  <clang-tidy/checks/altera-struct-pack-align>` check.
+- New :doc:`concurrency-thread-canceltype-asynchronous
+  <clang-tidy/checks/concurrency-thread-canceltype-asynchronous>` check.
 
-  Finds structs that are inefficiently packed or aligned, and recommends
-  packing and/or aligning of said structs as needed.
+  Finds ``pthread_setcanceltype`` function calls where a thread's cancellation
+  type is set to asynchronous.
 
 - New :doc:`cppcoreguidelines-prefer-member-initializer
   <clang-tidy/checks/cppcoreguidelines-prefer-member-initializer>` check.
@@ -97,54 +89,28 @@ New checks
   Finds member initializations in the constructor body which can be placed into
   the initialization list instead.
 
-- New :doc:`bugprone-misplaced-pointer-arithmetic-in-alloc
-  <clang-tidy/checks/bugprone-misplaced-pointer-arithmetic-in-alloc>` check.
+New check aliases
+^^^^^^^^^^^^^^^^^
 
-- New :doc:`bugprone-redundant-branch-condition
-  <clang-tidy/checks/bugprone-redundant-branch-condition>` check.
-
-  Finds condition variables in nested ``if`` statements that were also checked
-  in the outer ``if`` statement and were not changed.
-
-- New :doc:`bugprone-signal-handler
-  <clang-tidy/checks/bugprone-signal-handler>` check.
-
-  Finds functions registered as signal handlers that call non asynchronous-safe
-  functions.
-
-- New :doc:`cert-sig30-c
-  <clang-tidy/checks/cert-sig30-c>` check.
-
-  Alias to the :doc:`bugprone-signal-handler
-  <clang-tidy/checks/bugprone-signal-handler>` check.
-
-- New :doc:`readability-function-cognitive-complexity
-  <clang-tidy/checks/readability-function-cognitive-complexity>` check.
-
-  Flags functions with Cognitive Complexity metric exceeding the configured limit.
+- New alias :doc:`cert-pos47-c
+  <clang-tidy/checks/cert-pos47-c>` to
+  :doc:`concurrency-thread-canceltype-asynchronous
+  <clang-tidy/checks/concurrency-thread-canceltype-asynchronous>` was added.
 
 Changes in existing checks
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- Improved :doc:`modernize-loop-convert
-  <clang-tidy/checks/modernize-loop-convert>` check.
+- Improved :doc:`bugprone-signal-handler
+  <clang-tidy/checks/bugprone-signal-handler>` check.
 
-  Now able to transform iterator loops using ``rbegin`` and ``rend`` methods.
+  Added an option to choose the set of allowed functions.
 
-- Improved :doc:`readability-identifier-naming
-  <clang-tidy/checks/readability-identifier-naming>` check.
+- Improved :doc:`readability-uniqueptr-delete-release
+  <clang-tidy/checks/readability-uniqueptr-delete-release>` check.
 
-  Added an option `GetConfigPerFile` to support including files which use
-  different naming styles.
-
-  Now renames overridden virtual methods if the method they override has a
-  style violation.
-  
-  Added support for specifying the style of scoped ``enum`` constants. If 
-  unspecified, will fall back to the style for regular ``enum`` constants.
-
-- Removed `google-runtime-references` check because the rule it checks does
-  not exist in the Google Style Guide anymore.
+  Added an option to choose whether to refactor by calling the ``reset`` member
+  function or assignment to ``nullptr``.
+  Added support for pointers to ``std::unique_ptr``.
 
 Improvements to include-fixer
 -----------------------------

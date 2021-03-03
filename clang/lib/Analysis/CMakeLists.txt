@@ -6,6 +6,7 @@ set(LLVM_LINK_COMPONENTS
 add_clang_library(clangAnalysis
   AnalysisDeclContext.cpp
   BodyFarm.cpp
+  CalledOnceCheck.cpp
   CFG.cpp
   CFGReachabilityAnalysis.cpp
   CFGStmtMap.cpp
@@ -17,11 +18,13 @@ add_clang_library(clangAnalysis
   CodeInjector.cpp
   Dominators.cpp
   ExprMutationAnalyzer.cpp
+  IssueHash.cpp
   Lifetime.cpp
   LifetimeAttrHandling.cpp
   LifetimeTypeCategory.cpp
   LifetimePsetBuilder.cpp
   LiveVariables.cpp
+  MacroExpansionContext.cpp
   ObjCNoReturn.cpp
   PathDiagnostic.cpp
   PostOrderCFGView.cpp

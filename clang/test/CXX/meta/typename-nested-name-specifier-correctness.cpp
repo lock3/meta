@@ -5,11 +5,11 @@ struct foo {
 };
 
 template<typename T>
-constexpr int global_i = typename(reflexpr(T))::i;
+constexpr int global_i = typename [: ^T :]::i;
 static_assert(global_i<foo> == 10);
 
 constexpr int do_things() {
-  auto y = typename(reflexpr(foo))::i;
+  auto y = typename [: ^foo :]::i;
   return y + 5;
 }
 
@@ -18,7 +18,7 @@ static_assert(do_things_foo_ret == 15);
 
 template<typename T>
 constexpr int templ_do_things() {
-  auto y = typename(reflexpr(T))::i;
+  auto y = typename [: ^T :]::i;
   return y + 10;
 }
 
@@ -28,7 +28,7 @@ static_assert(templ_do_things_foo_ret == 20);
 template<typename T>
 struct class_templ {
   constexpr static int templ_do_things() {
-    auto y = typename(reflexpr(T))::i;
+    auto y = typename [: ^T :]::i;
     return y + 15;
   }
 };

@@ -53,7 +53,6 @@ def CXXExpansionStmt : StmtNode<Stmt, 1>;
 def CXXCompositeExpansionStmt : StmtNode<CXXExpansionStmt>;
 def CXXPackExpansionStmt : StmtNode<CXXExpansionStmt>;
 def CXXInjectionStmt : StmtNode<Stmt>;
-def CXXBaseInjectionStmt : StmtNode<Stmt>;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : StmtNode<Stmt>;
@@ -170,7 +169,6 @@ def CXXFoldExpr : StmtNode<Expr>;
 def CXXFragmentExpr : StmtNode<Expr>;
 def CXXFragmentCaptureExpr : StmtNode<Expr>;
 def CXXInjectedValueExpr : StmtNode<Expr>;
-def CXXParameterInfoExpr : StmtNode<Expr>;
 
 // C++ Coroutines TS expressions
 def CoroutineSuspendExpr : StmtNode<Expr, 1>;
@@ -191,12 +189,11 @@ def CXXReflectPrintLiteralExpr : StmtNode<Expr>;
 def CXXReflectPrintReflectionExpr : StmtNode<Expr>;
 def CXXReflectDumpReflectionExpr : StmtNode<Expr>;
 def CXXCompilerErrorExpr : StmtNode<Expr>;
-def CXXIdExprExpr : StmtNode<Expr>;
-def CXXMemberIdExprExpr : StmtNode<Expr>;
+def CXXExprSpliceExpr : StmtNode<Expr>;
+def CXXMemberExprSpliceExpr : StmtNode<Expr>;
+def CXXPackSpliceExpr : StmtNode<Expr>;
 def CXXDependentSpliceIdExpr : StmtNode<Expr>;
-def CXXValueOfExpr : StmtNode<Expr>;
 def CXXConcatenateExpr : StmtNode<Expr>;
-def CXXDependentVariadicReifierExpr : StmtNode<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : StmtNode<Expr>;
@@ -245,9 +242,11 @@ def AsTypeExpr : StmtNode<Expr>;
 
 // OpenMP Directives.
 def OMPExecutableDirective : StmtNode<Stmt, 1>;
-def OMPLoopDirective : StmtNode<OMPExecutableDirective, 1>;
+def OMPLoopBasedDirective : StmtNode<OMPExecutableDirective, 1>;
+def OMPLoopDirective : StmtNode<OMPLoopBasedDirective, 1>;
 def OMPParallelDirective : StmtNode<OMPExecutableDirective>;
 def OMPSimdDirective : StmtNode<OMPLoopDirective>;
+def OMPTileDirective : StmtNode<OMPLoopBasedDirective>;
 def OMPForDirective : StmtNode<OMPLoopDirective>;
 def OMPForSimdDirective : StmtNode<OMPLoopDirective>;
 def OMPSectionsDirective : StmtNode<OMPExecutableDirective>;

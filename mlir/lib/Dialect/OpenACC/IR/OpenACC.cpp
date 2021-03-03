@@ -9,8 +9,8 @@
 #include "mlir/Dialect/OpenACC/OpenACC.h"
 #include "mlir/Dialect/OpenACC/OpenACCOpsEnums.cpp.inc"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/StandardTypes.h"
 
 using namespace mlir;
 using namespace acc;
@@ -445,7 +445,7 @@ static void print(OpAsmPrinter &printer, ParallelOp &op) {
                       /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
   printer.printOptionalAttrDictWithKeyword(
-      op.getAttrs(), ParallelOp::getOperandSegmentSizeAttr());
+      op->getAttrs(), ParallelOp::getOperandSegmentSizeAttr());
 }
 
 //===----------------------------------------------------------------------===//
@@ -608,8 +608,8 @@ static void print(OpAsmPrinter &printer, LoopOp &op) {
                       /*printBlockTerminators=*/true);
 
   printer.printOptionalAttrDictWithKeyword(
-      op.getAttrs(), {LoopOp::getExecutionMappingAttrName(),
-                      LoopOp::getOperandSegmentSizeAttr()});
+      op->getAttrs(), {LoopOp::getExecutionMappingAttrName(),
+                       LoopOp::getOperandSegmentSizeAttr()});
 }
 
 static LogicalResult verifyLoopOp(acc::LoopOp loopOp) {

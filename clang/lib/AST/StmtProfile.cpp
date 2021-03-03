@@ -20,6 +20,7 @@
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/ODRHash.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtVisitor.h"
 #include "llvm/ADT/FoldingSet.h"
 using namespace clang;
@@ -72,6 +73,9 @@ namespace {
 
     /// Visit a single template argument.
     void VisitTemplateArgument(const TemplateArgument &Arg);
+
+    /// Visit a pack splice.
+    void VisitPackSplice(const PackSplice *PS);
   };
 
   class StmtProfilerWithPointers : public StmtProfiler {
@@ -358,10 +362,6 @@ void StmtProfiler::VisitCXXInjectionStmt(const CXXInjectionStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXBaseInjectionStmt(const CXXBaseInjectionStmt *S) {
-  VisitStmt(S);
-}
-
 void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
   VisitStmt(S);
   ID.AddBoolean(S->isIfExists());
@@ -431,8 +431,9 @@ class OMPClauseProfiler : public ConstOMPClauseVisitor<OMPClauseProfiler> {
 
 public:
   OMPClauseProfiler(StmtProfiler *P) : Profiler(P) { }
-#define OMP_CLAUSE_CLASS(Enum, Str, Class) void Visit##Class(const Class *C);
-#include "llvm/Frontend/OpenMP/OMPKinds.def"
+#define GEN_CLANG_CLAUSE_CLASS
+#define CLAUSE_CLASS(Enum, Str, Class) void Visit##Class(const Class *C);
+#include "llvm/Frontend/OpenMP/OMP.inc"
   void VistOMPClauseWithPreInit(const OMPClauseWithPreInit *C);
   void VistOMPClauseWithPostUpdate(const OMPClauseWithPostUpdate *C);
 };
@@ -476,6 +477,12 @@ void OMPClauseProfiler::VisitOMPSafelenClause(const OMPSafelenClause *C) {
 void OMPClauseProfiler::VisitOMPSimdlenClause(const OMPSimdlenClause *C) {
   if (C->getSimdlen())
     Profiler->VisitStmt(C->getSimdlen());
+}
+
+void OMPClauseProfiler::VisitOMPSizesClause(const OMPSizesClause *C) {
+  for (auto E : C->getSizesRefs())
+    if (E)
+      Profiler->VisitExpr(E);
 }
 
 void OMPClauseProfiler::VisitOMPAllocatorClause(const OMPAllocatorClause *C) {
@@ -864,8 +871,12 @@ StmtProfiler::VisitOMPExecutableDirective(const OMPExecutableDirective *S) {
       P.Visit(*I);
 }
 
-void StmtProfiler::VisitOMPLoopDirective(const OMPLoopDirective *S) {
+void StmtProfiler::VisitOMPLoopBasedDirective(const OMPLoopBasedDirective *S) {
   VisitOMPExecutableDirective(S);
+}
+
+void StmtProfiler::VisitOMPLoopDirective(const OMPLoopDirective *S) {
+  VisitOMPLoopBasedDirective(S);
 }
 
 void StmtProfiler::VisitOMPParallelDirective(const OMPParallelDirective *S) {
@@ -874,6 +885,10 @@ void StmtProfiler::VisitOMPParallelDirective(const OMPParallelDirective *S) {
 
 void StmtProfiler::VisitOMPSimdDirective(const OMPSimdDirective *S) {
   VisitOMPLoopDirective(S);
+}
+
+void StmtProfiler::VisitOMPTileDirective(const OMPTileDirective *S) {
+  VisitOMPLoopBasedDirective(S);
 }
 
 void StmtProfiler::VisitOMPForDirective(const OMPForDirective *S) {
@@ -1795,11 +1810,6 @@ void StmtProfiler::VisitCXXNullPtrLiteralExpr(const CXXNullPtrLiteralExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitCXXParameterInfoExpr(const CXXParameterInfoExpr *S) {
-  VisitExpr(S);
-  VisitDecl(S->getDecl());
-}
-
 void StmtProfiler::VisitCXXStdInitializerListExpr(
     const CXXStdInitializerListExpr *S) {
   VisitExpr(S);
@@ -2140,29 +2150,20 @@ void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
+void StmtProfiler::VisitCXXExprSpliceExpr(const CXXExprSpliceExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXMemberIdExprExpr(const CXXMemberIdExprExpr *E) {
+void StmtProfiler::VisitCXXMemberExprSpliceExpr(const CXXMemberExprSpliceExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXPackSpliceExpr(const CXXPackSpliceExpr *E) {
   VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXDependentSpliceIdExpr(const CXXDependentSpliceIdExpr *E) {
   VisitName(E->getNameInfo().getName());
-}
-
-void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
-  VisitExpr(E);
-}
-
-void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
-  VisitExpr(E);
-}
-
-void StmtProfiler::VisitCXXDependentVariadicReifierExpr(
-    const CXXDependentVariadicReifierExpr *E) {
-  VisitExpr(E);
 }
 
 void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
@@ -2174,6 +2175,10 @@ void StmtProfiler::VisitCXXFragmentCaptureExpr(const CXXFragmentCaptureExpr *E) 
 }
 
 void StmtProfiler::VisitCXXInjectedValueExpr(const CXXInjectedValueExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
   VisitExpr(E);
 }
 
@@ -2301,6 +2306,8 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     break;
 
   case TemplateArgument::Declaration:
+    VisitType(Arg.getParamTypeForDecl());
+    // FIXME: Do we need to recursively decompose template parameter objects?
     VisitDecl(Arg.getAsDecl());
     break;
 
@@ -2309,11 +2316,10 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     break;
 
   case TemplateArgument::Integral:
-    Arg.getAsIntegral().Profile(ID);
     VisitType(Arg.getIntegralType());
+    Arg.getAsIntegral().Profile(ID);
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     Visit(Arg.getAsExpr());
     break;
@@ -2322,7 +2328,21 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     for (const auto &P : Arg.pack_elements())
       VisitTemplateArgument(P);
     break;
+
+  case TemplateArgument::PackSplice:
+    VisitPackSplice(Arg.getPackSplice());
+    break;
   }
+}
+
+void StmtProfiler::VisitPackSplice(const PackSplice *PS) {
+  Visit(PS->getOperand());
+
+  if (!PS->isExpanded())
+    return;
+
+  for (auto *SubOperand : PS->getExpansions())
+    Visit(SubOperand);
 }
 
 void Stmt::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,

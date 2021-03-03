@@ -12,14 +12,14 @@ namespace existing {
 }
 
 consteval {
-  auto variable_1 = reflexpr(existing::variable_1);
+  auto variable_1 = ^existing::variable_1;
   __reflect_mod(query_set_constexpr, variable_1, ConstexprModifier::Constexpr);
 
   -> variable_1;
 }
 
 consteval {
-  auto function_1 = reflexpr(existing::function_1);
+  auto function_1 = ^existing::function_1;
   __reflect_mod(query_set_constexpr, function_1, ConstexprModifier::Constexpr);
 
   -> function_1;
@@ -35,7 +35,7 @@ struct Existing {
 
 struct NewMethod {
   consteval {
-    auto method_1 = reflexpr(Existing::method_1);
+    auto method_1 = ^Existing::method_1;
     __reflect_mod(query_set_constexpr, method_1, ConstexprModifier::Constexpr);
 
     -> method_1;
@@ -47,7 +47,7 @@ public:
 
 struct NewBrokenField {
   consteval {
-    auto field_1 = reflexpr(Existing::field_1);
+    auto field_1 = ^Existing::field_1;
     __reflect_mod(query_set_constexpr, field_1, ConstexprModifier::Constexpr);
 
     -> field_1;
@@ -62,7 +62,7 @@ struct ExistingDestructorOnly {
 
 struct NewBrokenDestructor {
   consteval {
-    auto refl = reflexpr(ExistingDestructorOnly);
+    auto refl = ^ExistingDestructorOnly;
 
     auto destructor_1 = __reflect(query_get_begin, refl);
     __reflect_mod(query_set_constexpr, destructor_1, ConstexprModifier::Constexpr);
@@ -82,14 +82,14 @@ namespace existing {
 }
 
 consteval {
-  auto variable_1 = reflexpr(existing::variable_1);
+  auto variable_1 = ^existing::variable_1;
   __reflect_mod(query_set_constexpr, variable_1, ConstexprModifier::Consteval);
 
   -> variable_1;
 }
 
 consteval {
-  auto function_1 = reflexpr(existing::function_1);
+  auto function_1 = ^existing::function_1;
   __reflect_mod(query_set_constexpr, function_1, ConstexprModifier::Consteval);
 
   -> function_1;
@@ -105,7 +105,7 @@ struct Existing {
 
 struct NewMethod {
   consteval {
-    auto method_1 = reflexpr(Existing::method_1);
+    auto method_1 = ^Existing::method_1;
     __reflect_mod(query_set_constexpr, method_1, ConstexprModifier::Consteval);
 
     -> method_1;
@@ -117,7 +117,7 @@ public:
 
 struct NewBrokenField {
   consteval {
-    auto field_1 = reflexpr(Existing::field_1);
+    auto field_1 = ^Existing::field_1;
     __reflect_mod(query_set_constexpr, field_1, ConstexprModifier::Consteval);
 
     -> field_1;
@@ -132,7 +132,7 @@ struct ExistingDestructorOnly {
 
 struct NewBrokenDestructor {
   consteval {
-    auto refl = reflexpr(ExistingDestructorOnly);
+    auto refl = ^ExistingDestructorOnly;
 
     auto destructor_1 = __reflect(query_get_begin, refl);
     __reflect_mod(query_set_constexpr, destructor_1, ConstexprModifier::Consteval);
@@ -152,14 +152,14 @@ namespace existing {
 }
 
 consteval {
-  auto variable_1 = reflexpr(existing::variable_1);
+  auto variable_1 = ^existing::variable_1;
   __reflect_mod(query_set_constexpr, variable_1, ConstexprModifier::Constinit);
 
   -> variable_1;
 }
 
 consteval {
-  auto function_1 = reflexpr(existing::function_1);
+  auto function_1 = ^existing::function_1;
   __reflect_mod(query_set_constexpr, function_1, ConstexprModifier::Constinit);
 
   -> function_1;
@@ -175,7 +175,7 @@ struct Existing {
 
 struct NewBrokenMethod {
   consteval {
-    auto method_1 = reflexpr(Existing::method_1);
+    auto method_1 = ^Existing::method_1;
     __reflect_mod(query_set_constexpr, method_1, ConstexprModifier::Constinit);
 
     -> method_1;
@@ -187,7 +187,7 @@ public:
 
 struct NewBrokenField {
   consteval {
-    auto field_1 = reflexpr(Existing::field_1);
+    auto field_1 = ^Existing::field_1;
     __reflect_mod(query_set_constexpr, field_1, ConstexprModifier::Constinit);
 
     -> field_1;
@@ -202,7 +202,7 @@ struct ExistingDestructorOnly {
 
 struct NewBrokenDestructor {
   consteval {
-    auto refl = reflexpr(ExistingDestructorOnly);
+    auto refl = ^ExistingDestructorOnly;
 
     auto destructor_1 = __reflect(query_get_begin, refl);
     __reflect_mod(query_set_constexpr, destructor_1, ConstexprModifier::Constinit);

@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 consteval auto generate_func() {

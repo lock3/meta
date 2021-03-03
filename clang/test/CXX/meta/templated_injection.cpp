@@ -5,9 +5,9 @@
 template<typename T, auto V>
 class test {
   consteval {
-    auto ty = reflexpr(T);
+    auto ty = ^T;
     -> fragment struct S {
-      static constexpr typename(%{ty}) x = V;
+      static constexpr typename [: %{ty} :] x = V;
     };
   }
 };

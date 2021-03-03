@@ -25,6 +25,7 @@
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
@@ -431,12 +432,6 @@ void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
   if (Policy.IncludeNewlines) OS << "\n";
 }
 
-void StmtPrinter::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *Node) {
-  // FIXME: Actually print something meaningful.
-  Indent() << "__inject_base( ... )";
-  if (Policy.IncludeNewlines) OS << "\n";
-}
-
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())
@@ -737,6 +732,11 @@ void StmtPrinter::VisitOMPParallelDirective(OMPParallelDirective *Node) {
 
 void StmtPrinter::VisitOMPSimdDirective(OMPSimdDirective *Node) {
   Indent() << "#pragma omp simd";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPTileDirective(OMPTileDirective *Node) {
+  Indent() << "#pragma omp tile";
   PrintOMPExecutableDirective(Node);
 }
 
@@ -1990,10 +1990,6 @@ void StmtPrinter::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *Node) {
   OS << "nullptr";
 }
 
-void StmtPrinter::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *Node) {
-  OS << "<parameter info for " << Node->getDecl()->getName() << ">";
-}
-
 void StmtPrinter::VisitCXXThisExpr(CXXThisExpr *Node) {
   OS << "this";
 }
@@ -2569,13 +2565,13 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
-  OS << "idexpr(";
+void StmtPrinter::VisitCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << ">]";
 }
 
-void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void StmtPrinter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   PrintExpr(E->getBase());
 
   if (E->isArrow())
@@ -2583,17 +2579,19 @@ void StmtPrinter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
   else
     OS << ".";
 
-  OS << "idexpr(";
+  OS << "[<";
   PrintExpr(E->getReflection());
-  OS << ")";
+  OS << ">]";
+}
+
+void StmtPrinter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
+  OS << "...[<";
+  PrintExpr(E->getPackSplice()->getOperand());
+  OS << ">]";
 }
 
 void StmtPrinter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *Node) {
   OS << "(. " << Node->getNameInfo() << " .)";
-}
-
-void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
-  OS << "valueof(...)"; // TODO Finish this
 }
 
 void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
@@ -2607,29 +2605,8 @@ void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
-    CXXDependentVariadicReifierExpr *E) {
-  // TODO Finish this
-  switch(E->getKeywordId()) {
-  case tok::kw_valueof:
-    OS << "valueof(...)";
-    break;
-  case tok::kw_idexpr:
-    OS << "idexpr(...)";
-    break;
-  case tok::kw_unqualid:
-    OS << "unqualid(...)";
-    break;
-  case tok::kw_typename:
-    OS << "typename(...)";
-    break;
-  default:
-    break;
-  }
-}
-
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
-  OS << (Node->isLegacy() ? "__fragment " : "fragment ");
+  OS << "fragment ";
   Node->getFragment()->getContent()->print(OS, Policy);
 }
 

@@ -107,20 +107,20 @@ private:
                                              ModuleOp module) {
     auto *context = module.getContext();
     if (module.lookupSymbol<LLVM::LLVMFuncOp>("printf"))
-      return SymbolRefAttr::get("printf", context);
+      return SymbolRefAttr::get(context, "printf");
 
     // Create a function declaration for printf, the signature is:
     //   * `i32 (i8*, ...)`
-    auto llvmI32Ty = LLVM::LLVMType::getInt32Ty(context);
-    auto llvmI8PtrTy = LLVM::LLVMType::getInt8PtrTy(context);
-    auto llvmFnType = LLVM::LLVMType::getFunctionTy(llvmI32Ty, llvmI8PtrTy,
-                                                    /*isVarArg=*/true);
+    auto llvmI32Ty = IntegerType::get(context, 32);
+    auto llvmI8PtrTy = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+    auto llvmFnType = LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy,
+                                                  /*isVarArg=*/true);
 
     // Insert the printf function into the body of the parent module.
     PatternRewriter::InsertionGuard insertGuard(rewriter);
     rewriter.setInsertionPointToStart(module.getBody());
     rewriter.create<LLVM::LLVMFuncOp>(module.getLoc(), "printf", llvmFnType);
-    return SymbolRefAttr::get("printf", context);
+    return SymbolRefAttr::get(context, "printf");
   }
 
   /// Return a value representing an access into a global string with the given
@@ -133,8 +133,8 @@ private:
     if (!(global = module.lookupSymbol<LLVM::GlobalOp>(name))) {
       OpBuilder::InsertionGuard insertGuard(builder);
       builder.setInsertionPointToStart(module.getBody());
-      auto type = LLVM::LLVMType::getArrayTy(
-          LLVM::LLVMType::getInt8Ty(builder.getContext()), value.size());
+      auto type = LLVM::LLVMArrayType::get(
+          IntegerType::get(builder.getContext(), 8), value.size());
       global = builder.create<LLVM::GlobalOp>(loc, type, /*isConstant=*/true,
                                               LLVM::Linkage::Internal, name,
                                               builder.getStringAttr(value));
@@ -143,11 +143,12 @@ private:
     // Get the pointer to the first character in the global string.
     Value globalPtr = builder.create<LLVM::AddressOfOp>(loc, global);
     Value cst0 = builder.create<LLVM::ConstantOp>(
-        loc, LLVM::LLVMType::getInt64Ty(builder.getContext()),
+        loc, IntegerType::get(builder.getContext(), 64),
         builder.getIntegerAttr(builder.getIndexType(), 0));
     return builder.create<LLVM::GEPOp>(
-        loc, LLVM::LLVMType::getInt8PtrTy(builder.getContext()), globalPtr,
-        ArrayRef<Value>({cst0, cst0}));
+        loc,
+        LLVM::LLVMPointerType::get(IntegerType::get(builder.getContext(), 8)),
+        globalPtr, ArrayRef<Value>({cst0, cst0}));
   }
 };
 } // end anonymous namespace

@@ -23,7 +23,6 @@
 #include "clang/AST/Attr.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
-#include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/DiagnosticRenderer.h"
 #include "clang/Tooling/Core/Diagnostic.h"
@@ -31,7 +30,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Regex.h"
 #include <tuple>
@@ -177,6 +175,21 @@ DiagnosticBuilder ClangTidyContext::diag(
   return DiagEngine->Report(Loc, ID);
 }
 
+DiagnosticBuilder ClangTidyContext::diag(
+    StringRef CheckName, StringRef Description,
+    DiagnosticIDs::Level Level /* = DiagnosticIDs::Warning*/) {
+  unsigned ID = DiagEngine->getDiagnosticIDs()->getCustomDiagID(
+      Level, (Description + " [" + CheckName + "]").str());
+  CheckNamesByDiagnosticID.try_emplace(ID, CheckName);
+  return DiagEngine->Report(ID);
+}
+
+DiagnosticBuilder ClangTidyContext::configurationDiag(
+    StringRef Message,
+    DiagnosticIDs::Level Level /* = DiagnosticIDs::Warning*/) {
+  return diag("clang-tidy-config", Message, Level);
+}
+
 void ClangTidyContext::setSourceManager(SourceManager *SourceMgr) {
   DiagEngine->setSourceManager(SourceMgr);
 }
@@ -205,7 +218,7 @@ const ClangTidyOptions &ClangTidyContext::getOptions() const {
 ClangTidyOptions ClangTidyContext::getOptionsForFile(StringRef File) const {
   // Merge options on top of getDefaults() as a safeguard against options with
   // unset values.
-  return ClangTidyOptions::getDefaults().mergeWith(
+  return ClangTidyOptions::getDefaults().merge(
       OptionsProvider->getOptions(File), 0);
 }
 
@@ -247,17 +260,19 @@ std::string ClangTidyContext::getCheckName(unsigned DiagnosticID) const {
 
 ClangTidyDiagnosticConsumer::ClangTidyDiagnosticConsumer(
     ClangTidyContext &Ctx, DiagnosticsEngine *ExternalDiagEngine,
-    bool RemoveIncompatibleErrors)
+    bool RemoveIncompatibleErrors, bool GetFixesFromNotes)
     : Context(Ctx), ExternalDiagEngine(ExternalDiagEngine),
       RemoveIncompatibleErrors(RemoveIncompatibleErrors),
-      LastErrorRelatesToUserCode(false), LastErrorPassesLineFilter(false),
-      LastErrorWasIgnored(false) {}
+      GetFixesFromNotes(GetFixesFromNotes), LastErrorRelatesToUserCode(false),
+      LastErrorPassesLineFilter(false), LastErrorWasIgnored(false) {}
 
 void ClangTidyDiagnosticConsumer::finalizeLastError() {
   if (!Errors.empty()) {
     ClangTidyError &Error = Errors.back();
-    if (!Context.isCheckEnabled(Error.DiagnosticName) &&
-        Error.DiagLevel != ClangTidyError::Error) {
+    if (Error.DiagnosticName == "clang-tidy-config") {
+      // Never ignore these.
+    } else if (!Context.isCheckEnabled(Error.DiagnosticName) &&
+               Error.DiagLevel != ClangTidyError::Error) {
       ++Context.Stats.ErrorsIgnoredCheckFilter;
       Errors.pop_back();
     } else if (!LastErrorRelatesToUserCode) {
@@ -357,6 +372,24 @@ bool shouldSuppressDiagnostic(DiagnosticsEngine::Level DiagLevel,
          LineIsMarkedWithNOLINTinMacro(Info.getSourceManager(),
                                        Info.getLocation(), Info.getID(),
                                        Context, AllowIO);
+}
+
+const llvm::StringMap<tooling::Replacements> *
+getFixIt(const tooling::Diagnostic &Diagnostic, bool GetFixFromNotes) {
+  if (!Diagnostic.Message.Fix.empty())
+    return &Diagnostic.Message.Fix;
+  if (!GetFixFromNotes)
+    return nullptr;
+  const llvm::StringMap<tooling::Replacements> *Result = nullptr;
+  for (const auto &Note : Diagnostic.Notes) {
+    if (!Note.Fix.empty()) {
+      if (Result)
+        // We have 2 different fixes in notes, bail out.
+        return nullptr;
+      Result = &Note.Fix;
+    }
+  }
+  return Result;
 }
 
 } // namespace tidy
@@ -643,7 +676,7 @@ void ClangTidyDiagnosticConsumer::removeIncompatibleErrors() {
       std::pair<ClangTidyError *, llvm::StringMap<tooling::Replacements> *>>
       ErrorFixes;
   for (auto &Error : Errors) {
-    if (const auto *Fix = tooling::selectFirstFix(Error))
+    if (const auto *Fix = getFixIt(Error, GetFixesFromNotes))
       ErrorFixes.emplace_back(
           &Error, const_cast<llvm::StringMap<tooling::Replacements> *>(Fix));
   }

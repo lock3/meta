@@ -315,7 +315,8 @@ class InitListChecker {
                            InitListExpr *IList, QualType ElemType,
                            unsigned &Index,
                            InitListExpr *StructuredList,
-                           unsigned &StructuredIndex);
+                           unsigned &StructuredIndex,
+                           bool DirectlyDesignated = false);
   void CheckComplexType(const InitializedEntity &Entity,
                         InitListExpr *IList, QualType DeclType,
                         unsigned &Index,
@@ -1328,7 +1329,8 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
                                           QualType ElemType,
                                           unsigned &Index,
                                           InitListExpr *StructuredList,
-                                          unsigned &StructuredIndex) {
+                                          unsigned &StructuredIndex,
+                                          bool DirectlyDesignated) {
   Expr *expr = IList->getInit(Index);
 
   if (ElemType->isReferenceType())
@@ -1464,6 +1466,20 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     CheckImplicitInitList(Entity, IList, ElemType, Index, StructuredList,
                           StructuredIndex);
     ++StructuredIndex;
+
+    // In C++20, brace elision is not permitted for a designated initializer.
+    if (DirectlyDesignated && SemaRef.getLangOpts().CPlusPlus && !hadError) {
+      if (InOverloadResolution)
+        hadError = true;
+      if (!VerifyOnly) {
+        SemaRef.Diag(expr->getBeginLoc(),
+                     diag::ext_designated_init_brace_elision)
+            << expr->getSourceRange()
+            << FixItHint::CreateInsertion(expr->getBeginLoc(), "{")
+            << FixItHint::CreateInsertion(
+                   SemaRef.getLocForEndOfToken(expr->getEndLoc()), "}");
+      }
+    }
   } else {
     if (!VerifyOnly) {
       // We cannot initialize this element, so let PerformCopyInitialization
@@ -2415,8 +2431,8 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
     unsigned OldIndex = Index;
     IList->setInit(OldIndex, DIE->getInit());
 
-    CheckSubElementType(Entity, IList, CurrentObjectType, Index,
-                        StructuredList, StructuredIndex);
+    CheckSubElementType(Entity, IList, CurrentObjectType, Index, StructuredList,
+                        StructuredIndex, /*DirectlyDesignated=*/true);
 
     // Restore the designated initializer expression in the syntactic
     // form of the initializer list.
@@ -3446,6 +3462,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_QualificationConversionRValue:
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionLValue:
+  case SK_FunctionReferenceConversion:
   case SK_AtomicConversion:
   case SK_ListInitialization:
   case SK_UnwrapInitList:
@@ -3468,7 +3485,6 @@ void InitializationSequence::Step::Destroy() {
   case SK_StdInitializerListConstructorCall:
   case SK_OCLSamplerInit:
   case SK_OCLZeroOpaqueType:
-  case SK_ParameterModeInit:
     break;
 
   case SK_ConversionSequence:
@@ -3625,6 +3641,13 @@ void InitializationSequence::AddQualificationConversionStep(QualType Ty,
   Steps.push_back(S);
 }
 
+void InitializationSequence::AddFunctionReferenceConversionStep(QualType Ty) {
+  Step S;
+  S.Kind = SK_FunctionReferenceConversion;
+  S.Type = Ty;
+  Steps.push_back(S);
+}
+
 void InitializationSequence::AddAtomicConversionStep(QualType Ty) {
   Step S;
   S.Kind = SK_AtomicConversion;
@@ -3766,14 +3789,6 @@ void InitializationSequence::RewrapReferenceInitList(QualType T,
   S.Kind = SK_RewrapInitList;
   S.Type = T;
   S.WrappingSyntacticList = Syntactic;
-  Steps.push_back(S);
-}
-
-void InitializationSequence::AddParameterAdjustmentStep(QualType T)
-{
-  Step S;
-  S.Kind = SK_ParameterModeInit;
-  S.Type = T;
   Steps.push_back(S);
 }
 
@@ -4120,11 +4135,13 @@ static void TryConstructorInitialization(Sema &S,
                                         IsListInit);
   }
   if (Result) {
-    Sequence.SetOverloadFailure(IsListInit ?
-                      InitializationSequence::FK_ListConstructorOverloadFailed :
-                      InitializationSequence::FK_ConstructorOverloadFailed,
-                                Result);
-    return;
+    Sequence.SetOverloadFailure(
+        IsListInit ? InitializationSequence::FK_ListConstructorOverloadFailed
+                   : InitializationSequence::FK_ConstructorOverloadFailed,
+        Result);
+
+    if (Result != OR_Deleted)
+      return;
   }
 
   bool HadMultipleCandidates = (CandidateSet.size() > 1);
@@ -4145,31 +4162,45 @@ static void TryConstructorInitialization(Sema &S,
     return;
   }
 
-  // C++11 [dcl.init]p6:
-  //   If a program calls for the default initialization of an object
-  //   of a const-qualified type T, T shall be a class type with a
-  //   user-provided default constructor.
-  // C++ core issue 253 proposal:
-  //   If the implicit default constructor initializes all subobjects, no
-  //   initializer should be required.
-  // The 253 proposal is for example needed to process libstdc++ headers in 5.x.
   CXXConstructorDecl *CtorDecl = cast<CXXConstructorDecl>(Best->Function);
-  if (Kind.getKind() == InitializationKind::IK_Default &&
-      Entity.getType().isConstQualified()) {
-    if (!CtorDecl->getParent()->allowConstDefaultInit()) {
-      if (!maybeRecoverWithZeroInitialization(S, Sequence, Entity))
-        Sequence.SetFailed(InitializationSequence::FK_DefaultInitOfConst);
+  if (Result != OR_Deleted) {
+    // C++11 [dcl.init]p6:
+    //   If a program calls for the default initialization of an object
+    //   of a const-qualified type T, T shall be a class type with a
+    //   user-provided default constructor.
+    // C++ core issue 253 proposal:
+    //   If the implicit default constructor initializes all subobjects, no
+    //   initializer should be required.
+    // The 253 proposal is for example needed to process libstdc++ headers
+    // in 5.x.
+    if (Kind.getKind() == InitializationKind::IK_Default &&
+        Entity.getType().isConstQualified()) {
+      if (!CtorDecl->getParent()->allowConstDefaultInit()) {
+        if (!maybeRecoverWithZeroInitialization(S, Sequence, Entity))
+          Sequence.SetFailed(InitializationSequence::FK_DefaultInitOfConst);
+        return;
+      }
+    }
+
+    // C++11 [over.match.list]p1:
+    //   In copy-list-initialization, if an explicit constructor is chosen, the
+    //   initializer is ill-formed.
+    if (IsListInit && !Kind.AllowExplicit() && CtorDecl->isExplicit()) {
+      Sequence.SetFailed(InitializationSequence::FK_ExplicitConstructor);
       return;
     }
   }
 
-  // C++11 [over.match.list]p1:
-  //   In copy-list-initialization, if an explicit constructor is chosen, the
-  //   initializer is ill-formed.
-  if (IsListInit && !Kind.AllowExplicit() && CtorDecl->isExplicit()) {
-    Sequence.SetFailed(InitializationSequence::FK_ExplicitConstructor);
+  // [class.copy.elision]p3:
+  // In some copy-initialization contexts, a two-stage overload resolution
+  // is performed.
+  // If the first overload resolution selects a deleted function, we also
+  // need the initialization sequence to decide whether to perform the second
+  // overload resolution.
+  // For deleted functions in other contexts, there is no need to get the
+  // initialization sequence.
+  if (Result == OR_Deleted && Kind.getKind() != InitializationKind::IK_Copy)
     return;
-  }
 
   // Add the constructor initialization step. Any cv-qualification conversion is
   // subsumed by the initialization.
@@ -4241,11 +4272,6 @@ static void TryReferenceListInitialization(Sema &S,
   }
 
   QualType DestType = Entity.getType();
-
-  // For parameter types, initialize an object of the underlying type.
-  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType(S.Context);
-
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4258,7 +4284,7 @@ static void TryReferenceListInitialization(Sema &S,
   // bind to that.
   if (InitList->getNumInits() == 1) {
     Expr *Initializer = InitList->getInit(0);
-    QualType cv2T2 = Initializer->getType();
+    QualType cv2T2 = S.getCompletedType(Initializer);
     Qualifiers T2Quals;
     QualType T2 = S.Context.getUnqualifiedArrayType(cv2T2, T2Quals);
 
@@ -4283,17 +4309,36 @@ static void TryReferenceListInitialization(Sema &S,
     if (Sequence.step_begin() != Sequence.step_end())
       Sequence.RewrapReferenceInitList(cv1T1, InitList);
   }
-
+  // Perform address space compatibility check.
+  QualType cv1T1IgnoreAS = cv1T1;
+  if (T1Quals.hasAddressSpace()) {
+    Qualifiers T2Quals;
+    (void)S.Context.getUnqualifiedArrayType(InitList->getType(), T2Quals);
+    if (!T1Quals.isAddressSpaceSupersetOf(T2Quals)) {
+      Sequence.SetFailed(
+          InitializationSequence::FK_ReferenceInitDropsQualifiers);
+      return;
+    }
+    // Ignore address space of reference type at this point and perform address
+    // space conversion after the reference binding step.
+    cv1T1IgnoreAS =
+        S.Context.getQualifiedType(T1, T1Quals.withoutAddressSpace());
+  }
   // Not reference-related. Create a temporary and bind to that.
-  InitializedEntity TempEntity = InitializedEntity::InitializeTemporary(cv1T1);
+  InitializedEntity TempEntity =
+      InitializedEntity::InitializeTemporary(cv1T1IgnoreAS);
 
   TryListInitialization(S, TempEntity, Kind, InitList, Sequence,
                         TreatUnavailableAsInvalid);
   if (Sequence) {
     if (DestType->isRValueReferenceType() ||
-        (T1Quals.hasConst() && !T1Quals.hasVolatile()))
-      Sequence.AddReferenceBindingStep(cv1T1, /*BindingTemporary=*/true);
-    else
+        (T1Quals.hasConst() && !T1Quals.hasVolatile())) {
+      Sequence.AddReferenceBindingStep(cv1T1IgnoreAS,
+                                       /*BindingTemporary=*/true);
+      if (T1Quals.hasAddressSpace())
+        Sequence.AddQualificationConversionStep(
+            cv1T1, DestType->isRValueReferenceType() ? VK_XValue : VK_LValue);
+    } else
       Sequence.SetFailed(
           InitializationSequence::FK_NonConstLValueReferenceBindingToTemporary);
   }
@@ -4307,10 +4352,6 @@ static void TryListInitialization(Sema &S,
                                   InitializationSequence &Sequence,
                                   bool TreatUnavailableAsInvalid) {
   QualType DestType = Entity.getType();
-
-  // For parameter types, initialize an object of the underlying type.
-  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType(S.Context);
 
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
@@ -4675,7 +4716,7 @@ static OverloadingResult TryRefInitWithConversionFunction(
   else if (RefConv & Sema::ReferenceConversions::ObjC)
     Sequence.AddObjCObjectConversionStep(cv1T1);
   else if (RefConv & Sema::ReferenceConversions::Function)
-    Sequence.AddQualificationConversionStep(cv1T1, VK);
+    Sequence.AddFunctionReferenceConversionStep(cv1T1);
   else if (RefConv & Sema::ReferenceConversions::Qualification) {
     if (!S.Context.hasSameType(cv1T4, cv1T1))
       Sequence.AddQualificationConversionStep(cv1T1, VK);
@@ -4695,15 +4736,10 @@ static void TryReferenceInitialization(Sema &S,
                                        Expr *Initializer,
                                        InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
-
-  // Adjust parameter types as needed.
-  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType(S.Context);
-
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
-  QualType cv2T2 = Initializer->getType();
+  QualType cv2T2 = S.getCompletedType(Initializer);
   Qualifiers T2Quals;
   QualType T2 = S.Context.getUnqualifiedArrayType(cv2T2, T2Quals);
 
@@ -4741,11 +4777,6 @@ static void TryReferenceInitializationCore(Sema &S,
                                            Qualifiers T2Quals,
                                            InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
-
-  // Adjust the parameter type as needed.
-  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
-    DestType = ParamType->getAdjustedType(S.Context);
-
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
   // Compute some basic properties of the types and the initializer.
@@ -4787,12 +4818,12 @@ static void TryReferenceInitializationCore(Sema &S,
           Sequence.AddDerivedToBaseCastStep(cv1T1, VK_LValue);
         else
           Sequence.AddObjCObjectConversionStep(cv1T1);
-      } else if (RefConv & (Sema::ReferenceConversions::Qualification |
-                            Sema::ReferenceConversions::Function)) {
+      } else if (RefConv & Sema::ReferenceConversions::Qualification) {
         // Perform a (possibly multi-level) qualification conversion.
-        // FIXME: Should we use a different step kind for function conversions?
         Sequence.AddQualificationConversionStep(cv1T1,
                                                 Initializer->getValueKind());
+      } else if (RefConv & Sema::ReferenceConversions::Function) {
+        Sequence.AddFunctionReferenceConversionStep(cv1T1);
       }
 
       // We only create a temporary here when binding a reference to a
@@ -5282,9 +5313,17 @@ static void TryUserDefinedConversion(Sema &S,
   if (OverloadingResult Result
         = CandidateSet.BestViableFunction(S, DeclLoc, Best)) {
     Sequence.SetOverloadFailure(
-                        InitializationSequence::FK_UserConversionOverloadFailed,
-                                Result);
-    return;
+        InitializationSequence::FK_UserConversionOverloadFailed, Result);
+
+    // [class.copy.elision]p3:
+    // In some copy-initialization contexts, a two-stage overload resolution
+    // is performed.
+    // If the first overload resolution selects a deleted function, we also
+    // need the initialization sequence to decide whether to perform the second
+    // overload resolution.
+    if (!(Result == OR_Deleted &&
+          Kind.getKind() == InitializationKind::IK_Copy))
+      return;
   }
 
   FunctionDecl *Function = Best->Function;
@@ -5590,13 +5629,11 @@ static bool TryOCLZeroOpaqueTypeInitialization(Sema &S,
   return false;
 }
 
-InitializationSequence::InitializationSequence(Sema &S,
-                                               const InitializedEntity &Entity,
-                                               const InitializationKind &Kind,
-                                               MultiExprArg Args,
-                                               bool TopLevelOfInitList,
-                                               bool TreatUnavailableAsInvalid)
-    : FailedCandidateSet(Kind.getLocation(), OverloadCandidateSet::CSK_Normal) {
+InitializationSequence::InitializationSequence(
+    Sema &S, const InitializedEntity &Entity, const InitializationKind &Kind,
+    MultiExprArg Args, bool TopLevelOfInitList, bool TreatUnavailableAsInvalid)
+    : FailedOverloadResult(OR_Success),
+      FailedCandidateSet(Kind.getLocation(), OverloadCandidateSet::CSK_Normal) {
   InitializeFrom(S, Entity, Kind, Args, TopLevelOfInitList,
                  TreatUnavailableAsInvalid);
 }
@@ -5679,14 +5716,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //   parenthesized list of expressions.
   QualType DestType = Entity.getType();
 
-  // Adjust destination parameter types as needed.
-  auto *ParamType = DestType->getAs<ParameterType>();
-  if (ParamType)
-    DestType = ParamType->getAdjustedType(Context);
-
   if (DestType->isDependentType() ||
-      Expr::hasAnyTypeDependentArguments(Args) ||
-      Expr::hasDependentVariadicReifierArguments(Args)) {
+      Expr::hasAnyTypeDependentArguments(Args)) {
     SequenceKind = DependentSequence;
     return;
   }
@@ -5722,11 +5753,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
     if (InitListExpr *InitList = dyn_cast_or_null<InitListExpr>(Initializer)) {
       TryListInitialization(S, Entity, Kind, InitList, *this,
                             TreatUnavailableAsInvalid);
-
-      // Re-adjust to a parameter type as needed.
-      if (!Failed() && ParamType)
-        AddParameterAdjustmentStep(QualType(ParamType, 0));
-
       return;
     }
   }
@@ -5748,11 +5774,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
       SetFailed(FK_ParenthesizedListInitForReference);
     else
       TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
-
-    // Re-adjust to a parameter type as needed.
-    if (!Failed() && ParamType)
-      AddParameterAdjustmentStep(QualType(ParamType, 0));
-
     return;
   }
 
@@ -5917,11 +5938,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
     else
       TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                                TopLevelOfInitList);
-
-    // In either case, if this was a paramter type, add the adjustment.
-    if (!Failed() && ParamType)
-      AddParameterAdjustmentStep(QualType(ParamType, 0));
-
     return;
   }
 
@@ -5954,14 +5970,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
     TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                              TopLevelOfInitList);
     MaybeProduceObjCObject(S, *this, Entity);
-
     if (!Failed() && NeedAtomicConversion)
       AddAtomicConversionStep(Entity.getType());
-
-    // Re-adjust to a parameter type as needed.
-    if (!Failed() && ParamType)
-      AddParameterAdjustmentStep(QualType(ParamType, 0));
-
     return;
   }
 
@@ -5983,6 +5993,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //      conversions (Clause 4) will be used, if necessary, to convert the
   //      initializer expression to the cv-unqualified version of the
   //      destination type; no user-defined conversions are considered.
+
   ImplicitConversionSequence ICS
     = S.TryImplicitConversion(Initializer, DestType,
                               /*SuppressUserConversions*/true,
@@ -6031,9 +6042,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
 
     MaybeProduceObjCObject(S, *this, Entity);
   }
-
-  if (!Failed() && ParamType)
-    AddParameterAdjustmentStep(QualType(ParamType, 0));
 }
 
 InitializationSequence::~InitializationSequence() {
@@ -6542,22 +6550,23 @@ PerformConstructorInitialization(Sema &S,
         ? SourceRange(LBraceLoc, RBraceLoc)
         : Kind.getParenOrBraceRange();
 
+    CXXConstructorDecl *CalleeDecl = Constructor;
     if (auto *Shadow = dyn_cast<ConstructorUsingShadowDecl>(
             Step.Function.FoundDecl.getDecl())) {
-      Constructor = S.findInheritingConstructor(Loc, Constructor, Shadow);
-      if (S.DiagnoseUseOfDecl(Constructor, Loc))
+      CalleeDecl = S.findInheritingConstructor(Loc, Constructor, Shadow);
+      if (S.DiagnoseUseOfDecl(CalleeDecl, Loc))
         return ExprError();
     }
-    S.MarkFunctionReferenced(Loc, Constructor);
+    S.MarkFunctionReferenced(Loc, CalleeDecl);
 
     CurInit = S.CheckForImmediateInvocation(
         CXXTemporaryObjectExpr::Create(
-            S.Context, Constructor,
+            S.Context, CalleeDecl,
             Entity.getType().getNonLValueExprType(S.Context), TSInfo,
             ConstructorArgs, ParenOrBraceRange, HadMultipleCandidates,
             IsListInitialization, IsStdInitListInitialization,
             ConstructorInitRequiresZeroInit),
-        Constructor);
+        CalleeDecl);
   } else {
     CXXConstructExpr::ConstructionKind ConstructKind =
       CXXConstructExpr::CK_Complete;
@@ -7532,6 +7541,8 @@ static bool pathOnlyInitializesGslPointer(IndirectLocalPath &Path) {
       continue;
     if (It->Kind == IndirectLocalPathEntry::AddressOf)
       continue;
+    if (It->Kind == IndirectLocalPathEntry::LifetimeBoundCall)
+      continue;
     return It->Kind == IndirectLocalPathEntry::GslPointerInit ||
            It->Kind == IndirectLocalPathEntry::GslReferenceInit;
   }
@@ -8118,6 +8129,7 @@ ExprResult InitializationSequence::Perform(Sema &S,
   case SK_QualificationConversionLValue:
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionRValue:
+  case SK_FunctionReferenceConversion:
   case SK_AtomicConversion:
   case SK_ConversionSequence:
   case SK_ConversionSequenceNoNarrowing:
@@ -8137,8 +8149,7 @@ ExprResult InitializationSequence::Perform(Sema &S,
   case SK_ProduceObjCObject:
   case SK_StdInitializerList:
   case SK_OCLSamplerInit:
-  case SK_OCLZeroOpaqueType: 
-  case SK_ParameterModeInit: {
+  case SK_OCLZeroOpaqueType: {
     assert(Args.size() == 1);
     CurInit = Args[0];
     if (!CurInit.get()) return ExprError();
@@ -8250,9 +8261,21 @@ ExprResult InitializationSequence::Perform(Sema &S,
       if (S.CheckExceptionSpecCompatibility(CurInit.get(), DestType))
         return ExprError();
 
+      QualType MTETy = Step->Type;
+
+      // When this is an incomplete array type (such as when this is
+      // initializing an array of unknown bounds from an init list), use THAT
+      // type instead so that we propogate the array bounds.
+      if (MTETy->isIncompleteArrayType() &&
+          !CurInit.get()->getType()->isIncompleteArrayType() &&
+          S.Context.hasSameType(
+              MTETy->getPointeeOrArrayElementType(),
+              CurInit.get()->getType()->getPointeeOrArrayElementType()))
+        MTETy = CurInit.get()->getType();
+
       // Materialize the temporary into memory.
       MaterializeTemporaryExpr *MTE = S.CreateMaterializeTemporaryExpr(
-          Step->Type, CurInit.get(), Entity.getType()->isLValueReferenceType());
+          MTETy, CurInit.get(), Entity.getType()->isLValueReferenceType());
       CurInit = MTE;
 
       // If we're extending this temporary to automatic storage duration -- we
@@ -8383,6 +8406,13 @@ ExprResult InitializationSequence::Perform(Sema &S,
       CurInit = S.PerformQualificationConversion(CurInit.get(), Step->Type, VK);
       break;
     }
+
+    case SK_FunctionReferenceConversion:
+      assert(CurInit.get()->isLValue() &&
+             "function reference should be lvalue");
+      CurInit =
+          S.ImpCastExprToType(CurInit.get(), Step->Type, CK_NoOp, VK_LValue);
+      break;
 
     case SK_AtomicConversion: {
       assert(CurInit.get()->isRValue() && "cannot convert glvalue to atomic");
@@ -8815,18 +8845,6 @@ ExprResult InitializationSequence::Perform(Sema &S,
       CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type,
                                     CK_ZeroToOCLOpaqueType,
                                     CurInit.get()->getValueKind());
-      break;
-    }
-
-    case SK_ParameterModeInit: {
-      // Build a conversion back to the original parameter type; that will
-      // essentially be a no-op.
-      //
-      // We can't hack around this and just update ResultType, since there's
-      // no guarantee it's actually provided.
-      CurInit = ImplicitCastExpr::Create(
-          S.Context, Step->Type, CK_ParameterQualification, CurInit.get(),
-          nullptr, CurInit.get()->getValueKind(), S.getCurFPFeatures());
       break;
     }
     }
@@ -9657,6 +9675,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
       OS << "qualification conversion (lvalue)";
       break;
 
+    case SK_FunctionReferenceConversion:
+      OS << "function reference conversion";
+      break;
+
     case SK_AtomicConversion:
       OS << "non-atomic-to-atomic conversion";
       break;
@@ -9755,10 +9777,6 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_OCLZeroOpaqueType:
       OS << "OpenCL opaque type from zero";
-      break;
-
-    case SK_ParameterModeInit:
-      OS << "initialize parameter";
       break;
     }
 

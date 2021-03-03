@@ -69,16 +69,24 @@ void __kmp_dispatch_dxo_error(int *gtid_ref, int *cid_ref, ident_t *loc_ref) {
 }
 
 // Returns either SCHEDULE_MONOTONIC or SCHEDULE_NONMONOTONIC
-static inline int __kmp_get_monotonicity(enum sched_type schedule,
+static inline int __kmp_get_monotonicity(ident_t *loc, enum sched_type schedule,
                                          bool use_hier = false) {
   // Pick up the nonmonotonic/monotonic bits from the scheduling type
-  int monotonicity;
-  // default to monotonic
-  monotonicity = SCHEDULE_MONOTONIC;
-  if (SCHEDULE_HAS_NONMONOTONIC(schedule))
+  // TODO: make nonmonotonic when static_steal is fixed
+  int monotonicity = SCHEDULE_MONOTONIC;
+
+  // Let default be monotonic for executables
+  // compiled with OpenMP* 4.5 or less compilers
+  if (loc->get_openmp_version() < 50)
+    monotonicity = SCHEDULE_MONOTONIC;
+
+  if (use_hier || __kmp_force_monotonic)
+    monotonicity = SCHEDULE_MONOTONIC;
+  else if (SCHEDULE_HAS_NONMONOTONIC(schedule))
     monotonicity = SCHEDULE_NONMONOTONIC;
   else if (SCHEDULE_HAS_MONOTONIC(schedule))
     monotonicity = SCHEDULE_MONOTONIC;
+
   return monotonicity;
 }
 
@@ -146,7 +154,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
 #endif
 
   /* Pick up the nonmonotonic/monotonic bits from the scheduling type */
-  monotonicity = __kmp_get_monotonicity(schedule, use_hier);
+  monotonicity = __kmp_get_monotonicity(loc, schedule, use_hier);
   schedule = SCHEDULE_WITHOUT_MODIFIERS(schedule);
 
   /* Pick up the nomerge/ordered bits from the scheduling type */
@@ -177,7 +185,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
       // Use the scheduling specified by OMP_SCHEDULE (or __kmp_sch_default if
       // not specified)
       schedule = team->t.t_sched.r_sched_type;
-      monotonicity = __kmp_get_monotonicity(schedule, use_hier);
+      monotonicity = __kmp_get_monotonicity(loc, schedule, use_hier);
       schedule = SCHEDULE_WITHOUT_MODIFIERS(schedule);
       // Detail the schedule if needed (global controls are differentiated
       // appropriately)
@@ -244,7 +252,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
     if (schedule == kmp_sch_runtime_simd) {
       // compiler provides simd_width in the chunk parameter
       schedule = team->t.t_sched.r_sched_type;
-      monotonicity = __kmp_get_monotonicity(schedule, use_hier);
+      monotonicity = __kmp_get_monotonicity(loc, schedule, use_hier);
       schedule = SCHEDULE_WITHOUT_MODIFIERS(schedule);
       // Detail the schedule if needed (global controls are differentiated
       // appropriately)
@@ -383,7 +391,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
       schedule = kmp_sch_dynamic_chunked;
       KD_TRACE(100, ("__kmp_dispatch_init_algorithm: T#%d switching to "
                      "kmp_sch_dynamic_chunked\n",
-                      gtid));
+                     gtid));
       if (pr->u.p.parm1 <= 0)
         pr->u.p.parm1 = KMP_DEFAULT_CHUNK;
       break;
@@ -486,7 +494,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
         // when remaining iters become less than parm2 - switch to dynamic
         pr->u.p.parm2 = guided_int_param * nproc * (chunk + 1);
         *(double *)&pr->u.p.parm3 =
-            guided_flt_param / nproc; // may occupy parm3 and parm4
+            guided_flt_param / (double)nproc; // may occupy parm3 and parm4
       }
     } else {
       KD_TRACE(100, ("__kmp_dispatch_init_algorithm: T#%d falling-through to "
@@ -536,7 +544,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
         UT cross;
 
         /* commonly used term: (2 nproc - 1)/(2 nproc) */
-        x = (long double)1.0 - (long double)0.5 / nproc;
+        x = 1.0 - 0.5 / (double)nproc;
 
 #ifdef KMP_DEBUG
         { // test natural alignment
@@ -607,8 +615,9 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
 #define GUIDED_ANALYTICAL_WORKAROUND (x)
 #endif
         /* dynamic-style scheduling offset */
-        pr->u.p.count = tc - __kmp_dispatch_guided_remaining(
-                                 tc, GUIDED_ANALYTICAL_WORKAROUND, cross) -
+        pr->u.p.count = tc -
+                        __kmp_dispatch_guided_remaining(
+                            tc, GUIDED_ANALYTICAL_WORKAROUND, cross) -
                         cross * chunk;
 #if KMP_USE_X87CONTROL
         // restore FPCW
@@ -634,9 +643,10 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
     break;
   case kmp_sch_static_chunked:
   case kmp_sch_dynamic_chunked:
-    if (pr->u.p.parm1 <= 0) {
+    if (pr->u.p.parm1 <= 0)
       pr->u.p.parm1 = KMP_DEFAULT_CHUNK;
-    }
+    else if (pr->u.p.parm1 > tc)
+      pr->u.p.parm1 = tc;
     KD_TRACE(100, ("__kmp_dispatch_init_algorithm: T#%d "
                    "kmp_sch_static_chunked/kmp_sch_dynamic_chunked cases\n",
                    gtid));
@@ -694,7 +704,7 @@ void __kmp_dispatch_init_algorithm(ident_t *loc, int gtid,
     __kmp_fatal(KMP_MSG(UnknownSchedTypeDetected), // Primary message
                 KMP_HNT(GetNewerLibrary), // Hint
                 __kmp_msg_null // Variadic argument list terminator
-                );
+    );
   } break;
   } // switch
   pr->schedule = schedule;
@@ -1150,7 +1160,7 @@ int __kmp_dispatch_next_algorithm(int gtid,
   typedef typename traits_t<T>::signed_t ST;
   typedef typename traits_t<T>::floating_t DBL;
   int status = 0;
-  kmp_int32 last = 0;
+  bool last = false;
   T start;
   ST incr;
   UT limit, trip, init;
@@ -1211,8 +1221,8 @@ int __kmp_dispatch_next_algorithm(int gtid,
       }
       if (!status) { // try to steal
         kmp_info_t **other_threads = team->t.t_threads;
-        int while_limit = pr->u.p.parm3;
-        int while_index = 0;
+        T while_limit = pr->u.p.parm3;
+        T while_index = 0;
         T id = pr->u.p.static_steal_counter; // loop id
         int idx = (th->th.th_dispatch->th_disp_index - 1) %
                   __kmp_dispatch_num_buffers; // current loop index
@@ -1310,8 +1320,8 @@ int __kmp_dispatch_next_algorithm(int gtid,
 
       if (!status) {
         kmp_info_t **other_threads = team->t.t_threads;
-        int while_limit = pr->u.p.parm3;
-        int while_index = 0;
+        T while_limit = pr->u.p.parm3;
+        T while_index = 0;
         T id = pr->u.p.static_steal_counter; // loop id
         int idx = (th->th.th_dispatch->th_disp_index - 1) %
                   __kmp_dispatch_num_buffers; // current loop index
@@ -1321,7 +1331,7 @@ int __kmp_dispatch_next_algorithm(int gtid,
         while ((!status) && (while_limit != ++while_index)) {
           dispatch_private_info_template<T> *victim;
           union_i4 vold, vnew;
-          kmp_int32 remaining;
+          T remaining;
           T victimIdx = pr->u.p.parm4;
           T oldVictimIdx = victimIdx ? victimIdx - 1 : nproc - 1;
           victim = reinterpret_cast<dispatch_private_info_template<T> *>(
@@ -1351,7 +1361,8 @@ int __kmp_dispatch_next_algorithm(int gtid,
               break; // not enough chunks to steal, goto next victim
             }
             if (remaining > 3) {
-              vnew.p.ub -= (remaining >> 2); // try to steal 1/4 of remaining
+              // try to steal 1/4 of remaining
+              vnew.p.ub -= remaining >> 2;
             } else {
               vnew.p.ub -= 1; // steal 1 chunk of 2 or 3 remaining
             }
@@ -1425,7 +1436,7 @@ int __kmp_dispatch_next_algorithm(int gtid,
       pr->u.p.count = 1;
       *p_lb = pr->u.p.lb;
       *p_ub = pr->u.p.ub;
-      last = pr->u.p.parm1;
+      last = (pr->u.p.parm1 != 0);
       if (p_st != NULL)
         *p_st = pr->u.p.st;
     } else { /* no iterations to do */
@@ -1549,14 +1560,14 @@ int __kmp_dispatch_next_algorithm(int gtid,
           if ((T)remaining > chunkspec) {
             limit = init + chunkspec - 1;
           } else {
-            last = 1; // the last chunk
+            last = true; // the last chunk
             limit = init + remaining - 1;
           } // if
         } // if
         break;
       } // if
-      limit = init +
-              (UT)(remaining * *(double *)&pr->u.p.parm3); // divide by K*nproc
+      limit = init + (UT)((double)remaining *
+                          *(double *)&pr->u.p.parm3); // divide by K*nproc
       if (compare_and_swap<ST>(RCAST(volatile ST *, &sh->u.s.iteration),
                                (ST)init, (ST)limit)) {
         // CAS was successful, chunk obtained
@@ -1618,14 +1629,16 @@ int __kmp_dispatch_next_algorithm(int gtid,
           if ((T)remaining > chunk) {
             limit = init + chunk - 1;
           } else {
-            last = 1; // the last chunk
+            last = true; // the last chunk
             limit = init + remaining - 1;
           } // if
         } // if
         break;
       } // if
       // divide by K*nproc
-      UT span = remaining * (*(double *)&pr->u.p.parm3);
+      UT span;
+      __kmp_type_convert((double)remaining * (*(double *)&pr->u.p.parm3),
+                         &span);
       UT rem = span % chunk;
       if (rem) // adjust so that span%chunk == 0
         span += chunk - rem;
@@ -1803,7 +1816,7 @@ int __kmp_dispatch_next_algorithm(int gtid,
     __kmp_fatal(KMP_MSG(UnknownSchedTypeDetected), // Primary message
                 KMP_HNT(GetNewerLibrary), // Hint
                 __kmp_msg_null // Variadic argument list terminator
-                );
+    );
   } break;
   } // switch
   if (p_last)
@@ -1891,7 +1904,7 @@ static int __kmp_dispatch_next(ident_t *loc, int gtid, kmp_int32 *p_last,
                                ,
                                void *codeptr
 #endif
-                               ) {
+) {
 
   typedef typename traits_t<T>::unsigned_t UT;
   typedef typename traits_t<T>::signed_t ST;
@@ -2418,7 +2431,7 @@ int __kmpc_dispatch_next_4(ident_t *loc, kmp_int32 gtid, kmp_int32 *p_last,
                                         ,
                                         OMPT_LOAD_RETURN_ADDRESS(gtid)
 #endif
-                                            );
+  );
 }
 
 /*!
@@ -2435,7 +2448,7 @@ int __kmpc_dispatch_next_4u(ident_t *loc, kmp_int32 gtid, kmp_int32 *p_last,
                                          ,
                                          OMPT_LOAD_RETURN_ADDRESS(gtid)
 #endif
-                                             );
+  );
 }
 
 /*!
@@ -2451,7 +2464,7 @@ int __kmpc_dispatch_next_8(ident_t *loc, kmp_int32 gtid, kmp_int32 *p_last,
                                         ,
                                         OMPT_LOAD_RETURN_ADDRESS(gtid)
 #endif
-                                            );
+  );
 }
 
 /*!
@@ -2468,7 +2481,7 @@ int __kmpc_dispatch_next_8u(ident_t *loc, kmp_int32 gtid, kmp_int32 *p_last,
                                          ,
                                          OMPT_LOAD_RETURN_ADDRESS(gtid)
 #endif
-                                             );
+  );
 }
 
 /*!
@@ -2530,7 +2543,7 @@ kmp_uint32
 __kmp_wait_4(volatile kmp_uint32 *spinner, kmp_uint32 checker,
              kmp_uint32 (*pred)(kmp_uint32, kmp_uint32),
              void *obj // Higher-level synchronization object, or NULL.
-             ) {
+) {
   // note: we may not belong to a team at this point
   volatile kmp_uint32 *spin = spinner;
   kmp_uint32 check = checker;
@@ -2556,7 +2569,7 @@ __kmp_wait_4(volatile kmp_uint32 *spinner, kmp_uint32 checker,
 void __kmp_wait_4_ptr(void *spinner, kmp_uint32 checker,
                       kmp_uint32 (*pred)(void *, kmp_uint32),
                       void *obj // Higher-level synchronization object, or NULL.
-                      ) {
+) {
   // note: we may not belong to a team at this point
   void *spin = spinner;
   kmp_uint32 check = checker;

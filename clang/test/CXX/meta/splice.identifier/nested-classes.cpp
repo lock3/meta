@@ -5,9 +5,9 @@ namespace nested_classes {
 
 class container_type {
 public:
-  class unqualid("contained_type_", 1) {
+  class [# "contained_type_", 1 #] {
     public:
-    class unqualid("contained_contained_type_", 1) {
+    class [# "contained_contained_type_", 1 #] {
     };
   };
 };
@@ -25,9 +25,9 @@ namespace dependent_nested_classes {
 template<int T>
 class container_type {
 public:
-  class unqualid("contained_type_", T) {
+  class [# "contained_type_", T #] {
     public:
-    class unqualid("contained_contained_type_", T) {
+    class [# "contained_contained_type_", T #] {
     };
   };
 };

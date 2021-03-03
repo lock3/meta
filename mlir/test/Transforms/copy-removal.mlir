@@ -5,7 +5,7 @@
 
 // CHECK-LABEL: func @nested_region_control_flow_div_nested
 func @nested_region_control_flow_div_nested(%arg0: index, %arg1: index) -> memref<?x?xf32> {
-  %0 = cmpi "eq", %arg0, %arg1 : index
+  %0 = cmpi eq, %arg0, %arg1 : index
   %1 = alloc(%arg0, %arg0) : memref<?x?xf32>
   // CHECK: %{{.*}} = scf.if
   %2 = scf.if %0 -> (memref<?x?xf32>) {
@@ -145,8 +145,19 @@ func @test_with_temp_usage_before_copy() -> memref<5xf32> {
 // -----
 
 // It is legal to remove the copy operation that %temp has a usage after the copy
-// operation. The allocation of %temp and the deallocation of %ret should be also
+// operation. The allocation of %temp and the deallocation of %ret could be also
 // removed.
+
+// However the following pattern is not handled by copy removal.
+//   %from = alloc()
+//   %to = alloc()
+//   copy(%from, %to)
+//   read_from(%from) + write_to(%something_else)
+//   dealloc(%from)
+//   return %to
+// In particular, linalg.generic is a memoryEffectOp between copy and dealloc.
+// Since no alias analysis is performed and no distinction is made between reads
+// and writes, the linalg.generic with effects blocks copy removal.
 
 #map0 = affine_map<(d0) -> (d0)>
 
@@ -162,7 +173,7 @@ func @test_with_temp_usage_after_copy() -> memref<5xf32> {
     ins(%temp : memref<5xf32>)
    outs(%res : memref<5xf32>) {
   ^bb0(%gen1_arg0: f32, %gen1_arg1: f32):
-    %tmp1 = exp %gen1_arg0 : f32
+    %tmp1 = math.exp %gen1_arg0 : f32
     linalg.yield %tmp1 : f32
   }
   dealloc %ret : memref<5xf32>
@@ -170,10 +181,11 @@ func @test_with_temp_usage_after_copy() -> memref<5xf32> {
 }
 // CHECK-NEXT: %[[ret:.*]] = alloc()
 // CHECK-NEXT: %[[res:.*]] = alloc()
-// CHECK-NOT: %{{.*}} = alloc()
-// CHECK-NOT: linalg.copy
-// CHECK-NOT: dealloc %[[ret]]
-// CHECK: return %[[ret]]
+// CHECK-NEXT: %[[temp:.*]] = alloc()
+// CHECK-NEXT: linalg.copy(%[[ret]], %[[temp]])
+// CHECK-NEXT: linalg.generic
+//      CHECK: dealloc %[[ret]]
+//      CHECK: return %[[temp]]
 
 // -----
 
@@ -240,10 +252,10 @@ func @test_ReuseCopyTargetAsSource(%arg0: memref<2xf32>, %result: memref<2xf32>)
     ins(%arg0 : memref<2xf32>)
    outs(%temp : memref<2xf32>) {
   ^bb0(%gen2_arg0: f32, %gen2_arg1: f32):
-    %tmp2 = exp %gen2_arg0 : f32
+    %tmp2 = math.exp %gen2_arg0 : f32
     linalg.yield %tmp2 : f32
   }
-  "linalg.copy"(%temp, %result) : (memref<2xf32>, memref<2xf32>) -> ()
+  linalg.copy(%temp, %result) : memref<2xf32>, memref<2xf32>
   dealloc %temp : memref<2xf32>
   // CHECK: return
   return
@@ -266,7 +278,7 @@ func @test_ReuseCopyTargetAsSource(%arg0: memref<2xf32>){
     ins(%arg0 : memref<2xf32>)
    outs(%temp : memref<2xf32>) {
   ^bb0(%gen1_arg0: f32, %gen1_arg1: f32):
-    %tmp1 = exp %gen1_arg0 : f32
+    %tmp1 = math.exp %gen1_arg0 : f32
     linalg.yield %tmp1 : f32
   }
   linalg.generic {
@@ -275,11 +287,11 @@ func @test_ReuseCopyTargetAsSource(%arg0: memref<2xf32>){
     ins(%arg0 : memref<2xf32>)
    outs(%to : memref<2xf32>) {
   ^bb0(%gen2_arg0: f32, %gen2_arg1: f32):
-    %tmp2 = exp %gen2_arg0 : f32
+    %tmp2 = math.exp %gen2_arg0 : f32
     linalg.yield %tmp2 : f32
   }
   // CHECK: linalg.copy
-  "linalg.copy"(%temp, %to) : (memref<2xf32>, memref<2xf32>) -> ()
+  linalg.copy(%temp, %to) : memref<2xf32>, memref<2xf32>
   dealloc %temp : memref<2xf32>
   return
 }
@@ -298,7 +310,7 @@ func @loop_alloc(%arg0: index, %arg1: index, %arg2: index, %arg3: memref<2xf32>,
   // CHECK: linalg.copy
   linalg.copy(%arg3, %1) : memref<2xf32>, memref<2xf32>
   %2 = scf.for %arg5 = %arg0 to %arg1 step %arg2 iter_args(%arg6 = %1) -> (memref<2xf32>) {
-    %3 = cmpi "eq", %arg5, %arg1 : index
+    %3 = cmpi eq, %arg5, %arg1 : index
     // CHECK: dealloc
     dealloc %arg6 : memref<2xf32>
     // CHECK: %[[PERCENT4:.*]] = alloc()
@@ -334,7 +346,7 @@ func @check_with_affine_dialect(%arg0: memref<4xf32>, %arg1: memref<4xf32>, %arg
   affine.for %arg3 = 0 to 4 {
     %5 = affine.load %arg0[%arg3] : memref<4xf32>
     %6 = affine.load %arg1[%arg3] : memref<4xf32>
-    %7 = cmpf "ogt", %5, %6 : f32
+    %7 = cmpf ogt, %5, %6 : f32
     // CHECK: %[[SELECT_RES:.*]] = select
     %8 = select %7, %5, %6 : f32
     // CHECK-NEXT: affine.store %[[SELECT_RES]], %[[RES]]
@@ -342,7 +354,7 @@ func @check_with_affine_dialect(%arg0: memref<4xf32>, %arg1: memref<4xf32>, %arg
   }
   // CHECK-NOT: linalg.copy
   // CHECK-NOT: dealloc
-  "linalg.copy"(%0, %arg2) : (memref<4xf32>, memref<4xf32>) -> ()
+  linalg.copy(%0, %arg2) : memref<4xf32>, memref<4xf32>
   dealloc %0 : memref<4xf32>
   //CHECK: return
   return

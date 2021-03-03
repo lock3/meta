@@ -41,7 +41,7 @@ namespace serialization {
 /// Version 4 of AST files also requires that the version control branch and
 /// revision match exactly, since there is no backward compatibility of
 /// AST files at this time.
-const unsigned VERSION_MAJOR = 11;
+const unsigned VERSION_MAJOR = 12;
 
 /// AST file minor version number supported by this version of
 /// Clang.
@@ -681,8 +681,8 @@ public:
 
       MODULAR_CODEGEN_DECLS = 60,
 
-      /// Record code for \#pragma pack options.
-      PACK_PRAGMA_OPTIONS = 61,
+      /// Record code for \#pragma align/pack options.
+      ALIGN_PACK_PRAGMA_OPTIONS = 61,
 
       /// The stack of open #ifs/#ifdefs recorded in a preamble.
       PP_CONDITIONAL_STACK = 62,
@@ -1084,8 +1084,11 @@ public:
 #define SVE_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
 #include "clang/Basic/AArch64SVEACLETypes.def"
       // \brief  PowerPC MMA types with auto numeration
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) PREDEF_TYPE_##Id##_ID,
+#define PPC_VECTOR_TYPE(Name, Id, Size) PREDEF_TYPE_##Id##_ID,
 #include "clang/Basic/PPCTypes.def"
+      // \brief RISC-V V types with auto numeration
+#define RVV_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
+#include "clang/Basic/RISCVVTypes.def"
     };
 
     /// The number of predefined type IDs that are reserved for
@@ -1093,7 +1096,7 @@ public:
     ///
     /// Type IDs for non-predefined types will start at
     /// NUM_PREDEF_TYPE_IDs.
-    const unsigned NUM_PREDEF_TYPE_IDS = 201;
+    const unsigned NUM_PREDEF_TYPE_IDS = 300;
 
     /// Record codes for each kind of type.
     ///
@@ -1501,12 +1504,6 @@ public:
       /// A CXXInjectionDecl record.
       DECL_CXX_INJECTION,
 
-      /// A CXXRequiredTypeDecl record.
-      DECL_CXX_REQUIRED_TYPE,
-
-      /// A CXXRequiredDeclaratorDecl record.
-      DECL_CXX_REQUIRED_DECLARATOR,
-
       DECL_LAST = DECL_CXX_INJECTION
     };
 
@@ -1797,9 +1794,6 @@ public:
       /// A CXXInjection record.
       STMT_CXX_INJECTION,
 
-      /// A CXXBaseInjection record.
-      STMT_CXX_BASE_INJECTION,
-
       /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
 
@@ -1897,8 +1891,6 @@ public:
       EXPR_CONCEPT_SPECIALIZATION,// ConceptSpecializationExpr
       EXPR_REQUIRES,              // RequiresExpr
 
-      EXPR_CXX_PARAMETER_INFO,    // CXXParameterInfo
-
       // CUDA
       EXPR_CUDA_KERNEL_CALL,       // CUDAKernelCallExpr
 
@@ -1918,6 +1910,7 @@ public:
       // OpenMP directives
       STMT_OMP_PARALLEL_DIRECTIVE,
       STMT_OMP_SIMD_DIRECTIVE,
+      STMT_OMP_TILE_DIRECTIVE,
       STMT_OMP_FOR_DIRECTIVE,
       STMT_OMP_FOR_SIMD_DIRECTIVE,
       STMT_OMP_SECTIONS_DIRECTIVE,

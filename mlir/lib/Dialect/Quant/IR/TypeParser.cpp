@@ -8,9 +8,9 @@
 
 #include "mlir/Dialect/Quant/QuantOps.h"
 #include "mlir/Dialect/Quant/QuantTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Location.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -91,9 +91,28 @@ static ParseResult parseStorageRange(DialectAsmParser &parser,
   return success();
 }
 
-/// Parses a UniformQuantizedType.
+static FloatType parseExpressedTypeAndRange(DialectAsmParser &parser,
+                                            double &min, double &max) {
+  auto typeLoc = parser.getCurrentLocation();
+  FloatType type;
+
+  if (failed(parser.parseType(type))) {
+    parser.emitError(typeLoc, "expecting float expressed type");
+    return nullptr;
+  }
+
+  // Calibrated min and max values.
+  if (parser.parseLess() || parser.parseFloat(min) || parser.parseColon() ||
+      parser.parseFloat(max) || parser.parseGreater()) {
+    parser.emitError(typeLoc, "calibrated values must be present");
+    return nullptr;
+  }
+  return type;
+}
+
+/// Parses an AnyQuantizedType.
 ///
-///   uniform_per_layer ::= `any<` storage-spec (expressed-type-spec)?`>`
+///   any ::= `any<` storage-spec (expressed-type-spec)?`>`
 ///   storage-spec ::= storage-type (`<` storage-range `>`)?
 ///   storage-range ::= integer-literal `:` integer-literal
 ///   storage-type ::= (`i` | `u`) integer-literal
@@ -136,8 +155,9 @@ static Type parseAnyType(DialectAsmParser &parser, Location loc) {
     return nullptr;
   }
 
-  return AnyQuantizedType::getChecked(typeFlags, storageType, expressedType,
-                                      storageTypeMin, storageTypeMax, loc);
+  return AnyQuantizedType::getChecked(loc, typeFlags, storageType,
+                                      expressedType, storageTypeMin,
+                                      storageTypeMax);
 }
 
 static ParseResult parseQuantParams(DialectAsmParser &parser, double &scale,
@@ -260,13 +280,41 @@ static Type parseUniformType(DialectAsmParser &parser, Location loc) {
     ArrayRef<double> scalesRef(scales.begin(), scales.end());
     ArrayRef<int64_t> zeroPointsRef(zeroPoints.begin(), zeroPoints.end());
     return UniformQuantizedPerAxisType::getChecked(
-        typeFlags, storageType, expressedType, scalesRef, zeroPointsRef,
-        quantizedDimension, storageTypeMin, storageTypeMax, loc);
+        loc, typeFlags, storageType, expressedType, scalesRef, zeroPointsRef,
+        quantizedDimension, storageTypeMin, storageTypeMax);
   }
 
-  return UniformQuantizedType::getChecked(typeFlags, storageType, expressedType,
-                                          scales.front(), zeroPoints.front(),
-                                          storageTypeMin, storageTypeMax, loc);
+  return UniformQuantizedType::getChecked(
+      loc, typeFlags, storageType, expressedType, scales.front(),
+      zeroPoints.front(), storageTypeMin, storageTypeMax);
+}
+
+/// Parses an CalibratedQuantizedType.
+///
+///   calibrated ::= `calibrated<` expressed-spec `>`
+///   expressed-spec ::= expressed-type `<` calibrated-range `>`
+///   expressed-type ::= `f` integer-literal
+///   calibrated-range ::= float-literal `:` float-literal
+static Type parseCalibratedType(DialectAsmParser &parser, Location loc) {
+  FloatType expressedType;
+  double min;
+  double max;
+
+  // Type specification.
+  if (parser.parseLess())
+    return nullptr;
+
+  // Expressed type.
+  expressedType = parseExpressedTypeAndRange(parser, min, max);
+  if (!expressedType) {
+    return nullptr;
+  }
+
+  if (parser.parseGreater()) {
+    return nullptr;
+  }
+
+  return CalibratedQuantizedType::getChecked(loc, expressedType, min, max);
 }
 
 /// Parse a type registered to this dialect.
@@ -282,6 +330,8 @@ Type QuantizationDialect::parseType(DialectAsmParser &parser) const {
     return parseUniformType(parser, loc);
   if (typeNameSpelling == "any")
     return parseAnyType(parser, loc);
+  if (typeNameSpelling == "calibrated")
+    return parseCalibratedType(parser, loc);
 
   parser.emitError(parser.getNameLoc(),
                    "unknown quantized type " + typeNameSpelling);
@@ -318,7 +368,7 @@ static void printQuantParams(double scale, int64_t zeroPoint,
   }
 }
 
-/// Helper that prints a UniformQuantizedType.
+/// Helper that prints a AnyQuantizedType.
 static void printAnyQuantizedType(AnyQuantizedType type,
                                   DialectAsmPrinter &out) {
   out << "any<";
@@ -363,6 +413,14 @@ static void printUniformQuantizedPerAxisType(UniformQuantizedPerAxisType type,
   out << "}>";
 }
 
+/// Helper that prints a CalibratedQuantizedType.
+static void printCalibratedQuantizedType(CalibratedQuantizedType type,
+                                         DialectAsmPrinter &out) {
+  out << "calibrated<" << type.getExpressedType();
+  out << "<" << type.getMin() << ":" << type.getMax() << ">";
+  out << ">";
+}
+
 /// Print a type registered to this dialect.
 void QuantizationDialect::printType(Type type, DialectAsmPrinter &os) const {
   if (auto anyType = type.dyn_cast<AnyQuantizedType>())
@@ -371,6 +429,8 @@ void QuantizationDialect::printType(Type type, DialectAsmPrinter &os) const {
     printUniformQuantizedType(uniformType, os);
   else if (auto perAxisType = type.dyn_cast<UniformQuantizedPerAxisType>())
     printUniformQuantizedPerAxisType(perAxisType, os);
+  else if (auto calibratedType = type.dyn_cast<CalibratedQuantizedType>())
+    printCalibratedQuantizedType(calibratedType, os);
   else
     llvm_unreachable("Unhandled quantized type");
 }

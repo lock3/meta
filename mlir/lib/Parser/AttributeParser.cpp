@@ -12,9 +12,9 @@
 
 #include "Parser.h"
 #include "mlir/IR/AffineMap.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/IntegerSet.h"
-#include "mlir/IR/StandardTypes.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Endian.h"
 
@@ -121,8 +121,14 @@ Attribute Parser::parseAttribute(Type type) {
 
   // Parse a location attribute.
   case Token::kw_loc: {
-    LocationAttr attr;
-    return failed(parseLocation(attr)) ? Attribute() : attr;
+    consumeToken(Token::kw_loc);
+
+    LocationAttr locAttr;
+    if (parseToken(Token::l_paren, "expected '(' in inline location") ||
+        parseLocationInstance(locAttr) ||
+        parseToken(Token::r_paren, "expected ')' in inline location"))
+      return Attribute();
+    return locAttr;
   }
 
   // Parse an opaque elements attribute.
@@ -142,7 +148,7 @@ Attribute Parser::parseAttribute(Type type) {
       return Attribute();
 
     return type ? StringAttr::get(val, type)
-                : StringAttr::get(val, getContext());
+                : StringAttr::get(getContext(), val);
   }
 
   // Parse a symbol reference attribute.
@@ -170,7 +176,7 @@ Attribute Parser::parseAttribute(Type type) {
 
       std::string nameStr = getToken().getSymbolReference();
       consumeToken(Token::at_identifier);
-      nestedRefs.push_back(SymbolRefAttr::get(nameStr, getContext()));
+      nestedRefs.push_back(SymbolRefAttr::get(getContext(), nameStr));
     }
 
     return builder.getSymbolRefAttr(nameStr, nestedRefs);
@@ -328,6 +334,11 @@ static Optional<APInt> buildAttributeAPInt(Type type, bool isNegative,
   // Extend or truncate the bitwidth to the right size.
   unsigned width = type.isIndex() ? IndexType::kInternalStorageBitWidth
                                   : type.getIntOrFloatBitWidth();
+
+  // APInt cannot hold a zero bit value.
+  if (width == 0)
+    return llvm::None;
+
   if (width > result.getBitWidth()) {
     result = result.zext(width);
   } else if (width < result.getBitWidth()) {
@@ -522,6 +533,13 @@ DenseElementsAttr TensorLiteralParser::getAttr(llvm::SMLoc loc,
   if (!shape.empty() && getShape() != type.getShape()) {
     p.emitError(loc) << "inferred shape of elements literal ([" << getShape()
                      << "]) does not match type ([" << type.getShape() << "])";
+    return nullptr;
+  }
+
+  // Handle the case where no elements were parsed.
+  if (!hexStorage.hasValue() && storage.empty() && type.getNumElements()) {
+    p.emitError(loc) << "parsed zero elements, but type (" << type
+                     << ") expected at least 1";
     return nullptr;
   }
 

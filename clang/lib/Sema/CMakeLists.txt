@@ -1,4 +1,5 @@
 set(LLVM_LINK_COMPONENTS
+  Core
   FrontendOpenMP
   Support
   )
@@ -45,13 +46,11 @@ add_clang_library(clangSema
   SemaInit.cpp
   SemaInject.cpp
   SemaLambda.cpp
-  SemaLegacyFragment.cpp
   SemaLookup.cpp
   SemaModule.cpp
   SemaObjCProperty.cpp
   SemaOpenMP.cpp
   SemaOverload.cpp
-  SemaParameter.cpp
   SemaPseudoObject.cpp
   SemaReflect.cpp
   SemaStmt.cpp

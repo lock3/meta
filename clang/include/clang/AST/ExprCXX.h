@@ -26,6 +26,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/Reflection.h"
@@ -343,6 +344,16 @@ public:
   bool isReversed() const { return CXXRewrittenBinaryOperatorBits.IsReversed; }
 
   BinaryOperatorKind getOperator() const { return getDecomposedForm().Opcode; }
+  BinaryOperatorKind getOpcode() const { return getOperator(); }
+  static StringRef getOpcodeStr(BinaryOperatorKind Op) {
+    return BinaryOperator::getOpcodeStr(Op);
+  }
+  StringRef getOpcodeStr() const {
+    return BinaryOperator::getOpcodeStr(getOpcode());
+  }
+  bool isComparisonOp() const { return true; }
+  bool isAssignmentOp() const { return false; }
+
   const Expr *getLHS() const { return getDecomposedForm().LHS; }
   const Expr *getRHS() const { return getDecomposedForm().RHS; }
 
@@ -2051,6 +2062,9 @@ public:
   /// Get the template parameters were explicitly specified (as opposed to being
   /// invented by use of an auto parameter).
   ArrayRef<NamedDecl *> getExplicitTemplateParameters() const;
+
+  /// Get the trailing requires clause, if any.
+  Expr *getTrailingRequiresClause() const;
 
   /// Whether this is a generic lambda.
   bool isGenericLambda() const { return getTemplateParameterList(); }
@@ -4110,6 +4124,7 @@ public:
   }
 
   SourceLocation getEndLoc() const LLVM_READONLY { return EllipsisLoc; }
+  SourceRange getSourceRange() const { return { getBeginLoc(), getEndLoc() }; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == PackExpansionExprClass;
@@ -4634,6 +4649,8 @@ public:
   /// Get the operand that doesn't contain a pack, for a binary fold.
   Expr *getInit() const { return isLeftFold() ? getLHS() : getRHS(); }
 
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
   BinaryOperatorKind getOperator() const { return Opcode; }
 
@@ -4887,7 +4904,7 @@ class BuiltinBitCastExpr final
       private llvm::TrailingObjects<BuiltinBitCastExpr, CXXBaseSpecifier *> {
   friend class ASTStmtReader;
   friend class CastExpr;
-  friend class TrailingObjects;
+  friend TrailingObjects;
 
   SourceLocation KWLoc;
   SourceLocation RParenLoc;
@@ -5414,47 +5431,44 @@ public:
   child_range children() { return child_range(&Message, &Message + 1); }
 };
 
-class CXXIdExprExpr : public Expr {
+class CXXExprSpliceExpr : public Expr {
   Expr *Reflection;
 
-  SourceLocation KeywordLoc;
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
 
-  CXXIdExprExpr(
-      QualType T, Expr *Reflection, SourceLocation KeywordLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc)
-    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary),
-      Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+  CXXExprSpliceExpr(
+      QualType T, Expr *Reflection,
+      SourceLocation SBELoc, SourceLocation SEELoc)
+    : Expr(CXXExprSpliceExprClass, T, VK_RValue, OK_Ordinary),
+      Reflection(Reflection), SBELoc(SBELoc), SEELoc(SEELoc) {
     setDependence(computeDependence(this));
   }
 
-  CXXIdExprExpr(EmptyShell Empty)
-    : Expr(CXXIdExprExprClass, Empty) {}
+  CXXExprSpliceExpr(EmptyShell Empty)
+    : Expr(CXXExprSpliceExprClass, Empty) {}
 
 public:
-  static CXXIdExprExpr *Create(
-      const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc);
+  static CXXExprSpliceExpr *Create(
+      const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
+      SourceLocation SEELoc);
 
-  static CXXIdExprExpr *CreateEmpty(const ASTContext &C);
+  static CXXExprSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the reflection operand.
   Expr *getReflection() const { return Reflection; }
 
-  /// Returns the source code location of the trait keyword.
-  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+  /// Returns the source code location of the left token
+  /// introducing the expression operand.
+  SourceLocation getSBELoc() const { return SBELoc; }
 
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
+  /// Returns the source code location of the right token
+  /// terminating the expression operand.
+  SourceLocation getSEELoc() const { return SEELoc; }
 
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
+  SourceLocation getBeginLoc() const { return getSBELoc(); }
 
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-
-  SourceLocation getEndLoc() const { return RParenLoc; }
+  SourceLocation getEndLoc() const { return getSEELoc(); }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
@@ -5465,13 +5479,13 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXIdExprExprClass;
+    return T->getStmtClass() == CXXExprSpliceExprClass;
   }
 };
 
-class CXXMemberIdExprExpr final
+class CXXMemberExprSpliceExpr final
   : public Expr,
-    private llvm::TrailingObjects<CXXMemberIdExprExpr,
+    private llvm::TrailingObjects<CXXMemberExprSpliceExpr,
                                   ASTTemplateKWAndArgsInfo,
                                   TemplateArgumentLoc> {
   friend TrailingObjects;
@@ -5484,17 +5498,17 @@ class CXXMemberIdExprExpr final
   unsigned HasTemplateKWAndArgsInfo : 1;
 
   SourceLocation OpLoc;
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
 
-  CXXMemberIdExprExpr(
+  CXXMemberExprSpliceExpr(
       QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
       SourceLocation OpLoc, SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *Args);
 
-  CXXMemberIdExprExpr(EmptyShell Empty)
-    : Expr(CXXMemberIdExprExprClass, Empty) {}
+  CXXMemberExprSpliceExpr(EmptyShell Empty)
+    : Expr(CXXMemberExprSpliceExprClass, Empty) {}
 
   size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
     return hasTemplateKWAndArgsInfo();
@@ -5504,14 +5518,14 @@ class CXXMemberIdExprExpr final
     return HasTemplateKWAndArgsInfo;
   }
 public:
-  static CXXMemberIdExprExpr *Create(
+  static CXXMemberExprSpliceExpr *Create(
       const ASTContext &C, Expr *Base, Expr *Reflection,
       bool IsArrow, SourceLocation OpLoc,
       SourceLocation TemplateKWLoc,
-      SourceLocation LParenLoc, SourceLocation RParenLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc,
       const TemplateArgumentListInfo *TemplateArgs);
 
-  static CXXMemberIdExprExpr *CreateEmpty(const ASTContext &C);
+  static CXXMemberExprSpliceExpr *CreateEmpty(const ASTContext &C);
 
   /// Returns the base expression
   Expr *getBase() const { return cast<Expr>(Base); }
@@ -5532,11 +5546,13 @@ public:
     return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->TemplateKWLoc;
   }
 
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
+  /// Returns the source code location of the left token
+  /// introducing the expression operand.
+  SourceLocation getSBELoc() const { return SBELoc; }
 
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
+  /// Returns the source code location of the right token
+  /// terminating the expression operand.
+  SourceLocation getSEELoc() const { return SEELoc; }
 
   /// Retrieve the location of the left angle bracket starting the
   /// explicit template argument list following the name, if any.
@@ -5591,11 +5607,11 @@ public:
   SourceLocation getEndLoc() const {
     if (hasExplicitTemplateArgs())
       return getRAngleLoc();
-    return RParenLoc;
+    return getSEELoc();
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXMemberIdExprExprClass;
+    return T->getStmtClass() == CXXMemberExprSpliceExprClass;
   }
 
   // Iterators
@@ -5605,43 +5621,60 @@ public:
   }
 };
 
-class CXXDependentVariadicReifierExpr : public Expr {
+// Represents a pack splice which has been expanded from its initial
+// operand.
+//
+// Note that while this expression should always be expanded, it may still
+// be dependent, as there are cases where the operand is expandable
+// but the expanded elements themselves are still dependent, and thus
+// cannot yet be spliced.
+class CXXPackSpliceExpr : public Expr {
+  friend class ASTReader;
+  friend class ASTStmtReader;
 
-  Expr *Range;
+  const PackSplice *PS;
 
-  SourceLocation KeywordLoc;
-  IdentifierInfo *Keyword;
-
-  SourceLocation LParenLoc;
-  SourceLocation RParenLoc;
   SourceLocation EllipsisLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+
+  CXXPackSpliceExpr(
+      QualType T, const PackSplice *PS,
+      SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc);
+
+  CXXPackSpliceExpr(EmptyShell Empty)
+    : Expr(CXXExprSpliceExprClass, Empty) {}
+
 public:
-  CXXDependentVariadicReifierExpr(QualType DependentTy,
-                                  Expr *Range,
-                                  SourceLocation KeywordLoc,
-                                  IdentifierInfo *Keyword,
-                                  SourceLocation LParenLoc,
-                                  SourceLocation RParenLoc,
-                                  SourceLocation EllipsisLoc)
-    : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
-           OK_Ordinary), Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
-      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {
-    setDependence(computeDependence(this));
-  }
+  static CXXPackSpliceExpr *Create(
+      const ASTContext &C, const PackSplice *PS, SourceLocation EllipsisLoc,
+      SourceLocation SBELoc, SourceLocation SEELoc);
 
-  CXXDependentVariadicReifierExpr(EmptyShell Empty)
-    : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
+  static CXXPackSpliceExpr *CreateEmpty(const ASTContext &C);
 
-  /// Returns the source code location of the (optional) ellipsis.
+  const PackSplice *getPackSplice() const { return PS; }
+
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
 
-  tok::TokenKind getKeywordId() const { return Keyword->getTokenID(); }
+  /// Returns the source code location of the left token
+  /// introducing the expression operand.
+  SourceLocation getSBELoc() const { return SBELoc; }
 
-  Expr *getRange() const { return Range; }
+  /// Returns the source code location of the right token
+  /// terminating the expression operand.
+  SourceLocation getSEELoc() const { return SEELoc; }
 
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
+  PackSpliceLoc getAsPackSpliceLoc() const {
+    return { getPackSplice(), getEllipsisLoc(), getSBELoc(), getSEELoc() };
+  }
 
-  SourceLocation getEndLoc() const { return RParenLoc; }
+  SourceLocation getBeginLoc() const { return getEllipsisLoc(); }
+
+  SourceLocation getEndLoc() const { return getSEELoc(); }
+
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(getBeginLoc(), getEndLoc());
+  }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
@@ -5652,7 +5685,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
+    return T->getStmtClass() == CXXPackSpliceExprClass;
   }
 };
 
@@ -5797,7 +5830,7 @@ public:
 
 /// Represents a dependent identifier splice, i.e.
 ///
-///   'unqualid' '(' expression-list ')'
+///   '[' '#' expression-list '#' ']'
 ///
 class CXXDependentSpliceIdExpr final
     : public Expr,
@@ -5944,58 +5977,6 @@ public:
   }
 };
 
-class CXXValueOfExpr : public Expr {
-  Expr *Reflection;
-
-  SourceLocation KeywordLoc;
-  SourceLocation LParenLoc;
-  SourceLocation EllipsisLoc;
-  SourceLocation RParenLoc;
-public:
-  CXXValueOfExpr(QualType T, Expr *Reflection,
-                 SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc,
-                 SourceLocation RParenLoc,
-                 SourceLocation EllipsisLoc = SourceLocation())
-    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary),
-      Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
-      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {
-    setDependence(computeDependence(this));
-  }
-
-  CXXValueOfExpr(EmptyShell Empty)
-    : Expr(CXXValueOfExprClass, Empty) {}
-
-  /// Returns the reflection operand.
-  Expr *getReflection() const { return Reflection; }
-
-  /// Returns the source code location of the trait keyword.
-  SourceLocation getKeywordLoc() const { return KeywordLoc; }
-
-  /// Returns the source code location of the left parenthesis.
-  SourceLocation getLParenLoc() const { return LParenLoc; }
-
-  /// Returns the source code location of the right parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }
-
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-
-  SourceLocation getEndLoc() const { return RParenLoc; }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXValueOfExprClass;
-  }
-};
-
 /// Represents the expression __concatenate(...)
 class CXXConcatenateExpr : public Expr {
   /// The location of the introducer token.
@@ -6077,20 +6058,16 @@ class CXXFragmentExpr final
   }
 
   CXXFragmentExpr(QualType Ty, SourceLocation IntroLoc,
-                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
-                  bool IsLegacy);
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
 
   CXXFragmentExpr(EmptyShell Empty) : Expr(CXXFragmentExprClass, Empty) {}
 public:
   static CXXFragmentExpr *Create(
       const ASTContext &C, SourceLocation IntroLoc,
-      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
-      bool IsLegacy = false);
+      CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures);
 
   static CXXFragmentExpr *CreateEmpty(const ASTContext &C,
                                       EmptyShell Empty);
-
-  bool isLegacy() const { return FragmentExprBits.IsLegacy; }
 
   /// \brief The number of captured declarations.
   std::size_t getNumCaptures() const { return NumCaptures; }
@@ -6262,41 +6239,6 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXInjectedValueExprClass;
-  }
-};
-
-/// Represents a query for information about a particular parameter.
-class CXXParameterInfoExpr : public Expr {
-  ValueDecl *Parm;
-  SourceLocation Loc;
-public:
-  CXXParameterInfoExpr(ValueDecl *D, QualType Ty, SourceLocation Loc)
-      : Expr(CXXParameterInfoExprClass, Ty, VK_RValue, OK_Ordinary), Parm(D),
-        Loc(Loc) {
-  }
-
-  explicit CXXParameterInfoExpr(EmptyShell Empty)
-      : Expr(CXXParameterInfoExprClass, Empty) {}
-
-  ValueDecl *getDecl() const { return Parm; }
-  void setDecl(ValueDecl *D) { Parm = D; }
-
-  SourceLocation getBeginLoc() const { return getLocation(); }
-  SourceLocation getEndLoc() const { return getLocation(); }
-
-  SourceLocation getLocation() const { return Loc; }
-  void setLocation(SourceLocation L) { Loc = L; }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXParameterInfoExprClass;
   }
 };
 

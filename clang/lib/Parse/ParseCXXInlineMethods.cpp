@@ -111,7 +111,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   // An exception is made for fragment contexts, as injection will
   // require a complete delcaration before the end of the translation unit.
   if (getLangOpts().DelayedTemplateParsing &&
-      D.getFunctionDefinitionKind() == FDK_Definition &&
+      D.getFunctionDefinitionKind() == FunctionDefinitionKind::Definition &&
       !D.getDeclSpec().hasConstexprSpecifier() &&
       !(FnD && FnD->getAsFunction() &&
         FnD->getAsFunction()->getReturnType()->getContainedAutoType()) &&
@@ -142,9 +142,6 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   tok::TokenKind kind = Tok.getKind();
   // Consume everything up to (and including) the left brace of the
   // function body.
-
-  // FIXME: a memember initializer list will parse to here.
-
   if (ConsumeAndStoreFunctionPrologue(Toks)) {
     // We didn't find the left-brace we expected after the
     // constructor initializer; we already printed an error, and it's likely
@@ -944,6 +941,18 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         return true;
       }
     }
+
+    if (isCXXPackSpliceBegin()) {
+      // Use the location of the '[' token
+      SourceLocation OpenLoc = NextToken().getLocation();
+
+      if (!ConsumeAndStoreTypePackSplice(Toks)) {
+        Diag(Tok.getLocation(), diag::err_expected_end_of_splice);
+        Diag(OpenLoc, diag::note_matching);
+        return true;
+      }
+    }
+
     do {
       // Walk over a component of a nested-name-specifier.
       if (Tok.is(tok::coloncolon)) {
@@ -996,27 +1005,6 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         // We're not just missing the initializer, we're also missing the
         // function body!
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_brace;
-      }
-    } else if(isVariadicReifier()) {
-      if (!ConsumeAndStoreUntil(tok::l_paren, Toks, /*StopAtSemi=*/true,
-                               /*ConsumeFinalToken=*/true))
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::l_paren;
-      if (!ConsumeAndStoreUntil(tok::ellipsis, Toks, /*StopAtSemi=*/true,
-                               /*ConsumeFinalToken=*/true)){
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::ellipsis;
-      }
-      if (!isIdentifier())
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
-      Toks.push_back(Tok);
-      ConsumeIdentifier();
-
-      // if(!Tok.is(tok::r_paren))
-      //   return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
-      // Toks.push_back(Tok);
-      // ConsumeToken();
-      if (!ConsumeAndStoreUntil(tok::r_paren, Toks, /*StopAtSemi=*/true,
-                                /*ConsumeFinalToken=*/true)) {
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
       }
     } else if (Tok.isNot(tok::l_paren) && Tok.isNot(tok::l_brace)) {
       // We found something weird in a mem-initializer-id.

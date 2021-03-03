@@ -1223,17 +1223,15 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXReflectPrintReflectionExprClass:
     case Stmt::CXXReflectDumpReflectionExprClass:
     case Stmt::CXXCompilerErrorExprClass:
-    case Stmt::CXXIdExprExprClass:
-    case Stmt::CXXMemberIdExprExprClass:
+    case Stmt::CXXExprSpliceExprClass:
+    case Stmt::CXXMemberExprSpliceExprClass:
+    case Stmt::CXXPackSpliceExprClass:
     case Stmt::CXXDependentSpliceIdExprClass:
-    case Stmt::CXXValueOfExprClass:
     case Stmt::CXXConcatenateExprClass:
-    case Stmt::CXXDependentVariadicReifierExprClass:
     case Stmt::CXXPackExpansionStmtClass:
     case Stmt::CXXCompositeExpansionStmtClass:
     case Stmt::CXXSelectMemberExprClass:
     case Stmt::CXXSelectPackExprClass:
-    case Stmt::CXXParameterInfoExprClass:
     case Stmt::MSPropertyRefExprClass:
     case Stmt::MSPropertySubscriptExprClass:
     case Stmt::CXXUnresolvedConstructExprClass:
@@ -1311,13 +1309,12 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPTargetTeamsDistributeParallelForDirectiveClass:
     case Stmt::OMPTargetTeamsDistributeParallelForSimdDirectiveClass:
     case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
+    case Stmt::OMPTileDirectiveClass:
     case Stmt::CapturedStmtClass:
     case Stmt::CXXFragmentExprClass:
     case Stmt::CXXFragmentCaptureExprClass:
     case Stmt::CXXInjectedValueExprClass:
-    case Stmt::CXXInjectionStmtClass:
-    case Stmt::CXXBaseInjectionStmtClass:
-    {
+    case Stmt::CXXInjectionStmtClass: {
       const ExplodedNode *node = Bldr.generateSink(S, Pred, Pred->getState());
       Engine.addAbortedBlock(node, currBldrCtx->getBlock());
       break;
@@ -3175,7 +3172,7 @@ struct DOTGraphTraits<ExplodedGraph*> : public DefaultDOTGraphTraits {
       if (Stop(N))
         return true;
 
-      if (N->succ_size() != 1 || !isNodeHidden(N->getFirstSucc()))
+      if (N->succ_size() != 1 || !isNodeHidden(N->getFirstSucc(), nullptr))
         break;
       PostCallback(N);
 
@@ -3184,7 +3181,7 @@ struct DOTGraphTraits<ExplodedGraph*> : public DefaultDOTGraphTraits {
     return false;
   }
 
-  static bool isNodeHidden(const ExplodedNode *N) {
+  static bool isNodeHidden(const ExplodedNode *N, const ExplodedGraph *G) {
     return N->isTrivial();
   }
 

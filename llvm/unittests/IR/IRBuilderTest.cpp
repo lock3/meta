@@ -127,6 +127,12 @@ TEST_F(IRBuilderTest, Intrinsics) {
   EXPECT_EQ(II->getIntrinsicID(), Intrinsic::roundeven);
   EXPECT_FALSE(II->hasNoInfs());
   EXPECT_FALSE(II->hasNoNaNs());
+
+  Call = Builder.CreateIntrinsic(
+      Intrinsic::set_rounding, {},
+      {Builder.getInt32(static_cast<uint32_t>(RoundingMode::TowardZero))});
+  II = cast<IntrinsicInst>(Call);
+  EXPECT_EQ(II->getIntrinsicID(), Intrinsic::set_rounding);
 }
 
 TEST_F(IRBuilderTest, IntrinsicsWithScalableVectors) {
@@ -770,7 +776,7 @@ TEST_F(IRBuilderTest, DIBuilder) {
       CU, "bar", "", File, 1, Type, 1, DINode::FlagZero,
       DISubprogram::SPFlagDefinition | DISubprogram::SPFlagOptimized);
   auto BadScope = DIB.createLexicalBlockFile(BarSP, File, 0);
-  I->setDebugLoc(DebugLoc::get(2, 0, BadScope));
+  I->setDebugLoc(DILocation::get(Ctx, 2, 0, BadScope));
   DIB.finalize();
   EXPECT_TRUE(verifyModule(*M));
 }
@@ -792,8 +798,8 @@ TEST_F(IRBuilderTest, createArtificialSubprogram) {
   F->setSubprogram(SP);
   AllocaInst *I = Builder.CreateAlloca(Builder.getInt8Ty());
   ReturnInst *R = Builder.CreateRetVoid();
-  I->setDebugLoc(DebugLoc::get(3, 2, SP));
-  R->setDebugLoc(DebugLoc::get(4, 2, SP));
+  I->setDebugLoc(DILocation::get(Ctx, 3, 2, SP));
+  R->setDebugLoc(DILocation::get(Ctx, 4, 2, SP));
   DIB.finalize();
   EXPECT_FALSE(verifyModule(*M));
 
@@ -821,7 +827,8 @@ TEST_F(IRBuilderTest, createArtificialSubprogram) {
   DebugLoc DL = I->getDebugLoc();
   DenseMap<const MDNode *, MDNode *> IANodes;
   auto IA = DebugLoc::appendInlinedAt(DL, InlinedAtNode, Ctx, IANodes);
-  auto NewDL = DebugLoc::get(DL.getLine(), DL.getCol(), DL.getScope(), IA);
+  auto NewDL =
+      DILocation::get(Ctx, DL.getLine(), DL.getCol(), DL.getScope(), IA);
   I->setDebugLoc(NewDL);
   EXPECT_FALSE(verifyModule(*M));
 

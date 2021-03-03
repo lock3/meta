@@ -340,6 +340,11 @@ public:
   }
   /// @}
 
+  /// Adds an !annotation metadata node with \p Annotation to this instruction.
+  /// If this instruction already has !annotation metadata, append \p Annotation
+  /// to the existing node.
+  void addAnnotationMetadata(StringRef Annotation);
+
   /// Sets the metadata on this instruction from the AAMDNodes structure.
   void setAAMetadata(const AAMDNodes &N);
 
@@ -628,6 +633,10 @@ public:
   /// generated program.
   bool isSafeToRemove() const;
 
+  /// Return true if the instruction will return (unwinding is considered as
+  /// a form of returning control flow here).
+  bool willReturn() const;
+
   /// Return true if the instruction is a variety of EH-block.
   bool isEHPad() const {
     switch (getOpcode()) {
@@ -645,20 +654,29 @@ public:
   /// llvm.lifetime.end marker.
   bool isLifetimeStartOrEnd() const;
 
+  /// Return true if the instruction is a DbgInfoIntrinsic or PseudoProbeInst.
+  bool isDebugOrPseudoInst() const;
+
   /// Return a pointer to the next non-debug instruction in the same basic
-  /// block as 'this', or nullptr if no such instruction exists.
-  const Instruction *getNextNonDebugInstruction() const;
-  Instruction *getNextNonDebugInstruction() {
+  /// block as 'this', or nullptr if no such instruction exists. Skip any pseudo
+  /// operations if \c SkipPseudoOp is true.
+  const Instruction *
+  getNextNonDebugInstruction(bool SkipPseudoOp = false) const;
+  Instruction *getNextNonDebugInstruction(bool SkipPseudoOp = false) {
     return const_cast<Instruction *>(
-        static_cast<const Instruction *>(this)->getNextNonDebugInstruction());
+        static_cast<const Instruction *>(this)->getNextNonDebugInstruction(
+            SkipPseudoOp));
   }
 
   /// Return a pointer to the previous non-debug instruction in the same basic
-  /// block as 'this', or nullptr if no such instruction exists.
-  const Instruction *getPrevNonDebugInstruction() const;
-  Instruction *getPrevNonDebugInstruction() {
+  /// block as 'this', or nullptr if no such instruction exists. Skip any pseudo
+  /// operations if \c SkipPseudoOp is true.
+  const Instruction *
+  getPrevNonDebugInstruction(bool SkipPseudoOp = false) const;
+  Instruction *getPrevNonDebugInstruction(bool SkipPseudoOp = false) {
     return const_cast<Instruction *>(
-        static_cast<const Instruction *>(this)->getPrevNonDebugInstruction());
+        static_cast<const Instruction *>(this)->getPrevNonDebugInstruction(
+            SkipPseudoOp));
   }
 
   /// Create a copy of 'this' instruction that is identical in all ways except

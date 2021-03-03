@@ -4,12 +4,12 @@
 
 void no_attr_fn();
 
-constexpr meta::info no_attr_fn_refl = reflexpr(no_attr_fn);
+constexpr meta::info no_attr_fn_refl = ^no_attr_fn;
 static_assert(!__reflect(query_has_attribute, no_attr_fn_refl, "noreturn"));
 
 [[noreturn]] void fn();
 
-constexpr meta::info fn_refl = reflexpr(fn);
+constexpr meta::info fn_refl = ^fn;
 static_assert(__reflect(query_has_attribute, fn_refl, "noreturn"));
 static_assert(!__reflect(query_has_attribute, fn_refl, "deprecated"));
 

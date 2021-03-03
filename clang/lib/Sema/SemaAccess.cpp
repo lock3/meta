@@ -1476,7 +1476,8 @@ void Sema::HandleDelayedAccessCheck(DelayedDiagnostic &DD, Decl *D) {
   } else if (FunctionDecl *FN = dyn_cast<FunctionDecl>(D)) {
     DC = FN;
   } else if (TemplateDecl *TD = dyn_cast<TemplateDecl>(D)) {
-    DC = cast<DeclContext>(TD->getTemplatedDecl());
+    if (isa<DeclContext>(TD->getTemplatedDecl()))
+      DC = cast<DeclContext>(TD->getTemplatedDecl());
   }
 
   EffectiveContext EC(DC);
@@ -1834,6 +1835,9 @@ Sema::AccessResult Sema::CheckBaseClassAccess(SourceLocation AccessLoc,
     return AR_accessible;
 
   if (Path.Access == AS_public)
+    return AR_accessible;
+
+  if (ForceBaseConversion)
     return AR_accessible;
 
   CXXRecordDecl *BaseD, *DerivedD;

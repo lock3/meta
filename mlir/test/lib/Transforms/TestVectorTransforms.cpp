@@ -24,16 +24,45 @@ namespace {
 
 struct TestVectorToVectorConversion
     : public PassWrapper<TestVectorToVectorConversion, FunctionPass> {
+  TestVectorToVectorConversion() = default;
+  TestVectorToVectorConversion(const TestVectorToVectorConversion &pass) {}
+
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<AffineDialect>();
+  }
+
+  Option<bool> unroll{*this, "unroll", llvm::cl::desc("Include unrolling"),
+                      llvm::cl::init(false)};
+
   void runOnFunction() override {
     OwningRewritePatternList patterns;
     auto *ctx = &getContext();
-    patterns.insert<UnrollVectorPattern<AddFOp>>(
-        ctx, UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2}));
-    patterns.insert<UnrollVectorPattern<vector::ContractionOp>>(
-        ctx, UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2, 2}));
+    if (unroll) {
+      patterns.insert<UnrollVectorPattern>(
+          ctx,
+          UnrollVectorOptions().setNativeShapeFn(getShape).setFilterConstraint(
+              filter));
+    }
     populateVectorToVectorCanonicalizationPatterns(patterns, ctx);
     populateVectorToVectorTransformationPatterns(patterns, ctx);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    populateBubbleVectorBitCastOpPatterns(patterns, ctx);
+    populateCastAwayVectorLeadingOneDimPatterns(patterns, ctx);
+    populateSplitVectorTransferPatterns(patterns, ctx);
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+  }
+
+private:
+  // Return the target shape based on op type.
+  static Optional<SmallVector<int64_t, 4>> getShape(Operation *op) {
+    if (isa<AddFOp, SelectOp, CmpFOp>(op))
+      return SmallVector<int64_t, 4>(2, 2);
+    if (isa<vector::ContractionOp>(op))
+      return SmallVector<int64_t, 4>(3, 2);
+    return llvm::None;
+  }
+
+  static LogicalResult filter(Operation *op) {
+    return success(isa<AddFOp, SelectOp, CmpFOp, ContractionOp>(op));
   }
 };
 
@@ -42,7 +71,7 @@ struct TestVectorSlicesConversion
   void runOnFunction() override {
     OwningRewritePatternList patterns;
     populateVectorSlicesLoweringPatterns(patterns, &getContext());
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 };
 
@@ -79,7 +108,7 @@ struct TestVectorContractionConversion
       VectorTransformsOptions options{lowering};
       patterns.insert<ContractionOpToOuterProductOpLowering>(options,
                                                              &getContext());
-      applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+      (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
       return;
     }
 
@@ -95,7 +124,7 @@ struct TestVectorContractionConversion
               return failure();
             return success();
           });
-      applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+      (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
       return;
     }
 
@@ -109,7 +138,7 @@ struct TestVectorContractionConversion
       transposeLowering = VectorTransposeLowering::Flat;
     VectorTransformsOptions options{contractLowering, transposeLowering};
     populateVectorContractLoweringPatterns(patterns, &getContext(), options);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 };
 
@@ -120,8 +149,12 @@ struct TestVectorUnrollingPatterns
   void runOnFunction() override {
     MLIRContext *ctx = &getContext();
     OwningRewritePatternList patterns;
-    patterns.insert<UnrollVectorPattern<AddFOp>>(
-        ctx, UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2}));
+    patterns.insert<UnrollVectorPattern>(
+        ctx, UnrollVectorOptions()
+                 .setNativeShape(ArrayRef<int64_t>{2, 2})
+                 .setFilterConstraint([](Operation *op) {
+                   return success(isa<AddFOp, vector::FMAOp>(op));
+                 }));
 
     if (unrollBasedOnType) {
       UnrollVectorOptions::NativeShapeFnType nativeShapeFn =
@@ -137,16 +170,23 @@ struct TestVectorUnrollingPatterns
         }
         return nativeShape;
       };
-      patterns.insert<UnrollVectorPattern<vector::ContractionOp>>(
-          ctx, UnrollVectorOptions().setNativeShapeFn(nativeShapeFn));
+      patterns.insert<UnrollVectorPattern>(
+          ctx, UnrollVectorOptions()
+                   .setNativeShapeFn(nativeShapeFn)
+                   .setFilterConstraint([](Operation *op) {
+                     return success(isa<ContractionOp>(op));
+                   }));
     } else {
-      patterns.insert<UnrollVectorPattern<vector::ContractionOp>>(
-          ctx,
-          UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2, 2}));
+      patterns.insert<UnrollVectorPattern>(
+          ctx, UnrollVectorOptions()
+                   .setNativeShape(ArrayRef<int64_t>{2, 2, 2})
+                   .setFilterConstraint([](Operation *op) {
+                     return success(isa<ContractionOp>(op));
+                   }));
     }
     populateVectorToVectorCanonicalizationPatterns(patterns, ctx);
     populateVectorToVectorTransformationPatterns(patterns, ctx);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 
   Option<bool> unrollBasedOnType{
@@ -163,26 +203,45 @@ struct TestVectorDistributePatterns
     registry.insert<VectorDialect>();
     registry.insert<AffineDialect>();
   }
-  Option<int32_t> multiplicity{
-      *this, "distribution-multiplicity",
-      llvm::cl::desc("Set the multiplicity used for distributing vector"),
-      llvm::cl::init(32)};
+  ListOption<int32_t> multiplicity{
+      *this, "distribution-multiplicity", llvm::cl::MiscFlags::CommaSeparated,
+      llvm::cl::desc("Set the multiplicity used for distributing vector")};
+
   void runOnFunction() override {
     MLIRContext *ctx = &getContext();
     OwningRewritePatternList patterns;
     FuncOp func = getFunction();
     func.walk([&](AddFOp op) {
       OpBuilder builder(op);
-      Optional<mlir::vector::DistributeOps> ops = distributPointwiseVectorOp(
-          builder, op.getOperation(), func.getArgument(0), multiplicity);
-      if (ops.hasValue()) {
-        SmallPtrSet<Operation *, 1> extractOp({ops->extract, ops->insert});
-        op.getResult().replaceAllUsesExcept(ops->insert.getResult(), extractOp);
+      if (auto vecType = op.getType().dyn_cast<VectorType>()) {
+        SmallVector<int64_t, 2> mul;
+        SmallVector<AffineExpr, 2> perm;
+        SmallVector<Value, 2> ids;
+        unsigned count = 0;
+        // Remove the multiplicity of 1 and calculate the affine map based on
+        // the multiplicity.
+        SmallVector<int32_t, 4> m(multiplicity.begin(), multiplicity.end());
+        for (unsigned i = 0, e = vecType.getRank(); i < e; i++) {
+          if (i < m.size() && m[i] != 1 && vecType.getDimSize(i) % m[i] == 0) {
+            mul.push_back(m[i]);
+            ids.push_back(func.getArgument(count++));
+            perm.push_back(getAffineDimExpr(i, ctx));
+          }
+        }
+        auto map = AffineMap::get(op.getType().cast<VectorType>().getRank(), 0,
+                                  perm, ctx);
+        Optional<mlir::vector::DistributeOps> ops = distributPointwiseVectorOp(
+            builder, op.getOperation(), ids, mul, map);
+        if (ops.hasValue()) {
+          SmallPtrSet<Operation *, 1> extractOp({ops->extract, ops->insert});
+          op.getResult().replaceAllUsesExcept(ops->insert.getResult(),
+                                              extractOp);
+        }
       }
     });
     patterns.insert<PointwiseExtractPattern>(ctx);
     populateVectorToVectorTransformationPatterns(patterns, ctx);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 };
 
@@ -229,9 +288,11 @@ struct TestVectorToLoopPatterns
       for (Operation *it : dependentOps) {
         it->moveBefore(forOp.getBody()->getTerminator());
       }
+      auto map = AffineMap::getMultiDimIdentityMap(1, ctx);
       // break up the original op and let the patterns propagate.
       Optional<mlir::vector::DistributeOps> ops = distributPointwiseVectorOp(
-          builder, op.getOperation(), forOp.getInductionVar(), multiplicity);
+          builder, op.getOperation(), {forOp.getInductionVar()}, {multiplicity},
+          map);
       if (ops.hasValue()) {
         SmallPtrSet<Operation *, 1> extractOp({ops->extract, ops->insert});
         op.getResult().replaceAllUsesExcept(ops->insert.getResult(), extractOp);
@@ -240,7 +301,7 @@ struct TestVectorToLoopPatterns
     });
     patterns.insert<PointwiseExtractPattern>(ctx);
     populateVectorToVectorTransformationPatterns(patterns, ctx);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 };
 
@@ -252,13 +313,17 @@ struct TestVectorTransferUnrollingPatterns
   void runOnFunction() override {
     MLIRContext *ctx = &getContext();
     OwningRewritePatternList patterns;
-    patterns.insert<UnrollVectorPattern<vector::TransferReadOp>>(
-        ctx, UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2}));
-    patterns.insert<UnrollVectorPattern<vector::TransferWriteOp>>(
-        ctx, UnrollVectorOptions().setNativeShape(ArrayRef<int64_t>{2, 2}));
+    patterns.insert<UnrollVectorPattern>(
+        ctx,
+        UnrollVectorOptions()
+            .setNativeShape(ArrayRef<int64_t>{2, 2})
+            .setFilterConstraint([](Operation *op) {
+              return success(
+                  isa<vector::TransferReadOp, vector::TransferWriteOp>(op));
+            }));
     populateVectorToVectorCanonicalizationPatterns(patterns, ctx);
     populateVectorToVectorTransformationPatterns(patterns, ctx);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
 };
 
@@ -287,13 +352,19 @@ struct TestVectorTransferFullPartialSplitPatterns
     else
       options.setVectorTransferSplit(VectorTransferSplit::VectorTransfer);
     patterns.insert<VectorTransferFullPartialRewriter>(ctx, options);
-    applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
+    (void)applyPatternsAndFoldGreedily(getFunction(), std::move(patterns));
   }
+};
+
+struct TestVectorTransferOpt
+    : public PassWrapper<TestVectorTransferOpt, FunctionPass> {
+  void runOnFunction() override { transferOpflowOpt(getFunction()); }
 };
 
 } // end anonymous namespace
 
 namespace mlir {
+namespace test {
 void registerTestVectorConversions() {
   PassRegistration<TestVectorToVectorConversion> vectorToVectorPass(
       "test-vector-to-vector-conversion",
@@ -326,5 +397,9 @@ void registerTestVectorConversions() {
   PassRegistration<TestVectorToLoopPatterns> vectorToForLoop(
       "test-vector-to-forloop",
       "Test conversion patterns to break up a vector op into a for loop");
+  PassRegistration<TestVectorTransferOpt> transferOpOpt(
+      "test-vector-transferop-opt",
+      "Test optimization transformations for transfer ops");
 }
+} // namespace test
 } // namespace mlir

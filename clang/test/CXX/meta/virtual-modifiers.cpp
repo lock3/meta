@@ -16,12 +16,12 @@ struct Existing {
 struct New {
   consteval {
     // Methods
-    auto method_1 = reflexpr(Existing::method_1);
+    auto method_1 = ^Existing::method_1;
     __reflect_mod(query_set_add_virtual, method_1, true);
 
     -> method_1;
 
-    auto method_2 = reflexpr(Existing::method_2);
+    auto method_2 = ^Existing::method_2;
     __reflect_mod(query_set_add_pure_virtual, method_2, true);
 
     -> method_2;

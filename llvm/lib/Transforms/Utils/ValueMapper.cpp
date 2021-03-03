@@ -167,12 +167,9 @@ public:
   void flush();
 
 private:
-  void mapGlobalInitializer(GlobalVariable &GV, Constant &Init);
   void mapAppendingVariable(GlobalVariable &GV, Constant *InitPrefix,
                             bool IsOldCtorDtor,
                             ArrayRef<Constant *> NewMembers);
-  void mapGlobalIndirectSymbol(GlobalIndirectSymbol &GIS, Constant &Target);
-  void remapFunction(Function &F, ValueToValueMapTy &VM);
 
   ValueToValueMapTy &getVM() { return *MCs[CurrentMCID].VM; }
   ValueMaterializer *getMaterializer() { return MCs[CurrentMCID].Materializer; }
@@ -536,23 +533,13 @@ Optional<Metadata *> MDNodeMapper::tryToMapOperand(const Metadata *Op) {
   return None;
 }
 
-static Metadata *cloneOrBuildODR(const MDNode &N) {
-  auto *CT = dyn_cast<DICompositeType>(&N);
-  // If ODR type uniquing is enabled, we would have uniqued composite types
-  // with identifiers during bitcode reading, so we can just use CT.
-  if (CT && CT->getContext().isODRUniquingDebugTypes() &&
-      CT->getIdentifier() != "")
-    return const_cast<DICompositeType *>(CT);
-  return MDNode::replaceWithDistinct(N.clone());
-}
-
 MDNode *MDNodeMapper::mapDistinctNode(const MDNode &N) {
   assert(N.isDistinct() && "Expected a distinct node");
   assert(!M.getVM().getMappedMD(&N) && "Expected an unmapped node");
-  DistinctWorklist.push_back(
-      cast<MDNode>((M.Flags & RF_MoveDistinctMDs)
-                       ? M.mapToSelf(&N)
-                       : M.mapToMetadata(&N, cloneOrBuildODR(N))));
+  DistinctWorklist.push_back(cast<MDNode>(
+      (M.Flags & RF_ReuseAndMutateDistinctMDs)
+          ? M.mapToSelf(&N)
+          : M.mapToMetadata(&N, MDNode::replaceWithDistinct(N.clone()))));
   return DistinctWorklist.back();
 }
 
@@ -822,11 +809,15 @@ void Mapper::flush() {
       break;
     case WorklistEntry::MapAppendingVar: {
       unsigned PrefixSize = AppendingInits.size() - E.AppendingGVNumNewMembers;
+      // mapAppendingVariable call can change AppendingInits if initalizer for
+      // the variable depends on another appending global, because of that inits
+      // need to be extracted and updated before the call.
+      SmallVector<Constant *, 8> NewInits(
+          drop_begin(AppendingInits, PrefixSize));
+      AppendingInits.resize(PrefixSize);
       mapAppendingVariable(*E.Data.AppendingGV.GV,
                            E.Data.AppendingGV.InitPrefix,
-                           E.AppendingGVIsOldCtorDtor,
-                           makeArrayRef(AppendingInits).slice(PrefixSize));
-      AppendingInits.resize(PrefixSize);
+                           E.AppendingGVIsOldCtorDtor, makeArrayRef(NewInits));
       break;
     }
     case WorklistEntry::MapGlobalIndirectSymbol:
@@ -901,7 +892,7 @@ void Mapper::remapInstruction(Instruction *I) {
     AttributeList Attrs = CB->getAttributes();
     for (unsigned i = 0; i < Attrs.getNumAttrSets(); ++i) {
       for (Attribute::AttrKind TypedAttr :
-           {Attribute::ByVal, Attribute::StructRet}) {
+           {Attribute::ByVal, Attribute::StructRet, Attribute::ByRef}) {
         if (Type *Ty = Attrs.getAttribute(i, TypedAttr).getValueAsType()) {
           Attrs = Attrs.replaceAttributeType(C, i, TypedAttr,
                                              TypeMapper->remapType(Ty));

@@ -16,6 +16,7 @@
 
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/LLVM.h"
@@ -54,6 +55,7 @@ namespace clang {
 class ASTContext;
 class DiagnosticBuilder;
 class Expr;
+class PackSplice;
 struct PrintingPolicy;
 class TypeSourceInfo;
 class ValueDecl;
@@ -94,19 +96,13 @@ public:
     /// of the other forms yet, either because it's dependent or because we're
     /// representing a non-canonical template argument (for instance, in a
     /// TemplateSpecializationType).
-    ///
-    /// Also used to represent:
-    /// - a non-dependent reflection expression (C++ Reflection).
     Expression,
 
     /// The template argument is actually a parameter pack. Arguments are stored
     /// in the Args struct.
     Pack,
 
-    /// The template argument is an expression, representing a reflection,
-    /// and we've not resolved it to one of the other forms yet, because
-    /// it's dependent.
-    Reflected
+    PackSplice
   };
 
 private:
@@ -147,12 +143,18 @@ private:
     unsigned Kind;
     uintptr_t V;
   };
+  struct PSV {
+    unsigned Kind;
+    class PackSplice *PS;
+    unsigned IsPattern : 1;
+  };
   union {
     struct DA DeclArg;
     struct I Integer;
     struct A Args;
     struct TA TemplateArg;
     struct TV TypeOrValue;
+    struct PSV PackSpliceValue;
   };
 
 public:
@@ -225,12 +227,8 @@ public:
   /// This form of template argument only occurs in template argument
   /// lists used for dependent types and for expression; it will not
   /// occur in a non-dependent, canonical template argument list.
-  TemplateArgument(Expr *E, ArgKind ExpressionKind) {
-    assert((ExpressionKind == Expression
-            || ExpressionKind == Reflected)
-           && "For expressions the only valid ArgKinds are "
-              "Expression and Reflected");
-    TypeOrValue.Kind = ExpressionKind;
+  explicit TemplateArgument(Expr *E) {
+    TypeOrValue.Kind = Expression;
     TypeOrValue.V = reinterpret_cast<uintptr_t>(E);
   }
 
@@ -242,6 +240,16 @@ public:
     this->Args.Kind = Pack;
     this->Args.Args = Args.data();
     this->Args.NumArgs = Args.size();
+  }
+
+  /// Construct a template argument that is a template argument pack splice.
+  TemplateArgument(ASTContext &Ctx, Expr *Operand,
+                   Optional<unsigned> NumExpansions, Expr *const *Expansions);
+
+  TemplateArgument(class PackSplice *PS, bool IsPattern = false) {
+    PackSpliceValue.Kind = PackSplice;
+    PackSpliceValue.PS = PS;
+    PackSpliceValue.IsPattern = IsPattern;
   }
 
   TemplateArgument(TemplateName, bool) = delete;
@@ -276,9 +284,6 @@ public:
 
   /// Determine whether this template argument is a pack expansion.
   bool isPackExpansion() const;
-
-  /// Determine whether this template argument is a dependent variadic reifier.
-  bool isVariadicReifier() const;
 
   /// Determine whether this template argument is constexpr promoting.
   bool isConstexprPromoting() const;
@@ -326,6 +331,15 @@ public:
   /// expansion will produce, if known.
   Optional<unsigned> getNumTemplateExpansions() const;
 
+  bool isPackSplice() const {
+    return getKind() == PackSplice;
+  }
+
+  class PackSplice *getPackSplice() const {
+    assert(isPackSplice() && "Unexpected kind");
+    return PackSpliceValue.PS;
+  }
+
   /// Retrieve the template argument as an integral value.
   // FIXME: Provide a way to read the integral data without copying the value.
   llvm::APSInt getAsIntegral() const {
@@ -358,8 +372,7 @@ public:
 
   /// Retrieve the template argument as an expression.
   Expr *getAsExpr() const {
-    assert((getKind() == Expression || getKind() == Reflected)
-           && "Unexpected kind");
+    assert(getKind() == Expression && "Unexpected kind");
     return reinterpret_cast<Expr *>(TypeOrValue.V);
   }
 
@@ -428,15 +441,26 @@ private:
     // but template arguments get canonicalized too quickly.
     NestedNameSpecifier *Qualifier;
     void *QualifierLocData;
-    unsigned TemplateNameLoc;
-    unsigned EllipsisLoc;
+    SourceLocation TemplateNameLoc;
+    SourceLocation EllipsisLoc;
   };
 
-  llvm::PointerUnion<TemplateTemplateArgLocInfo *, Expr *, TypeSourceInfo *>
-      Pointer;
+  struct PackSpliceArgLocInfo {
+    unsigned IntroEllipsisLoc;
+    unsigned SBELoc;
+    unsigned SEELoc;
+    unsigned ExpansionEllipsisLoc;
+  };
+
+  llvm::PointerUnion<TemplateTemplateArgLocInfo *, PackSpliceArgLocInfo *,
+                     Expr *, TypeSourceInfo *> Pointer;
 
   TemplateTemplateArgLocInfo *getTemplate() const {
     return Pointer.get<TemplateTemplateArgLocInfo *>();
+  }
+
+  PackSpliceArgLocInfo *getPackSplice() const {
+    return Pointer.get<PackSpliceArgLocInfo *>();
   }
 
 public:
@@ -449,6 +473,9 @@ public:
   TemplateArgumentLocInfo(ASTContext &Ctx, NestedNameSpecifierLoc QualifierLoc,
                           SourceLocation TemplateNameLoc,
                           SourceLocation EllipsisLoc);
+  TemplateArgumentLocInfo(ASTContext &Ctx, SourceLocation IntroEllipsisLoc,
+                          SourceLocation SBELoc, SourceLocation SEELoc,
+                          SourceLocation ExpansionEllipsisLoc);
 
   TypeSourceInfo *getAsTypeSourceInfo() const {
     return Pointer.get<TypeSourceInfo *>();
@@ -463,11 +490,31 @@ public:
   }
 
   SourceLocation getTemplateNameLoc() const {
-    return SourceLocation::getFromRawEncoding(getTemplate()->TemplateNameLoc);
+    return getTemplate()->TemplateNameLoc;
   }
 
   SourceLocation getTemplateEllipsisLoc() const {
-    return SourceLocation::getFromRawEncoding(getTemplate()->EllipsisLoc);
+    return getTemplate()->EllipsisLoc;
+  }
+
+  SourceLocation getPackSpliceIntroductionEllipsisLoc() const {
+    unsigned RawLoc = getPackSplice()->IntroEllipsisLoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
+  }
+
+  SourceLocation getPackSpliceSBELoc() const {
+    unsigned RawLoc = getPackSplice()->SBELoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
+  }
+
+  SourceLocation getPackSpliceSEELoc() const {
+    unsigned RawLoc = getPackSplice()->SEELoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
+  }
+
+  SourceLocation getPackSpliceExpansionEllipsisLoc() const {
+    unsigned RawLoc = getPackSplice()->ExpansionEllipsisLoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
   }
 };
 
@@ -497,8 +544,7 @@ public:
     assert(Argument.getKind() == TemplateArgument::NullPtr ||
            Argument.getKind() == TemplateArgument::Integral ||
            Argument.getKind() == TemplateArgument::Declaration ||
-           Argument.getKind() == TemplateArgument::Expression ||
-           Argument.getKind() == TemplateArgument::Reflected);
+           Argument.getKind() == TemplateArgument::Expression);
   }
 
   TemplateArgumentLoc(ASTContext &Ctx, const TemplateArgument &Argument,
@@ -509,6 +555,15 @@ public:
         LocInfo(Ctx, QualifierLoc, TemplateNameLoc, EllipsisLoc) {
     assert(Argument.getKind() == TemplateArgument::Template ||
            Argument.getKind() == TemplateArgument::TemplateExpansion);
+  }
+
+  TemplateArgumentLoc(ASTContext &Ctx, const TemplateArgument &Argument,
+                      SourceLocation IntroEllipsisLoc,
+                      SourceLocation SBELoc, SourceLocation SEELoc,
+                      SourceLocation ExpansionEllipsisLoc)
+      : Argument(Argument),
+        LocInfo(Ctx, IntroEllipsisLoc, SBELoc, SEELoc, ExpansionEllipsisLoc) {
+    assert(Argument.getKind() == TemplateArgument::PackSplice);
   }
 
   /// - Fetches the primary location of the argument.
@@ -537,8 +592,7 @@ public:
   }
 
   Expr *getSourceExpression() const {
-    assert(Argument.getKind() == TemplateArgument::Expression
-           || Argument.getKind() == TemplateArgument::Reflected);
+    assert(Argument.getKind() == TemplateArgument::Expression);
     return LocInfo.getAsExpr();
   }
 
@@ -555,6 +609,14 @@ public:
   Expr *getSourceIntegralExpression() const {
     assert(Argument.getKind() == TemplateArgument::Integral);
     return LocInfo.getAsExpr();
+  }
+
+  PackSpliceLoc getAsPackSpliceLoc() const {
+    assert(Argument.getKind() == TemplateArgument::PackSplice);
+    return PackSpliceLoc(
+        Argument.getPackSplice(),
+        LocInfo.getPackSpliceIntroductionEllipsisLoc(),
+        LocInfo.getPackSpliceSBELoc(), LocInfo.getPackSpliceSEELoc());
   }
 
   NestedNameSpecifierLoc getTemplateQualifierLoc() const {
@@ -576,6 +638,8 @@ public:
       return SourceLocation();
     return LocInfo.getTemplateEllipsisLoc();
   }
+
+  SourceLocation getExpansionEllipsisLoc() const;
 };
 
 /// A convenient class for passing around template argument

@@ -15,16 +15,9 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_DISASSEMBLER_AMDGPUDISASSEMBLER_H
 #define LLVM_LIB_TARGET_AMDGPU_DISASSEMBLER_AMDGPUDISASSEMBLER_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
-#include "llvm/MC/MCDisassembler/MCRelocationInfo.h"
-#include "llvm/MC/MCDisassembler/MCSymbolizer.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/Support/DataExtractor.h"
-
-#include <algorithm>
-#include <cstdint>
 #include <memory>
 
 namespace llvm {
@@ -106,12 +99,14 @@ public:
   MCOperand decodeOperand_VS_128(unsigned Val) const;
   MCOperand decodeOperand_VSrc16(unsigned Val) const;
   MCOperand decodeOperand_VSrcV216(unsigned Val) const;
+  MCOperand decodeOperand_VSrcV232(unsigned Val) const;
 
   MCOperand decodeOperand_VReg_64(unsigned Val) const;
   MCOperand decodeOperand_VReg_96(unsigned Val) const;
   MCOperand decodeOperand_VReg_128(unsigned Val) const;
   MCOperand decodeOperand_VReg_256(unsigned Val) const;
   MCOperand decodeOperand_VReg_512(unsigned Val) const;
+  MCOperand decodeOperand_VReg_1024(unsigned Val) const;
 
   MCOperand decodeOperand_SReg_32(unsigned Val) const;
   MCOperand decodeOperand_SReg_32_XM0_XEXEC(unsigned Val) const;
@@ -124,7 +119,9 @@ public:
   MCOperand decodeOperand_SReg_512(unsigned Val) const;
 
   MCOperand decodeOperand_AGPR_32(unsigned Val) const;
+  MCOperand decodeOperand_AReg_64(unsigned Val) const;
   MCOperand decodeOperand_AReg_128(unsigned Val) const;
+  MCOperand decodeOperand_AReg_256(unsigned Val) const;
   MCOperand decodeOperand_AReg_512(unsigned Val) const;
   MCOperand decodeOperand_AReg_1024(unsigned Val) const;
   MCOperand decodeOperand_AV_32(unsigned Val) const;
@@ -133,12 +130,15 @@ public:
   enum OpWidthTy {
     OPW32,
     OPW64,
+    OPW96,
     OPW128,
+    OPW160,
     OPW256,
     OPW512,
     OPW1024,
     OPW16,
     OPWV216,
+    OPWV232,
     OPW_LAST_,
     OPW_FIRST_ = OPW32
   };
@@ -166,9 +166,14 @@ public:
 
   int getTTmpIdx(unsigned Val) const;
 
+  const MCInstrInfo *getMCII() const { return MCII.get(); }
+
   bool isVI() const;
   bool isGFX9() const;
+  bool isGFX90A() const;
+  bool isGFX9Plus() const;
   bool isGFX10() const;
+  bool isGFX10Plus() const;
 };
 
 //===----------------------------------------------------------------------===//

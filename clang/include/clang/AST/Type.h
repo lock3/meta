@@ -19,6 +19,7 @@
 
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/AttrKinds.h"
@@ -61,6 +62,7 @@ class ExtQuals;
 class QualType;
 class ConceptDecl;
 class TagDecl;
+class TemplateParameterList;
 class Type;
 
 enum {
@@ -128,7 +130,6 @@ class TemplateArgumentLoc;
 class TemplateTypeParmDecl;
 class TypedefNameDecl;
 class UnresolvedUsingTypenameDecl;
-class CXXRequiredTypeDecl;
 
 using CanQualType = CanQual<Type>;
 
@@ -941,8 +942,6 @@ public:
   bool isAtLeastAsQualifiedAs(QualType Other) const;
 
   QualType getNonReferenceType() const;
-
-  QualType getParameterType() const;
 
   /// Determine the type of a (typically non-lvalue) expression with the
   /// specified result type.
@@ -1786,21 +1785,6 @@ protected:
     unsigned NumTemplateArgs;
   };
 
-  class ParameterTypeBitfields {
-    friend class ParameterType;
-
-    unsigned : NumTypeBits;
-
-    /// The parameter passing mode of the type.
-    unsigned PassingMode : 1;
-  };
-
-  class CXXDependentVariadicReifierTypeBitfields {
-    friend class CXXDependentVariadicReifierType;
-
-    unsigned : NumTypeBits;
-  };
-
   union {
     TypeBitfields TypeBits;
     ArrayTypeBitfields ArrayTypeBits;
@@ -1820,7 +1804,6 @@ protected:
       DependentTemplateSpecializationTypeBits;
     PackExpansionTypeBitfields PackExpansionTypeBits;
     DependentIdentifierSpliceTypeBitfields DependentIdentifierSpliceTypeBits;
-    ParameterTypeBitfields ParameterTypeBits;
 
     static_assert(sizeof(TypeBitfields) <= 8,
                   "TypeBitfields is larger than 8 bytes!");
@@ -1857,8 +1840,6 @@ protected:
                   "PackExpansionTypeBitfields is larger than 8 bytes");
     static_assert(sizeof(DependentIdentifierSpliceTypeBitfields) <= 8,
                   "DependentIdentifierSpliceTypeBitfields is larger than 8 bytes");
-    static_assert(sizeof(ParameterTypeBitfields) <= 8,
-                  "ParameterTypeBitfields is larger than 8 bytes");
   };
 
 private:
@@ -2122,6 +2103,8 @@ public:
   bool isObjCObjectOrInterfaceType() const;
   bool isObjCIdType() const;                    // id
   bool isDecltypeType() const;
+  bool isTypePackSpliceType() const;
+
   /// Was this type written with the special inert-in-ARC __unsafe_unretained
   /// qualifier?
   ///
@@ -2165,6 +2148,7 @@ public:
   bool isAtomicType() const;                    // C11 _Atomic()
   bool isUndeducedAutoType() const;             // C++11 auto or
                                                 // C++14 decltype(auto)
+  bool isTypedefNameType() const;               // typedef or alias template
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   bool is##Id##Type() const;
@@ -2188,8 +2172,6 @@ public:
   bool isPipeType() const;                      // OpenCL pipe type
   bool isExtIntType() const;                    // Extended Int Type
   bool isOpenCLSpecificType() const;            // Any OpenCL specific type
-
-  bool isParameterType() const;                 // In, out, etc.
 
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
@@ -2563,8 +2545,11 @@ public:
 #define SVE_TYPE(Name, Id, SingletonId) Id,
 #include "clang/Basic/AArch64SVEACLETypes.def"
 // PPC MMA Types
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) Id,
+#define PPC_VECTOR_TYPE(Name, Id, Size) Id,
 #include "clang/Basic/PPCTypes.def"
+// RVV Types
+#define RVV_TYPE(Name, Id, SingletonId) Id,
+#include "clang/Basic/RISCVVTypes.def"
 // All other builtin types
 #define BUILTIN_TYPE(Id, SingletonId) Id,
 #define LAST_BUILTIN_TYPE(Id) LastKind = Id
@@ -4446,44 +4431,14 @@ public:
   }
 };
 
-class CXXRequiredTypeType : public Type {
-  friend class ASTContext; // ASTContext creates these.
-
-  CXXRequiredTypeDecl *RequiresDecl;
-
-  CXXRequiredTypeType(const CXXRequiredTypeDecl *D)
-    : Type(CXXRequiredType, QualType(this, 0),
-             TypeDependence::DependentInstantiation, /*MetaType=*/false),
-      RequiresDecl(const_cast<CXXRequiredTypeDecl*>(D))
-    {}
-
-public:
-  CXXRequiredTypeDecl *getDecl() const { return RequiresDecl; }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == CXXRequiredType;
-  }
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    return Profile(ID, RequiresDecl);
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      const CXXRequiredTypeDecl *D) {
-    ID.AddPointer(D);
-  }
-};
-
 class TypedefType : public Type {
   TypedefNameDecl *Decl;
 
-protected:
+private:
   friend class ASTContext; // ASTContext creates these.
 
-  TypedefType(TypeClass tc, const TypedefNameDecl *D, QualType can);
+  TypedefType(TypeClass tc, const TypedefNameDecl *D, QualType underlying,
+              QualType can);
 
 public:
   TypedefNameDecl *getDecl() const { return Decl; }
@@ -4698,40 +4653,40 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs);
 };
 
-/// \brief Representation of reflected types.
+/// Representation of spliced types.
 ///
-/// Reflected types have the form 'typename(x)' where x is a reflection.
-class ReflectedType : public Type {
-  friend class ASTContext;  // ASTContext creates these.
-
+/// Spliced types have the form 'typename [< x >]' where x is a reflection.
+class TypeSpliceType : public Type {
   Expr *Reflection;
   QualType UnderlyingType;
 
 protected:
-  ReflectedType(Expr *E, QualType T, QualType Can = QualType());
+  friend class ASTContext;  // ASTContext creates these.
+
+  TypeSpliceType(Expr *E, QualType T, QualType Can = QualType());
 
 public:
-  /// \brief Returns the reflection (expression) of the operator.
+  /// Returns the reflection (expression) of the operator.
   Expr *getReflection() const { return Reflection; }
 
-  /// \brief Returns the underlying type; the one reflected.
+  /// Returns the underlying type; the one spliced.
   QualType getUnderlyingType() const { return UnderlyingType; }
 
-  /// \brief Returns whether this type provides sugar.
-  bool isSugared() const;
-
-  /// \brief Removes one level of sugar.
+  /// Removes one level of sugar.
   QualType desugar() const;
 
-  static bool classof(const Type *T) { return T->getTypeClass() == Reflected; }
+  /// Returns whether this type provides sugar.
+  bool isSugared() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == TypeSplice; }
 };
 
-/// \brief Representation of dependent reflected types.
-class DependentReflectedType : public ReflectedType,
-                               public llvm::FoldingSetNode {
+/// Representation of dependent type splice types.
+class DependentTypeSpliceType : public TypeSpliceType,
+                                public llvm::FoldingSetNode {
   const ASTContext &Context;
 public:
-  DependentReflectedType(const ASTContext &Context, Expr *E);
+  DependentTypeSpliceType(const ASTContext &Context, Expr *E);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, Context, getReflection());
@@ -4739,6 +4694,50 @@ public:
 
   static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       Expr *E);
+};
+
+/// Represents pack splice types.
+class TypePackSpliceType : public Type, public llvm::FoldingSetNode {
+  friend class ASTContext; // ASTContext creates these.
+
+  const PackSplice *PS;
+
+  TypePackSpliceType(const ASTContext &Ctx, const PackSplice *PS);
+public:
+  const PackSplice *getPackSplice() const { return PS; }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypePackSplice;
+  }
+};
+
+/// Represents the result of substituting a type for a pack splice.
+class SubstTypePackSpliceType : public Type, public llvm::FoldingSetNode {
+  friend class ASTContext;
+
+  Expr *ExpansionExpr;
+
+  SubstTypePackSpliceType(Expr *ExpansionExpr, QualType Canon);
+public:
+  /// Returns the expression which was spliced to form this type
+  Expr *getExpansionExpr() const { return ExpansionExpr; }
+
+  QualType getReplacementType() const {
+    return getCanonicalTypeInternal();
+  }
+
+  bool isSugared() const { return true; }
+  QualType desugar() const { return getReplacementType(); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == SubstTypePackSplice;
+  }
 };
 
 /// A unary type transform, which is a type constructed from another.
@@ -4943,6 +4942,9 @@ public:
 
     case NullabilityKind::Nullable:
       return attr::TypeNullable;
+
+    case NullabilityKind::NullableResult:
+      return attr::TypeNullableResult;
 
     case NullabilityKind::Unspecified:
       return attr::TypeNullUnspecified;
@@ -5199,17 +5201,11 @@ public:
 class alignas(8) AutoType : public DeducedType, public llvm::FoldingSetNode {
   friend class ASTContext; // ASTContext creates these
 
-  /// TODO: Put this into a union with the matched type.
   ConceptDecl *TypeConstraintConcept;
-
-  /// Implicitly equivalent to std::same_as<T>.
-  QualType ExpectedDeduction;
 
   AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
            TypeDependence ExtraDependence, ConceptDecl *CD,
            ArrayRef<TemplateArgument> TypeConstraintArgs);
-
-  AutoType(QualType Expected);
 
   const TemplateArgument *getArgBuffer() const {
     return reinterpret_cast<const TemplateArgument*>(this+1);
@@ -5252,15 +5248,6 @@ public:
     return (AutoTypeKeyword)AutoTypeBits.Keyword;
   }
 
-  bool hasExpectedDeduction() const {
-    return !ExpectedDeduction.isNull();
-  }
-
-  QualType getExpectedDeduction() const {
-    assert(hasExpectedDeduction());
-    return ExpectedDeduction;
-  }
-
   void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context) {
     Profile(ID, Context, getDeducedType(), getKeyword(), isDependentType(),
             getTypeConstraintConcept(), getTypeConstraintArguments());
@@ -5270,9 +5257,6 @@ public:
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
                       ArrayRef<TemplateArgument> Arguments);
-
-  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
-                      QualType Expected);
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == Auto;
@@ -5358,11 +5342,24 @@ class alignas(8) TemplateSpecializationType
 
 public:
   /// Determine whether any of the given template arguments are dependent.
-  static bool anyDependentTemplateArguments(ArrayRef<TemplateArgumentLoc> Args,
-                                            bool &InstantiationDependent);
-
-  static bool anyDependentTemplateArguments(const TemplateArgumentListInfo &,
-                                            bool &InstantiationDependent);
+  ///
+  /// The converted arguments should be supplied when known; whether an
+  /// argument is dependent can depend on the conversions performed on it
+  /// (for example, a 'const int' passed as a template argument might be
+  /// dependent if the parameter is a reference but non-dependent if the
+  /// parameter is an int).
+  ///
+  /// Note that the \p Args parameter is unused: this is intentional, to remind
+  /// the caller that they need to pass in the converted arguments, not the
+  /// specified arguments.
+  static bool
+  anyDependentTemplateArguments(ArrayRef<TemplateArgumentLoc> Args,
+                                ArrayRef<TemplateArgument> Converted);
+  static bool
+  anyDependentTemplateArguments(const TemplateArgumentListInfo &,
+                                ArrayRef<TemplateArgument> Converted);
+  static bool anyInstantiationDependentTemplateArguments(
+      ArrayRef<TemplateArgumentLoc> Args);
 
   /// True if this template specialization type matches a current
   /// instantiation in the context in which it is found.
@@ -5447,15 +5444,18 @@ public:
 /// enclosing the template arguments.
 void printTemplateArgumentList(raw_ostream &OS,
                                ArrayRef<TemplateArgument> Args,
-                               const PrintingPolicy &Policy);
+                               const PrintingPolicy &Policy,
+                               const TemplateParameterList *TPL = nullptr);
 
 void printTemplateArgumentList(raw_ostream &OS,
                                ArrayRef<TemplateArgumentLoc> Args,
-                               const PrintingPolicy &Policy);
+                               const PrintingPolicy &Policy,
+                               const TemplateParameterList *TPL = nullptr);
 
 void printTemplateArgumentList(raw_ostream &OS,
                                const TemplateArgumentListInfo &Args,
-                               const PrintingPolicy &Policy);
+                               const PrintingPolicy &Policy,
+                               const TemplateParameterList *TPL = nullptr);
 
 /// The injected class name of a C++ class template or class
 /// template partial specialization.  Used to record that a type was
@@ -5641,7 +5641,14 @@ class ElaboratedType final
   ElaboratedType(ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
                  QualType NamedType, QualType CanonType, TagDecl *OwnedTagDecl)
       : TypeWithKeyword(Keyword, Elaborated, CanonType,
-                        NamedType->getDependence()),
+                        // Any semantic dependence on the qualifier will have
+                        // been incorporated into NamedType. We still need to
+                        // track syntactic (instantiation / error / pack)
+                        // dependence on the qualifier.
+                        NamedType->getDependence() |
+                            (NNS ? toSyntacticDependence(
+                                       toTypeDependence(NNS->getDependence()))
+                                 : TypeDependence::None)),
         NNS(NNS), NamedType(NamedType) {
     ElaboratedTypeBits.HasOwnedTagDecl = false;
     if (OwnedTagDecl) {
@@ -5850,15 +5857,7 @@ class PackExpansionType : public Type, public llvm::FoldingSetNode {
   QualType Pattern;
 
   PackExpansionType(QualType Pattern, QualType Canon,
-                    Optional<unsigned> NumExpansions)
-      : Type(PackExpansion, Canon,
-             (Pattern->getDependence() | TypeDependence::Dependent |
-              TypeDependence::Instantiation) &
-                 ~TypeDependence::UnexpandedPack, /*MetaType=*/false),
-        Pattern(Pattern) {
-    PackExpansionTypeBits.NumExpansions =
-        NumExpansions ? *NumExpansions + 1 : 0;
-  }
+                    Optional<unsigned> NumExpansions);
 
 public:
   /// Retrieve the pattern of this pack expansion, which is the
@@ -5893,49 +5892,6 @@ public:
     return T->getTypeClass() == PackExpansion;
   }
 };
-
-class CXXDependentVariadicReifierType : public Type {
-  Expr *Range;
-
-  SourceLocation KeywordLoc;
-  SourceLocation EllipsisLoc;
-  SourceLocation RParenLoc;
-public:
-  CXXDependentVariadicReifierType(Expr *Range,
-                                  SourceLocation KeywordLoc,
-                                  SourceLocation EllipsisLoc,
-                                  SourceLocation RParenLoc)
-    : Type(CXXDependentVariadicReifier, QualType(),
-           TypeDependence::DependentInstantiation, /*MetaType=*/false),
-      Range(Range), KeywordLoc(KeywordLoc), EllipsisLoc(EllipsisLoc),
-      RParenLoc(RParenLoc)
-    {}
-
-  Expr *getRange() const { return Range; }
-
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
-  SourceLocation getEndLoc() const { return RParenLoc; }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    // Profile(ID, Context, Range);
-    // TODO: Implement me
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      ASTContext const& Context, Expr *Range) {
-    // Range->Profile(ID, Context, /*Canonical=*/false);
-    // TODO: Implement me
-  }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == CXXDependentVariadicReifier;
-  }
-};
-
 
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.
@@ -6621,144 +6577,6 @@ public:
   }
 };
 
-/// Base for LValueReferenceType and RValueReferenceType
-class ParameterType : public Type, public llvm::FoldingSetNode {
-  /// The underlying parameter type.
-  QualType ParmType;
-
-  /// The parameter passing mode.
-  ParameterPassingKind PassingMode;
-
-protected:
-  ParameterType(TypeClass tc, QualType Parm, QualType CanonicalParm,
-                ParameterPassingKind PPK)
-      : Type(tc, CanonicalParm, Parm->getDependence(), false),
-        ParmType(Parm), PassingMode(PPK) {
-    ParameterTypeBits.PassingMode = PPK;
-  }
-
-public:
-  ParameterPassingKind getParameterPassingMode() const { return PassingMode; }
-  bool isInParameter() const { return PassingMode == PPK_in; }
-  bool isOutParameter() const { return PassingMode == PPK_out; }
-  bool isInOutParameter() const { return PassingMode == PPK_inout; }
-  bool isMoveParameter() const { return PassingMode == PPK_move; }
-
-  /// Returns the underlying type of the parameter.
-  QualType getParameterType() const { return ParmType; }
-
-  /// Returns the adjusted parameter type used for overloading, initialization,
-  /// and code generation.
-  QualType getAdjustedType(const ASTContext &Ctx) const;
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, ParmType, PassingMode);
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      QualType Parm,
-                      ParameterPassingKind PPK) {
-    ID.AddPointer(Parm.getAsOpaquePtr());
-    ID.AddInteger(PPK);
-  }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == InParameter ||
-           T->getTypeClass() == OutParameter ||
-           T->getTypeClass() == InOutParameter ||
-           T->getTypeClass() == MoveParameter;
-  }
-};
-
-/// An input parameter type.
-class InParameterType : public ParameterType {
-  friend class ASTContext; // ASTContext creates these
-
-  InParameterType(QualType Parm, QualType Canonical)
-    : ParameterType(InParameter, Parm, Canonical, PassingMode) {}
-
-public:
-  static constexpr ParameterPassingKind PassingMode = PPK_in;
-
-  /// Returns true if `T` should be passed by value.
-  static bool isPassByValue(const ASTContext &Cxt, QualType T);
-
-  /// Returns true if `T` should be passed by reference.
-  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
-    return !isPassByValue(Cxt, T);
-  }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == InParameter;
-  }
-};
-
-/// An output parameter type.
-class OutParameterType : public ParameterType {
-  friend class ASTContext; // ASTContext creates these
-
-  OutParameterType(QualType Parm, QualType Canonical)
-    : ParameterType(OutParameter, Parm, Canonical, PassingMode) {}
-
-public:
-  static constexpr ParameterPassingKind PassingMode = PPK_out;
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == OutParameter;
-  }
-};
-
-/// An input parameter type.
-class InOutParameterType : public ParameterType {
-  friend class ASTContext; // ASTContext creates these
-
-  InOutParameterType(QualType Parm, QualType Canonical)
-    : ParameterType(InOutParameter, Parm, Canonical, PassingMode) {}
-
-public:
-  static constexpr ParameterPassingKind PassingMode = PPK_inout;
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == InOutParameter;
-  }
-};
-
-/// An input parameter type.
-class MoveParameterType : public ParameterType {
-  friend class ASTContext; // ASTContext creates these
-
-  MoveParameterType(QualType Parm, QualType Canonical)
-    : ParameterType(MoveParameter, Parm, Canonical, PassingMode) {}
-
-public:
-  static constexpr ParameterPassingKind PassingMode = PPK_move;
-
-  /// Returns true if `T` should be passed by value, presumably in registers.
-  /// If false, arguments are passed by reference.
-  static bool isPassByValue(const ASTContext &Cxt, QualType T);
-
-  /// Returns true if `T` should be passed by reference.
-  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
-    return !isPassByValue(Cxt, T);
-  }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == MoveParameter;
-  }
-};
-
 /// A qualifier set is used to build a set of qualifiers.
 class QualifierCollector : public Qualifiers {
 public:
@@ -7023,14 +6841,6 @@ inline QualType QualType::getNonReferenceType() const {
     return *this;
 }
 
-/// If Type is a parameter type (e.g., in int), returns the underlying
-/// type of the parameter (i.e., int).
-inline QualType QualType::getParameterType() const {
-  if (const auto *ParmType = (*this)->getAs<ParameterType>())
-    return ParmType->getParameterType();
-  return *this;
-}
-
 inline bool QualType::isCForbiddenLValueType() const {
   return ((getTypePtr()->isVoidType() && !hasQualifiers()) ||
           getTypePtr()->isFunctionType());
@@ -7257,6 +7067,10 @@ inline bool Type::isDecltypeType() const {
   return isa<DecltypeType>(this);
 }
 
+inline bool Type::isTypePackSpliceType() const {
+  return isa<TypePackSpliceType>(this);
+}
+
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   inline bool Type::is##Id##Type() const { \
     return isSpecificBuiltinType(BuiltinType::Id); \
@@ -7296,10 +7110,6 @@ inline bool Type::isPipeType() const {
 
 inline bool Type::isExtIntType() const {
   return isa<ExtIntType>(CanonicalType);
-}
-
-inline bool Type::isParameterType() const {
-  return isa<ParameterType>(CanonicalType);
 }
 
 #define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
@@ -7496,6 +7306,15 @@ inline bool Type::isUndeducedType() const {
 /// an overloaded operator.
 inline bool Type::isOverloadableType() const {
   return isDependentType() || isRecordType() || isEnumeralType();
+}
+
+/// Determines whether this type is written as a typedef-name.
+inline bool Type::isTypedefNameType() const {
+  if (getAs<TypedefType>())
+    return true;
+  if (auto *TST = getAs<TemplateSpecializationType>())
+    return TST->isTypeAlias();
+  return false;
 }
 
 /// Determines whether this type can decay to a pointer type.

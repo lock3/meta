@@ -12,7 +12,7 @@
 
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/Attributes.h"
-#include "mlir/IR/StandardTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 
@@ -84,6 +84,18 @@ LogicalResult mlir::verifyCompatibleShape(Type type1, Type type2) {
     return success();
 
   return verifyCompatibleShape(sType1.getShape(), sType2.getShape());
+}
+
+/// Returns success if the given two arrays have the same number of elements and
+/// each pair wise entries have compatible shape.
+LogicalResult mlir::verifyCompatibleShapes(ArrayRef<Type> types1,
+                                           ArrayRef<Type> types2) {
+  if (types1.size() != types2.size())
+    return failure();
+  for (auto it : zip_first(types1, types2))
+    if (failed(verifyCompatibleShape(std::get<0>(it), std::get<1>(it))))
+      return failure();
+  return success();
 }
 
 OperandElementTypeIterator::OperandElementTypeIterator(

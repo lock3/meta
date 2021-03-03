@@ -31,6 +31,7 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsAArch64.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
@@ -43,6 +44,7 @@
 #include "llvm/IR/IntrinsicsR600.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/IntrinsicsS390.h"
+#include "llvm/IR/IntrinsicsVE.h"
 #include "llvm/IR/IntrinsicsWebAssembly.h"
 #include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/IntrinsicsXCore.h"
@@ -50,6 +52,7 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/SymbolTableListTraits.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Use.h"
@@ -86,9 +89,11 @@ void Argument::setParent(Function *parent) {
   Parent = parent;
 }
 
-bool Argument::hasNonNullAttr() const {
+bool Argument::hasNonNullAttr(bool AllowUndefOrPoison) const {
   if (!getType()->isPointerTy()) return false;
-  if (getParent()->hasParamAttribute(getArgNo(), Attribute::NonNull))
+  if (getParent()->hasParamAttribute(getArgNo(), Attribute::NonNull) &&
+      (AllowUndefOrPoison ||
+       getParent()->hasParamAttribute(getArgNo(), Attribute::NoUndef)))
     return true;
   else if (getDereferenceableBytes() > 0 &&
            !NullPointerIsDefined(getParent(),
@@ -609,6 +614,12 @@ void Function::clearGC() {
   setValueSubclassDataBit(14, false);
 }
 
+bool Function::hasStackProtectorFnAttr() const {
+  return hasFnAttribute(Attribute::StackProtect) ||
+         hasFnAttribute(Attribute::StackProtectStrong) ||
+         hasFnAttribute(Attribute::StackProtectReq);
+}
+
 /// Copy all additional attributes (those not needed to create a Function) from
 /// the Function Src to this one.
 void Function::copyAttributesFrom(const Function *Src) {
@@ -757,6 +768,7 @@ static std::string getMangledTypeStr(Type* Ty) {
     case Type::FP128TyID:     Result += "f128";     break;
     case Type::PPC_FP128TyID: Result += "ppcf128";  break;
     case Type::X86_MMXTyID:   Result += "x86mmx";   break;
+    case Type::X86_AMXTyID:   Result += "x86amx";   break;
     case Type::IntegerTyID:
       Result += "i" + utostr(cast<IntegerType>(Ty)->getBitWidth());
       break;
@@ -774,6 +786,8 @@ StringRef Intrinsic::getName(ID id) {
 
 std::string Intrinsic::getName(ID id, ArrayRef<Type*> Tys) {
   assert(id < num_intrinsics && "Invalid intrinsic ID!");
+  assert((Tys.empty() || Intrinsic::isOverloaded(id)) &&
+         "This version of getName is for overloaded intrinsics only");
   std::string Result(IntrinsicNameTable[id]);
   for (Type *Ty : Tys) {
     Result += "." + getMangledTypeStr(Ty);
@@ -839,7 +853,8 @@ enum IIT_Info {
   IIT_V128 = 47,
   IIT_BF16 = 48,
   IIT_STRUCT9 = 49,
-  IIT_V256 = 50
+  IIT_V256 = 50,
+  IIT_AMX  = 51
 };
 
 static void DecodeIITType(unsigned &NextElt, ArrayRef<unsigned char> Infos,
@@ -861,6 +876,9 @@ static void DecodeIITType(unsigned &NextElt, ArrayRef<unsigned char> Infos,
     return;
   case IIT_MMX:
     OutputTable.push_back(IITDescriptor::get(IITDescriptor::MMX, 0));
+    return;
+  case IIT_AMX:
+    OutputTable.push_back(IITDescriptor::get(IITDescriptor::AMX, 0));
     return;
   case IIT_TOKEN:
     OutputTable.push_back(IITDescriptor::get(IITDescriptor::Token, 0));
@@ -1099,6 +1117,7 @@ static Type *DecodeFixedType(ArrayRef<Intrinsic::IITDescriptor> &Infos,
   case IITDescriptor::Void: return Type::getVoidTy(Context);
   case IITDescriptor::VarArg: return Type::getVoidTy(Context);
   case IITDescriptor::MMX: return Type::getX86_MMXTy(Context);
+  case IITDescriptor::AMX: return Type::getX86_AMXTy(Context);
   case IITDescriptor::Token: return Type::getTokenTy(Context);
   case IITDescriptor::Metadata: return Type::getMetadataTy(Context);
   case IITDescriptor::Half: return Type::getHalfTy(Context);
@@ -1236,7 +1255,7 @@ Function *Intrinsic::getDeclaration(Module *M, ID id, ArrayRef<Type*> Tys) {
   // There can never be multiple globals with the same name of different types,
   // because intrinsics must be a specific type.
   return cast<Function>(
-      M->getOrInsertFunction(getName(id, Tys),
+      M->getOrInsertFunction(Tys.empty() ? getName(id) : getName(id, Tys),
                              getType(M->getContext(), id, Tys))
           .getCallee());
 }
@@ -1278,6 +1297,7 @@ static bool matchIntrinsicType(
     case IITDescriptor::Void: return !Ty->isVoidTy();
     case IITDescriptor::VarArg: return true;
     case IITDescriptor::MMX:  return !Ty->isX86_MMXTy();
+    case IITDescriptor::AMX:  return !Ty->isX86_AMXTy();
     case IITDescriptor::Token: return !Ty->isTokenTy();
     case IITDescriptor::Metadata: return !Ty->isMetadataTy();
     case IITDescriptor::Half: return !Ty->isHalfTy();
@@ -1560,9 +1580,12 @@ Optional<Function *> Intrinsic::remangleIntrinsicFunction(Function *F) {
 
 /// hasAddressTaken - returns true if there are any uses of this function
 /// other than direct calls or invokes to it. Optionally ignores callback
-/// uses.
+/// uses, assume like pointer annotation calls, and references in llvm.used
+/// and llvm.compiler.used variables.
 bool Function::hasAddressTaken(const User **PutOffender,
-                               bool IgnoreCallbackUses) const {
+                               bool IgnoreCallbackUses,
+                               bool IgnoreAssumeLikeCalls,
+                               bool IgnoreLLVMUsed) const {
   for (const Use &U : uses()) {
     const User *FU = U.getUser();
     if (isa<BlockAddress>(FU))
@@ -1576,6 +1599,31 @@ bool Function::hasAddressTaken(const User **PutOffender,
 
     const auto *Call = dyn_cast<CallBase>(FU);
     if (!Call) {
+      if (IgnoreAssumeLikeCalls) {
+        if (const auto *FI = dyn_cast<Instruction>(FU)) {
+          if (FI->isCast() && !FI->user_empty() &&
+              llvm::all_of(FU->users(), [](const User *U) {
+                if (const auto *I = dyn_cast<IntrinsicInst>(U))
+                  return I->isAssumeLikeIntrinsic();
+                return false;
+              }))
+            continue;
+        }
+      }
+      if (IgnoreLLVMUsed && !FU->user_empty()) {
+        const User *FUU = FU;
+        if (isa<BitCastOperator>(FU) && FU->hasOneUse() &&
+            !FU->user_begin()->user_empty())
+          FUU = *FU->user_begin();
+        if (llvm::all_of(FUU->users(), [](const User *U) {
+              if (const auto *GV = dyn_cast<GlobalVariable>(U))
+                return GV->hasName() &&
+                       (GV->getName().equals("llvm.compiler.used") ||
+                        GV->getName().equals("llvm.used"));
+              return false;
+            }))
+          continue;
+      }
       if (PutOffender)
         *PutOffender = FU;
       return true;

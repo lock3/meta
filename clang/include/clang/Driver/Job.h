@@ -140,6 +140,9 @@ class Command {
   /// See Command::setEnvironment
   std::vector<const char *> Environment;
 
+  /// Information on executable run provided by OS.
+  mutable Optional<llvm::sys::ProcessStatistics> ProcStat;
+
   /// When a response file is needed, we try to put most arguments in an
   /// exclusive file, while others remains as regular command line arguments.
   /// This functions fills a vector with the regular command line arguments,
@@ -212,6 +215,10 @@ public:
     return OutputFilenames;
   }
 
+  Optional<llvm::sys::ProcessStatistics> getProcessStatistics() const {
+    return ProcStat;
+  }
+
 protected:
   /// Optionally print the filenames to be compiled
   void PrintFileNames() const;
@@ -232,26 +239,6 @@ public:
               bool *ExecutionFailed) const override;
 
   void setEnvironment(llvm::ArrayRef<const char *> NewEnvironment) override;
-};
-
-/// Like Command, but with a fallback which is executed in case
-/// the primary command crashes.
-class FallbackCommand : public Command {
-public:
-  FallbackCommand(const Action &Source_, const Tool &Creator_,
-                  ResponseFileSupport ResponseSupport, const char *Executable_,
-                  const llvm::opt::ArgStringList &Arguments_,
-                  ArrayRef<InputInfo> Inputs, ArrayRef<InputInfo> Outputs,
-                  std::unique_ptr<Command> Fallback_);
-
-  void Print(llvm::raw_ostream &OS, const char *Terminator, bool Quote,
-             CrashReportInfo *CrashInfo = nullptr) const override;
-
-  int Execute(ArrayRef<Optional<StringRef>> Redirects, std::string *ErrMsg,
-              bool *ExecutionFailed) const override;
-
-private:
-  std::unique_ptr<Command> Fallback;
 };
 
 /// Like Command, but always pretends that the wrapped command succeeded.

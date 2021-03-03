@@ -402,11 +402,6 @@ MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
 // C++ metaprogramming keywords
-KEYWORD(reflexpr                    , KEYREFLECT)
-KEYWORD(templarg                    , KEYREFLECT)
-KEYWORD(unqualid                    , KEYREFLECT)
-KEYWORD(idexpr                      , KEYREFLECT)
-KEYWORD(valueof                     , KEYREFLECT)
 KEYWORD(__invalid_reflection        , KEYREFLECT)
 KEYWORD(__reflect                   , KEYREFLECT)
 KEYWORD(__reflect_mod               , KEYREFLECT)
@@ -416,7 +411,6 @@ KEYWORD(__reflect_dump              , KEYREFLECT)
 KEYWORD(__compiler_error            , KEYREFLECT)
 KEYWORD(__concatenate               , KEYREFLECT)
 KEYWORD(__select_member             , KEYREFLECT)
-KEYWORD(__inject_base               , KEYREFLECT)
 
 // C++20 keywords.
 CXX20_KEYWORD(consteval             , 0)
@@ -608,7 +602,7 @@ ALIAS("write_only", __write_only    , KEYOPENCLC | KEYOPENCLCXX)
 ALIAS("read_write", __read_write    , KEYOPENCLC | KEYOPENCLCXX)
 // OpenCL builtins
 KEYWORD(__builtin_astype            , KEYOPENCLC | KEYOPENCLCXX)
-UNARY_EXPR_OR_TYPE_TRAIT(vec_step, VecStep, KEYOPENCLC | KEYALTIVEC | KEYZVECTOR)
+UNARY_EXPR_OR_TYPE_TRAIT(vec_step, VecStep, KEYOPENCLC | KEYOPENCLCXX | KEYALTIVEC | KEYZVECTOR)
 #define GENERIC_IMAGE_TYPE(ImgType, Id) KEYWORD(ImgType##_t, KEYOPENCLC | KEYOPENCLCXX)
 #include "clang/Basic/OpenCLImageTypes.def"
 KEYWORD(pipe                        , KEYOPENCLC | KEYOPENCLCXX)
@@ -672,6 +666,7 @@ ALIAS("__volatile__" , volatile   , KEYALL)
 // Type nullability.
 KEYWORD(_Nonnull                 , KEYALL)
 KEYWORD(_Nullable                , KEYALL)
+KEYWORD(_Nullable_result         , KEYALL)
 KEYWORD(_Null_unspecified        , KEYALL)
 
 // Microsoft extensions which should be disabled in strict conformance mode
@@ -784,13 +779,13 @@ ANNOTATION(primary_expr) // annotation for a primary expression, used when
                          // message send
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
-ANNOTATION(refltype)     // annotation for a reflected type specifier of the
-                         // form "typename(reflection)".
+ANNOTATION(type_splice)  // annotation for a spliced type of the
+                         // form "typename [< reflection >]".
 ANNOTATION(identifier_splice) // annotation for an identifier splice.
-                              // e.g. "unqualid("a", 1)"
+                              // e.g. "[# "a", 1 #]"
 ANNOTATION(invalid_identifier_splice) // annotation for an
                                       // invalid identifier splice
-                                      // e.g. "unqualid foo )"
+                                      // e.g. "[# #]"
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

@@ -15,12 +15,10 @@
 //
 
 #include "AMDGPUPALMetadata.h"
-#include "AMDGPU.h"
-#include "AMDGPUAsmPrinter.h"
-#include "MCTargetDesc/AMDGPUTargetStreamer.h"
+#include "AMDGPUPTNote.h"
 #include "SIDefines.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/IR/CallingConv.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/AMDGPUMetadata.h"
@@ -236,6 +234,13 @@ void AMDGPUPALMetadata::setScratchSize(CallingConv::ID CC, unsigned Val) {
   }
   // Msgpack format.
   getHwStage(CC)[".scratch_memory_size"] = MsgPackDoc.getNode(Val);
+}
+
+// Set the stack frame size of a function in the metadata.
+void AMDGPUPALMetadata::setFunctionScratchSize(const MachineFunction &MF,
+                                               unsigned Val) {
+  auto Node = getShaderFunction(MF.getFunction().getName());
+  Node[".stack_frame_size_in_bytes"] = MsgPackDoc.getNode(Val);
 }
 
 // Set the hardware register bit in PAL metadata to enable wave32 on the
@@ -587,6 +592,41 @@ static const char *getRegisterName(unsigned RegNum) {
       {0xa2c1, "VGT_STRMOUT_VTX_STRIDE_3"},
       {0xa316, "VGT_VERTEX_REUSE_BLOCK_CNTL"},
 
+      {0x2e28, "COMPUTE_PGM_RSRC3"},
+      {0x2e2a, "COMPUTE_SHADER_CHKSUM"},
+      {0x2e24, "COMPUTE_USER_ACCUM_0"},
+      {0x2e25, "COMPUTE_USER_ACCUM_1"},
+      {0x2e26, "COMPUTE_USER_ACCUM_2"},
+      {0x2e27, "COMPUTE_USER_ACCUM_3"},
+      {0xa1ff, "GE_MAX_OUTPUT_PER_SUBGROUP"},
+      {0xa2d3, "GE_NGG_SUBGRP_CNTL"},
+      {0xc25f, "GE_STEREO_CNTL"},
+      {0xc262, "GE_USER_VGPR_EN"},
+      {0xc258, "IA_MULTI_VGT_PARAM_PIPED"},
+      {0xa210, "PA_STEREO_CNTL"},
+      {0xa1c2, "SPI_SHADER_IDX_FORMAT"},
+      {0x2c80, "SPI_SHADER_PGM_CHKSUM_GS"},
+      {0x2d00, "SPI_SHADER_PGM_CHKSUM_HS"},
+      {0x2c06, "SPI_SHADER_PGM_CHKSUM_PS"},
+      {0x2c45, "SPI_SHADER_PGM_CHKSUM_VS"},
+      {0x2c88, "SPI_SHADER_PGM_LO_GS"},
+      {0x2cb2, "SPI_SHADER_USER_ACCUM_ESGS_0"},
+      {0x2cb3, "SPI_SHADER_USER_ACCUM_ESGS_1"},
+      {0x2cb4, "SPI_SHADER_USER_ACCUM_ESGS_2"},
+      {0x2cb5, "SPI_SHADER_USER_ACCUM_ESGS_3"},
+      {0x2d32, "SPI_SHADER_USER_ACCUM_LSHS_0"},
+      {0x2d33, "SPI_SHADER_USER_ACCUM_LSHS_1"},
+      {0x2d34, "SPI_SHADER_USER_ACCUM_LSHS_2"},
+      {0x2d35, "SPI_SHADER_USER_ACCUM_LSHS_3"},
+      {0x2c32, "SPI_SHADER_USER_ACCUM_PS_0"},
+      {0x2c33, "SPI_SHADER_USER_ACCUM_PS_1"},
+      {0x2c34, "SPI_SHADER_USER_ACCUM_PS_2"},
+      {0x2c35, "SPI_SHADER_USER_ACCUM_PS_3"},
+      {0x2c72, "SPI_SHADER_USER_ACCUM_VS_0"},
+      {0x2c73, "SPI_SHADER_USER_ACCUM_VS_1"},
+      {0x2c74, "SPI_SHADER_USER_ACCUM_VS_2"},
+      {0x2c75, "SPI_SHADER_USER_ACCUM_VS_3"},
+
       {0, nullptr}};
   auto Entry = RegInfoTable;
   for (; Entry->Num && Entry->Num != RegNum; ++Entry)
@@ -721,6 +761,30 @@ msgpack::MapDocNode AMDGPUPALMetadata::getRegisters() {
   return Registers.getMap();
 }
 
+// Reference (create if necessary) the node for the shader functions map.
+msgpack::DocNode &AMDGPUPALMetadata::refShaderFunctions() {
+  auto &N =
+      MsgPackDoc.getRoot()
+          .getMap(/*Convert=*/true)[MsgPackDoc.getNode("amdpal.pipelines")]
+          .getArray(/*Convert=*/true)[0]
+          .getMap(/*Convert=*/true)[MsgPackDoc.getNode(".shader_functions")];
+  N.getMap(/*Convert=*/true);
+  return N;
+}
+
+// Get (create if necessary) the shader functions map.
+msgpack::MapDocNode AMDGPUPALMetadata::getShaderFunctions() {
+  if (ShaderFunctions.isEmpty())
+    ShaderFunctions = refShaderFunctions();
+  return ShaderFunctions.getMap();
+}
+
+// Get (create if necessary) a function in the shader functions map.
+msgpack::MapDocNode AMDGPUPALMetadata::getShaderFunction(StringRef Name) {
+  auto Functions = getShaderFunctions();
+  return Functions[Name].getMap(/*Convert=*/true);
+}
+
 // Return the PAL metadata hardware shader stage name.
 static const char *getStageName(CallingConv::ID CC) {
   switch (CC) {
@@ -736,6 +800,8 @@ static const char *getStageName(CallingConv::ID CC) {
     return ".hs";
   case CallingConv::AMDGPU_LS:
     return ".ls";
+  case CallingConv::AMDGPU_Gfx:
+    llvm_unreachable("Callable shader has no hardware stage");
   default:
     return ".cs";
   }

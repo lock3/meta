@@ -169,7 +169,7 @@ protected:
   ScalarTy Value;         // The value at the univeriate dimension.
   unsigned UnivariateDim; // The univeriate dimension.
 
-  UnivariateLinearPolyBase(ScalarTy &Val, unsigned UnivariateDim)
+  UnivariateLinearPolyBase(ScalarTy Val, unsigned UnivariateDim)
       : Value(Val), UnivariateDim(UnivariateDim) {
     assert(UnivariateDim < Dimensions && "Dimension out of range");
   }
@@ -229,6 +229,18 @@ public:
   ScalarTy getValue(unsigned Dim) const {
     return Dim == UnivariateDim ? Value : 0;
   }
+
+  /// Add \p RHS to the value at the univariate dimension.
+  LeafTy getWithIncrement(ScalarTy RHS) const {
+    return static_cast<LeafTy>(
+        UnivariateLinearPolyBase(Value + RHS, UnivariateDim));
+  }
+
+  /// Subtract \p RHS from the value at the univariate dimension.
+  LeafTy getWithDecrement(ScalarTy RHS) const {
+    return static_cast<LeafTy>(
+        UnivariateLinearPolyBase(Value - RHS, UnivariateDim));
+  }
 };
 
 
@@ -247,6 +259,11 @@ public:
 /// fixed-sized or it is scalable-sized, but it cannot be both.
 template <typename LeafTy>
 class LinearPolySize : public UnivariateLinearPolyBase<LeafTy> {
+  // Make the parent class a friend, so that it can access the protected
+  // conversion/copy-constructor for UnivariatePolyBase<LeafTy> ->
+  // LinearPolySize<LeafTy>.
+  friend class UnivariateLinearPolyBase<LeafTy>;
+
 public:
   using ScalarTy = typename UnivariateLinearPolyBase<LeafTy>::ScalarTy;
   enum Dims : unsigned { FixedDim = 0, ScalableDim = 1 };
@@ -255,7 +272,11 @@ protected:
   LinearPolySize(ScalarTy MinVal, Dims D)
       : UnivariateLinearPolyBase<LeafTy>(MinVal, D) {}
 
+  LinearPolySize(const UnivariateLinearPolyBase<LeafTy> &V)
+      : UnivariateLinearPolyBase<LeafTy>(V) {}
+
 public:
+
   static LeafTy getFixed(ScalarTy MinVal) {
     return static_cast<LeafTy>(LinearPolySize(MinVal, FixedDim));
   }
@@ -360,6 +381,7 @@ template <> struct LinearPolyBaseTypeTraits<ElementCount> {
 
 class ElementCount : public LinearPolySize<ElementCount> {
 public:
+  ElementCount() : LinearPolySize(LinearPolySize::getNull()) {}
 
   ElementCount(const LinearPolySize<ElementCount> &V) : LinearPolySize(V) {}
 
@@ -507,4 +529,4 @@ template <> struct DenseMapInfo<ElementCount> {
 
 } // end namespace llvm
 
-#endif // LLVM_SUPPORT_TypeSize_H
+#endif // LLVM_SUPPORT_TYPESIZE_H

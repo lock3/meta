@@ -87,22 +87,22 @@ struct CasedTypeInfo {
 };
 
 class ASTPropsEmitter {
-	raw_ostream &Out;
-	RecordKeeper &Records;
-	std::map<HasProperties, NodeInfo> NodeInfos;
+  raw_ostream &Out;
+  RecordKeeper &Records;
+  std::map<HasProperties, NodeInfo> NodeInfos;
   std::vector<PropertyType> AllPropertyTypes;
   std::map<PropertyType, CasedTypeInfo> CasedTypeInfos;
 
 public:
-	ASTPropsEmitter(RecordKeeper &records, raw_ostream &out)
-		: Out(out), Records(records) {
+  ASTPropsEmitter(RecordKeeper &records, raw_ostream &out)
+    : Out(out), Records(records) {
 
-		// Find all the properties.
-		for (Property property :
+    // Find all the properties.
+    for (Property property :
            records.getAllDerivedDefinitions(PropertyClassName)) {
-			HasProperties node = property.getClass();
-			NodeInfos[node].Properties.push_back(property);
-		}
+      HasProperties node = property.getClass();
+      NodeInfos[node].Properties.push_back(property);
+    }
 
     // Find all the creation rules.
     for (CreationRule creationRule :
@@ -176,7 +176,11 @@ public:
     }
 
     Validator(*this).validate();
-	}
+  }
+
+  void writeOriginComment() {
+    Out << "// Auto generated from: " << Records.getInputFilename() << "\n";
+  }
 
   void visitAllProperties(HasProperties derived, const NodeInfo &derivedInfo,
                           function_ref<void (Property)> visit) {
@@ -382,7 +386,12 @@ void ASTPropsEmitter::emitNodeReaderWriterClass(const ReaderWriterInfo &info) {
     Out         << "kind";
   else
     Out         << "node->" << NodeClass::getASTIdAccessorName() << "()";
-  Out           << ") {\n";
+  Out           << ") { ";
+
+  // Terminate the switch with an origin comment so that missing
+  // branches hint at the correct file to modify.
+  writeOriginComment();
+
   visitASTNodeHierarchy<NodeClass>(Records, [&](NodeClass node, NodeClass _) {
     if (node.isAbstract()) return;
     Out << "    case " << info.HierarchyName << "::" << node.getId() << ":\n"
@@ -708,15 +717,13 @@ ASTPropsEmitter::emitBasicReaderWriterTemplate(const ReaderWriterInfo &info) {
   // Emit the Basic{Reader,Writer}Base template.
   Out << "template <class Impl>\n"
          "class Basic" << info.ClassSuffix << "Base {\n";
-  if (info.IsReader)
-    Out << "  ASTContext &C;\n";
+  Out << "  ASTContext &C;\n";
   Out << "protected:\n"
-         "  Basic" << info.ClassSuffix << "Base"
-                   << (info.IsReader ? "(ASTContext &ctx) : C(ctx)" : "()")
-                   << " {}\n"
+         "  Basic"
+      << info.ClassSuffix << "Base" << ("(ASTContext &ctx) : C(ctx)")
+      << " {}\n"
          "public:\n";
-  if (info.IsReader)
-    Out << "  ASTContext &getASTContext() { return C; }\n";
+  Out << "  ASTContext &getASTContext() { return C; }\n";
   Out << "  Impl &asImpl() { return static_cast<Impl&>(*this); }\n";
 
   auto enterReaderWriterMethod = [&](StringRef cxxTypeName,
@@ -826,7 +833,12 @@ void ASTPropsEmitter::emitCasedReaderWriterMethodBody(PropertyType type,
   subInfo.HelperVariable = subvar;
 
   // Switch on the kind.
-  Out << "    switch (" << kindProperty << ") {\n";
+  Out << "    switch (" << kindProperty << ") { ";
+
+  // Terminate the switch with an origin comment so that missing
+  // branches hint at the correct file to modify.
+  writeOriginComment();
+
   for (TypeCase typeCase : typeCases.Cases) {
     Out << "    case " << type.getCXXTypeName() << "::"
                        << typeCase.getCaseName() << ": {\n";

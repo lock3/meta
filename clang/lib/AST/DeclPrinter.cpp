@@ -78,8 +78,6 @@ namespace {
     void VisitNamespaceDecl(NamespaceDecl *D);
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
-    void VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
-    void VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitTemplateDecl(const TemplateDecl *D);
@@ -357,7 +355,8 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
         SimpleInit = Init;
 
       if (SimpleInit)
-        SimpleInit->printPretty(Out, nullptr, Policy, Indentation);
+        SimpleInit->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                                &Context);
       else {
         for (unsigned I = 0; I != NumArgs; ++I) {
           assert(Args[I] != nullptr && "Expected non-null Expr");
@@ -366,7 +365,8 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
 
           if (I)
             Out << ", ";
-          Args[I]->printPretty(Out, nullptr, Policy, Indentation);
+          Args[I]->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                               &Context);
         }
       }
     }
@@ -617,13 +617,14 @@ void DeclPrinter::VisitEnumConstantDecl(EnumConstantDecl *D) {
 }
 
 static void printExplicitSpecifier(ExplicitSpecifier ES, llvm::raw_ostream &Out,
-                                   PrintingPolicy &Policy,
-                                   unsigned Indentation) {
+                                   PrintingPolicy &Policy, unsigned Indentation,
+                                   const ASTContext &Context) {
   std::string Proto = "explicit";
   llvm::raw_string_ostream EOut(Proto);
   if (ES.getExpr()) {
     EOut << "(";
-    ES.getExpr()->printPretty(EOut, nullptr, Policy, Indentation);
+    ES.getExpr()->printPretty(EOut, nullptr, Policy, Indentation, "\n",
+                              &Context);
     EOut << ")";
   }
   EOut << " ";
@@ -665,7 +666,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     if (D->isConsteval())        Out << "consteval ";
     ExplicitSpecifier ExplicitSpec = ExplicitSpecifier::getFromDecl(D);
     if (ExplicitSpec.isSpecified())
-      printExplicitSpecifier(ExplicitSpec, Out, Policy, Indentation);
+      printExplicitSpecifier(ExplicitSpec, Out, Policy, Indentation, Context);
   }
 
   PrintingPolicy SubPolicy(Policy);
@@ -770,7 +771,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
           Proto += "(";
           llvm::raw_string_ostream EOut(Proto);
           FT->getNoexceptExpr()->printPretty(EOut, nullptr, SubPolicy,
-                                             Indentation);
+                                           Indentation, "\n", &Context);
           EOut.flush();
           Proto += EOut.str();
           Proto += ")";
@@ -795,7 +796,8 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
 
     if (Expr *TrailingRequiresClause = D->getTrailingRequiresClause()) {
       Out << " requires ";
-      TrailingRequiresClause->printPretty(Out, nullptr, SubPolicy, Indentation);
+      TrailingRequiresClause->printPretty(Out, nullptr, SubPolicy, Indentation,
+                                          "\n", &Context);
     }
   } else {
     Ty.print(Out, Policy, Proto);
@@ -856,7 +858,8 @@ void DeclPrinter::VisitFieldDecl(FieldDecl *D) {
 
   if (D->isBitField()) {
     Out << " : ";
-    D->getBitWidth()->printPretty(Out, nullptr, Policy, Indentation);
+    D->getBitWidth()->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                                  &Context);
   }
 
   Expr *Init = D->getInClassInitializer();
@@ -865,7 +868,7 @@ void DeclPrinter::VisitFieldDecl(FieldDecl *D) {
       Out << " ";
     else
       Out << " = ";
-    Init->printPretty(Out, nullptr, Policy, Indentation);
+    Init->printPretty(Out, nullptr, Policy, Indentation, "\n", &Context);
   }
   prettyPrintAttributes(D);
 }
@@ -930,7 +933,7 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
       PrintingPolicy SubPolicy(Policy);
       SubPolicy.SuppressSpecifiers = false;
       SubPolicy.IncludeTagDefinition = false;
-      Init->printPretty(Out, nullptr, SubPolicy, Indentation);
+      Init->printPretty(Out, nullptr, SubPolicy, Indentation, "\n", &Context);
       if ((D->getInitStyle() == VarDecl::CallInit) && !isa<ParenListExpr>(Init))
         Out << ")";
     }
@@ -944,7 +947,8 @@ void DeclPrinter::VisitParmVarDecl(ParmVarDecl *D) {
 
 void DeclPrinter::VisitFileScopeAsmDecl(FileScopeAsmDecl *D) {
   Out << "__asm (";
-  D->getAsmString()->printPretty(Out, nullptr, Policy, Indentation);
+  D->getAsmString()->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                                 &Context);
   Out << ")";
 }
 
@@ -955,10 +959,11 @@ void DeclPrinter::VisitImportDecl(ImportDecl *D) {
 
 void DeclPrinter::VisitStaticAssertDecl(StaticAssertDecl *D) {
   Out << "static_assert(";
-  D->getAssertExpr()->printPretty(Out, nullptr, Policy, Indentation);
+  D->getAssertExpr()->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                                  &Context);
   if (StringLiteral *SL = D->getMessage()) {
     Out << ", ";
-    SL->printPretty(Out, nullptr, Policy, Indentation);
+    SL->printPretty(Out, nullptr, Policy, Indentation, "\n", &Context);
   }
   Out << ")";
 }
@@ -991,25 +996,6 @@ void DeclPrinter::VisitNamespaceAliasDecl(NamespaceAliasDecl *D) {
   if (D->getQualifier())
     D->getQualifier()->print(Out, Policy);
   Out << *D->getAliasedNamespace();
-}
-
-void
-DeclPrinter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  Out << "requires ";
-  if (D->wasDeclaredWithTypename())
-    Out << "typename ";
-  else
-    Out << "class ";
-
-  QualType T = QualType(D->getTypeForDecl(), 0);
-  printDeclType(T, D->getName());
-}
-
-void
-DeclPrinter::VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
-  Out << "requires ";
-  QualType T = D->getTypeSourceInfo()->getType();
-  printDeclType(T, D->getName());
 }
 
 void DeclPrinter::VisitEmptyDecl(EmptyDecl *D) {
@@ -1164,8 +1150,8 @@ void DeclPrinter::VisitTemplateDecl(const TemplateDecl *D) {
     Visit(TD);
   else if (const auto *Concept = dyn_cast<ConceptDecl>(D)) {
     Out << "concept " << Concept->getName() << " = " ;
-    Concept->getConstraintExpr()->printPretty(Out, nullptr, Policy,
-                                              Indentation);
+    Concept->getConstraintExpr()->printPretty(Out, nullptr, Policy, Indentation,
+                                              "\n", &Context);
     Out << ";";
   }
 }
@@ -1310,7 +1296,8 @@ void DeclPrinter::PrintFunctionBody(FunctionDecl *D, PrintingPolicy &SubPolicy) 
       Out << ' ';
 
     if (D->getBody())
-      D->getBody()->printPretty(Out, nullptr, SubPolicy, Indentation);
+      D->getBody()->printPretty(Out, nullptr, SubPolicy, Indentation, "\n",
+                                &Context);
   } else {
     if (!Policy.TerseOutput && isa<CXXConstructorDecl>(*D))
       Out << " {}";
@@ -1352,7 +1339,8 @@ void DeclPrinter::VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
 
   if (OMD->getBody() && !Policy.TerseOutput) {
     Out << ' ';
-    OMD->getBody()->printPretty(Out, nullptr, Policy);
+    OMD->getBody()->printPretty(Out, nullptr, Policy, Indentation, "\n",
+                                &Context);
   }
   else if (Policy.PolishForDeclaration)
     Out << ';';
@@ -1732,7 +1720,7 @@ void DeclPrinter::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
     Out << " : ";
     D->getType().print(Out, Policy);
     Out << " : ";
-    D->getCombiner()->printPretty(Out, nullptr, Policy, 0);
+    D->getCombiner()->printPretty(Out, nullptr, Policy, 0, "\n", &Context);
     Out << ")";
     if (auto *Init = D->getInitializer()) {
       Out << " initializer(";
@@ -1746,7 +1734,7 @@ void DeclPrinter::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
       case OMPDeclareReductionDecl::CallInit:
         break;
       }
-      Init->printPretty(Out, nullptr, Policy, 0);
+      Init->printPretty(Out, nullptr, Policy, 0, "\n", &Context);
       if (D->getInitializerKind() == OMPDeclareReductionDecl::DirectInit)
         Out << ")";
       Out << ")";
@@ -1774,7 +1762,7 @@ void DeclPrinter::VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D) {
 }
 
 void DeclPrinter::VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D) {
-  D->getInit()->printPretty(Out, nullptr, Policy, Indentation);
+  D->getInit()->printPretty(Out, nullptr, Policy, Indentation, "\n", &Context);
 }
 
 void DeclPrinter::VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *TTP) {
@@ -1808,7 +1796,8 @@ void DeclPrinter::VisitNonTypeTemplateParmDecl(
 
   if (NTTP->hasDefaultArgument()) {
     Out << " = ";
-    NTTP->getDefaultArgument()->printPretty(Out, nullptr, Policy, Indentation);
+    NTTP->getDefaultArgument()->printPretty(Out, nullptr, Policy, Indentation,
+                                            "\n", &Context);
   }
 }
 

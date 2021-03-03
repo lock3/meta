@@ -399,32 +399,6 @@ let Class = TypeOfType in {
   }]>;
 }
 
-let Class = DecltypeType in {
-  def : Property<"underlyingType", QualType> {
-    let Read = [{ node->getUnderlyingType() }];
-  }
-  def : Property<"expression", ExprRef> {
-    let Read = [{ node->getUnderlyingExpr() }];
-  }
-
-  def : Creator<[{
-    return ctx.getDecltypeType(expression, underlyingType);
-  }]>;
-}
-
-let Class = ReflectedType in {
-  def : Property<"underlyingType", QualType> {
-    let Read = [{ node->getUnderlyingType() }];
-  }
-  def : Property<"reflection", ExprRef> {
-    let Read = [{ node->getReflection() }];
-  }
-
-  def : Creator<[{
-    return ctx.getReflectedType(reflection, underlyingType);
-  }]>;
-}
-
 let Class = DependentIdentifierSpliceType in {
   def : Property<"qualifier", NestedNameSpecifier> {
     let Read = [{ node->getQualifier() }];
@@ -439,6 +413,54 @@ let Class = DependentIdentifierSpliceType in {
   def : Creator<[{
     return ctx.getDependentIdentifierSpliceType(qualifier, identifier,
                                                 templateArguments);
+  }]>;
+}
+
+let Class = DecltypeType in {
+  def : Property<"underlyingType", QualType> {
+    let Read = [{ node->getUnderlyingType() }];
+  }
+  def : Property<"expression", ExprRef> {
+    let Read = [{ node->getUnderlyingExpr() }];
+  }
+
+  def : Creator<[{
+    return ctx.getDecltypeType(expression, underlyingType);
+  }]>;
+}
+
+let Class = TypeSpliceType in {
+  def : Property<"underlyingType", QualType> {
+    let Read = [{ node->getUnderlyingType() }];
+  }
+  def : Property<"reflection", ExprRef> {
+    let Read = [{ node->getReflection() }];
+  }
+
+  def : Creator<[{
+    return ctx.getTypeSpliceType(reflection, underlyingType);
+  }]>;
+}
+
+let Class = TypePackSpliceType in {
+  def : Property<"packSplice", PackSplice> {
+    let Read = [{ *node->getPackSplice() }];
+  }
+  def : Creator<[{
+    return ctx.getTypePackSpliceType(&packSplice);
+  }]>;
+}
+
+let Class = SubstTypePackSpliceType in {
+  def : Property<"expansionExpr", ExprRef> {
+    let Read = [{ node->getExpansionExpr() }];
+  }
+  def : Property<"replacementType", QualType> {
+    let Read = [{ node->getReplacementType() }];
+  }
+
+  def : Creator<[{
+    return ctx.getSubstTypePackSpliceType(expansionExpr, replacementType);
   }]>;
 }
 
@@ -514,8 +536,12 @@ let Class = TagType in {
     let Read = [{ node->isDependentType() }];
   }
   def : Property<"declaration", DeclRef> {
-    // Serializing a reference to the canonical declaration is apparently
-    // necessary to make module-merging work.
+    // We don't know which declaration was originally referenced here, and we
+    // cannot reference a declaration that follows the use (because that can
+    // introduce deserialization cycles), so conservatively generate a
+    // reference to the first declaration.
+    // FIXME: If this is a reference to a class template specialization, that
+    // can still introduce a deserialization cycle.
     let Read = [{ node->getDecl()->getCanonicalDecl() }];
   }
 }
@@ -757,36 +783,6 @@ let Class = PackExpansionType in {
   }]>;
 }
 
-let Class = CXXDependentVariadicReifierType in {
-  def : Property<"range", ExprRef> {
-    let Read = [{ node->getRange() }];
-  }
-  def : Property<"keywordLoc", SourceLocation> {
-    let Read = [{ node->getBeginLoc() }];
-  }
-  def : Property<"ellipsisLoc", SourceLocation> {
-    let Read = [{ node->getEllipsisLoc() }];
-  }
-  def : Property<"rparenLoc", SourceLocation> {
-    let Read = [{ node->getEndLoc() }];
-  }
-
-  def : Creator<[{
-    return ctx.getCXXDependentVariadicReifierType(range, keywordLoc,
-                                                  ellipsisLoc, rparenLoc);
-  }]>;
-}
-
-let Class = CXXRequiredTypeType in {
-  def : Property<"declaration", DeclRef> {
-    let Read = [{ node->getDecl() }];
-  }
-
-  def : Creator<[{
-    return ctx.getCXXRequiredTypeType(cast<CXXRequiredTypeDecl>(declaration));
-  }]>;
-}
-
 let Class = SubstTemplateTypeParmPackType in {
   def : Property<"replacedParameter", QualType> {
     let Read = [{ QualType(node->getReplacedParameter(), 0) }];
@@ -821,9 +817,13 @@ let Class = BuiltinType in {
       case BuiltinType::ID: return ctx.SINGLETON_ID;
 #include "clang/Basic/AArch64SVEACLETypes.def"
 
-#define PPC_MMA_VECTOR_TYPE(NAME, ID, SIZE) \
+#define PPC_VECTOR_TYPE(NAME, ID, SIZE) \
       case BuiltinType::ID: return ctx.ID##Ty;
 #include "clang/Basic/PPCTypes.def"
+
+#define RVV_TYPE(NAME, ID, SINGLETON_ID) \
+      case BuiltinType::ID: return ctx.SINGLETON_ID;
+#include "clang/Basic/RISCVVTypes.def"
 
 #define BUILTIN_TYPE(ID, SINGLETON_ID) \
       case BuiltinType::ID: return ctx.SINGLETON_ID;
@@ -956,51 +956,5 @@ let Class = DependentExtIntType in {
   }
   def : Creator<[{
     return ctx.getDependentExtIntType(isUnsigned, numBitsExpr);
-  }]>;
-}
-
-let Class = ParameterType in {
-  def : Property<"parameterType", QualType> {
-    let Read = [{ node->getParameterType() }];
-  }
-}
-
-let Class = InParameterType in {
-  def : Property<"parameterType", QualType> {
-    let Read = [{ node->getParameterType() }];
-  }
-
-  def : Creator<[{
-    return ctx.getInParameterType(parameterType);
-  }]>;
-}
-
-let Class = OutParameterType in {
-  def : Property<"parameterType", QualType> {
-    let Read = [{ node->getParameterType() }];
-  }
-
-  def : Creator<[{
-    return ctx.getOutParameterType(parameterType);
-  }]>;
-}
-
-let Class = InOutParameterType in {
-  def : Property<"parameterType", QualType> {
-    let Read = [{ node->getParameterType() }];
-  }
-
-  def : Creator<[{
-    return ctx.getInOutParameterType(parameterType);
-  }]>;
-}
-
-let Class = MoveParameterType in {
-  def : Property<"parameterType", QualType> {
-    let Read = [{ node->getParameterType() }];
-  }
-
-  def : Creator<[{
-    return ctx.getMoveParameterType(parameterType);
   }]>;
 }

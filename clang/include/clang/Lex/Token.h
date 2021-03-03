@@ -125,7 +125,7 @@ public:
   /// tok::identifier or tok::annot_identifier_splice.
   bool isIdentifier() const {
     return isOneOf(
-        tok::identifier, tok::annot_identifier_splice, tok::kw_unqualid,
+        tok::identifier, tok::annot_identifier_splice,
         tok::annot_invalid_identifier_splice);
   }
 

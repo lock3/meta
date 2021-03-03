@@ -25,6 +25,7 @@
 #include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
@@ -1157,7 +1158,7 @@ public:
   SUGARED_TYPE_CLASS(TypeOfExpr)
   SUGARED_TYPE_CLASS(TypeOf)
   SUGARED_TYPE_CLASS(Decltype)
-  SUGARED_TYPE_CLASS(Reflected)
+  SUGARED_TYPE_CLASS(TypeSplice)
   SUGARED_TYPE_CLASS(UnaryTransform)
   TRIVIAL_TYPE_CLASS(Record)
   TRIVIAL_TYPE_CLASS(Enum)
@@ -2313,6 +2314,8 @@ bool Type::isSizelessBuiltinType() const {
       // SVE Types
 #define SVE_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
+#define RVV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
+#include "clang/Basic/RISCVVTypes.def"
       return true;
     default:
       return false;
@@ -2969,6 +2972,29 @@ DependentTemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
     Arg.Profile(ID, Context);
 }
 
+static TypeDependence computePackExpansionDependence(QualType Pattern) {
+  auto D = Pattern->getDependence() & ~TypeDependence::UnexpandedPack;
+
+  // If a pack expansion is dependent in any way, its type, and
+  // instantiation dependent.
+  //
+  // Additionally, if we have a pattern with no UnexpandedPack dependence,
+  // assume it's type and instantiation dependent.
+  if (D || !(Pattern->getDependence() & TypeDependence::UnexpandedPack))
+    D |= TypeDependence::DependentInstantiation;
+
+  return D;
+}
+
+PackExpansionType::PackExpansionType(QualType Pattern, QualType Canon,
+                                     Optional<unsigned> NumExpansions)
+    : Type(PackExpansion, Canon,
+           computePackExpansionDependence(Pattern), /*MetaType=*/false),
+      Pattern(Pattern) {
+  PackExpansionTypeBits.NumExpansions =
+      NumExpansions ? *NumExpansions + 1 : 0;
+}
+
 bool Type::isElaboratedTypeSpecifier() const {
   ElaboratedTypeKeyword Keyword;
   if (const auto *Elab = dyn_cast<ElaboratedType>(this))
@@ -3158,10 +3184,14 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
   case Id: \
     return Name;
 #include "clang/Basic/AArch64SVEACLETypes.def"
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+#define PPC_VECTOR_TYPE(Name, Id, Size) \
   case Id: \
     return #Name;
 #include "clang/Basic/PPCTypes.def"
+#define RVV_TYPE(Name, Id, SingletonId)                                        \
+  case Id:                                                                     \
+    return Name;
+#include "clang/Basic/RISCVVTypes.def"
   }
 
   llvm_unreachable("Invalid builtin type.");
@@ -3442,8 +3472,9 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID,
           getExtProtoInfo(), Ctx, isCanonicalUnqualified());
 }
 
-TypedefType::TypedefType(TypeClass tc, const TypedefNameDecl *D, QualType can)
-    : Type(tc, can, D->getUnderlyingType()->getDependence(), can->isMetaType()),
+TypedefType::TypedefType(TypeClass tc, const TypedefNameDecl *D,
+                         QualType underlying, QualType can)
+    : Type(tc, can, underlying->getDependence(), underlying->isMetaType()),
       Decl(const_cast<TypedefNameDecl *>(D)) {
   assert(!isa<TypedefType>(can) && "Invalid canonical type");
 }
@@ -3560,31 +3591,56 @@ void DependentIdentifierSpliceType::Profile(
   }
 }
 
-ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
-  : Type(Reflected, Can, toTypeDependence(E->getDependence()),
+TypeSpliceType::TypeSpliceType(Expr *E, QualType T, QualType Can)
+  : Type(TypeSplice, Can, toTypeDependence(E->getDependence()),
          T->isMetaType()),
     Reflection(E), UnderlyingType(T) {
 }
 
-bool ReflectedType::isSugared() const {
-  // A reflected type is sugared if it's non-dependent.
-  return !Reflection->isInstantiationDependent();
-}
-
-QualType ReflectedType::desugar() const {
+QualType TypeSpliceType::desugar() const {
   if (isSugared())
     return getUnderlyingType();
   else
     return QualType(this, 0);
 }
 
-DependentReflectedType::DependentReflectedType(const ASTContext &Cxt, Expr *E)
-  : ReflectedType(E, Cxt.DependentTy), Context(Cxt) { }
+bool TypeSpliceType::isSugared() const {
+  // A reflected type is sugared if it's non-dependent.
+  return !Reflection->isInstantiationDependent();
+}
 
-void DependentReflectedType::Profile(llvm::FoldingSetNodeID &ID,
+DependentTypeSpliceType::DependentTypeSpliceType(const ASTContext &Ctx, Expr *E)
+  : TypeSpliceType(E, Ctx.DependentTy), Context(Ctx) { }
+
+void DependentTypeSpliceType::Profile(llvm::FoldingSetNodeID &ID,
                                      const ASTContext& Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
+
+static TypeDependence computePackSpliceDependence(const PackSplice *PS) {
+  // FIXME: Duplicated by the computeDependence function for
+  // CXXPackSpliceExpr
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
+
+  if (PS->isExpanded()) {
+    for (Expr *SE : PS->getExpansions())
+      Depends |= SE->getDependence();
+  } else {
+    Depends |= PS->getOperand()->getDependence();
+  }
+
+  return toTypeDependence(Depends);
+}
+
+TypePackSpliceType::TypePackSpliceType(const ASTContext &Ctx,
+                                       const PackSplice *PS)
+    : Type(TypePackSplice, Ctx.DependentTy, computePackSpliceDependence(PS),
+           /*MetaType=*/false), PS(PS) { }
+
+SubstTypePackSpliceType::SubstTypePackSpliceType(Expr *ExpansionExpr,
+                                                 QualType Canon)
+    : Type(SubstTypePackSplice, Canon, Canon->getDependence(),
+           Canon->isMetaType()), ExpansionExpr(ExpansionExpr) { }
 
 UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        QualType UnderlyingType, UTTKind UKind,
@@ -3654,6 +3710,7 @@ bool AttributedType::isQualifier() const {
   case attr::ObjCInertUnsafeUnretained:
   case attr::TypeNonNull:
   case attr::TypeNullable:
+  case attr::TypeNullableResult:
   case attr::TypeNullUnspecified:
   case attr::LifetimeBound:
   case attr::AddressSpace:
@@ -3738,24 +3795,24 @@ void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID,
     ID.AddPointer(P.getAsType().getAsOpaquePtr());
 }
 
-bool TemplateSpecializationType::
-anyDependentTemplateArguments(const TemplateArgumentListInfo &Args,
-                              bool &InstantiationDependent) {
-  return anyDependentTemplateArguments(Args.arguments(),
-                                       InstantiationDependent);
+bool TemplateSpecializationType::anyDependentTemplateArguments(
+    const TemplateArgumentListInfo &Args, ArrayRef<TemplateArgument> Converted) {
+  return anyDependentTemplateArguments(Args.arguments(), Converted);
 }
 
-bool TemplateSpecializationType::
-anyDependentTemplateArguments(ArrayRef<TemplateArgumentLoc> Args,
-                              bool &InstantiationDependent) {
-  for (const TemplateArgumentLoc &ArgLoc : Args) {
-    if (ArgLoc.getArgument().isDependent()) {
-      InstantiationDependent = true;
+bool TemplateSpecializationType::anyDependentTemplateArguments(
+    ArrayRef<TemplateArgumentLoc> Args, ArrayRef<TemplateArgument> Converted) {
+  for (const TemplateArgument &Arg : Converted)
+    if (Arg.isDependent())
       return true;
-    }
+  return false;
+}
 
+bool TemplateSpecializationType::anyInstantiationDependentTemplateArguments(
+      ArrayRef<TemplateArgumentLoc> Args) {
+  for (const TemplateArgumentLoc &ArgLoc : Args) {
     if (ArgLoc.getArgument().isInstantiationDependent())
-      InstantiationDependent = true;
+      return true;
   }
   return false;
 }
@@ -4037,11 +4094,6 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return Cache::get(cast<PipeType>(T)->getElementType());
-  case Type::InParameter:
-  case Type::OutParameter:
-  case Type::InOutParameter:
-  case Type::MoveParameter:
-    return Cache::get(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4130,11 +4182,6 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
     return computeTypeLinkageInfo(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return computeTypeLinkageInfo(cast<PipeType>(T)->getElementType());
-  case Type::InParameter:
-  case Type::OutParameter:
-  case Type::InOutParameter:
-  case Type::MoveParameter:
-    return computeTypeLinkageInfo(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4200,7 +4247,8 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
+  case Type::TypePackSplice:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:
   case Type::SubstTemplateTypeParmPack:
@@ -4208,7 +4256,6 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::DependentTemplateSpecialization:
   case Type::DependentIdentifierSplice:
   case Type::Auto:
-  case Type::CXXRequiredType:
     return ResultIfUnknown;
 
   // Dependent template specializations can instantiate to pointer
@@ -4260,9 +4307,11 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
 #define SVE_TYPE(Name, Id, SingletonId) \
     case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+#define PPC_VECTOR_TYPE(Name, Id, Size) \
     case BuiltinType::Id:
 #include "clang/Basic/PPCTypes.def"
+#define RVV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
+#include "clang/Basic/RISCVVTypes.def"
     case BuiltinType::BuiltinFn:
     case BuiltinType::NullPtr:
     case BuiltinType::MetaInfo:
@@ -4296,22 +4345,12 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::Enum:
   case Type::InjectedClassName:
   case Type::PackExpansion:
-  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::Atomic:
   case Type::Pipe:
   case Type::ExtInt:
   case Type::DependentExtInt:
-    return false;
-
-  case Type::InParameter:
-  case Type::OutParameter:
-  case Type::InOutParameter:
-  case Type::MoveParameter:
-    // TODO: This could be wrong. It seems like these may be nullable
-    // if their underlying type is nullable. But maybe that's not what
-    // this function computes.
     return false;
   }
   llvm_unreachable("bad type kind!");
@@ -4325,6 +4364,8 @@ AttributedType::getImmediateNullability() const {
     return NullabilityKind::Nullable;
   if (getAttrKind() == attr::TypeNullUnspecified)
     return NullabilityKind::Unspecified;
+  if (getAttrKind() == attr::TypeNullableResult)
+    return NullabilityKind::NullableResult;
   return None;
 }
 
@@ -4557,15 +4598,6 @@ AutoType::AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
   }
 }
 
-AutoType::AutoType(QualType Expected)
-    : DeducedType(Auto, QualType(), TypeDependence::None) {
-  AutoTypeBits.Keyword = (unsigned)AutoTypeKeyword::Auto;
-  AutoTypeBits.NumArgs = 0;
-  TypeConstraintConcept = nullptr;
-  ExpectedDeduction = Expected;
-}
-
-
 void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
@@ -4576,68 +4608,4 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
   ID.AddPointer(CD);
   for (const TemplateArgument &Arg : Arguments)
     Arg.Profile(ID, Context);
-}
-
-void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
-                      QualType Expected) {
-  Expected.Profile(ID);
-}
-
-QualType ParameterType::getAdjustedType(const ASTContext &Ctx)  const {
-  // Use the canonical type for forming the adjusted type. Otherwise, we might
-  // have sugar affecting the results of analyses.
-  QualType T = Ctx.getCanonicalType(getParameterType());
-  switch (getParameterPassingMode()) {
-  case PPK_in:
-    if (InParameterType::isPassByReference(Ctx, T))
-      T = Ctx.getLValueReferenceType(Ctx.getConstType(T));
-    return T;
-
-  case PPK_out:
-  case PPK_inout:
-    return Ctx.getLValueReferenceType(T);
-
-  case PPK_move:
-    if (InParameterType::isPassByReference(Ctx, T))
-      T = Ctx.getRValueReferenceType(T);
-    return T;
-
-  default:
-    break;
-  }
-  llvm_unreachable("Invalid parameter passing mode");
-}
-
-static bool shouldPassByValue(const ASTContext &Ctx, QualType T) {
-  assert(!T->isParameterType());
-
-  // Scalar types are always passed by value.
-  if (T->isScalarType())
-    return true;
-
-  // Function and array types decay to pointers, so those are also passed
-  // by value (presumably).
-  if (T->isFunctionType() || T->isArrayType())
-    return true;
-
-  // Trivially copyable class types whose size is less or equal to that of a
-  // pointer are passed by value.
-  //
-  // TODO: Some ABIs allow certain types to be coerced into multiple integer
-  // registers. By comparing against just the size of a pointer, we might
-  // actually be inhibiting some optimizations in those cases.
-  if (const CXXRecordDecl *Class = T->getAsCXXRecordDecl())
-    if (Class->isTriviallyCopyable())
-      if (Ctx.getTypeSize(T) <= Ctx.getTypeSize(Ctx.VoidPtrTy))
-        return true;
-  
-  return false;
-}
-
-bool InParameterType::isPassByValue(const ASTContext &Ctx, QualType T) {
-  return shouldPassByValue(Ctx, T);
-}
-
-bool MoveParameterType::isPassByValue(const ASTContext &Ctx, QualType T) {
-  return shouldPassByValue(Ctx, T);
 }

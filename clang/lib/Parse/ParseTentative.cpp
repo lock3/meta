@@ -846,7 +846,8 @@ Parser::TPResult Parser::TryParsePtrOperatorSeq() {
 
       while (Tok.isOneOf(tok::kw_const, tok::kw_volatile, tok::kw_restrict,
                          tok::kw__Nonnull, tok::kw__Nullable,
-                         tok::kw__Null_unspecified, tok::kw__Atomic))
+                         tok::kw__Nullable_result, tok::kw__Null_unspecified,
+                         tok::kw__Atomic))
         ConsumeToken();
     } else {
       return TPResult::True;
@@ -1348,6 +1349,11 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
       return TPResult::Error;
     return isCXXDeclarationSpecifier(BracedCastResult, InvalidAsDeclSpec);
 
+  case tok::ellipsis:
+    if (isCXXPackSpliceBegin())
+      return TPResult::True;
+    return TPResult::False;
+
     // decl-specifier:
     //   storage-class-specifier
     //   type-specifier
@@ -1443,6 +1449,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw___unaligned:
   case tok::kw__Nonnull:
   case tok::kw__Nullable:
+  case tok::kw__Nullable_result:
   case tok::kw__Null_unspecified:
   case tok::kw___kindof:
     return TPResult::True;
@@ -1597,7 +1604,6 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
 
     // simple-type-specifier:
 
-  case tok::annot_refltype:
   case tok::annot_typename:
   case_typename:
     // In Objective-C, we might have a protocol-qualified type.
@@ -1644,6 +1650,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw___float128:
   case tok::kw_void:
   case tok::annot_decltype:
+  case tok::annot_type_splice:
 #define GENERIC_IMAGE_TYPE(ImgType, Id) case tok::kw_##ImgType##_t:
 #include "clang/Basic/OpenCLImageTypes.def"
     if (NextToken().is(tok::l_paren))
@@ -1916,10 +1923,6 @@ Parser::TryParseParameterDeclarationClause(bool *InvalidAsDeclaration,
 
     ParsedAttributes attrs(AttrFactory);
     MaybeParseMicrosoftAttributes(attrs);
-
-    // A parameter passing specifier inidcates a function declarator.
-    if (isParameterPassingSpecifier())
-      return TPResult::True;
 
     // decl-specifier-seq
     // A parameter-declaration's initializer must be preceded by an '=', so

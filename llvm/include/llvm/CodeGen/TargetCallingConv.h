@@ -119,13 +119,15 @@ namespace ISD {
     void setNest() { IsNest = 1; }
 
     bool isReturned() const { return IsReturned; }
-    void setReturned() { IsReturned = 1; }
+    void setReturned(bool V = true) { IsReturned = V; }
 
     bool isInConsecutiveRegs()  const { return IsInConsecutiveRegs; }
-    void setInConsecutiveRegs() { IsInConsecutiveRegs = 1; }
+    void setInConsecutiveRegs(bool Flag = true) { IsInConsecutiveRegs = Flag; }
 
     bool isInConsecutiveRegsLast() const { return IsInConsecutiveRegsLast; }
-    void setInConsecutiveRegsLast() { IsInConsecutiveRegsLast = 1; }
+    void setInConsecutiveRegsLast(bool Flag = true) {
+      IsInConsecutiveRegsLast = Flag;
+    }
 
     bool isSplit()   const { return IsSplit; }
     void setSplit()  { IsSplit = 1; }

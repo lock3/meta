@@ -35,6 +35,7 @@
 #include "lldb/Interpreter/OptionValueProperties.h"
 
 #include "Plugins/ExpressionParser/Clang/ClangUtil.h"
+#include "Plugins/SymbolFile/DWARF/DWARFDebugInfoEntry.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/CompileUnit.h"
@@ -623,8 +624,7 @@ DWARFDebugAbbrev *SymbolFileDWARF::DebugAbbrev() {
 
 DWARFDebugInfo &SymbolFileDWARF::DebugInfo() {
   llvm::call_once(m_info_once_flag, [&] {
-    static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-    Timer scoped_timer(func_cat, "%s this = %p", LLVM_PRETTY_FUNCTION,
+    LLDB_SCOPED_TIMERF("%s this = %p", LLVM_PRETTY_FUNCTION,
                        static_cast<void *>(this));
     m_info = std::make_unique<DWARFDebugInfo>(*this, m_context);
   });
@@ -646,8 +646,7 @@ DWARFCompileUnit *SymbolFileDWARF::GetDWARFCompileUnit(CompileUnit *comp_unit) {
 
 DWARFDebugRanges *SymbolFileDWARF::GetDebugRanges() {
   if (!m_ranges) {
-    static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-    Timer scoped_timer(func_cat, "%s this = %p", LLVM_PRETTY_FUNCTION,
+    LLDB_SCOPED_TIMERF("%s this = %p", LLVM_PRETTY_FUNCTION,
                        static_cast<void *>(this));
 
     if (m_context.getOrLoadRangesData().GetByteSize() > 0)
@@ -829,8 +828,7 @@ XcodeSDK SymbolFileDWARF::ParseXcodeSDK(CompileUnit &comp_unit) {
 }
 
 size_t SymbolFileDWARF::ParseFunctions(CompileUnit &comp_unit) {
-  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-  Timer scoped_timer(func_cat, "SymbolFileDWARF::ParseFunctions");
+  LLDB_SCOPED_TIMER();
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   DWARFUnit *dwarf_cu = GetDWARFCompileUnit(&comp_unit);
   if (!dwarf_cu)
@@ -1786,7 +1784,7 @@ SymbolFileDWARF::GlobalVariableMap &SymbolFileDWARF::GetGlobalAranges() {
                 if (location.Evaluate(nullptr, LLDB_INVALID_ADDRESS, nullptr,
                                       nullptr, location_result, &error)) {
                   if (location_result.GetValueType() ==
-                      Value::eValueTypeFileAddress) {
+                      Value::ValueType::FileAddress) {
                     lldb::addr_t file_addr =
                         location_result.GetScalar().ULongLong();
                     lldb::addr_t byte_size = 1;
@@ -1839,9 +1837,7 @@ uint32_t SymbolFileDWARF::ResolveSymbolContext(const Address &so_addr,
                                                SymbolContextItem resolve_scope,
                                                SymbolContext &sc) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-  Timer scoped_timer(func_cat,
-                     "SymbolFileDWARF::"
+  LLDB_SCOPED_TIMERF("SymbolFileDWARF::"
                      "ResolveSymbolContext (so_addr = { "
                      "section = %p, offset = 0x%" PRIx64
                      " }, resolve_scope = 0x%8.8x)",
@@ -2277,8 +2273,7 @@ void SymbolFileDWARF::FindFunctions(ConstString name,
                                     bool include_inlines,
                                     SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-  Timer scoped_timer(func_cat, "SymbolFileDWARF::FindFunctions (name = '%s')",
+  LLDB_SCOPED_TIMERF("SymbolFileDWARF::FindFunctions (name = '%s')",
                      name.AsCString());
 
   // eFunctionNameTypeAuto should be pre-resolved by a call to
@@ -2332,8 +2327,7 @@ void SymbolFileDWARF::FindFunctions(const RegularExpression &regex,
                                     bool include_inlines,
                                     SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
-  Timer scoped_timer(func_cat, "SymbolFileDWARF::FindFunctions (regex = '%s')",
+  LLDB_SCOPED_TIMERF("SymbolFileDWARF::FindFunctions (regex = '%s')",
                      regex.GetText().str().c_str());
 
   Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_LOOKUPS));
@@ -3047,8 +3041,12 @@ size_t SymbolFileDWARF::ParseVariablesForContext(const SymbolContext &sc) {
     if (sc.function) {
       DWARFDIE function_die = GetDIE(sc.function->GetID());
 
-      const dw_addr_t func_lo_pc = function_die.GetAttributeValueAsAddress(
-          DW_AT_low_pc, LLDB_INVALID_ADDRESS);
+      dw_addr_t func_lo_pc = LLDB_INVALID_ADDRESS;
+      DWARFRangeList ranges;
+      if (function_die.GetDIE()->GetAttributeAddressRanges(
+              function_die.GetCU(), ranges,
+              /*check_hi_lo_pc=*/true))
+        func_lo_pc = ranges.GetMinRangeBase(0);
       if (func_lo_pc != LLDB_INVALID_ADDRESS) {
         const size_t num_variables = ParseVariables(
             sc, function_die.GetFirstChild(), func_lo_pc, true, true);

@@ -28,6 +28,14 @@
 
 using namespace __sanitizer;
 
+#if SANITIZER_SOLARIS && defined(__sparcv9)
+// FIXME: These tests probably fail because Solaris/sparcv9 uses the full
+// 64-bit address space.  Needs more investigation
+#define SKIP_ON_SOLARIS_SPARCV9(x) DISABLED_##x
+#else
+#define SKIP_ON_SOLARIS_SPARCV9(x) x
+#endif
+
 // Too slow for debug build
 #if !SANITIZER_DEBUG
 
@@ -701,7 +709,7 @@ TEST(SanitizerCommon, CombinedAllocator64VeryCompact) {
 }
 #endif
 
-TEST(SanitizerCommon, CombinedAllocator32Compact) {
+TEST(SanitizerCommon, SKIP_ON_SOLARIS_SPARCV9(CombinedAllocator32Compact)) {
   TestCombinedAllocator<Allocator32Compact>();
 }
 
@@ -937,7 +945,7 @@ TEST(SanitizerCommon, SizeClassAllocator64DynamicIteration) {
 #endif
 #endif
 
-TEST(SanitizerCommon, SizeClassAllocator32Iteration) {
+TEST(SanitizerCommon, SKIP_ON_SOLARIS_SPARCV9(SizeClassAllocator32Iteration)) {
   TestSizeClassAllocatorIteration<Allocator32Compact>();
 }
 
@@ -1073,11 +1081,11 @@ class NoMemoryMapper {
 
   NoMemoryMapper() : last_request_buffer_size(0) {}
 
-  uptr MapPackedCounterArrayBuffer(uptr buffer_size) {
+  void *MapPackedCounterArrayBuffer(uptr buffer_size) {
     last_request_buffer_size = buffer_size;
-    return 0;
+    return nullptr;
   }
-  void UnmapPackedCounterArrayBuffer(uptr buffer, uptr buffer_size) {}
+  void UnmapPackedCounterArrayBuffer(void *buffer, uptr buffer_size) {}
 };
 
 class RedZoneMemoryMapper {
@@ -1092,14 +1100,15 @@ class RedZoneMemoryMapper {
     UnmapOrDie(buffer, 3 * GetPageSize());
   }
 
-  uptr MapPackedCounterArrayBuffer(uptr buffer_size) {
+  void *MapPackedCounterArrayBuffer(uptr buffer_size) {
     const auto page_size = GetPageSize();
     CHECK_EQ(buffer_size, page_size);
-    memset(reinterpret_cast<void*>(reinterpret_cast<uptr>(buffer) + page_size),
-           0, page_size);
-    return reinterpret_cast<uptr>(buffer) + page_size;
+    void *p =
+        reinterpret_cast<void *>(reinterpret_cast<uptr>(buffer) + page_size);
+    memset(p, 0, page_size);
+    return p;
   }
-  void UnmapPackedCounterArrayBuffer(uptr buffer, uptr buffer_size) {}
+  void UnmapPackedCounterArrayBuffer(void *buffer, uptr buffer_size) {}
 
  private:
   void *buffer;
@@ -1219,12 +1228,12 @@ class ReleasedPagesTrackingMemoryMapper {
  public:
   std::set<u32> reported_pages;
 
-  uptr MapPackedCounterArrayBuffer(uptr buffer_size) {
+  void *MapPackedCounterArrayBuffer(uptr buffer_size) {
     reported_pages.clear();
-    return reinterpret_cast<uptr>(calloc(1, buffer_size));
+    return calloc(1, buffer_size);
   }
-  void UnmapPackedCounterArrayBuffer(uptr buffer, uptr buffer_size) {
-    free(reinterpret_cast<void*>(buffer));
+  void UnmapPackedCounterArrayBuffer(void *buffer, uptr buffer_size) {
+    free(buffer);
   }
 
   void ReleasePageRangeToOS(u32 from, u32 to) {

@@ -169,7 +169,7 @@ void test_nonstatic_constexpr_range() {
 void test_invalid_constexpr_range() {
   template for (constexpr auto n : ints) { // expected-error {{use of undeclared identifier 'ints'}}
     consteval {
-      (void)__reflect_dump(reflexpr(n));
+      (void)__reflect_dump(^n);
     }
   }
 }

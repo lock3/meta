@@ -34,6 +34,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/IR/PrintPasses.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -539,6 +540,22 @@ void Loop::setLoopAlreadyUnrolled() {
   setLoopID(NewLoopID);
 }
 
+void Loop::setLoopMustProgress() {
+  LLVMContext &Context = getHeader()->getContext();
+
+  MDNode *MustProgress = findOptionMDForLoop(this, "llvm.loop.mustprogress");
+
+  if (MustProgress)
+    return;
+
+  MDNode *MustProgressMD =
+      MDNode::get(Context, MDString::get(Context, "llvm.loop.mustprogress"));
+  MDNode *LoopID = getLoopID();
+  MDNode *NewLoopID =
+      makePostTransformationMetadata(Context, LoopID, {}, {MustProgressMD});
+  setLoopID(NewLoopID);
+}
+
 bool Loop::isAnnotatedParallel() const {
   MDNode *DesiredLoopIdMetadata = getLoopID();
 
@@ -550,7 +567,7 @@ bool Loop::isAnnotatedParallel() const {
   SmallPtrSet<MDNode *, 4>
       ParallelAccessGroups; // For scalable 'contains' check.
   if (ParallelAccesses) {
-    for (const MDOperand &MD : drop_begin(ParallelAccesses->operands(), 1)) {
+    for (const MDOperand &MD : drop_begin(ParallelAccesses->operands())) {
       MDNode *AccGroup = cast<MDNode>(MD.get());
       assert(isValidAsAccessGroup(AccGroup) &&
              "List item must be an access group");
@@ -599,15 +616,7 @@ bool Loop::isAnnotatedParallel() const {
       if (!LoopIdMD)
         return false;
 
-      bool LoopIdMDFound = false;
-      for (const MDOperand &MDOp : LoopIdMD->operands()) {
-        if (MDOp == DesiredLoopIdMetadata) {
-          LoopIdMDFound = true;
-          break;
-        }
-      }
-
-      if (!LoopIdMDFound)
+      if (!llvm::is_contained(LoopIdMD->operands(), DesiredLoopIdMetadata))
         return false;
     }
   }
@@ -748,9 +757,8 @@ void UnloopUpdater::updateBlockParents() {
 void UnloopUpdater::removeBlocksFromAncestors() {
   // Remove all unloop's blocks (including those in nested subloops) from
   // ancestors below the new parent loop.
-  for (Loop::block_iterator BI = Unloop.block_begin(), BE = Unloop.block_end();
-       BI != BE; ++BI) {
-    Loop *OuterParent = LI->getLoopFor(*BI);
+  for (BasicBlock *BB : Unloop.blocks()) {
+    Loop *OuterParent = LI->getLoopFor(BB);
     if (Unloop.contains(OuterParent)) {
       while (OuterParent->getParentLoop() != &Unloop)
         OuterParent = OuterParent->getParentLoop();
@@ -761,7 +769,7 @@ void UnloopUpdater::removeBlocksFromAncestors() {
     for (Loop *OldParent = Unloop.getParentLoop(); OldParent != OuterParent;
          OldParent = OldParent->getParentLoop()) {
       assert(OldParent && "new loop is not an ancestor of the original");
-      OldParent->removeBlockFromLoop(*BI);
+      OldParent->removeBlockFromLoop(BB);
     }
   }
 }
@@ -868,17 +876,14 @@ void LoopInfo::erase(Loop *Unloop) {
   // First handle the special case of no parent loop to simplify the algorithm.
   if (Unloop->isOutermost()) {
     // Since BBLoop had no parent, Unloop blocks are no longer in a loop.
-    for (Loop::block_iterator I = Unloop->block_begin(),
-                              E = Unloop->block_end();
-         I != E; ++I) {
-
+    for (BasicBlock *BB : Unloop->blocks()) {
       // Don't reparent blocks in subloops.
-      if (getLoopFor(*I) != Unloop)
+      if (getLoopFor(BB) != Unloop)
         continue;
 
       // Blocks no longer have a parent but are still referenced by Unloop until
       // the Unloop object is deleted.
-      changeLoopFor(*I, nullptr);
+      changeLoopFor(BB, nullptr);
     }
 
     // Remove the loop from the top-level LoopInfo object.

@@ -50,9 +50,6 @@ enum NodeType : unsigned {
   // as a register base.
   PCREL_OFFSET,
 
-  // Integer absolute.
-  IABS,
-
   // Integer comparisons.  There are three operands: the two values
   // to compare, and an integer of type SystemZICMP.
   ICMP,
@@ -438,8 +435,7 @@ public:
   bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
                              unsigned AS,
                              Instruction *I = nullptr) const override;
-  bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AS,
-                                      unsigned Align,
+  bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AS, Align Alignment,
                                       MachineMemOperand::Flags Flags,
                                       bool *Fast) const override;
   bool isTruncateFree(Type *, Type *) const override;
@@ -700,6 +696,8 @@ private:
                                          unsigned Opcode) const;
   MachineBasicBlock *emitProbedAlloca(MachineInstr &MI,
                                       MachineBasicBlock *MBB) const;
+
+  SDValue getBackchainAddress(SDValue SP, SelectionDAG &DAG) const;
 
   MachineMemOperand::Flags
   getTargetMMOFlags(const Instruction &I) const override;

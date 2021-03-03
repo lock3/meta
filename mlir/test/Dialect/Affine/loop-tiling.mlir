@@ -133,8 +133,8 @@ func @tile_with_symbolic_loop_upper_bounds(%arg0: memref<?x?xf32>, %arg1: memref
 // CHECK:       dim %{{.*}}, %c0 : memref<?x?xf32>
 // CHECK-NEXT:  affine.for %{{.*}} = 0 to %{{.*}} step 32 {
 // CHECK-NEXT:    affine.for %{{.*}} = 0 to %{{.*}} step 32 {
-// CHECK-NEXT:      affine.for %{{.*}} = #map3(%{{.*}}) to min [[$UBMAP]](%{{.*}})[%{{.*}}] {
-// CHECK-NEXT:        affine.for %{{.*}} = #map3(%{{.*}}) to min [[$UBMAP]](%{{.*}})[%{{.*}}] {
+// CHECK-NEXT:      affine.for %{{.*}} = #map0(%{{.*}}) to min [[$UBMAP]](%{{.*}})[%{{.*}}] {
+// CHECK-NEXT:        affine.for %{{.*}} = #map0(%{{.*}}) to min [[$UBMAP]](%{{.*}})[%{{.*}}] {
 // CHECK-NEXT:          affine.store %{{.*}}, %{{.*}}[%{{.*}}, %{{.*}}] : memref<?x?xf32>
 // CHECK-NEXT:          affine.for %{{.*}} = 0 to %{{.*}} {
 // CHECK-NEXT:            affine.load
@@ -171,6 +171,24 @@ func @tile_with_loop_upper_bounds_in_two_symbols(%arg0: memref<?xf32>, %limit: i
 // CHECK-NEXT:      affine.load
 // CHECK-NEXT:    }
 // CHECK-NEXT:  }
+
+// -----
+
+// CHECK-DAG:  #[[$ID:.*]] = affine_map<(d0) -> (d0)>
+// CHECK-DAG:  [[$UBMAP:#map[0-9]+]] = affine_map<(d0)[s0] -> (d0 + 160, s0)>
+
+func @tile_loop_with_non_unit_step(%arg0 : memref<50xf32>, %arg1 : index) {
+  affine.for %i = 0 to %arg1 step 5 {
+    affine.load %arg0[%i] : memref<50xf32>
+  }
+  return
+}
+
+// CHECK-LABEL: func @tile_loop_with_non_unit_step(%arg{{.*}}: memref<50xf32>, %arg{{.*}}: index)
+// CHECK:     affine.for %[[I:.*]] = 0 to %[[N:.*]] step 160 {
+// CHECK-NEXT:       affine.for %[[II:.*]] = [[$ID:.*]](%[[I]]) to min
+// [[$UBMAP]](%[[I]])[%[[N]]] step 5 {
+// CHECK-NEXT:         affine.load %arg{{.*}}[%arg{{.*}}] : memref<50xf32>
 
 // -----
 

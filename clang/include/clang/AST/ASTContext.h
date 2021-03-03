@@ -34,9 +34,10 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Linkage.h"
+#include "clang/Basic/NoSanitizeList.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/PartialDiagnostic.h"
-#include "clang/Basic/SanitizerBlacklist.h"
+#include "clang/Basic/ProfileList.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/XRayLists.h"
@@ -213,7 +214,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
-  mutable llvm::FoldingSet<DependentReflectedType> DependentReflectedTypes;
+  mutable llvm::FoldingSet<DependentTypeSpliceType> DependentTypeSpliceTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
   mutable llvm::FoldingSet<SubstTemplateTypeParmType>
@@ -241,10 +242,6 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<PipeType> PipeTypes;
   mutable llvm::FoldingSet<ExtIntType> ExtIntTypes;
   mutable llvm::FoldingSet<DependentExtIntType> DependentExtIntTypes;
-  mutable llvm::FoldingSet<InParameterType> InParameterTypes;
-  mutable llvm::FoldingSet<OutParameterType> OutParameterTypes;
-  mutable llvm::FoldingSet<InOutParameterType> InOutParameterTypes;
-  mutable llvm::FoldingSet<MoveParameterType> MoveParameterTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
   mutable llvm::FoldingSet<DependentTemplateName> DependentTemplateNames;
@@ -302,6 +299,10 @@ class ASTContext : public RefCountedBase<ASTContext> {
   ///
   /// This is lazily created.  This is intentionally not serialized.
   mutable llvm::StringMap<StringLiteral *> StringLiteralCache;
+
+  /// MD5 hash of CUID. It is calculated when first used and cached by this
+  /// data member.
+  mutable std::string CUIDHash;
 
   /// Representation of a "canonical" template template parameter that
   /// is used in canonical template names.
@@ -542,6 +543,9 @@ private:
   /// need them (like static local vars).
   llvm::MapVector<const NamedDecl *, unsigned> MangleNumbers;
   llvm::MapVector<const VarDecl *, unsigned> StaticLocalNumbers;
+  /// Mapping the associated device lambda mangling number if present.
+  mutable llvm::DenseMap<const CXXRecordDecl *, unsigned>
+      DeviceLambdaManglingNumbers;
 
   /// Mapping that stores parameterIndex values for ParmVarDecls when
   /// that value exceeds the bitfield size of ParmVarDeclBits.ParameterIndex.
@@ -563,13 +567,17 @@ private:
   ///  this ASTContext object.
   LangOptions &LangOpts;
 
-  /// Blacklist object that is used by sanitizers to decide which
+  /// NoSanitizeList object that is used by sanitizers to decide which
   /// entities should not be instrumented.
-  std::unique_ptr<SanitizerBlacklist> SanitizerBL;
+  std::unique_ptr<NoSanitizeList> NoSanitizeL;
 
   /// Function filtering mechanism to determine whether a given function
   /// should be imbued with the XRay "always" or "never" attributes.
   std::unique_ptr<XRayFunctionFilter> XRayFilter;
+
+  /// ProfileList object that is used by the profile instrumentation
+  /// to decide which entities should be instrumented.
+  std::unique_ptr<ProfileList> ProfList;
 
   /// The allocator used to create AST objects.
   ///
@@ -693,13 +701,13 @@ public:
     return LangOpts.CPlusPlus || LangOpts.RecoveryAST;
   }
 
-  const SanitizerBlacklist &getSanitizerBlacklist() const {
-    return *SanitizerBL;
-  }
+  const NoSanitizeList &getNoSanitizeList() const { return *NoSanitizeL; }
 
   const XRayFunctionFilter &getXRayFilter() const {
     return *XRayFilter;
   }
+
+  const ProfileList &getProfileList() const { return *ProfList; }
 
   DiagnosticsEngine &getDiagnostics() const;
 
@@ -1018,9 +1026,12 @@ public:
 #define SVE_TYPE(Name, Id, SingletonId) \
   CanQualType SingletonId;
 #include "clang/Basic/AArch64SVEACLETypes.def"
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+#define PPC_VECTOR_TYPE(Name, Id, Size) \
   CanQualType Id##Ty;
 #include "clang/Basic/PPCTypes.def"
+#define RVV_TYPE(Name, Id, SingletonId) \
+  CanQualType SingletonId;
+#include "clang/Basic/RISCVVTypes.def"
 
   // Types for deductions in C++0x [stmt.ranged]'s desugaring. Built on demand.
   mutable QualType AutoDeductTy;     // Deduction against 'auto'.
@@ -1418,16 +1429,6 @@ public:
     return getFunctionTypeInternal(ResultTy, Args, EPI, false);
   }
 
-private:
-  template<typename T>
-  QualType getParameterType(llvm::FoldingSet<T>& Types, QualType ParmType);
-
-public:
-  QualType getInParameterType(QualType ParmType) const;
-  QualType getOutParameterType(QualType ParmType) const;
-  QualType getInOutParameterType(QualType ParmType) const;
-  QualType getMoveParameterType(QualType ParmType) const;
-
   QualType adjustStringLiteralBaseType(QualType StrLTy) const;
 
 private:
@@ -1456,7 +1457,7 @@ public:
   /// Return the unique reference to the type for the specified
   /// typedef-name decl.
   QualType getTypedefType(const TypedefNameDecl *Decl,
-                          QualType Canon = QualType()) const;
+                          QualType Underlying = QualType()) const;
 
   QualType getRecordType(const RecordDecl *Decl) const;
 
@@ -1495,9 +1496,6 @@ public:
   getTemplateSpecializationTypeInfo(TemplateName T, SourceLocation TLoc,
                                     const TemplateArgumentListInfo &Args,
                                     QualType Canon = QualType()) const;
-
-  QualType
-  getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const;
 
   QualType getParenType(QualType NamedType) const;
 
@@ -1538,10 +1536,6 @@ public:
   QualType getPackExpansionType(QualType Pattern,
                                 Optional<unsigned> NumExpansions,
                                 bool ExpectPackInType = true);
-
-  QualType getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
-                                              SourceLocation EllipsisLoc,
-                                              SourceLocation RParenLoc);
 
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
@@ -1587,9 +1581,12 @@ public:
       NestedNameSpecifier *NNS, IdentifierInfo *II,
       ArrayRef<TemplateArgument> TemplateArgs) const;
 
-  /// \brief Reflected types.
-  QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
+  /// Reflection splice types.
+  QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
+  QualType getTypePackSpliceType(const PackSplice *PS) const;
+  QualType getSubstTypePackSpliceType(Expr *ExpansionExpr,
+                                      QualType Replacement) const;
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
                                  UnaryTransformType::UTTKind UKind) const;
@@ -1600,19 +1597,11 @@ public:
                        ConceptDecl *TypeConstraintConcept = nullptr,
                        ArrayRef<TemplateArgument> TypeConstraintArgs ={}) const;
 
-  /// Deduced auto type with expected result.
-  QualType getAutoType(QualType DeducedType, AutoTypeKeyword Keyword,
-                       bool IsDependent, bool IsPack,
-                       QualType Expected) const;
-
   /// C++11 deduction pattern for 'auto' type.
   QualType getAutoDeductType() const;
 
   /// C++11 deduction pattern for 'auto &&' type.
   QualType getAutoRRefDeductType() const;
-
-  /// An auto type with an expected deduction.
-  QualType getAutoExpectType(QualType Expected) const;
 
   /// C++17 deduced class template specialization type.
   QualType getDeducedTemplateSpecializationType(TemplateName Template,
@@ -2139,6 +2128,10 @@ public:
   /// vector-length.
   bool areCompatibleSveTypes(QualType FirstType, QualType SecondType);
 
+  /// Return true if the given vector types are lax-compatible SVE vector types,
+  /// false otherwise.
+  bool areLaxCompatibleSveTypes(QualType FirstType, QualType SecondType);
+
   /// Return true if the type has been explicitly qualified with ObjC ownership.
   /// A type may be implicitly qualified with ownership under ObjC ARC, and in
   /// some cases the compiler treats these differently.
@@ -2149,6 +2142,17 @@ public:
   static bool isObjCNSObjectType(QualType Ty) {
     return Ty->isObjCNSObjectType();
   }
+
+  //===--------------------------------------------------------------------===//
+  //                         Reflection caching
+  //===--------------------------------------------------------------------===//
+
+  using MemberList = std::vector<const FieldDecl *>;
+  using MemberMap = llvm::DenseMap<const CXXRecordDecl*, MemberList>;
+
+  /// For the subobject queries, the cached subobjects of a class in the
+  /// order they would appear in their layout.
+  mutable MemberMap AllSubobjects;
 
   //===--------------------------------------------------------------------===//
   //                         Type Sizing and Analysis
@@ -2349,6 +2353,10 @@ public:
                                 const ObjCImplementationDecl *ID,
                                 const ObjCIvarDecl *Ivar) const;
 
+  /// Find the 'this' offset for the member path in a pointer-to-member
+  /// APValue.
+  CharUnits getMemberPointerPathAdjustment(const APValue &MP) const;
+
   bool isNearlyEmpty(const CXXRecordDecl *RD) const;
 
   VTableContextBase *getVTableContext();
@@ -2444,12 +2452,10 @@ public:
         return (*SuperTnullability == NullabilityKind::NonNull &&
                 *SubTnullability == NullabilityKind::Nullable);
       }
-      else {
-        // For the return type, it's okay for the superclass method to specify
-        // "nullable" and the subclass method specify "nonnull"
-        return (*SuperTnullability == NullabilityKind::Nullable &&
-                *SubTnullability == NullabilityKind::NonNull);
-      }
+      // For the return type, it's okay for the superclass method to specify
+      // "nullable" and the subclass method specify "nonnull"
+      return (*SuperTnullability == NullabilityKind::Nullable &&
+              *SubTnullability == NullabilityKind::NonNull);
     }
     return true;
   }
@@ -3129,13 +3135,12 @@ public:
   };
 
   struct SectionInfo {
-    DeclaratorDecl *Decl;
+    NamedDecl *Decl;
     SourceLocation PragmaSectionLocation;
     int SectionFlags;
 
     SectionInfo() = default;
-    SectionInfo(DeclaratorDecl *Decl,
-                SourceLocation PragmaSectionLocation,
+    SectionInfo(NamedDecl *Decl, SourceLocation PragmaSectionLocation,
                 int SectionFlags)
         : Decl(Decl), PragmaSectionLocation(PragmaSectionLocation),
           SectionFlags(SectionFlags) {}
@@ -3151,6 +3156,8 @@ public:
 
   /// Whether a C++ static variable should be externalized.
   bool shouldExternalizeStaticVar(const Decl *D) const;
+
+  StringRef getCUIDHash() const;
 
 private:
   /// All OMPTraitInfo objects live in this collection, one per

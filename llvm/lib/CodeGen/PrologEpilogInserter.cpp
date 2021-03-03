@@ -317,8 +317,8 @@ void PEI::calculateCallFrameInfo(MachineFunction &MF) {
     return;
 
   std::vector<MachineBasicBlock::iterator> FrameSDOps;
-  for (MachineFunction::iterator BB = MF.begin(), E = MF.end(); BB != E; ++BB)
-    for (MachineBasicBlock::iterator I = BB->begin(); I != BB->end(); ++I)
+  for (MachineBasicBlock &BB : MF)
+    for (MachineBasicBlock::iterator I = BB.begin(); I != BB.end(); ++I)
       if (TII.isFrameInstr(*I)) {
         unsigned Size = TII.getFrameSize(*I);
         if (Size > MaxCallFrameSize) MaxCallFrameSize = Size;
@@ -337,10 +337,7 @@ void PEI::calculateCallFrameInfo(MachineFunction &MF) {
   MFI.setAdjustsStack(AdjustsStack);
   MFI.setMaxCallFrameSize(MaxCallFrameSize);
 
-  for (std::vector<MachineBasicBlock::iterator>::iterator
-         i = FrameSDOps.begin(), e = FrameSDOps.end(); i != e; ++i) {
-    MachineBasicBlock::iterator I = *i;
-
+  for (MachineBasicBlock::iterator I : FrameSDOps) {
     // If call frames are not being included as part of the stack frame, and
     // the target doesn't indicate otherwise, remove the call frame pseudos
     // here. The sub/add sp instruction pairs are still inserted, but we don't
@@ -620,12 +617,12 @@ void PEI::spillCalleeSavedRegs(MachineFunction &MF) {
       if (!MFI.hasCalls())
         NumLeafFuncWithSpills++;
 
-      for (MachineBasicBlock *SaveBlock : SaveBlocks) {
+      for (MachineBasicBlock *SaveBlock : SaveBlocks)
         insertCSRSaves(*SaveBlock, CSI);
-        // Update the live-in information of all the blocks up to the save
-        // point.
-        updateLiveness(MF);
-      }
+
+      // Update the live-in information of all the blocks up to the save point.
+      updateLiveness(MF);
+
       for (MachineBasicBlock *RestoreBlock : RestoreBlocks)
         insertCSRRestores(*RestoreBlock, CSI);
     }
@@ -772,9 +769,7 @@ static void AssignProtectedObjSet(const StackObjSet &UnassignedObjs,
                                   int64_t &Offset, Align &MaxAlign,
                                   unsigned Skew) {
 
-  for (StackObjSet::const_iterator I = UnassignedObjs.begin(),
-        E = UnassignedObjs.end(); I != E; ++I) {
-    int i = *I;
+  for (int i : UnassignedObjs) {
     AdjustStackOffset(MFI, i, StackGrowsDown, Offset, MaxAlign, Skew);
     ProtectedObjs.insert(i);
   }
@@ -888,9 +883,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &MF) {
   if (RS && EarlyScavengingSlots) {
     SmallVector<int, 2> SFIs;
     RS->getScavengingFrameIndices(SFIs);
-    for (SmallVectorImpl<int>::iterator I = SFIs.begin(),
-           IE = SFIs.end(); I != IE; ++I)
-      AdjustStackOffset(MFI, *I, StackGrowsDown, Offset, MaxAlign, Skew);
+    for (int SFI : SFIs)
+      AdjustStackOffset(MFI, SFI, StackGrowsDown, Offset, MaxAlign, Skew);
   }
 
   // FIXME: Once this is working, then enable flag will change to a target
@@ -1050,9 +1044,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &MF) {
   if (RS && !EarlyScavengingSlots) {
     SmallVector<int, 2> SFIs;
     RS->getScavengingFrameIndices(SFIs);
-    for (SmallVectorImpl<int>::iterator I = SFIs.begin(),
-           IE = SFIs.end(); I != IE; ++I)
-      AdjustStackOffset(MFI, *I, StackGrowsDown, Offset, MaxAlign, Skew);
+    for (int SFI : SFIs)
+      AdjustStackOffset(MFI, SFI, StackGrowsDown, Offset, MaxAlign, Skew);
   }
 
   if (!TFI.targetHandlesStackFrameRounding()) {
@@ -1077,7 +1070,26 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &MF) {
     // If the frame pointer is eliminated, all frame offsets will be relative to
     // SP not FP. Align to MaxAlign so this works.
     StackAlign = std::max(StackAlign, MaxAlign);
+    int64_t OffsetBeforeAlignment = Offset;
     Offset = alignTo(Offset, StackAlign, Skew);
+
+    // If we have increased the offset to fulfill the alignment constrants,
+    // then the scavenging spill slots may become harder to reach from the
+    // stack pointer, float them so they stay close.
+    if (OffsetBeforeAlignment != Offset && RS && !EarlyScavengingSlots) {
+      SmallVector<int, 2> SFIs;
+      RS->getScavengingFrameIndices(SFIs);
+      LLVM_DEBUG(if (!SFIs.empty()) llvm::dbgs()
+                     << "Adjusting emergency spill slots!\n";);
+      int64_t Delta = Offset - OffsetBeforeAlignment;
+      for (int SFI : SFIs) {
+        LLVM_DEBUG(llvm::dbgs()
+                       << "Adjusting offset of emergency spill slot #" << SFI
+                       << " from " << MFI.getObjectOffset(SFI););
+        MFI.setObjectOffset(SFI, MFI.getObjectOffset(SFI) - Delta);
+        LLVM_DEBUG(llvm::dbgs() << " to " << MFI.getObjectOffset(SFI) << "\n";);
+      }
+    }
   }
 
   // Update frame info to pretend that this is part of the stack...
@@ -1209,7 +1221,7 @@ void PEI::replaceFrameIndices(MachineBasicBlock *BB, MachineFunction &MF,
         unsigned FrameIdx = MI.getOperand(0).getIndex();
         unsigned Size = MF.getFrameInfo().getObjectSize(FrameIdx);
 
-        int64_t Offset =
+        StackOffset Offset =
             TFI->getFrameIndexReference(MF, FrameIdx, Reg);
         MI.getOperand(0).ChangeToRegister(Reg, false /*isDef*/);
         MI.getOperand(0).setIsDebug();
@@ -1236,7 +1248,8 @@ void PEI::replaceFrameIndices(MachineBasicBlock *BB, MachineFunction &MF,
           // Make the DBG_VALUE direct.
           MI.getDebugOffset().ChangeToRegister(0, false);
         }
-        DIExpr = DIExpression::prepend(DIExpr, PrependFlags, Offset);
+
+        DIExpr = TRI.prependOffsetExpression(DIExpr, PrependFlags, Offset);
         MI.getDebugExpressionOp().setMetadata(DIExpr);
         continue;
       }
@@ -1252,9 +1265,11 @@ void PEI::replaceFrameIndices(MachineBasicBlock *BB, MachineFunction &MF,
                "DBG_VALUE machine instruction");
         Register Reg;
         MachineOperand &Offset = MI.getOperand(i + 1);
-        int refOffset = TFI->getFrameIndexReferencePreferSP(
+        StackOffset refOffset = TFI->getFrameIndexReferencePreferSP(
             MF, MI.getOperand(i).getIndex(), Reg, /*IgnoreSPUpdates*/ false);
-        Offset.setImm(Offset.getImm() + refOffset + SPAdj);
+        assert(!refOffset.getScalable() &&
+               "Frame offsets with a scalable component are not supported");
+        Offset.setImm(Offset.getImm() + refOffset.getFixed() + SPAdj);
         MI.getOperand(i).ChangeToRegister(Reg, false /*isDef*/);
         continue;
       }

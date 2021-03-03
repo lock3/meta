@@ -11,7 +11,7 @@ struct S {
 };
 
 void test() {
-  int q = unqualid("S")<2>::X2();
+  int q = [# "S" #]<2>::X2();
 }
 
 } // end namespace class_name

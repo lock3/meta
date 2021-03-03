@@ -13,7 +13,7 @@ class foo {
   consteval {
     int i = 0;
     -> fragment struct {
-      int unqualid("get_value_", %{i})() {
+      int [# "get_value_", %{i} #]() {
         return nested_foo<%{i}> { }.get();
       }
     };

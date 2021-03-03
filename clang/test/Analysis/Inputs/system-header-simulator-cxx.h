@@ -46,7 +46,7 @@ template <typename T, typename Ptr, typename Ref> struct __vector_iterator {
 
   __vector_iterator(const Ptr p = 0) : ptr(p) {}
   __vector_iterator(const iterator &rhs): ptr(rhs.base()) {}
-  __vector_iterator<T, Ptr, Ref> operator++() { ++ ptr; return *this; }
+  __vector_iterator<T, Ptr, Ref>& operator++() { ++ ptr; return *this; }
   __vector_iterator<T, Ptr, Ref> operator++(int) {
     auto tmp = *this;
     ++ ptr;
@@ -109,7 +109,7 @@ template <typename T, typename Ptr, typename Ref> struct __deque_iterator {
 
   __deque_iterator(const Ptr p = 0) : ptr(p) {}
   __deque_iterator(const iterator &rhs): ptr(rhs.base()) {}
-  __deque_iterator<T, Ptr, Ref> operator++() { ++ ptr; return *this; }
+  __deque_iterator<T, Ptr, Ref>& operator++() { ++ ptr; return *this; }
   __deque_iterator<T, Ptr, Ref> operator++(int) {
     auto tmp = *this;
     ++ ptr;
@@ -169,7 +169,7 @@ template <typename T, typename Ptr, typename Ref> struct __list_iterator {
 
   __list_iterator(T* it = 0) : item(it) {}
   __list_iterator(const iterator &rhs): item(rhs.item) {}
-  __list_iterator<T, Ptr, Ref> operator++() { item = item->next; return *this; }
+  __list_iterator<T, Ptr, Ref>& operator++() { item = item->next; return *this; }
   __list_iterator<T, Ptr, Ref> operator++(int) {
     auto tmp = *this;
     item = item->next;
@@ -212,7 +212,7 @@ template <typename T, typename Ptr, typename Ref> struct __fwdl_iterator {
 
   __fwdl_iterator(T* it = 0) : item(it) {}
   __fwdl_iterator(const iterator &rhs): item(rhs.item) {}
-  __fwdl_iterator<T, Ptr, Ref> operator++() { item = item->next; return *this; }
+  __fwdl_iterator<T, Ptr, Ref>& operator++() { item = item->next; return *this; }
   __fwdl_iterator<T, Ptr, Ref> operator++(int) {
     auto tmp = *this;
     item = item->next;
@@ -953,7 +953,6 @@ next(ForwardIterator it,
 
 #if __cplusplus >= 201103L
 namespace std {
-
 template <typename T> // TODO: Implement the stub for deleter.
 class unique_ptr {
 public:
@@ -961,11 +960,12 @@ public:
   unique_ptr(T *) noexcept {}
   unique_ptr(const unique_ptr &) noexcept = delete;
   unique_ptr(unique_ptr &&) noexcept;
+  ~unique_ptr();
 
   T *get() const noexcept;
-  T *release() const noexcept;
-  void reset(T *p = nullptr) const noexcept;
-  void swap(unique_ptr<T> &p) const noexcept;
+  T *release() noexcept;
+  void reset(T *p = nullptr) noexcept;
+  void swap(unique_ptr<T> &p) noexcept;
 
   typename std::add_lvalue_reference<T>::type operator*() const;
   T *operator->() const noexcept;
@@ -979,7 +979,6 @@ template <typename T>
 void swap(unique_ptr<T> &x, unique_ptr<T> &y) noexcept {
   x.swap(y);
 }
-
 } // namespace std
 #endif
 
@@ -1084,7 +1083,7 @@ template<
     class iterator {
     public:
       iterator(Key *key): ptr(key) {}
-      iterator operator++() { ++ptr; return *this; }
+      iterator& operator++() { ++ptr; return *this; }
       bool operator!=(const iterator &other) const { return ptr != other.ptr; }
       const Key &operator*() const { return *ptr; }
     private:
@@ -1109,7 +1108,7 @@ template<
     class iterator {
     public:
       iterator(Key *key): ptr(key) {}
-      iterator operator++() { ++ptr; return *this; }
+      iterator& operator++() { ++ptr; return *this; }
       bool operator!=(const iterator &other) const { return ptr != other.ptr; }
       const Key &operator*() const { return *ptr; }
     private:

@@ -15,6 +15,7 @@
 
 #include "index/SymbolID.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclObjC.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/MacroInfo.h"
@@ -64,6 +65,14 @@ std::string printName(const ASTContext &Ctx, const NamedDecl &ND);
 /// string if decl is not a template specialization.
 std::string printTemplateSpecializationArgs(const NamedDecl &ND);
 
+/// Print the Objective-C method name, including the full container name, e.g.
+/// `-[MyClass(Category) method:]`
+std::string printObjCMethod(const ObjCMethodDecl &Method);
+
+/// Print the Objective-C container name including categories, e.g. `MyClass`,
+// `MyClass()`, `MyClass(Category)`, and `MyProtocol`.
+std::string printObjCContainer(const ObjCContainerDecl &C);
+
 /// Gets the symbol ID for a declaration. Returned SymbolID might be null.
 SymbolID getSymbolID(const Decl *D);
 
@@ -109,6 +118,7 @@ QualType declaredType(const TypeDecl *D);
 
 /// Retrieves the deduced type at a given location (auto, decltype).
 /// It will return the underlying type.
+/// If the type is an undeduced auto, returns the type itself.
 llvm::Optional<QualType> getDeducedType(ASTContext &, SourceLocation Loc);
 
 /// Gets the nested name specifier necessary for spelling \p ND in \p

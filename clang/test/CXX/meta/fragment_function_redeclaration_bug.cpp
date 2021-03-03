@@ -5,7 +5,7 @@ class foo {
   consteval {
     for (int i = 0; i < 2; ++i) {
       -> fragment struct {
-        void unqualid("func_", T + %{i}) () {
+        void [# "func_", T + %{i} #] () {
         }
       };
     }

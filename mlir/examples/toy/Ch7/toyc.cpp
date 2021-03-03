@@ -18,14 +18,15 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Module.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR.h"
+#include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -190,6 +191,9 @@ int dumpAST() {
 }
 
 int dumpLLVMIR(mlir::ModuleOp module) {
+  // Register the translation to LLVM IR with the MLIR context.
+  mlir::registerLLVMDialectTranslation(*module->getContext());
+
   // Convert the module to LLVM IR in a new LLVM IR context.
   llvm::LLVMContext llvmContext;
   auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
@@ -220,6 +224,10 @@ int runJit(mlir::ModuleOp module) {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
 
+  // Register the translation from MLIR to LLVM IR, which must happen before we
+  // can JIT-compile.
+  mlir::registerLLVMDialectTranslation(*module->getContext());
+
   // An optimization pipeline to use within the execution engine.
   auto optPipeline = mlir::makeOptimizingTransformer(
       /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
@@ -233,7 +241,7 @@ int runJit(mlir::ModuleOp module) {
   auto &engine = maybeEngine.get();
 
   // Invoke the JIT-compiled function.
-  auto invocationResult = engine->invoke("main");
+  auto invocationResult = engine->invokePacked("main");
   if (invocationResult) {
     llvm::errs() << "JIT invocation failed\n";
     return -1;

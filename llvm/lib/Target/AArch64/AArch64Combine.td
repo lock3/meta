@@ -17,9 +17,17 @@ def fconstant_to_constant : GICombineRule<
          [{ return matchFConstantToConstant(*${root}, MRI); }]),
   (apply [{ applyFConstantToConstant(*${root}); }])>;
 
+def icmp_redundant_trunc_matchdata : GIDefMatchData<"Register">;
+def icmp_redundant_trunc : GICombineRule<
+  (defs root:$root, icmp_redundant_trunc_matchdata:$matchinfo),
+  (match (wip_match_opcode G_ICMP):$root,
+         [{ return matchICmpRedundantTrunc(*${root}, MRI, Helper.getKnownBits(), ${matchinfo}); }]),
+  (apply [{ applyICmpRedundantTrunc(*${root}, MRI, B, Observer, ${matchinfo}); }])>;
+
 def AArch64PreLegalizerCombinerHelper: GICombinerHelper<
   "AArch64GenPreLegalizerCombinerHelper", [all_combines,
-                                           fconstant_to_constant]> {
+                                           fconstant_to_constant,
+                                           icmp_redundant_trunc]> {
   let DisableRuleOption = "aarch64prelegalizercombiner-disable-rule";
   let StateClass = "AArch64PreLegalizerCombinerHelperState";
   let AdditionalArguments = [];
@@ -71,9 +79,13 @@ def ext: GICombineRule <
   (apply [{ applyEXT(*${root}, ${matchinfo}); }])
 >;
 
-// Combines which replace a G_SHUFFLE_VECTOR with a target-specific pseudo
-// instruction.
-def shuffle_vector_pseudos : GICombineGroup<[dup, rev, ext, zip, uzp, trn]>;
+def shuf_to_ins_matchdata : GIDefMatchData<"std::tuple<Register, int, Register, int>">;
+def shuf_to_ins: GICombineRule <
+  (defs root:$root, shuf_to_ins_matchdata:$matchinfo),
+  (match (wip_match_opcode G_SHUFFLE_VECTOR):$root,
+         [{ return matchINS(*${root}, MRI, ${matchinfo}); }]),
+  (apply [{ return applyINS(*${root}, MRI, B, ${matchinfo}); }])
+>;
 
 def vashr_vlshr_imm_matchdata : GIDefMatchData<"int64_t">;
 def vashr_vlshr_imm : GICombineRule<
@@ -82,6 +94,19 @@ def vashr_vlshr_imm : GICombineRule<
           [{ return matchVAshrLshrImm(*${root}, MRI, ${matchinfo}); }]),
   (apply [{ applyVAshrLshrImm(*${root}, MRI, ${matchinfo}); }])
 >;
+
+def form_duplane_matchdata :
+  GIDefMatchData<"std::pair<unsigned, int>">;
+def form_duplane : GICombineRule <
+  (defs root:$root, form_duplane_matchdata:$matchinfo),
+  (match (wip_match_opcode G_SHUFFLE_VECTOR):$root,
+          [{ return matchDupLane(*${root}, MRI, ${matchinfo}); }]),
+  (apply [{ applyDupLane(*${root}, MRI, B, ${matchinfo}); }])
+>;
+
+def shuffle_vector_lowering : GICombineGroup<[dup, rev, ext, zip, uzp, trn,
+                                              form_duplane,
+                                              shuf_to_ins]>;
 
 def adjust_icmp_imm_matchdata :
   GIDefMatchData<"std::pair<uint64_t, CmpInst::Predicate>">;
@@ -102,12 +127,20 @@ def extractvecelt_pairwise_add : GICombineRule<
   (apply [{ applyExtractVecEltPairwiseAdd(*${root}, MRI, B, ${matchinfo}); }])
 >;
 
+def mul_const_matchdata : GIDefMatchData<"std::function<void(MachineIRBuilder&, Register)>">;
+def mul_const : GICombineRule<
+  (defs root:$root, mul_const_matchdata:$matchinfo),
+  (match (wip_match_opcode G_MUL):$root,
+          [{ return matchAArch64MulConstCombine(*${root}, MRI, ${matchinfo}); }]),
+  (apply [{ applyAArch64MulConstCombine(*${root}, MRI, B, ${matchinfo}); }])
+>;
+
 // Post-legalization combines which should happen at all optimization levels.
 // (E.g. ones that facilitate matching for the selector) For example, matching
 // pseudos.
 def AArch64PostLegalizerLoweringHelper
     : GICombinerHelper<"AArch64GenPostLegalizerLoweringHelper",
-                       [shuffle_vector_pseudos, vashr_vlshr_imm,
+                       [shuffle_vector_lowering, vashr_vlshr_imm,
                         icmp_lowering]> {
   let DisableRuleOption = "aarch64postlegalizerlowering-disable-rule";
 }
@@ -118,7 +151,8 @@ def AArch64PostLegalizerCombinerHelper
                        [copy_prop, erase_undef_store, combines_for_extload,
                         sext_trunc_sextload,
                         hoist_logic_op_with_same_opcode_hands,
-                        and_trivial_mask, xor_of_and_with_same_reg,
-                        extractvecelt_pairwise_add]> {
+                        redundant_and, xor_of_and_with_same_reg,
+                        extractvecelt_pairwise_add, redundant_or,
+                        mul_const, redundant_sext_inreg]> {
   let DisableRuleOption = "aarch64postlegalizercombiner-disable-rule";
 }

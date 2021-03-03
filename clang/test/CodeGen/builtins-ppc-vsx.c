@@ -22,6 +22,7 @@ vector signed long long vsll = { 255LL, -937LL };
 vector unsigned long long vull = { 1447LL, 2894LL };
 double d = 23.4;
 signed long long sll = 618LL;
+unsigned long long ull = 618ULL;
 float af[4] = {23.4f, 56.7f, 89.0f, 12.3f};
 double ad[2] = {23.4, 56.7};
 signed char asc[16] = { -8,  9, -10, 11, -12, 13, -14, 15,
@@ -65,8 +66,8 @@ unsigned int res_aui[4];
 void dummy() { }
 
 void test1() {
-// CHECK-LABEL: define void @test1
-// CHECK-LE-LABEL: define void @test1
+// CHECK-LABEL: define{{.*}} void @test1
+// CHECK-LE-LABEL: define{{.*}} void @test1
 
   res_vf = vec_abs(vf);
 // CHECK: call <4 x float> @llvm.fabs.v4f32(<4 x float> %{{[0-9]*}})
@@ -927,6 +928,66 @@ void test1() {
 // CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
 // CHECK-LE: or <2 x i64>
 // CHECK-LE: bitcast <2 x i64> %{{[0-9]+}} to <2 x double>
+
+  res_vbll = vec_sel(vbll, vbll, vbll);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
+
+  res_vbll = vec_sel(vbll, vbll, vull);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
+
+  res_vsll = vec_sel(vsll, vsll, vbll);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
+
+  res_vsll = vec_sel(vsll, vsll, vull);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
+
+  res_vull = vec_sel(vull, vull, vbll);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
+
+  res_vull = vec_sel(vull, vull, vull);
+// CHECK: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK: and <2 x i64> %{{[0-9]+}},
+// CHECK: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK: or <2 x i64>
+// CHECK-LE: xor <2 x i64> %{{[0-9]+}}, <i64 -1, i64 -1>
+// CHECK-LE: and <2 x i64> %{{[0-9]+}},
+// CHECK-LE: and <2 x i64> %{{[0-9]+}}, %{{[0-9]+}}
+// CHECK-LE: or <2 x i64>
 
   res_vf = vec_sqrt(vf);
 // CHECK: call <4 x float> @llvm.sqrt.v4f32(<4 x float> %{{[0-9]+}})
@@ -1791,6 +1852,24 @@ res_vsc = vec_xxsldwi(vsc, vsc, 0);
 res_vuc = vec_xxsldwi(vuc, vuc, 1);
 // CHECK: shufflevector <4 x i32> %{{[0-9]+}}, <4 x i32> %{{[0-9]+}}, <4 x i32> <i32 1, i32 2, i32 3, i32 4>
 // CHECK-LE: shufflevector <4 x i32> %{{[0-9]+}}, <4 x i32> %{{[0-9]+}}, <4 x i32> <i32 7, i32 0, i32 1, i32 2>
+
+res_vd = vec_promote(d, 0);
+// CHECK: store <2 x double> zeroinitializer
+// CHECK: insertelement <2 x double>
+// CHECK-LE: store <2 x double> zeroinitializer
+// CHECK-LE: insertelement <2 x double>
+
+res_vsll = vec_promote(sll, 0);
+// CHECK: store <2 x i64> zeroinitializer
+// CHECK: insertelement <2 x i64>
+// CHECK-LE: store <2 x i64> zeroinitializer
+// CHECK-LE: insertelement <2 x i64>
+
+res_vull = vec_promote(ull, 0);
+// CHECK: store <2 x i64> zeroinitializer
+// CHECK: insertelement <2 x i64>
+// CHECK-LE: store <2 x i64> zeroinitializer
+// CHECK-LE: insertelement <2 x i64>
 }
 
 // The return type of the call expression may be different from the return type of the shufflevector.
@@ -1849,4 +1928,48 @@ void testVectorInt128Pack(){
 // CHECK-LE:  %[[V1:[0-9]+]] = bitcast <1 x i128> %{{[0-9]+}} to <2 x i64>
 // CHECK-NEXT-LE: %{{[0-9]+}} = extractelement <2 x i64> %[[V1]], i32 0
 
+}
+
+void test_vector_cpsgn_float(vector float a, vector float b) {
+// CHECK-LABEL: test_vector_cpsgn_float
+// CHECK-DAG: load{{.*}}%__a
+// CHECK-DAG: load{{.*}}%__b
+// CHECK-NOT: SEPARATOR
+// CHECK-DAG: [[RA:%[0-9]+]] = load <4 x float>, <4 x float>* %__a.addr
+// CHECK-DAG: [[RB:%[0-9]+]] = load <4 x float>, <4 x float>* %__b.addr
+// CHECK-NEXT: call <4 x float> @llvm.copysign.v4f32(<4 x float> [[RB]], <4 x float> [[RA]])
+  vec_cpsgn(a, b);
+}
+
+void test_vector_cpsgn_double(vector double a, vector double b) {
+// CHECK-LABEL: test_vector_cpsgn_double
+// CHECK-DAG: load{{.*}}%__a
+// CHECK-DAG: load{{.*}}%__b
+// CHECK-NOT: SEPARATOR
+// CHECK-DAG: [[RA:%[0-9]+]] = load <2 x double>, <2 x double>* %__a.addr
+// CHECK-DAG: [[RB:%[0-9]+]] = load <2 x double>, <2 x double>* %__b.addr
+// CHECK-NEXT: call <2 x double> @llvm.copysign.v2f64(<2 x double> [[RB]], <2 x double> [[RA]])
+  vec_cpsgn(a, b);
+}
+
+void test_builtin_xvcpsgnsp(vector float a, vector float b) {
+// CHECK-LABEL: test_builtin_xvcpsgnsp
+// CHECK-DAG: load{{.*}}%a
+// CHECK-DAG: load{{.*}}%b
+// CHECK-NOT: SEPARATOR
+// CHECK-DAG: [[RA:%[0-9]+]] = load <4 x float>, <4 x float>* %a.addr
+// CHECK-DAG: [[RB:%[0-9]+]] = load <4 x float>, <4 x float>* %b.addr
+// CHECK-NEXT: call <4 x float> @llvm.copysign.v4f32(<4 x float> [[RA]], <4 x float> [[RB]])
+  __builtin_vsx_xvcpsgnsp(a, b);
+}
+
+void test_builtin_xvcpsgndp(vector double a, vector double b) {
+// CHECK-LABEL: test_builtin_xvcpsgndp
+// CHECK-DAG: load{{.*}}%a
+// CHECK-DAG: load{{.*}}%b
+// CHECK-NOT: SEPARATOR
+// CHECK-DAG: [[RA:%[0-9]+]] = load <2 x double>, <2 x double>* %a.addr
+// CHECK-DAG: [[RB:%[0-9]+]] = load <2 x double>, <2 x double>* %b.addr
+// CHECK-NEXT: call <2 x double> @llvm.copysign.v2f64(<2 x double> [[RA]], <2 x double> [[RB]])
+  __builtin_vsx_xvcpsgndp(a, b);
 }

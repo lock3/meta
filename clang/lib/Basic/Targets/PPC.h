@@ -59,6 +59,7 @@ class LLVM_LIBRARY_VISIBILITY PPCTargetInfo : public TargetInfo {
   // Target cpu features.
   bool HasAltivec = false;
   bool HasMMA = false;
+  bool HasROPProtection = false;
   bool HasVSX = false;
   bool HasP8Vector = false;
   bool HasP8Crypto = false;
@@ -355,6 +356,8 @@ public:
       : PPCTargetInfo(Triple, Opts) {
     if (Triple.isOSAIX())
       resetDataLayout("E-m:a-p:32:32-i64:64-n32");
+    else if (Triple.getArch() == llvm::Triple::ppcle)
+      resetDataLayout("e-m:e-p:32:32-i64:64-n32");
     else
       resetDataLayout("E-m:e-p:32:32-i64:64-n32");
 
@@ -438,7 +441,7 @@ public:
 
   // PPC64 Linux-specific ABI options.
   bool setABI(const std::string &Name) override {
-    if (Name == "elfv1" || Name == "elfv1-qpx" || Name == "elfv2") {
+    if (Name == "elfv1" || Name == "elfv2") {
       ABI = Name;
       return true;
     }

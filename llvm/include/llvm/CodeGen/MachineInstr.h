@@ -1156,6 +1156,10 @@ public:
     return getOpcode() == TargetOpcode::CFI_INSTRUCTION;
   }
 
+  bool isPseudoProbe() const {
+    return getOpcode() == TargetOpcode::PSEUDO_PROBE;
+  }
+  
   // True if the instruction represents a position in the function.
   bool isPosition() const { return isLabel() || isCFIInstruction(); }
 
@@ -1164,6 +1168,9 @@ public:
   bool isDebugRef() const { return getOpcode() == TargetOpcode::DBG_INSTR_REF; }
   bool isDebugInstr() const {
     return isDebugValue() || isDebugLabel() || isDebugRef();
+  }
+  bool isDebugOrPseudoInstr() const {
+    return isDebugInstr() || isPseudoProbe();
   }
 
   bool isDebugOffsetImm() const { return getDebugOffset().isImm(); }
@@ -1261,6 +1268,7 @@ public:
     case TargetOpcode::DBG_LABEL:
     case TargetOpcode::LIFETIME_START:
     case TargetOpcode::LIFETIME_END:
+    case TargetOpcode::PSEUDO_PROBE:
       return true;
     }
   }
@@ -1333,7 +1341,8 @@ public:
   /// Return true if the MachineInstr modifies (fully define or partially
   /// define) the specified register.
   /// NOTE: It's ignoring subreg indices on virtual registers.
-  bool modifiesRegister(Register Reg, const TargetRegisterInfo *TRI) const {
+  bool modifiesRegister(Register Reg,
+                        const TargetRegisterInfo *TRI = nullptr) const {
     return findRegisterDefOperandIdx(Reg, false, true, TRI) != -1;
   }
 

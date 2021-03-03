@@ -65,7 +65,7 @@ static FlatSymbolRefAttr getLibraryCallSymbolRef(Operation *op,
   assert(op->getNumResults() == 0 &&
          "Library call for linalg operation can be generated only for ops that "
          "have void return types");
-  auto libFnType = FunctionType::get(inputTypes, {}, rewriter.getContext());
+  auto libFnType = rewriter.getFunctionType(inputTypes, {});
 
   OpBuilder::InsertionGuard guard(rewriter);
   // Insert before module terminator.
@@ -76,7 +76,8 @@ static FlatSymbolRefAttr getLibraryCallSymbolRef(Operation *op,
   // Insert a function attribute that will trigger the emission of the
   // corresponding `_mlir_ciface_xxx` interface so that external libraries see
   // a normalized ABI. This interface is added during std to llvm conversion.
-  funcOp.setAttr("llvm.emit_c_interface", UnitAttr::get(op->getContext()));
+  funcOp->setAttr("llvm.emit_c_interface", UnitAttr::get(op->getContext()));
+  funcOp.setPrivate();
   return fnNameAttr;
 }
 
@@ -153,7 +154,13 @@ LogicalResult mlir::linalg::CopyTransposeRewrite::matchAndRewrite(
   if (in == op.input() && out == op.output())
     return failure();
 
-  rewriter.replaceOpWithNewOp<CopyOp>(op, in, out);
+  auto libraryCallName = getLibraryCallSymbolRef(op, rewriter);
+  if (!libraryCallName)
+    return failure();
+
+  rewriter.replaceOpWithNewOp<mlir::CallOp>(
+      op, libraryCallName.getValue(), TypeRange(),
+      createTypeCanonicalizedMemRefOperands(rewriter, op.getLoc(), {in, out}));
   return success();
 }
 

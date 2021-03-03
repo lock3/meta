@@ -61,11 +61,6 @@ areAllOpsInTheBlockListInvariant(Region &blockList, Value indVar,
                                  SmallPtrSetImpl<Operation *> &definedOps,
                                  SmallPtrSetImpl<Operation *> &opsToHoist);
 
-static bool isMemRefDereferencingOp(Operation &op) {
-  // TODO: Support DMA Ops.
-  return isa<AffineReadOpInterface, AffineWriteOpInterface>(op);
-}
-
 // Returns true if the individual op is loop invariant.
 bool isOpLoopInvariant(Operation &op, Value indVar,
                        SmallPtrSetImpl<Operation *> &definedOps,
@@ -89,7 +84,7 @@ bool isOpLoopInvariant(Operation &op, Value indVar,
     // which are themselves not being hoisted.
     definedOps.insert(&op);
 
-    if (isMemRefDereferencingOp(op)) {
+    if (isa<AffineMapAccessInterface>(op)) {
       Value memref = isa<AffineReadOpInterface>(op)
                          ? cast<AffineReadOpInterface>(op).getMemRef()
                          : cast<AffineWriteOpInterface>(op).getMemRef();
@@ -216,7 +211,7 @@ void LoopInvariantCodeMotion::runOnAffineForOp(AffineForOp forOp) {
     op->moveBefore(forOp);
   }
 
-  LLVM_DEBUG(forOp.getOperation()->print(llvm::dbgs() << "Modified loop\n"));
+  LLVM_DEBUG(forOp->print(llvm::dbgs() << "Modified loop\n"));
 }
 
 void LoopInvariantCodeMotion::runOnFunction() {
@@ -224,7 +219,7 @@ void LoopInvariantCodeMotion::runOnFunction() {
   // way, we first LICM from the inner loop, and place the ops in
   // the outer loop, which in turn can be further LICM'ed.
   getFunction().walk([&](AffineForOp op) {
-    LLVM_DEBUG(op.getOperation()->print(llvm::dbgs() << "\nOriginal loop\n"));
+    LLVM_DEBUG(op->print(llvm::dbgs() << "\nOriginal loop\n"));
     runOnAffineForOp(op);
   });
 }

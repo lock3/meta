@@ -17,7 +17,7 @@ struct New {
 };
 
 consteval auto get_field_1() {
-  auto field_1 = reflexpr(Existing::field_1);
+  auto field_1 = ^Existing::field_1;
   __reflect_mod(query_set_new_name, field_1, "ns_field_1");
   return field_1;
 }

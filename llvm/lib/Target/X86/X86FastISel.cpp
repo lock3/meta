@@ -779,13 +779,13 @@ bool X86FastISel::handleConstantAddresses(const Value *V, X86AddressMode &AM) {
         if (TLI.getPointerTy(DL) == MVT::i64) {
           Opc = X86::MOV64rm;
           RC  = &X86::GR64RegClass;
-
-          if (Subtarget->isPICStyleRIPRel())
-            StubAM.Base.Reg = X86::RIP;
         } else {
           Opc = X86::MOV32rm;
           RC  = &X86::GR32RegClass;
         }
+
+        if (Subtarget->isPICStyleRIPRel() || GVFlags == X86II::MO_GOTPCREL)
+          StubAM.Base.Reg = X86::RIP;
 
         LoadReg = createResultReg(RC);
         MachineInstrBuilder LoadMI =
@@ -1082,13 +1082,35 @@ bool X86FastISel::X86SelectCallAddress(const Value *V, X86AddressMode &AM) {
 
   // If all else fails, try to materialize the value in a register.
   if (!AM.GV || !Subtarget->isPICStyleRIPRel()) {
+    auto GetCallRegForValue = [this](const Value *V) {
+      Register Reg = getRegForValue(V);
+
+      // In 64-bit mode, we need a 64-bit register even if pointers are 32 bits.
+      if (Reg && Subtarget->isTarget64BitILP32()) {
+        Register CopyReg = createResultReg(&X86::GR32RegClass);
+        BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(X86::MOV32rr),
+                CopyReg)
+            .addReg(Reg);
+
+        Register ExtReg = createResultReg(&X86::GR64RegClass);
+        BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc,
+                TII.get(TargetOpcode::SUBREG_TO_REG), ExtReg)
+            .addImm(0)
+            .addReg(CopyReg)
+            .addImm(X86::sub_32bit);
+        Reg = ExtReg;
+      }
+
+      return Reg;
+    };
+
     if (AM.Base.Reg == 0) {
-      AM.Base.Reg = getRegForValue(V);
+      AM.Base.Reg = GetCallRegForValue(V);
       return AM.Base.Reg != 0;
     }
     if (AM.IndexReg == 0) {
       assert(AM.Scale == 1 && "Scale with no index!");
-      AM.IndexReg = getRegForValue(V);
+      AM.IndexReg = GetCallRegForValue(V);
       return AM.IndexReg != 0;
     }
   }
@@ -3178,23 +3200,23 @@ bool X86FastISel::fastLowerCall(CallLoweringInfo &CLI) {
   bool &IsTailCall    = CLI.IsTailCall;
   bool IsVarArg       = CLI.IsVarArg;
   const Value *Callee = CLI.Callee;
-  MCSymbol *Symbol = CLI.Symbol;
+  MCSymbol *Symbol    = CLI.Symbol;
+  const auto *CB      = CLI.CB;
 
   bool Is64Bit        = Subtarget->is64Bit();
   bool IsWin64        = Subtarget->isCallingConvWin64(CC);
 
-  const CallInst *CI = dyn_cast_or_null<CallInst>(CLI.CB);
-  const Function *CalledFn = CI ? CI->getCalledFunction() : nullptr;
-
   // Call / invoke instructions with NoCfCheck attribute require special
   // handling.
-  const auto *II = dyn_cast_or_null<InvokeInst>(CLI.CB);
-  if ((CI && CI->doesNoCfCheck()) || (II && II->doesNoCfCheck()))
+  if (CB && CB->doesNoCfCheck())
     return false;
 
   // Functions with no_caller_saved_registers that need special handling.
-  if ((CI && CI->hasFnAttr("no_caller_saved_registers")) ||
-      (CalledFn && CalledFn->hasFnAttribute("no_caller_saved_registers")))
+  if ((CB && isa<CallInst>(CB) && CB->hasFnAttr("no_caller_saved_registers")))
+    return false;
+
+  // Functions with no_callee_saved_registers that need special handling.
+  if ((CB && CB->hasFnAttr("no_callee_saved_registers")))
     return false;
 
   // Functions using thunks for indirect calls need to use SDISel.

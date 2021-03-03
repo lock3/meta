@@ -14,6 +14,8 @@
 #define LINALG_OPS
 
 include "mlir/Dialect/Linalg/IR/LinalgBase.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ViewLikeInterface.td"
 
@@ -29,6 +31,247 @@ class Linalg_Op<string mnemonic, list<OpTrait> traits = []> :
   let printer = [{ return ::print(p, *this); }];
   let verifier = [{ return ::verify(*this); }];
   let parser = [{ return ::parse$cppClass(parser, result); }];
+}
+
+def Linalg_InitTensorOp : Linalg_Op<"init_tensor", [NoSideEffect]> {
+  let summary = "operation to define a tensor of particular value";
+
+  let description = [{
+    `linalg.init_tensor` is an operation that materializes a tensor of
+    a given shape. The shape could be dynamic or static.
+  }];
+
+  let arguments =
+    (ins Variadic<Index>:$sizes, I64ArrayAttr:$static_sizes);
+
+  let results = (outs AnyTensor:$result);
+
+  let assemblyFormat = [{
+    custom<OperandsOrIntegersSizesList>($sizes, $static_sizes) attr-dict
+    `:` type($result)
+  }];
+
+  let verifier = [{ return ::verify(*this); }];
+
+  let extraClassDeclaration = [{
+    static StringRef getStaticSizesAttrName() {
+      return "static_sizes";
+    }
+
+    RankedTensorType getType() {
+      return getResult().getType().cast<RankedTensorType>(); }
+
+    // Infer the shape of the result tensor given the static shapes
+    // and element type of the result tensor.
+    static Type inferResultType(ArrayRef<int64_t> staticSizes, Type elementType);
+
+    // Return true if the size of the tensor is dynamic at `idx`
+    bool isDynamicSize(unsigned idx) {
+      APInt v = *(static_sizes().getAsValueRange<IntegerAttr>().begin() + idx);
+      return ShapedType::isDynamic(v.getSExtValue());
+    }
+
+    // Assert that the size of the result tensor is static at `idx`
+    // and return the shape.
+    int64_t getStaticSize(unsigned idx) {
+      assert(!isDynamicSize(idx) && "expected static size");
+      APInt v = *(static_sizes().
+          template getAsValueRange<IntegerAttr>().begin() + idx);
+        return v.getSExtValue();
+    }
+
+    // Return the argument position that contains the dynamic size of
+    // the tensor at dimension `idx`. Asserts that the shape is
+    // dynamic at that `idx`.
+    unsigned getIndexOfDynamicSize(unsigned idx) {
+      assert(isDynamicSize(idx) && "expected dynamic size");
+      return std::count_if(
+          static_sizes().getValue().begin(),
+          static_sizes().getValue().begin() + idx,
+          [&](Attribute attr) {
+            return ShapedType::isDynamic(attr.cast<IntegerAttr>().getInt());
+          });
+    }
+
+    // Return the Value of the dynamic size of the tensor at dimension
+    // `idx`. Asserts that the shape is dynamic at that `idx.
+    Value getDynamicSize(unsigned idx) {
+      return getOperand(getIndexOfDynamicSize(idx));
+    }
+  }];
+
+  let builders = [
+    OpBuilderDAG<(ins "ValueRange":$shape,
+                  "ArrayRef<int64_t>":$staticShape, "Type":$elementType),
+    [{
+      build($_builder, $_state,
+            InitTensorOp::inferResultType(staticShape, elementType),
+            shape, $_builder.getI64ArrayAttr(staticShape));
+    }]>,
+    OpBuilderDAG<(ins "ValueRange":$shape, "Type":$elementType),
+    [{
+      SmallVector<int64_t, 4> staticShape(
+        shape.size(), ShapedType::kDynamicSize);
+      build($_builder, $_state, shape, staticShape, elementType);
+    }]>,
+    OpBuilderDAG<(ins "ArrayRef<int64_t>":$staticShape, "Type":$elementType),
+    [{
+      build($_builder, $_state, ValueRange{}, staticShape, elementType);
+    }]>,
+    OpBuilderDAG<(ins "ArrayRef<OpFoldResult>":$sizes, "Type":$elementType,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
+  ];
+
+  let hasCanonicalizer = 1;
+}
+
+def Linalg_PadTensorOp : Linalg_Op<"pad_tensor",
+    [AttrSizedOperandSegments, NoSideEffect]> {
+  let summary = "tensor pad operation";
+  let description = [{
+    `linalg.pad_tensor` is an operation that pads the `source` tensor
+    with given `low` and `high` padding config.
+
+    The PadTensor operation supports the following arguments:
+
+    * source: the "base" tensor on which to pad.
+    * low: A list contains the padding along the start of each
+           dimension, i.e `low`.
+    * high: A list contains the padding along the end of each
+           dimension, i.e. `high`.
+
+    The result tensor dimensions are `low` + `dim` + `high` along that
+    dimension. The number of elements of `low` and `high` must match
+    the rank of the input tensor (which is also the rank of the output
+    tensor). They can be either a constant or a dynamic value.
+
+    The region of the `pad_tensor` operation returns the value to use
+    for the padding. The arguments of the region represent the index
+    of the source being accessed. There should be as many arguments as
+    the rank of the `source` tensor. The value `yield`-ed by the
+    region is used as the value of the view at the given position.
+
+    Example 1:
+
+    ```mlir
+      %pad_value = ... : f32
+      %0 = linalg.pad_tensor %0 low[1, 2] high[2, 3] {
+      ^bb0(%arg0 : index, %arg1 : index):
+        linalg.yield %pad_value : f32
+      } : tensor<?x?xf32> to tensor<?x?xf32>
+    ```
+
+    Example 2:
+
+    ```mlir
+      %pad_value = ... : f32
+      %0 = linalg.pad_tensor %arg0 low[2, %arg1, 3, 3] high[3, 3, %arg1, 2] {
+      ^bb0(%arg2: index, %arg3: index, %arg4: index, %arg5: index):
+          linalg.yield %pad_value : f32
+      } : tensor<1x2x2x?xf32> to tensor<6x?x?x?xf32>
+    ```
+
+    Example 3:
+
+    ```mlir
+      %pad_value = ... : f32
+      %0 = linalg.pad_tensor %arg0 low[0, 0] high[%ub0, %ub1] {
+      ^bb0(%arg1: index, %arg2: index):
+        linalg.yield %pad_value : f32
+      } : tensor<2x3xf32> to tensor<?x?xf32>
+    ```
+  }];
+
+  let arguments = (ins
+    AnyTensor:$source,
+    Variadic<Index>:$low,
+    Variadic<Index>:$high,
+    I64ArrayAttr:$static_low,
+    I64ArrayAttr:$static_high);
+
+  let regions = (region SizedRegion<1>:$region);
+
+  let results = (outs AnyTensor:$result);
+
+  let assemblyFormat = [{
+    $source `low` `` custom<OperandsOrIntegersSizesList>($low, $static_low)
+    `high` `` custom<OperandsOrIntegersSizesList>($high, $static_high)
+    $region attr-dict `:` type($source) `to` type($result)
+  }];
+
+  let extraClassDeclaration = [{
+    static StringRef getStaticLowAttrName() {
+      return "static_low";
+    }
+
+    static StringRef getStaticHighAttrName() {
+      return "static_high";
+    }
+
+    RankedTensorType getSourceType() {
+      return source().getType().cast<RankedTensorType>();
+    }
+    RankedTensorType getResultType() {
+      return getResult().getType().cast<RankedTensorType>();
+    }
+
+    // Infer the shape of the result tensor given the static shapes
+    // and element type of the result tensor.
+    static RankedTensorType inferResultType(RankedTensorType sourceType,
+                                ArrayRef<int64_t> staticLow,
+                                ArrayRef<int64_t> staticHigh);
+
+    // Return a PadTensorOp that pads `source` to `type` size where the static
+    // sizes are assumed to be greater than the dynamic sizes. The op performs
+    // "high" padding (i.e. it adds trailing padding values until the desired
+    // size is met).
+    static linalg::PadTensorOp createPadHighOp(
+        Type type, Value source, Value pad, Location loc, OpBuilder & builder);
+
+    // Return a PadTensorOp that pads `source to `type` size with `pad` value.
+    // I.e., a block will be created and the `pad` value will be yielded
+    // directly. If the type passed is nullptr, it is inferred.
+    static linalg::PadTensorOp createPadScalarOp(
+        Type type, Value source, Value pad, ArrayRef<OpFoldResult> low,
+        ArrayRef<OpFoldResult> high, Location loc, OpBuilder & builder);
+
+    // Return a vector of all the static or dynamic values (low/high padding) of
+    // the op.
+    inline SmallVector<OpFoldResult> getMixedPadImpl(ArrayAttr staticAttrs,
+                                                     ValueRange values) {
+      SmallVector<OpFoldResult> res;
+      unsigned numDynamic = 0;
+      unsigned count = staticAttrs.size();
+      for (unsigned idx = 0; idx < count; ++idx) {
+        if (ShapedType::isDynamic(staticAttrs[idx].cast<IntegerAttr>().getInt()))
+          res.push_back(values[numDynamic++]);
+        else
+          res.push_back(staticAttrs[idx]);
+      }
+      return res;
+    }
+    SmallVector<OpFoldResult> getMixedLowPad() {
+      return getMixedPadImpl(static_low(), low());
+    }
+    SmallVector<OpFoldResult> getMixedHighPad() {
+      return getMixedPadImpl(static_high(), high());
+    }
+  }];
+
+  let builders = [
+    // Build a PadTensorOp with mixed static and dynamic entries.
+    OpBuilderDAG<(ins "Value":$source, "ArrayRef<int64_t>":$staticLow,
+      "ArrayRef<int64_t>":$staticHigh, "ValueRange":$low, "ValueRange":$high,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build a PadTensorOp with all dynamic entries.
+    OpBuilderDAG<(ins "Value":$source, "ValueRange":$low, "ValueRange":$high,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build a PadTensorOp with mixed static and dynamic entries and custom
+    // result type. If the type passed is nullptr, it is inferred.
+    OpBuilderDAG<(ins "Type":$resultType, "Value":$source,
+      "ArrayRef<OpFoldResult>":$low, "ArrayRef<OpFoldResult>":$high,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
+  ];
 }
 
 def Linalg_RangeOp :
@@ -96,6 +339,19 @@ class Linalg_ReshapeLikeOp<string mnemonic, list<OpTrait> traits = []> :
     SmallVector<AffineMap, 4> getReassociationMaps() {
       return llvm::to_vector<4>(llvm::map_range(reassociation(), [
       ](Attribute a) { return a.cast<AffineMapAttr>().getValue(); }));
+    }
+    SmallVector<ReassociationExprs, 4> getReassociationExprs() {
+      return
+        llvm::to_vector<4>(llvm::map_range(reassociation(),
+          [](Attribute a) {
+            return llvm::to_vector<2>(
+              a.cast<AffineMapAttr>().getValue().getResults());
+          }));
+    }
+    SmallVector<Value, 4> getOutputShape(OpBuilder &b, Location loc) {
+      return getReshapeOutputShapeFromInputShape(
+          b, loc, src(), getResultType().getShape(),
+          getReassociationMaps());
     }
   }];
   let assemblyFormat = [{
@@ -214,79 +470,7 @@ def Linalg_TensorReshapeOp : Linalg_ReshapeLikeOp<"tensor_reshape">,
   let hasCanonicalizer = 1;
 }
 
-def Linalg_SliceOp : Linalg_Op<"slice", [
-      DeclareOpInterfaceMethods<ViewLikeOpInterface>, NoSideEffect]>,
-    Arguments<(ins AnyStridedMemRef:$view,
-                   Variadic<AnyTypeOf<[Range, Index]>>:$indexings)>,
-    Results<(outs AnyStridedMemRef)> {
-  let summary = "Produce a rank-reduced `subview` of a base `view`.";
-  let description = [{
-    The `linalg.slice` op allows defining a subregion of a smaller rank than the
-    operand `view` within the underlying buffer.
-
-    A `linalg.slice` op takes a view and a variadic number of indexings and
-    produces a `view` of the same elemental type. An indexing is either:
-      1. a `linalg.range`, in which case it does not reduce the rank of the
-         parent `view` along the corresponding dimension.
-      2. an `index`, in which case it reduces the rank of the parent view by
-         one.
-
-    If an indexing extends past the size of the `view`, this is undefined
-    behavior. Ideally the `linalg.slice` operation would automatically truncate
-    it to be within bounds but there are tradeoffs involved now that `std.view`
-    is a standard op.
-
-    Examples:
-
-      1. rank-preserving `slice`:
-
-      ```mlir
-      %4 = linalg.slice %0[%1, %2] : memref<?x?xf32, stride_spec>,
-        !linalg.range, !linalg.range, memref<?x?xf32, stride_spec>
-      ```
-
-      2. rank-reducing `slice` (from 2-D to 1-D):
-
-      ```mlir
-      %4 = linalg.slice %0[%1, %2] : memref<?x?xf32, stride_spec>,
-        index, !linalg.range, memref<?x?xf32, stride_spec>
-      ```
-
-      3. rank-reducing `slice` (from 2-D to 0-D):
-
-      ```mlir
-      %4 = linalg.slice %0[%1, %2] : memref<?x?xf32, stride_spec>,
-        index, index, memref<?x?xf32, stride_spec>
-      ```
-  }];
-
-  let builders = [OpBuilderDAG<(ins "Value":$base, "ValueRange":$indexings)>];
-
-  let extraClassDeclaration = [{
-    enum { FirstIndexingOperand = 1 };
-    unsigned getRank() { return getShapedType().getRank(); }
-    Type getElementType() { return getShapedType().getElementType(); }
-    ShapedType getShapedType() { return getType().cast<ShapedType>(); }
-    unsigned getBaseViewRank() { return getBaseViewType().getRank(); }
-    ShapedType getBaseViewType() { return view().getType().cast<ShapedType>();}
-
-    // Get the underlying indexing at a given rank.
-    Value indexing(unsigned rank) { return *(indexings().begin() + rank); }
-
-    // Get the subset of indexings that are of RangeType.
-    SmallVector<Value, 8> getRanges() {
-      SmallVector<Value, 8> res;
-      for (auto operand : indexings())
-        if (!operand.getType().isa<IndexType>())
-          res.push_back(operand);
-      return res;
-    }
-  }];
-
-  let hasFolder = 1;
-}
-
-def Linalg_YieldOp : Linalg_Op<"yield", [NoSideEffect, Terminator]>,
+def Linalg_YieldOp : Linalg_Op<"yield", [NoSideEffect, ReturnLike, Terminator]>,
     Arguments<(ins Variadic<AnyType>:$values)> {
   let summary = "Linalg yield operation";
   let description = [{
@@ -300,6 +484,76 @@ def Linalg_YieldOp : Linalg_Op<"yield", [NoSideEffect, Terminator]>,
     linalg.yield %f0, %f1 : f32, f32
     ```
   }];
+  let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
 }
+
+def Linalg_TiledLoopOp : Linalg_Op<"tiled_loop", [
+     AttrSizedOperandSegments,
+     DeclareOpInterfaceMethods<LoopLikeOpInterface>,
+     RecursiveSideEffects,
+     SingleBlockImplicitTerminator<"linalg::YieldOp">
+    ]> {
+  let summary = "Linalg tiled loop operation";
+  let description = [{
+    This is a loop-like operation with additional properties. The arguments
+    also include the input and the output tensors and the attributes to specify
+    the iterator types. The body region of the loop contains `subtensor`
+    operations applied to every tensor argument of TiledLoopOp.
+
+    The body region must contain exactly one block that terminates with
+    `linalg.yield` with the operands resulting from `subtensor_insert`
+    operations.
+
+    Parsing TiledLoopOp will set all elements of the `iterator_types` attribute
+    to "parallel" type, when it is absent from the custom format.
+
+    Example:
+
+    ```mlir
+    linalg.tiled_loop (%i) = (%c0) to (%c24) step (%c4)
+        ins(%lhs, %rhs : tensor<24x64xi8>, tensor<24x64xi8>)
+        outs(%out : tensor<24x64xi8>)
+        iterators("parallel") {
+      %lhs_sub = subtensor %lhs[%i, 0] [%c4, %c64] [1, 1]
+          : tensor<24x64xi8> to tensor<?x?xi8>
+      %rhs_sub = subtensor %rhs[%i, 0] [%c4, %c64] [1, 1]
+          : tensor<24x64xi8> to tensor<?x?xi8>
+      %out_sub = subtensor %out[%i, 0] [%c4, %c64] [1, 1]
+          : tensor<24x64xi8> to tensor<?x?xi8>
+
+      %result_sub = linalg.generic ...
+
+      %result = subtensor_insert %result_sub into %out[%i, 0][%c4, %c64][1, 1]
+        : tensor<?x?xi8> into tensor<24x64xi8>
+      linalg.yield %result : tensor<24x64xi8>
+    }
+    ```
+  }];
+
+  let arguments = (ins Variadic<Index>:$lowerBound,
+                       Variadic<Index>:$upperBound,
+                       Variadic<Index>:$step,
+                       Variadic<AnyRankedTensor>:$inputs,
+                       Variadic<AnyRankedTensor>:$outputs,
+                       ArrayAttr:$iterator_types);
+  let results = (outs Variadic<AnyRankedTensor>:$results);
+  let regions = (region SizedRegion<1>:$region);
+
+  let builders = [
+    OpBuilderDAG<(ins "ValueRange":$lowerBounds, "ValueRange":$upperBounds,
+      "ValueRange":$steps, "ValueRange":$inputs, "ValueRange":$outputs,
+      "ArrayRef<StringRef>":$iteratorTypes,
+      CArg<"function_ref<void (OpBuilder &, Location, ValueRange)>",
+           "nullptr">:$bodyBuilderFn)>,
+  ];
+
+  let extraClassDeclaration = [{
+    ValueRange getInductionVars() {
+      return getBody()->getArguments();
+    }
+    unsigned getNumLoops() { return step().size(); }
+  }];
+}
+
 
 #endif // LINALG_OPS

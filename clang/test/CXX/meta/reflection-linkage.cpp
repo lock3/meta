@@ -4,7 +4,7 @@
 #include "reflection_query.h"
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 template<meta::info refl>
@@ -27,18 +27,18 @@ class bar {
 namespace type_reflection {
 
 void test1() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy7PubTypeEEDav(
-  foo<reflexpr(PubType)>();
+  // CHECK: define linkonce_odr i32 @_Z3fooIReTy7PubTypeEDav(
+  foo<^PubType>();
 }
 
 void test2() {
-  // CHECK: define internal i32 @_Z3fooIXReTyN12_GLOBAL__N_18PrivTypeEEEDav(
-  foo<reflexpr(PrivType)>();
+  // CHECK: define internal i32 @_Z3fooIReTyN12_GLOBAL__N_18PrivTypeEEDav(
+  foo<^PrivType>();
 }
 
 void test3() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXReTy3barILi1EEEEDav(
-  foo<reflexpr(bar<1>)>();
+  // CHECK: define linkonce_odr i32 @_Z3fooIReTy3barILi1EEEDav(
+  foo<^bar<1>>();
 }
 
 }
@@ -46,8 +46,8 @@ void test3() {
 namespace template_reflection {
 
 void test3() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXRe3barEEDav(
-  foo<reflexpr(bar)>();
+  // CHECK: define linkonce_odr i32 @_Z3fooIRe3barEDav(
+  foo<^bar>();
 }
 
 }
@@ -55,13 +55,13 @@ void test3() {
 namespace namespace_reflection {
 
 void test1() {
-  // CHECK: define internal i32 @_Z3fooIXReTuEEDav(
-  foo<reflexpr(::)>();
+  // CHECK: define internal i32 @_Z3fooIReTuEDav(
+  foo<^::>();
 }
 
 void test2() {
-  // CHECK: define linkonce_odr i32 @_Z3fooIXRe20namespace_reflectionEEDav(
-  foo<reflexpr(::namespace_reflection)>();
+  // CHECK: define linkonce_odr i32 @_Z3fooIRe20namespace_reflectionEDav(
+  foo<^::namespace_reflection>();
 }
 
 }
@@ -69,8 +69,8 @@ void test2() {
 namespace expr_reflection {
 
 void test1() {
-  // CHECK: define internal i32 @_Z3fooIXRe{{[0-9]+}}EEDav(
-  foo<reflexpr(1 + 2)>();
+  // CHECK: define internal i32 @_Z3fooIRe{{[0-9]+}}EDav(
+  foo<^(1 + 2)>();
 }
 
 }
@@ -78,12 +78,13 @@ void test1() {
 namespace fragment_reflection {
 
 void test1() {
-  // CHECK: define internal i32 @_Z3fooIXReF{{[0-9]+}}EEDav(
+  // CHECK: define internal i32 @_Z3fooIReF{{[0-9]+}}EDav(
   foo<fragment class { int k; }>();
 }
 
 void test2() {
-  // CHECK: define internal i32 @_Z3fooIXReF{{[0-9]+}}CL_ZZN19fragment_reflection5test2EvE7var_capEEEDav(
+
+  // CHECK: define internal i32 @_Z3fooIReF{{[0-9]+}}CL_ZZN19fragment_reflection5test2EvE7var_capEEDav(
   constexpr int var_cap = 344;
   foo<fragment class { int k = %{var_cap}; }>();
 }

@@ -4,7 +4,7 @@
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 namespace ns { }
 
@@ -12,10 +12,10 @@ struct simple_struct {
   int var = 0;
 
   consteval {
-    -> namespace fragment namespace {
-      requires typename simple_struct;
+    info simple = ^simple_struct;
 
-      int get_val(const simple_struct &inst) {
+    -> namespace fragment namespace {
+      int get_val(const typename [: %{simple} :] &inst) {
         return inst.var;
       }
     };
@@ -28,10 +28,9 @@ consteval void metafn(info source) {
       int var = 1;
 
       consteval {
+        info global = ^global_foo;
         -> namespace fragment namespace {
-          requires typename global_foo;
-
-          int get_val(const global_foo &inst) {
+          int get_val(const typename [: %{global} :] &inst) {
             return inst.var;
           }
         };
@@ -44,10 +43,9 @@ consteval void metafn(info source) {
       int var = 2;
 
       consteval {
+        info ns = ^ns_foo;
         -> namespace fragment namespace {
-          requires typename ns_foo;
-
-          int get_val(const ns_foo &inst) {
+          int get_val(const typename [: %{ns} :] &inst) {
             return inst.var;
           }
         };
@@ -60,10 +58,9 @@ consteval void metafn(info source) {
       int var = 3;
 
       consteval {
+        info parent_ns = ^parent_ns_foo;
         -> namespace fragment namespace {
-          requires typename parent_ns_foo;
-
-          int get_val(const parent_ns_foo &inst) {
+          int get_val(const typename [: %{parent_ns} :] &inst) {
             return inst.var;
           }
         };

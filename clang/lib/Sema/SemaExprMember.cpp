@@ -1711,8 +1711,9 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
   // Decompose the name into its component parts.
   DeclarationNameInfo NameInfo;
   const TemplateArgumentListInfo *TemplateArgs;
-  DecomposeUnqualifiedId(Id, TemplateArgsBuffer,
-                         NameInfo, TemplateArgs);
+  if (DecomposeUnqualifiedId(Id, TemplateArgsBuffer,
+                             NameInfo, TemplateArgs))
+    return ExprError();
 
   DeclarationName Name = NameInfo.getName();
   bool IsArrow = (OpKind == tok::arrow);
@@ -1744,14 +1745,28 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
 }
 
 void Sema::CheckMemberAccessOfNoDeref(const MemberExpr *E) {
-  QualType ResultTy = E->getType();
-
-  // Do not warn on member accesses to arrays since this returns an array
-  // lvalue and does not actually dereference memory.
-  if (isa<ArrayType>(ResultTy))
+  if (isUnevaluatedContext())
     return;
 
-  if (E->isArrow()) {
+  QualType ResultTy = E->getType();
+
+  // Member accesses have four cases:
+  // 1: non-array member via "->": dereferences
+  // 2: non-array member via ".": nothing interesting happens
+  // 3: array member access via "->": nothing interesting happens
+  //    (this returns an array lvalue and does not actually dereference memory)
+  // 4: array member access via ".": *adds* a layer of indirection
+  if (ResultTy->isArrayType()) {
+    if (!E->isArrow()) {
+      // This might be something like:
+      //     (*structPtr).arrayMember
+      // which behaves roughly like:
+      //     &(*structPtr).pointerMember
+      // in that the apparent dereference in the base expression does not
+      // actually happen.
+      CheckAddressOfNoDeref(E->getBase());
+    }
+  } else if (E->isArrow()) {
     if (const auto *Ptr = dyn_cast<PointerType>(
             E->getBase()->getType().getDesugaredType(Context))) {
       if (Ptr->getPointeeType()->hasAttr(attr::NoDeref))
@@ -1806,6 +1821,14 @@ Sema::BuildFieldReferenceExpr(Expr *BaseExpr, bool IsArrow,
     Qualifiers Combined = BaseQuals + MemberQuals;
     if (Combined != MemberQuals)
       MemberType = Context.getQualifiedType(MemberType, Combined);
+
+    // Pick up NoDeref from the base in case we end up using AddrOf on the
+    // result. E.g. the expression
+    //     &someNoDerefPtr->pointerMember
+    // should be a noderef pointer again.
+    if (BaseType->hasAttr(attr::NoDeref))
+      MemberType =
+          Context.getAttributedType(attr::NoDeref, MemberType, MemberType);
   }
 
   auto *CurMethod = dyn_cast<CXXMethodDecl>(CurContext);

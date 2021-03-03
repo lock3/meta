@@ -81,7 +81,9 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       HasPublicFields(false), HasMutableFields(false), HasVariantMembers(false),
       HasOnlyCMembers(true), HasInClassInitializer(false),
       HasUninitializedReferenceMember(false), HasUninitializedFields(false),
-      HasInheritedConstructor(false), HasInheritedAssignment(false),
+      HasInheritedConstructor(false),
+      HasInheritedDefaultConstructor(false),
+      HasInheritedAssignment(false),
       NeedOverloadResolutionForCopyConstructor(false),
       NeedOverloadResolutionForMoveConstructor(false),
       NeedOverloadResolutionForCopyAssignment(false),
@@ -222,6 +224,9 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     QualType BaseType = Base->getType();
     // Skip dependent types; we can't do any checking on them now.
     if (BaseType->isDependentType())
+      continue;
+    const Type *BaseTypePtr = BaseType.getTypePtr();
+    if (isa<TypePackSpliceType>(BaseTypePtr))
       continue;
     auto *BaseClassDecl =
         cast<CXXRecordDecl>(BaseType->castAs<RecordType>()->getDecl());
@@ -815,6 +820,8 @@ void CXXRecordDecl::addedMember(Decl *D) {
     //   constructor [...]
     if (Constructor->isConstexpr() && !Constructor->isCopyOrMoveConstructor())
       data().HasConstexprNonCopyMoveConstructor = true;
+    if (!isa<CXXConstructorDecl>(D) && Constructor->isDefaultConstructor())
+      data().HasInheritedDefaultConstructor = true;
   }
 
   // Handle destructors.
@@ -1509,7 +1516,7 @@ CXXMethodDecl *CXXRecordDecl::getLambdaCallOperator() const {
 
 CXXMethodDecl* CXXRecordDecl::getLambdaStaticInvoker() const {
   CXXMethodDecl *CallOp = getLambdaCallOperator();
-  CallingConv CC = CallOp->getType()->getAs<FunctionType>()->getCallConv();
+  CallingConv CC = CallOp->getType()->castAs<FunctionType>()->getCallConv();
   return getLambdaStaticInvoker(CC);
 }
 
@@ -1533,8 +1540,8 @@ CXXMethodDecl *CXXRecordDecl::getLambdaStaticInvoker(CallingConv CC) const {
   DeclContext::lookup_result Invoker = getLambdaStaticInvokers(*this);
 
   for (NamedDecl *ND : Invoker) {
-    const FunctionType *FTy =
-        cast<ValueDecl>(ND->getAsFunction())->getType()->getAs<FunctionType>();
+    const auto *FTy =
+        cast<ValueDecl>(ND->getAsFunction())->getType()->castAs<FunctionType>();
     if (FTy->getCallConv() == CC)
       return getInvokerAsMethod(ND);
   }
@@ -1588,6 +1595,20 @@ Decl *CXXRecordDecl::getLambdaContextDecl() const {
   assert(isLambda() && "Not a lambda closure type!");
   ExternalASTSource *Source = getParentASTContext().getExternalSource();
   return getLambdaData().ContextDecl.get(Source);
+}
+
+void CXXRecordDecl::setDeviceLambdaManglingNumber(unsigned Num) const {
+  assert(isLambda() && "Not a lambda closure type!");
+  if (Num)
+    getASTContext().DeviceLambdaManglingNumbers[this] = Num;
+}
+
+unsigned CXXRecordDecl::getDeviceLambdaManglingNumber() const {
+  assert(isLambda() && "Not a lambda closure type!");
+  auto I = getASTContext().DeviceLambdaManglingNumbers.find(this);
+  if (I != getASTContext().DeviceLambdaManglingNumbers.end())
+    return I->second;
+  return 0;
 }
 
 static CanQualType GetConversionType(ASTContext &Context, NamedDecl *Conv) {
@@ -2202,10 +2223,10 @@ CXXMethodDecl *CXXMethodDecl::Create(ASTContext &C, CXXRecordDecl *RD,
 }
 
 CXXMethodDecl *CXXMethodDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) CXXMethodDecl(
-      CXXMethod, C, nullptr, SourceLocation(), DeclarationNameInfo(),
-      QualType(), nullptr, SC_None, false, CSK_unspecified, SourceLocation(),
-      nullptr);
+  return new (C, ID)
+      CXXMethodDecl(CXXMethod, C, nullptr, SourceLocation(),
+                    DeclarationNameInfo(), QualType(), nullptr, SC_None, false,
+                    ConstexprSpecKind::Unspecified, SourceLocation(), nullptr);
 }
 
 CXXMethodDecl *CXXMethodDecl::getDevirtualizedMethod(const Expr *Base,
@@ -2503,16 +2524,15 @@ CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
                                        SourceLocation L, Expr *Init,
                                        SourceLocation R,
                                        SourceLocation EllipsisLoc)
-    : Initializee(TInfo), MemberOrEllipsisLocation(EllipsisLoc), Init(Init),
+    : Initializee(TInfo), Init(Init), MemberOrEllipsisLocation(EllipsisLoc),
       LParenLoc(L), RParenLoc(R), IsDelegating(false), IsVirtual(IsVirtual),
       IsWritten(false), SourceOrder(0) {}
 
-CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
-                                       FieldDecl *Member,
+CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context, FieldDecl *Member,
                                        SourceLocation MemberLoc,
                                        SourceLocation L, Expr *Init,
                                        SourceLocation R)
-    : Initializee(Member), MemberOrEllipsisLocation(MemberLoc), Init(Init),
+    : Initializee(Member), Init(Init), MemberOrEllipsisLocation(MemberLoc),
       LParenLoc(L), RParenLoc(R), IsDelegating(false), IsVirtual(false),
       IsWritten(false), SourceOrder(0) {}
 
@@ -2521,7 +2541,7 @@ CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
                                        SourceLocation MemberLoc,
                                        SourceLocation L, Expr *Init,
                                        SourceLocation R)
-    : Initializee(Member), MemberOrEllipsisLocation(MemberLoc), Init(Init),
+    : Initializee(Member), Init(Init), MemberOrEllipsisLocation(MemberLoc),
       LParenLoc(L), RParenLoc(R), IsDelegating(false), IsVirtual(false),
       IsWritten(false), SourceOrder(0) {}
 
@@ -2604,10 +2624,10 @@ CXXConstructorDecl *CXXConstructorDecl::CreateDeserialized(ASTContext &C,
   unsigned Extra =
       additionalSizeToAlloc<InheritedConstructor, ExplicitSpecifier>(
           isInheritingConstructor, hasTraillingExplicit);
-  auto *Result = new (C, ID, Extra)
-      CXXConstructorDecl(C, nullptr, SourceLocation(), DeclarationNameInfo(),
-                         QualType(), nullptr, ExplicitSpecifier(), false, false,
-                         CSK_unspecified, InheritedConstructor(), nullptr);
+  auto *Result = new (C, ID, Extra) CXXConstructorDecl(
+      C, nullptr, SourceLocation(), DeclarationNameInfo(), QualType(), nullptr,
+      ExplicitSpecifier(), false, false, ConstexprSpecKind::Unspecified,
+      InheritedConstructor(), nullptr);
   Result->setInheritingConstructor(isInheritingConstructor);
   Result->CXXConstructorDeclBits.HasTrailingExplicitSpecifier =
       hasTraillingExplicit;
@@ -2745,10 +2765,9 @@ void CXXDestructorDecl::anchor() {}
 
 CXXDestructorDecl *
 CXXDestructorDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID)
-      CXXDestructorDecl(C, nullptr, SourceLocation(), DeclarationNameInfo(),
-                        QualType(), nullptr, false, false, CSK_unspecified,
-                        nullptr);
+  return new (C, ID) CXXDestructorDecl(
+      C, nullptr, SourceLocation(), DeclarationNameInfo(), QualType(), nullptr,
+      false, false, ConstexprSpecKind::Unspecified, nullptr);
 }
 
 CXXDestructorDecl *CXXDestructorDecl::Create(
@@ -2781,7 +2800,8 @@ CXXConversionDecl *
 CXXConversionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXConversionDecl(
       C, nullptr, SourceLocation(), DeclarationNameInfo(), QualType(), nullptr,
-      false, ExplicitSpecifier(), CSK_unspecified, SourceLocation(), nullptr);
+      false, ExplicitSpecifier(), ConstexprSpecKind::Unspecified,
+      SourceLocation(), nullptr);
 }
 
 CXXConversionDecl *CXXConversionDecl::Create(
@@ -3360,51 +3380,6 @@ CXXStmtFragmentDecl *CXXStmtFragmentDecl::Create(
     ASTContext &Cxt, DeclContext *DC,
     SourceLocation IntroLoc, bool HasThisPtr) {
   return new (Cxt, DC) CXXStmtFragmentDecl(DC, IntroLoc, HasThisPtr);
-}
-
-CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
-                                         SourceLocation SL, IdentifierInfo *Id,
-                                         bool Typename)
-  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), SpecLoc(SL),
-    WasDeclaredWithTypename(Typename)
-{
-}
-
-CXXRequiredTypeDecl *
-CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
-                            SourceLocation SL, IdentifierInfo *Id, bool Typename) {
-  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, SL, Id, Typename);
-}
-
-CXXRequiredTypeDecl *
-CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
-  IdentifierInfo *II = &Ctx.Idents.get("");
-  return new (Ctx, ID) CXXRequiredTypeDecl(nullptr, SourceLocation(),
-                                           SourceLocation(), II, true);
-}
-
-CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
-                                                     DeclContext *DC,
-                                                     DeclaratorDecl *DD,
-                                                     SourceLocation RL)
-  : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
-                   QualType(Context.DependentTy),
-                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
-                   RL), RequiresLoc(RL), RequiredDeclarator(DD) {
-}
-
-CXXRequiredDeclaratorDecl *
-CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
-                                  DeclaratorDecl *RequiredDecl,
-                                  SourceLocation RequiresLoc) {
-  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC, RequiredDecl,
-                                                 RequiresLoc);
-}
-
-CXXRequiredDeclaratorDecl *
-CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
-                                              unsigned ID) {
-  llvm_unreachable("unimplemented.");
 }
 
 static const char *getAccessName(AccessSpecifier AS) {

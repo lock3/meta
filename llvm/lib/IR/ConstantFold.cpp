@@ -348,14 +348,22 @@ static Constant *ExtractConstantBytes(Constant *C, unsigned ByteStart,
   }
 }
 
+/// Wrapper around getFoldedSizeOfImpl() that adds caching.
+static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded,
+                                 DenseMap<Type *, Constant *> &Cache);
+
 /// Return a ConstantExpr with type DestTy for sizeof on Ty, with any known
 /// factors factored out. If Folded is false, return null if no factoring was
 /// possible, to avoid endlessly bouncing an unfoldable expression back into the
 /// top-level folder.
-static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded) {
+static Constant *getFoldedSizeOfImpl(Type *Ty, Type *DestTy, bool Folded,
+                                     DenseMap<Type *, Constant *> &Cache) {
+  // This is the actual implementation of getFoldedSizeOf(). To get the caching
+  // behavior, we need to call getFoldedSizeOf() when we recurse.
+
   if (ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
     Constant *N = ConstantInt::get(DestTy, ATy->getNumElements());
-    Constant *E = getFoldedSizeOf(ATy->getElementType(), DestTy, true);
+    Constant *E = getFoldedSizeOf(ATy->getElementType(), DestTy, true, Cache);
     return ConstantExpr::getNUWMul(E, N);
   }
 
@@ -367,11 +375,11 @@ static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded) {
         return ConstantExpr::getNullValue(DestTy);
       // Check for a struct with all members having the same size.
       Constant *MemberSize =
-        getFoldedSizeOf(STy->getElementType(0), DestTy, true);
+          getFoldedSizeOf(STy->getElementType(0), DestTy, true, Cache);
       bool AllSame = true;
       for (unsigned i = 1; i != NumElems; ++i)
         if (MemberSize !=
-            getFoldedSizeOf(STy->getElementType(i), DestTy, true)) {
+            getFoldedSizeOf(STy->getElementType(i), DestTy, true, Cache)) {
           AllSame = false;
           break;
         }
@@ -385,10 +393,10 @@ static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded) {
   // to an arbitrary pointee.
   if (PointerType *PTy = dyn_cast<PointerType>(Ty))
     if (!PTy->getElementType()->isIntegerTy(1))
-      return
-        getFoldedSizeOf(PointerType::get(IntegerType::get(PTy->getContext(), 1),
-                                         PTy->getAddressSpace()),
-                        DestTy, true);
+      return getFoldedSizeOf(
+          PointerType::get(IntegerType::get(PTy->getContext(), 1),
+                           PTy->getAddressSpace()),
+          DestTy, true, Cache);
 
   // If there's no interesting folding happening, bail so that we don't create
   // a constant that looks like it needs folding but really doesn't.
@@ -401,6 +409,20 @@ static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded) {
                                                     DestTy, false),
                             C, DestTy);
   return C;
+}
+
+static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded,
+                                 DenseMap<Type *, Constant *> &Cache) {
+  // Check for previously generated folded size constant.
+  auto It = Cache.find(Ty);
+  if (It != Cache.end())
+    return It->second;
+  return Cache[Ty] = getFoldedSizeOfImpl(Ty, DestTy, Folded, Cache);
+}
+
+static Constant *getFoldedSizeOf(Type *Ty, Type *DestTy, bool Folded) {
+  DenseMap<Type *, Constant *> Cache;
+  return getFoldedSizeOf(Ty, DestTy, Folded, Cache);
 }
 
 /// Return a ConstantExpr with type DestTy for alignof on Ty, with any known
@@ -522,6 +544,9 @@ static Constant *getFoldedOffsetOf(Type *Ty, Constant *FieldNo, Type *DestTy,
 
 Constant *llvm::ConstantFoldCastInstruction(unsigned opc, Constant *V,
                                             Type *DestTy) {
+  if (isa<PoisonValue>(V))
+    return PoisonValue::get(DestTy);
+
   if (isa<UndefValue>(V)) {
     // zext(undef) = 0, because the top bits will be zero.
     // sext(undef) = 0, because the top bits will all be the same.
@@ -532,7 +557,7 @@ Constant *llvm::ConstantFoldCastInstruction(unsigned opc, Constant *V,
     return UndefValue::get(DestTy);
   }
 
-  if (V->isNullValue() && !DestTy->isX86_MMXTy() &&
+  if (V->isNullValue() && !DestTy->isX86_MMXTy() && !DestTy->isX86_AMXTy() &&
       opc != Instruction::AddrSpaceCast)
     return Constant::getNullValue(DestTy);
 
@@ -759,7 +784,9 @@ Constant *llvm::ConstantFoldSelectInstruction(Constant *Cond,
       Constant *V2Element = ConstantExpr::getExtractElement(V2,
                                                     ConstantInt::get(Ty, i));
       auto *Cond = cast<Constant>(CondV->getOperand(i));
-      if (V1Element == V2Element) {
+      if (isa<PoisonValue>(Cond)) {
+        V = PoisonValue::get(V1Element->getType());
+      } else if (V1Element == V2Element) {
         V = V1Element;
       } else if (isa<UndefValue>(Cond)) {
         V = isa<UndefValue>(V1Element) ? V1Element : V2Element;
@@ -775,6 +802,9 @@ Constant *llvm::ConstantFoldSelectInstruction(Constant *Cond,
       return ConstantVector::get(Result);
   }
 
+  if (isa<PoisonValue>(Cond))
+    return PoisonValue::get(V1->getType());
+
   if (isa<UndefValue>(Cond)) {
     if (isa<UndefValue>(V1)) return V1;
     return V2;
@@ -782,9 +812,17 @@ Constant *llvm::ConstantFoldSelectInstruction(Constant *Cond,
 
   if (V1 == V2) return V1;
 
+  if (isa<PoisonValue>(V1))
+    return V2;
+  if (isa<PoisonValue>(V2))
+    return V1;
+
   // If the true or false value is undef, we can fold to the other value as
   // long as the other value isn't poison.
   auto NotPoison = [](Constant *C) {
+    if (isa<PoisonValue>(C))
+      return false;
+
     // TODO: We can analyze ConstExpr by opcode to determine if there is any
     //       possibility of poison.
     if (isa<ConstantExpr>(C))
@@ -795,7 +833,7 @@ Constant *llvm::ConstantFoldSelectInstruction(Constant *Cond,
       return true;
 
     if (C->getType()->isVectorTy())
-      return !C->containsUndefElement() && !C->containsConstantExpression();
+      return !C->containsPoisonElement() && !C->containsConstantExpression();
 
     // TODO: Recursively analyze aggregates or other constants.
     return false;
@@ -821,9 +859,13 @@ Constant *llvm::ConstantFoldExtractElementInstruction(Constant *Val,
                                                       Constant *Idx) {
   auto *ValVTy = cast<VectorType>(Val->getType());
 
+  // extractelt poison, C -> poison
+  // extractelt C, undef -> poison
+  if (isa<PoisonValue>(Val) || isa<UndefValue>(Idx))
+    return PoisonValue::get(ValVTy->getElementType());
+
   // extractelt undef, C -> undef
-  // extractelt C, undef -> undef
-  if (isa<UndefValue>(Val) || isa<UndefValue>(Idx))
+  if (isa<UndefValue>(Val))
     return UndefValue::get(ValVTy->getElementType());
 
   auto *CIdx = dyn_cast<ConstantInt>(Idx);
@@ -831,9 +873,9 @@ Constant *llvm::ConstantFoldExtractElementInstruction(Constant *Val,
     return nullptr;
 
   if (auto *ValFVTy = dyn_cast<FixedVectorType>(Val->getType())) {
-    // ee({w,x,y,z}, wrong_value) -> undef
+    // ee({w,x,y,z}, wrong_value) -> poison
     if (CIdx->uge(ValFVTy->getNumElements()))
-      return UndefValue::get(ValFVTy->getElementType());
+      return PoisonValue::get(ValFVTy->getElementType());
   }
 
   // ee (gep (ptr, idx0, ...), idx) -> gep (ee (ptr, idx), ee (idx0, idx), ...)
@@ -882,7 +924,7 @@ Constant *llvm::ConstantFoldInsertElementInstruction(Constant *Val,
                                                      Constant *Elt,
                                                      Constant *Idx) {
   if (isa<UndefValue>(Idx))
-    return UndefValue::get(Val->getType());
+    return PoisonValue::get(Val->getType());
 
   ConstantInt *CIdx = dyn_cast<ConstantInt>(Idx);
   if (!CIdx) return nullptr;
@@ -1083,6 +1125,17 @@ Constant *llvm::ConstantFoldBinaryInstruction(unsigned Opcode, Constant *C1,
     if (C2 == Identity)
       return C1;
   }
+
+  // Binary operations propagate poison.
+  // FIXME: Currently, or/and i1 poison aren't folded into poison because
+  // it causes miscompilation when combined with another optimization in
+  // InstCombine (select i1 -> and/or). The select fold is wrong, but
+  // fixing it requires an effort, so temporarily disable this until it is
+  // fixed.
+  bool PoisonFold = !C1->getType()->isIntegerTy(1) ||
+                    (Opcode != Instruction::Or && Opcode != Instruction::And);
+  if (PoisonFold && (isa<PoisonValue>(C1) || isa<PoisonValue>(C2)))
+    return PoisonValue::get(C1->getType());
 
   // Handle scalar UndefValue and scalable vector UndefValue. Fixed-length
   // vectors are always evaluated per element.
@@ -1922,6 +1975,9 @@ Constant *llvm::ConstantFoldCompareInstruction(unsigned short pred,
     return Constant::getAllOnesValue(ResultTy);
 
   // Handle some degenerate cases first
+  if (isa<PoisonValue>(C1) || isa<PoisonValue>(C2))
+    return PoisonValue::get(ResultTy);
+
   if (isa<UndefValue>(C1) || isa<UndefValue>(C2)) {
     CmpInst::Predicate Predicate = CmpInst::Predicate(pred);
     bool isIntegerPredicate = ICmpInst::isIntPredicate(Predicate);
@@ -2042,17 +2098,17 @@ Constant *llvm::ConstantFoldCompareInstruction(unsigned short pred,
     }
   } else if (auto *C1VTy = dyn_cast<VectorType>(C1->getType())) {
 
-    // Do not iterate on scalable vector. The number of elements is unknown at
-    // compile-time.
-    if (isa<ScalableVectorType>(C1VTy))
-      return nullptr;
-
     // Fast path for splatted constants.
     if (Constant *C1Splat = C1->getSplatValue())
       if (Constant *C2Splat = C2->getSplatValue())
         return ConstantVector::getSplat(
             C1VTy->getElementCount(),
             ConstantExpr::getCompare(pred, C1Splat, C2Splat));
+
+    // Do not iterate on scalable vector. The number of elements is unknown at
+    // compile-time.
+    if (isa<ScalableVectorType>(C1VTy))
+      return nullptr;
 
     // If we can constant fold the comparison of each element, constant fold
     // the whole vector comparison.
@@ -2306,6 +2362,9 @@ Constant *llvm::ConstantFoldGetElementPtr(Type *PointeeTy, Constant *C,
 
   Type *GEPTy = GetElementPtrInst::getGEPReturnType(
       PointeeTy, C, makeArrayRef((Value *const *)Idxs.data(), Idxs.size()));
+
+  if (isa<PoisonValue>(C))
+    return PoisonValue::get(GEPTy);
 
   if (isa<UndefValue>(C))
     return UndefValue::get(GEPTy);

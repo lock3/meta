@@ -20,6 +20,8 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/TypoCorrection.h"
+#include "llvm/ADT/STLExtras.h"
+
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -98,10 +100,15 @@ Parser::ParseStatementOrDeclaration(StmtVector &Stmts,
 
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
 
+  // Because we're parsing either a statement or a declaration, the order of
+  // attribute parsing is important. [[]] attributes at the start of a
+  // statement are different from [[]] attributes that follow an __attribute__
+  // at the start of the statement. Thus, we're not using MaybeParseAttributes
+  // here because we don't want to allow arbitrary orderings.
   ParsedAttributesWithRange Attrs(AttrFactory);
   MaybeParseCXX11Attributes(Attrs, nullptr, /*MightBeObjCMessageSend*/ true);
-  if (!MaybeParseOpenCLUnrollHintAttribute(Attrs))
-    return StmtError();
+  if (getLangOpts().OpenCL)
+    MaybeParseGNUAttributes(Attrs);
 
   StmtResult Res = ParseStatementOrDeclarationAfterAttributes(
       Stmts, StmtCtx, TrailingElseLoc, Attrs);
@@ -160,16 +167,19 @@ Parser::StmtOrDeclAfterAttributesDefault(ParsedStmtContext StmtCtx,
   if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
        (StmtCtx & ParsedStmtContext::AllowDeclarationsInC) !=
         ParsedStmtContext()) &&
-      (GNUAttributeLoc.isValid() || isDeclarationStatement())) {
+      ((GNUAttributeLoc.isValid() &&
+        !(!Attrs.empty() &&
+          llvm::all_of(
+              Attrs, [](ParsedAttr &Attr) { return Attr.isStmtAttr(); }))) ||
+       isDeclarationStatement())) {
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy Decl;
     if (GNUAttributeLoc.isValid()) {
       DeclStart = GNUAttributeLoc;
-      Decl = ParseDeclaration(DeclaratorContext::BlockContext, DeclEnd, Attrs,
+      Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs,
                               &GNUAttributeLoc);
     } else {
-      Decl =
-        ParseDeclaration(DeclaratorContext::BlockContext, DeclEnd, Attrs);
+      Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs);
     }
     if (Attrs.Range.getBegin().isValid())
       DeclStart = Attrs.Range.getBegin();
@@ -210,7 +220,10 @@ Retry:
     cutOffParsing();
     return StmtError();
 
-  case tok::kw_unqualid: {
+  case tok::l_square: {
+    if (NextToken().isNot(tok::hash))
+      goto DefaultFallback;
+
     if (AnnotateIdentifierSplice())
       return StmtError();
 
@@ -250,6 +263,7 @@ Retry:
   }
 
   default:
+  DefaultFallback:
     return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs, GNUAttributeLoc);
 
   case tok::kw___attribute: {
@@ -312,11 +326,6 @@ Retry:
   case tok::arrow:
     Res = ParseCXXInjectionStatement();
     SemiError = "->";
-    break;
-
-  case tok::kw___inject_base:
-    Res = ParseCXXBaseInjectionStatement();
-    SemiError = "__inject_base";
     break;
 
   case tok::kw_asm: {
@@ -1158,7 +1167,7 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
 
         SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
         DeclGroupPtrTy Res =
-            ParseDeclaration(DeclaratorContext::BlockContext, DeclEnd, attrs);
+            ParseDeclaration(DeclaratorContext::Block, DeclEnd, attrs);
         R = Actions.ActOnDeclStmt(Res, DeclStart, DeclEnd);
       } else {
         // Otherwise this was a unary __extension__ marker.
@@ -1943,7 +1952,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy DG = ParseSimpleDeclaration(
-        DeclaratorContext::ForContext, DeclEnd, attrs, false,
+        DeclaratorContext::ForInit, DeclEnd, attrs, false,
         MightBeForRangeStmt ? &ForRangeInfo : nullptr);
     FirstPart = Actions.ActOnDeclStmt(DG, DeclStart, Tok.getLocation());
     if (ForRangeInfo.ParsedForRangeDecl()) {
@@ -2560,7 +2569,7 @@ StmtResult Parser::ParseCXXCatchBlock(bool FnCatch) {
     if (ParseCXXTypeSpecifierSeq(DS))
       return StmtError();
 
-    Declarator ExDecl(DS, DeclaratorContext::CXXCatchContext);
+    Declarator ExDecl(DS, DeclaratorContext::CXXCatch);
     ParseDeclarator(ExDecl);
     ExceptionDecl = Actions.ActOnExceptionDeclarator(getCurScope(), ExDecl);
   } else
@@ -2637,20 +2646,4 @@ void Parser::ParseMicrosoftIfExistsStatement(StmtVector &Stmts) {
       Stmts.push_back(R.get());
   }
   Braces.consumeClose();
-}
-
-bool Parser::ParseOpenCLUnrollHintAttribute(ParsedAttributes &Attrs) {
-  MaybeParseGNUAttributes(Attrs);
-
-  if (Attrs.empty())
-    return true;
-
-  if (Attrs.begin()->getKind() != ParsedAttr::AT_OpenCLUnrollHint)
-    return true;
-
-  if (!(Tok.is(tok::kw_for) || Tok.is(tok::kw_while) || Tok.is(tok::kw_do))) {
-    Diag(Tok, diag::err_opencl_unroll_hint_on_non_loop);
-    return false;
-  }
-  return true;
 }

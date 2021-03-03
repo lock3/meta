@@ -868,28 +868,6 @@ bool Sema::ActOnCXXNestedNameSpecifierDecltype(CXXScopeSpec &SS,
   return false;
 }
 
-bool Sema::ActOnCXXNestedNameSpecifierReifTypename(CXXScopeSpec &SS,
-                                                   SourceLocation TypenameLoc, ParsedType T,
-                                                   SourceLocation ColonColonLoc) {
-  TypeSourceInfo *TSInfo;
-  QualType Ty = GetTypeFromParser(T, &TSInfo);
-  if (!TSInfo)
-    TSInfo = Context.getTrivialTypeSourceInfo(Ty);
-
-  if (!Ty->isDependentType() && !Ty->getAs<TagType>()) {
-    Diag(TypenameLoc, diag::err_expected_class_or_namespace)
-        << Ty << getLangOpts().CPlusPlus;
-    return true;
-  }
-
-  TypeLocBuilder TLB;
-  ReflectedTypeLoc ReflectedTL = TLB.push<ReflectedTypeLoc>(Ty);
-  ReflectedTL.setNameLoc(TypenameLoc);
-  SS.Extend(Context, SourceLocation(), TSInfo->getTypeLoc(),
-            ColonColonLoc);
-  return false;
-}
-
 /// IsInvalidUnlessNestedName - This method is used for error recovery
 /// purposes to determine whether the specified identifier is only valid as
 /// a nested name specifier, for example a namespace name.  It is
@@ -923,7 +901,8 @@ bool Sema::ActOnCXXNestedNameSpecifier(Scope *S,
 
   // Translate the parser's template argument list in our AST format.
   TemplateArgumentListInfo TemplateArgs(LAngleLoc, RAngleLoc);
-  translateTemplateArguments(TemplateArgsIn, TemplateArgs);
+  if (translateTemplateArguments(TemplateArgsIn, TemplateArgs))
+    return true;
 
   DependentTemplateName *DTN = Template.getAsDependentTemplateName();
   if (DTN && DTN->isIdentifier()) {

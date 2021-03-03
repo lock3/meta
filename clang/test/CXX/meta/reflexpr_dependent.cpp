@@ -1,7 +1,5 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-// Check dependent reflexpr and instantiation
-
 template<typename T>
 struct S1 {
   constexpr S1() = default;
@@ -13,24 +11,24 @@ struct S1 {
 
 template<typename T>
 int test() {
-  constexpr auto x1 = reflexpr(T);
+  constexpr auto x1 = ^T;
 
   constexpr T* y1 = nullptr;
-  constexpr auto x2 = reflexpr(y1);
+  constexpr auto x2 = ^y1;
 
   constexpr T y2 = T();
-  constexpr auto x3 = reflexpr(y2);
+  constexpr auto x3 = ^y2;
 
   constexpr const T y3 = T();
-  constexpr auto x4 = reflexpr(y3);
+  constexpr auto x4 = ^y3;
 
   constexpr S1<T> y4 = S1<T>();
-  constexpr auto x5 = reflexpr(y4);
+  constexpr auto x5 = ^y4;
 
-  constexpr auto x6 = reflexpr(S1<T>::foo);
-  constexpr auto x7 = reflexpr(S1<T>::variable);
+  constexpr auto x6 = ^S1<T>::foo;
+  constexpr auto x7 = ^S1<T>::variable;
 
-  constexpr auto x8 = reflexpr(S1<T>::deleted_function);
+  constexpr auto x8 = ^S1<T>::deleted_function;
 
   // Generate output
   constexpr auto x1_print = __reflect_pretty_print(x1);

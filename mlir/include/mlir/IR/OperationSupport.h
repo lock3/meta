@@ -30,6 +30,8 @@
 
 namespace mlir {
 class Dialect;
+class DictionaryAttr;
+class ElementsAttr;
 class Operation;
 struct OperationState;
 class OpAsmParser;
@@ -53,33 +55,12 @@ class OwningRewritePatternList;
 // AbstractOperation
 //===----------------------------------------------------------------------===//
 
-enum class OperationProperty {
-  /// This bit is set for an operation if it is a commutative
-  /// operation: that is an operator where order of operands does not
-  /// change the result of the operation.  For example, in a binary
-  /// commutative operation, "a op b" and "b op a" produce the same
-  /// results.
-  Commutative = 0x1,
-
-  /// This bit is set for an operation if it is a terminator: that means
-  /// an operation at the end of a block.
-  Terminator = 0x2,
-
-  /// This bit is set for operations that are completely isolated from above.
-  /// This is used for operations whose regions are explicit capture only, i.e.
-  /// they are never allowed to implicitly reference values defined above the
-  /// parent operation.
-  IsolatedFromAbove = 0x4,
-};
-
 /// This is a "type erased" representation of a registered operation.  This
 /// should only be used by things like the AsmPrinter and other things that need
 /// to be parameterized by generic operation hooks.  Most user code should use
 /// the concrete operation types.
 class AbstractOperation {
 public:
-  using OperationProperties = uint32_t;
-
   using GetCanonicalizationPatternsFn = void (*)(OwningRewritePatternList &,
                                                  MLIRContext *);
   using FoldHookFn = LogicalResult (*)(Operation *, ArrayRef<Attribute>,
@@ -144,11 +125,6 @@ public:
     return getCanonicalizationPatternsFn(results, context);
   }
 
-  /// Returns whether the operation has a particular property.
-  bool hasProperty(OperationProperty property) const {
-    return opProperties & static_cast<OperationProperties>(property);
-  }
-
   /// Returns an instance of the concept object for the given interface if it
   /// was registered to this operation, null otherwise. This should not be used
   /// directly.
@@ -169,32 +145,27 @@ public:
   /// This constructor is used by Dialect objects when they register the list of
   /// operations they contain.
   template <typename T> static void insert(Dialect &dialect) {
-    insert(T::getOperationName(), dialect, T::getOperationProperties(),
-           TypeID::get<T>(), T::getParseAssemblyFn(), T::getPrintAssemblyFn(),
+    insert(T::getOperationName(), dialect, TypeID::get<T>(),
+           T::getParseAssemblyFn(), T::getPrintAssemblyFn(),
            T::getVerifyInvariantsFn(), T::getFoldHookFn(),
            T::getGetCanonicalizationPatternsFn(), T::getInterfaceMap(),
            T::getHasTraitFn());
   }
 
 private:
-  static void insert(StringRef name, Dialect &dialect,
-                     OperationProperties opProperties, TypeID typeID,
+  static void insert(StringRef name, Dialect &dialect, TypeID typeID,
                      ParseAssemblyFn parseAssembly,
                      PrintAssemblyFn printAssembly,
                      VerifyInvariantsFn verifyInvariants, FoldHookFn foldHook,
                      GetCanonicalizationPatternsFn getCanonicalizationPatterns,
                      detail::InterfaceMap &&interfaceMap, HasTraitFn hasTrait);
 
-  AbstractOperation(StringRef name, Dialect &dialect,
-                    OperationProperties opProperties, TypeID typeID,
+  AbstractOperation(StringRef name, Dialect &dialect, TypeID typeID,
                     ParseAssemblyFn parseAssembly,
                     PrintAssemblyFn printAssembly,
                     VerifyInvariantsFn verifyInvariants, FoldHookFn foldHook,
                     GetCanonicalizationPatternsFn getCanonicalizationPatterns,
                     detail::InterfaceMap &&interfaceMap, HasTraitFn hasTrait);
-
-  /// The properties of the operation.
-  const OperationProperties opProperties;
 
   /// A map of interfaces that were registered to this operation.
   detail::InterfaceMap interfaceMap;
@@ -223,6 +194,7 @@ public:
 
   NamedAttrList() : dictionarySorted({}, true) {}
   NamedAttrList(ArrayRef<NamedAttribute> attributes);
+  NamedAttrList(DictionaryAttr attributes);
   NamedAttrList(const_iterator in_start, const_iterator in_end);
 
   bool operator!=(const NamedAttrList &other) const {
@@ -236,13 +208,26 @@ public:
   void append(StringRef name, Attribute attr);
 
   /// Add an attribute with the specified name.
-  void append(Identifier name, Attribute attr);
+  void append(Identifier name, Attribute attr) {
+    append(NamedAttribute(name, attr));
+  }
+
+  /// Append the given named attribute.
+  void append(NamedAttribute attr) { push_back(attr); }
 
   /// Add an array of named attributes.
-  void append(ArrayRef<NamedAttribute> newAttributes);
+  template <typename RangeT> void append(RangeT &&newAttributes) {
+    append(std::begin(newAttributes), std::end(newAttributes));
+  }
 
   /// Add a range of named attributes.
-  void append(const_iterator in_start, const_iterator in_end);
+  template <typename IteratorT>
+  void append(IteratorT in_start, IteratorT in_end) {
+    // TODO: expand to handle case where values appended are in order & after
+    // end of current list.
+    dictionarySorted.setPointerAndInt(nullptr, false);
+    attrs.append(in_start, in_end);
+  }
 
   /// Replaces the attributes with new list of attributes.
   void assign(const_iterator in_start, const_iterator in_end);
@@ -282,9 +267,11 @@ public:
   Optional<NamedAttribute> getNamed(Identifier name) const;
 
   /// If the an attribute exists with the specified name, change it to the new
-  /// value.  Otherwise, add a new attribute with the specified name/value.
-  void set(Identifier name, Attribute value);
-  void set(StringRef name, Attribute value);
+  /// value. Otherwise, add a new attribute with the specified name/value.
+  /// Returns the previous attribute value of `name`, or null if no
+  /// attribute previously existed with `name`.
+  Attribute set(Identifier name, Attribute value);
+  Attribute set(StringRef name, Attribute value);
 
   /// Erase the attribute with the given name from the list. Return the
   /// attribute that was erased, or nullptr if there was no attribute with such
@@ -297,7 +284,6 @@ public:
 
   NamedAttrList &operator=(const SmallVectorImpl<NamedAttribute> &rhs);
   operator ArrayRef<NamedAttribute>() const;
-  operator MutableDictionaryAttr() const;
 
 private:
   /// Return whether the attributes are sorted.
@@ -328,7 +314,15 @@ public:
   OperationName(StringRef name, MLIRContext *context);
 
   /// Return the name of the dialect this operation is registered to.
-  StringRef getDialect() const;
+  StringRef getDialectNamespace() const;
+
+  /// Return the Dialect this operation is registered to if it is loaded in the
+  /// context, or nullptr if the dialect isn't loaded.
+  Dialect *getDialect() const {
+    if (const auto *abstractOp = getAbstractOperation())
+      return &abstractOp->dialect;
+    return representation.get<Identifier>().getDialect();
+  }
 
   /// Return the operation name with dialect name stripped, if it has one.
   StringRef stripDialect() const;
@@ -341,7 +335,9 @@ public:
 
   /// If this operation has a registered operation description, return it.
   /// Otherwise return null.
-  const AbstractOperation *getAbstractOperation() const;
+  const AbstractOperation *getAbstractOperation() const {
+    return representation.dyn_cast<const AbstractOperation *>();
+  }
 
   void print(raw_ostream &os) const;
   void dump() const;
@@ -349,7 +345,7 @@ public:
   void *getAsOpaquePointer() const {
     return static_cast<void *>(representation.getOpaqueValue());
   }
-  static OperationName getFromOpaquePointer(void *pointer);
+  static OperationName getFromOpaquePointer(const void *pointer);
 
 private:
   RepresentationUnion representation;
@@ -567,11 +563,11 @@ namespace detail {
 /// This class provides the implementation for an in-line operation result. This
 /// is an operation result whose number can be stored inline inside of the bits
 /// of an Operation*.
-struct InLineOpResult : public IRObjectWithUseList<OpOperand> {};
+struct alignas(8) InLineOpResult : public IRObjectWithUseList<OpOperand> {};
 /// This class provides the implementation for an out-of-line operation result.
 /// This is an operation result whose number cannot be stored inline inside of
 /// the bits of an Operation*.
-struct TrailingOpResult : public IRObjectWithUseList<OpOperand> {
+struct alignas(8) TrailingOpResult : public IRObjectWithUseList<OpOperand> {
   TrailingOpResult(uint64_t trailingResultNumber)
       : trailingResultNumber(trailingResultNumber) {}
 

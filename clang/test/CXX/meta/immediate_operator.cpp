@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -emit-llvm -std=c++2a -freflection -o %t %s
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 constexpr struct is_const_type_fn
 {
@@ -10,5 +10,5 @@ constexpr struct is_const_type_fn
 } is_const_type;
 
 int main() {
-  return is_const_type(reflexpr(int));;
+  return is_const_type(^int);
 }

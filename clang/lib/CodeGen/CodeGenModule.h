@@ -25,7 +25,7 @@
 #include "clang/Basic/ABI.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Module.h"
-#include "clang/Basic/SanitizerBlacklist.h"
+#include "clang/Basic/NoSanitizeList.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/XRayLists.h"
 #include "llvm/ADT/DenseMap.h"
@@ -210,6 +210,9 @@ struct ObjCEntrypoints {
 
   /// void clang.arc.use(...);
   llvm::Function *clang_arc_use;
+
+  /// void clang.arc.noop.use(...);
+  llvm::Function *clang_arc_noop_use;
 };
 
 /// This class records statistics on instrumentation based profiling.
@@ -1051,6 +1054,9 @@ public:
   /// Add a global to a list to be added to the llvm.compiler.used metadata.
   void addCompilerUsedGlobal(llvm::GlobalValue *GV);
 
+  /// Add a global to a list to be added to the llvm.compiler.used metadata.
+  void addUsedOrCompilerUsedGlobal(llvm::GlobalValue *GV);
+
   /// Add a destructor and object to add to the C++ global destructor function.
   void AddCXXDtorEntry(llvm::FunctionCallee DtorFn, llvm::Constant *Object) {
     CXXGlobalDtorsOrStermFinalizers.emplace_back(DtorFn.getFunctionType(),
@@ -1264,18 +1270,21 @@ public:
   /// annotations are emitted during finalization of the LLVM code.
   void AddGlobalAnnotations(const ValueDecl *D, llvm::GlobalValue *GV);
 
-  bool isInSanitizerBlacklist(SanitizerMask Kind, llvm::Function *Fn,
-                              SourceLocation Loc) const;
+  bool isInNoSanitizeList(SanitizerMask Kind, llvm::Function *Fn,
+                          SourceLocation Loc) const;
 
-  bool isInSanitizerBlacklist(llvm::GlobalVariable *GV, SourceLocation Loc,
-                              QualType Ty,
-                              StringRef Category = StringRef()) const;
+  bool isInNoSanitizeList(llvm::GlobalVariable *GV, SourceLocation Loc,
+                          QualType Ty, StringRef Category = StringRef()) const;
 
   /// Imbue XRay attributes to a function, applying the always/never attribute
   /// lists in the process. Returns true if we did imbue attributes this way,
   /// false otherwise.
   bool imbueXRayAttrs(llvm::Function *Fn, SourceLocation Loc,
                       StringRef Category = StringRef()) const;
+
+  /// Returns true if function at the given location should be excluded from
+  /// profile instrumentation.
+  bool isProfileInstrExcluded(llvm::Function *Fn, SourceLocation Loc) const;
 
   SanitizerMetadata *getSanitizerMetadata() {
     return SanitizerMD.get();
@@ -1333,8 +1342,11 @@ public:
   /// a virtual function call could be made which ends up being dispatched to a
   /// member function of this class. This scope can be wider than the visibility
   /// of the class itself when the class has a more-visible dynamic base class.
+  /// The client should pass in an empty Visited set, which is used to prevent
+  /// redundant recursive processing.
   llvm::GlobalObject::VCallVisibility
-  GetVCallVisibilityLevel(const CXXRecordDecl *RD);
+  GetVCallVisibilityLevel(const CXXRecordDecl *RD,
+                          llvm::DenseSet<const CXXRecordDecl *> &Visited);
 
   /// Emit type metadata for the given vtable using the given layout.
   void EmitVTableTypeMetadata(const CXXRecordDecl *RD,
@@ -1413,6 +1425,10 @@ public:
                                            TBAAAccessInfo *TBAAInfo = nullptr);
   bool stopAutoInit();
 
+  /// Print the postfix for externalized static variable for single source
+  /// offloading languages CUDA and HIP.
+  void printPostfixForExternalizedStaticVar(llvm::raw_ostream &OS) const;
+
 private:
   llvm::Constant *GetOrCreateLLVMFunction(
       StringRef MangledName, llvm::Type *Ty, GlobalDecl D, bool ForVTable,
@@ -1478,7 +1494,8 @@ private:
   // FIXME: Hardcoding priority here is gross.
   void AddGlobalCtor(llvm::Function *Ctor, int Priority = 65535,
                      llvm::Constant *AssociatedData = nullptr);
-  void AddGlobalDtor(llvm::Function *Dtor, int Priority = 65535);
+  void AddGlobalDtor(llvm::Function *Dtor, int Priority = 65535,
+                     bool IsDtorAttrFunc = false);
 
   /// EmitCtorList - Generates a global array of functions and priorities using
   /// the given list and name. This array will have appending linkage and is
@@ -1507,6 +1524,11 @@ private:
   /// Register functions annotated with __attribute__((destructor)) using
   /// __cxa_atexit, if it is available, or atexit otherwise.
   void registerGlobalDtorsWithAtExit();
+
+  // When using sinit and sterm functions, unregister
+  // __attribute__((destructor)) annotated functions which were previously
+  // registered by the atexit subroutine using unatexit.
+  void unregisterGlobalDtorsWithUnAtExit();
 
   void emitMultiVersionFunctions();
 

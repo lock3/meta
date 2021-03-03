@@ -118,7 +118,7 @@ int main() {
 }
 
 consteval {
-  compiler_print_type_definition(reflexpr(Shape));
+  compiler_print_type_definition(^Shape);
   compiler_print_lines(1);
-  compiler_print_type_definition(reflexpr(X));
+  compiler_print_type_definition(^X);
 }

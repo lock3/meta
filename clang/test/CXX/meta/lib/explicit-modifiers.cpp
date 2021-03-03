@@ -18,7 +18,7 @@ struct Existing {
 struct New {
   consteval {
     // Constructors
-    auto ctor_1 = __reflect(query_get_begin_member, reflexpr(Existing));
+    auto ctor_1 = __reflect(query_get_begin_member, ^Existing);
     __reflect_mod(query_set_add_explicit, ctor_1, true);
 
     -> ctor_1;
@@ -45,7 +45,7 @@ struct New {
 };
 
 // Constructors
-constexpr auto ctor_1 = __reflect(query_get_begin_member, reflexpr(New));
+constexpr auto ctor_1 = __reflect(query_get_begin_member, ^New);
 static_assert(__reflect(query_is_explicit, ctor_1));
 
 constexpr auto ctor_2 = __reflect(query_get_next_member, ctor_1);

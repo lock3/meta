@@ -60,9 +60,16 @@ protected:
 public:
   AMDGPUToolChain(const Driver &D, const llvm::Triple &Triple,
                   const llvm::opt::ArgList &Args);
-  unsigned GetDefaultDwarfVersion() const override { return 5; }
+  unsigned GetDefaultDwarfVersion() const override { return 4; }
   bool IsIntegratedAssemblerDefault() const override { return true; }
   bool IsMathErrnoDefault() const override { return false; }
+
+  bool useIntegratedAs() const override { return true; }
+  bool isCrossCompiling() const override { return true; }
+  bool isPICDefault() const override { return false; }
+  bool isPIEDefault() const override { return false; }
+  bool isPICDefaultForced() const override { return false; }
+  bool SupportsProfiling() const override { return false; }
 
   llvm::opt::DerivedArgList *
   TranslateArgs(const llvm::opt::DerivedArgList &Args, StringRef BoundArch,

@@ -307,11 +307,6 @@ public:
   /// language.
   bool isCPlusPlusKeyword(const LangOptions &LangOpts) const;
 
-  // Return true if this token is a C++ Reflection keyword
-  bool isReflectionKeyword(const LangOptions &LangOpts) const;
-
-  bool isReifierKeyword(const LangOptions &LangOpts) const;
-
   // Return true if this identifier is an incomplete identifier
   // splice.
   bool isSplice() const { return IsSplice; }

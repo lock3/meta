@@ -10,6 +10,7 @@
 #include "gwp_asan/stack_trace_compressor.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
 
 using AllocationMetadata = gwp_asan::AllocationMetadata;
@@ -102,7 +103,7 @@ uintptr_t __gwp_asan_get_allocation_address(
 
 size_t __gwp_asan_get_allocation_size(
     const gwp_asan::AllocationMetadata *AllocationMeta) {
-  return AllocationMeta->Size;
+  return AllocationMeta->RequestedSize;
 }
 
 uint64_t __gwp_asan_get_allocation_thread_id(

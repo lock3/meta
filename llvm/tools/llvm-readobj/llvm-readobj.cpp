@@ -458,11 +458,16 @@ createDumper(const ObjectFile &Obj, ScopedPrinter &Writer) {
 }
 
 /// Dumps the specified object file.
-static void dumpObject(const ObjectFile &Obj, ScopedPrinter &Writer,
+static void dumpObject(ObjectFile &Obj, ScopedPrinter &Writer,
                        const Archive *A = nullptr) {
   std::string FileStr =
       A ? Twine(A->getFileName() + "(" + Obj.getFileName() + ")").str()
         : Obj.getFileName().str();
+
+  std::string ContentErrString;
+  if (Error ContentErr = Obj.initContent())
+    ContentErrString = "unable to continue dumping, the file is corrupt: " +
+                       toString(std::move(ContentErr));
 
   ObjDumper *Dumper;
   Expected<std::unique_ptr<ObjDumper>> DumperOrErr = createDumper(Obj, Writer);
@@ -485,6 +490,11 @@ static void dumpObject(const ObjectFile &Obj, ScopedPrinter &Writer,
 
   if (opts::FileHeaders)
     Dumper->printFileHeaders();
+
+  // This is only used for ELF currently. In some cases, when an object is
+  // corrupt (e.g. truncated), we can't dump anything except the file header.
+  if (!ContentErrString.empty())
+    reportError(createError(ContentErrString), FileStr);
 
   if (opts::SectionDetails || opts::SectionHeaders) {
     if (opts::Output == opts::GNU && opts::SectionDetails)
@@ -636,27 +646,43 @@ static void dumpWindowsResourceFile(WindowsResource *WinRes,
 
 /// Opens \a File and dumps it.
 static void dumpInput(StringRef File, ScopedPrinter &Writer) {
-  // Attempt to open the binary.
-  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFileOrSTDIN(File, /*FileSize=*/-1,
+                                   /*RequiresNullTerminator=*/false);
+  if (std::error_code EC = FileOrErr.getError())
+    return reportError(errorCodeToError(EC), File);
+
+  std::unique_ptr<MemoryBuffer> &Buffer = FileOrErr.get();
+  file_magic Type = identify_magic(Buffer->getBuffer());
+  if (Type == file_magic::bitcode) {
+    reportWarning(createStringError(errc::invalid_argument,
+                                    "bitcode files are not supported"),
+                  File);
+    return;
+  }
+
+  Expected<std::unique_ptr<Binary>> BinaryOrErr = createBinary(
+      Buffer->getMemBufferRef(), /*Context=*/nullptr, /*InitContent=*/false);
   if (!BinaryOrErr)
     reportError(BinaryOrErr.takeError(), File);
-  Binary &Binary = *BinaryOrErr.get().getBinary();
 
-  if (Archive *Arc = dyn_cast<Archive>(&Binary))
+  std::unique_ptr<Binary> Bin = std::move(*BinaryOrErr);
+  if (Archive *Arc = dyn_cast<Archive>(Bin.get()))
     dumpArchive(Arc, Writer);
   else if (MachOUniversalBinary *UBinary =
-               dyn_cast<MachOUniversalBinary>(&Binary))
+               dyn_cast<MachOUniversalBinary>(Bin.get()))
     dumpMachOUniversalBinary(UBinary, Writer);
-  else if (ObjectFile *Obj = dyn_cast<ObjectFile>(&Binary))
+  else if (ObjectFile *Obj = dyn_cast<ObjectFile>(Bin.get()))
     dumpObject(*Obj, Writer);
-  else if (COFFImportFile *Import = dyn_cast<COFFImportFile>(&Binary))
+  else if (COFFImportFile *Import = dyn_cast<COFFImportFile>(Bin.get()))
     dumpCOFFImportFile(Import, Writer);
-  else if (WindowsResource *WinRes = dyn_cast<WindowsResource>(&Binary))
+  else if (WindowsResource *WinRes = dyn_cast<WindowsResource>(Bin.get()))
     dumpWindowsResourceFile(WinRes, Writer);
   else
     llvm_unreachable("unrecognized file type");
 
-  CVTypes.Binaries.push_back(std::move(*BinaryOrErr));
+  CVTypes.Binaries.push_back(
+      OwningBinary<Binary>(std::move(Bin), std::move(Buffer)));
 }
 
 /// Registers aliases that should only be allowed by readobj.

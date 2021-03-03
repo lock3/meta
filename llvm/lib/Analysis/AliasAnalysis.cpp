@@ -24,6 +24,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/CFLAndersAliasAnalysis.h"
 #include "llvm/Analysis/CFLSteensAliasAnalysis.h"
@@ -54,11 +55,24 @@
 #include <functional>
 #include <iterator>
 
+#define DEBUG_TYPE "aa"
+
 using namespace llvm;
+
+STATISTIC(NumNoAlias,   "Number of NoAlias results");
+STATISTIC(NumMayAlias,  "Number of MayAlias results");
+STATISTIC(NumMustAlias, "Number of MustAlias results");
 
 /// Allow disabling BasicAA from the AA results. This is particularly useful
 /// when testing to isolate a single AA implementation.
 cl::opt<bool> DisableBasicAA("disable-basic-aa", cl::Hidden, cl::init(false));
+
+#ifndef NDEBUG
+/// Print a trace of alias analysis queries and their results.
+static cl::opt<bool> EnableAATrace("aa-trace", cl::Hidden, cl::init(false));
+#else
+static const bool EnableAATrace = false;
+#endif
 
 AAResults::AAResults(AAResults &&Arg)
     : TLI(Arg.TLI), AAs(std::move(Arg.AAs)), AADeps(std::move(Arg.AADeps)) {
@@ -109,12 +123,39 @@ AliasResult AAResults::alias(const MemoryLocation &LocA,
 
 AliasResult AAResults::alias(const MemoryLocation &LocA,
                              const MemoryLocation &LocB, AAQueryInfo &AAQI) {
-  for (const auto &AA : AAs) {
-    auto Result = AA->alias(LocA, LocB, AAQI);
-    if (Result != MayAlias)
-      return Result;
+  AliasResult Result = MayAlias;
+
+  if (EnableAATrace) {
+    for (unsigned I = 0; I < AAQI.Depth; ++I)
+      dbgs() << "  ";
+    dbgs() << "Start " << *LocA.Ptr << " @ " << LocA.Size << ", "
+           << *LocB.Ptr << " @ " << LocB.Size << "\n";
   }
-  return MayAlias;
+
+  AAQI.Depth++;
+  for (const auto &AA : AAs) {
+    Result = AA->alias(LocA, LocB, AAQI);
+    if (Result != MayAlias)
+      break;
+  }
+  AAQI.Depth--;
+
+  if (EnableAATrace) {
+    for (unsigned I = 0; I < AAQI.Depth; ++I)
+      dbgs() << "  ";
+    dbgs() << "End " << *LocA.Ptr << " @ " << LocA.Size << ", "
+           << *LocB.Ptr << " @ " << LocB.Size << " = " << Result << "\n";
+  }
+
+  if (AAQI.Depth == 0) {
+    if (Result == NoAlias)
+      ++NumNoAlias;
+    else if (Result == MustAlias)
+      ++NumMustAlias;
+    else
+      ++NumMayAlias;
+  }
+  return Result;
 }
 
 bool AAResults::pointsToConstantMemory(const MemoryLocation &Loc,
@@ -214,7 +255,7 @@ ModRefInfo AAResults::getModRefInfo(const CallBase *Call,
         unsigned ArgIdx = std::distance(Call->arg_begin(), AI);
         MemoryLocation ArgLoc =
             MemoryLocation::getForArgument(Call, ArgIdx, TLI);
-        AliasResult ArgAlias = alias(ArgLoc, Loc);
+        AliasResult ArgAlias = alias(ArgLoc, Loc, AAQI);
         if (ArgAlias != NoAlias) {
           ModRefInfo ArgMask = getArgModRefInfo(Call, ArgIdx);
           AllArgsMask = unionModRef(AllArgsMask, ArgMask);
@@ -627,6 +668,43 @@ ModRefInfo AAResults::getModRefInfo(const AtomicRMWInst *RMW,
   return ModRefInfo::ModRef;
 }
 
+ModRefInfo AAResults::getModRefInfo(const Instruction *I,
+                                    const Optional<MemoryLocation> &OptLoc,
+                                    AAQueryInfo &AAQIP) {
+  if (OptLoc == None) {
+    if (const auto *Call = dyn_cast<CallBase>(I)) {
+      return createModRefInfo(getModRefBehavior(Call));
+    }
+  }
+
+  const MemoryLocation &Loc = OptLoc.getValueOr(MemoryLocation());
+
+  switch (I->getOpcode()) {
+  case Instruction::VAArg:
+    return getModRefInfo((const VAArgInst *)I, Loc, AAQIP);
+  case Instruction::Load:
+    return getModRefInfo((const LoadInst *)I, Loc, AAQIP);
+  case Instruction::Store:
+    return getModRefInfo((const StoreInst *)I, Loc, AAQIP);
+  case Instruction::Fence:
+    return getModRefInfo((const FenceInst *)I, Loc, AAQIP);
+  case Instruction::AtomicCmpXchg:
+    return getModRefInfo((const AtomicCmpXchgInst *)I, Loc, AAQIP);
+  case Instruction::AtomicRMW:
+    return getModRefInfo((const AtomicRMWInst *)I, Loc, AAQIP);
+  case Instruction::Call:
+    return getModRefInfo((const CallInst *)I, Loc, AAQIP);
+  case Instruction::Invoke:
+    return getModRefInfo((const InvokeInst *)I, Loc, AAQIP);
+  case Instruction::CatchPad:
+    return getModRefInfo((const CatchPadInst *)I, Loc, AAQIP);
+  case Instruction::CatchRet:
+    return getModRefInfo((const CatchReturnInst *)I, Loc, AAQIP);
+  default:
+    return ModRefInfo::NoModRef;
+  }
+}
+
 /// Return information about whether a particular call site modifies
 /// or reads the specified memory location \p MemLoc before instruction \p I
 /// in a BasicBlock.
@@ -668,7 +746,7 @@ ModRefInfo AAResults::callCapturesBefore(const Instruction *I,
          !Call->isByValArgument(ArgNo)))
       continue;
 
-    AliasResult AR = alias(MemoryLocation(*CI), MemoryLocation(Object));
+    AliasResult AR = alias(*CI, Object);
     // If this is a no-capture pointer argument, see if we can tell that it
     // is impossible to alias the pointer we're checking.  If not, we have to
     // assume that the call could touch the pointer, even though it doesn't
@@ -826,8 +904,8 @@ bool AAResultsWrapperPass::runOnFunction(Function &F) {
 
 void AAResultsWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
-  AU.addRequired<BasicAAWrapperPass>();
-  AU.addRequired<TargetLibraryInfoWrapperPass>();
+  AU.addRequiredTransitive<BasicAAWrapperPass>();
+  AU.addRequiredTransitive<TargetLibraryInfoWrapperPass>();
 
   // We also need to mark all the alias analysis passes we will potentially
   // probe in runOnFunction as used here to ensure the legacy pass manager
@@ -841,6 +919,13 @@ void AAResultsWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addUsedIfAvailable<CFLAndersAAWrapperPass>();
   AU.addUsedIfAvailable<CFLSteensAAWrapperPass>();
   AU.addUsedIfAvailable<ExternalAAWrapperPass>();
+}
+
+AAManager::Result AAManager::run(Function &F, FunctionAnalysisManager &AM) {
+  Result R(AM.getResult<TargetLibraryAnalysis>(F));
+  for (auto &Getter : ResultGetters)
+    (*Getter)(F, AM, R);
+  return R;
 }
 
 AAResults llvm::createLegacyPMAAResults(Pass &P, Function &F,
@@ -873,15 +958,26 @@ AAResults llvm::createLegacyPMAAResults(Pass &P, Function &F,
   return AAR;
 }
 
+Optional<int64_t>
+BatchAAResults::getClobberOffset(const MemoryLocation &LocA,
+                                 const MemoryLocation &LocB) const {
+  if (!LocA.Size.hasValue() || !LocB.Size.hasValue())
+    return None;
+  const Value *V1 = LocA.Ptr->stripPointerCastsForAliasAnalysis();
+  const Value *V2 = LocB.Ptr->stripPointerCastsForAliasAnalysis();
+  return AAQI.getClobberOffset(V1, V2, LocA.Size.getValue(),
+                               LocB.Size.getValue());
+}
+
 bool llvm::isNoAliasCall(const Value *V) {
   if (const auto *Call = dyn_cast<CallBase>(V))
     return Call->hasRetAttr(Attribute::NoAlias);
   return false;
 }
 
-bool llvm::isNoAliasArgument(const Value *V) {
+static bool isNoAliasOrByValArgument(const Value *V) {
   if (const Argument *A = dyn_cast<Argument>(V))
-    return A->hasNoAliasAttr();
+    return A->hasNoAliasAttr() || A->hasByValAttr();
   return false;
 }
 
@@ -892,13 +988,13 @@ bool llvm::isIdentifiedObject(const Value *V) {
     return true;
   if (isNoAliasCall(V))
     return true;
-  if (const Argument *A = dyn_cast<Argument>(V))
-    return A->hasNoAliasAttr() || A->hasByValAttr();
+  if (isNoAliasOrByValArgument(V))
+    return true;
   return false;
 }
 
 bool llvm::isIdentifiedFunctionLocal(const Value *V) {
-  return isa<AllocaInst>(V) || isNoAliasCall(V) || isNoAliasArgument(V);
+  return isa<AllocaInst>(V) || isNoAliasCall(V) || isNoAliasOrByValArgument(V);
 }
 
 void llvm::getAAResultsAnalysisUsage(AnalysisUsage &AU) {

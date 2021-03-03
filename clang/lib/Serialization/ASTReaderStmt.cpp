@@ -520,24 +520,19 @@ void ASTStmtReader::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
+void ASTStmtReader::VisitCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void ASTStmtReader::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXDependentVariadicReifierExpr(
-  CXXDependentVariadicReifierExpr *E) {
+void ASTStmtReader::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
 void ASTStmtReader::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
-  llvm_unreachable("unimplemented");
-}
-
-void ASTStmtReader::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
@@ -688,7 +683,7 @@ void ASTStmtReader::VisitDeclRefExpr(DeclRefExpr *E) {
         *E->getTrailingObjects<ASTTemplateKWAndArgsInfo>(),
         E->getTrailingObjects<TemplateArgumentLoc>(), NumTemplateArgs);
 
-  E->setDecl(readDeclAs<ValueDecl>());
+  E->D = readDeclAs<ValueDecl>();
   E->setLocation(readSourceLocation());
   E->DNLoc = Record.readDeclarationNameLoc(E->getDecl()->getDeclName());
 }
@@ -1767,11 +1762,6 @@ void ASTStmtReader::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
   // FIXME: Implement me.
 }
 
-void ASTStmtReader::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
-  VisitStmt(S);
-  // FIXME: Implement me.
-}
-
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   S->KeywordLoc = readSourceLocation();
@@ -1909,12 +1899,6 @@ void ASTStmtReader::VisitCXXBoolLiteralExpr(CXXBoolLiteralExpr *E) {
 
 void ASTStmtReader::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *E) {
   VisitExpr(E);
-  E->setLocation(readSourceLocation());
-}
-
-void ASTStmtReader::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
-  VisitExpr(E);
-  E->setDecl(Record.readDeclAs<ValueDecl>());
   E->setLocation(readSourceLocation());
 }
 
@@ -2393,11 +2377,15 @@ void ASTStmtReader::VisitOMPExecutableDirective(OMPExecutableDirective *E) {
   E->setLocEnd(readSourceLocation());
 }
 
-void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
+void ASTStmtReader::VisitOMPLoopBasedDirective(OMPLoopBasedDirective *D) {
   VisitStmt(D);
   // Field CollapsedNum was read in ReadStmtFromStream.
   Record.skipInts(1);
   VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
+  VisitOMPLoopBasedDirective(D);
 }
 
 void ASTStmtReader::VisitOMPParallelDirective(OMPParallelDirective *D) {
@@ -2408,6 +2396,10 @@ void ASTStmtReader::VisitOMPParallelDirective(OMPParallelDirective *D) {
 
 void ASTStmtReader::VisitOMPSimdDirective(OMPSimdDirective *D) {
   VisitOMPLoopDirective(D);
+}
+
+void ASTStmtReader::VisitOMPTileDirective(OMPTileDirective *D) {
+  VisitOMPLoopBasedDirective(D);
 }
 
 void ASTStmtReader::VisitOMPForDirective(OMPForDirective *D) {
@@ -3249,10 +3241,6 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CXXInjectionStmt(Empty);
       break;
 
-    case STMT_CXX_BASE_INJECTION:
-      S = CXXBaseInjectionStmt::CreateEmpty(Context);
-      break;
-
     case STMT_MS_DEPENDENT_EXISTS:
       S = new (Context) MSDependentExistsStmt(SourceLocation(), true,
                                               NestedNameSpecifierLoc(),
@@ -3272,6 +3260,13 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       unsigned NumClauses = Record[ASTStmtReader::NumStmtFields + 1];
       S = OMPSimdDirective::CreateEmpty(Context, NumClauses,
                                         CollapsedNum, Empty);
+      break;
+    }
+
+    case STMT_OMP_TILE_DIRECTIVE: {
+      unsigned NumLoops = Record[ASTStmtReader::NumStmtFields];
+      unsigned NumClauses = Record[ASTStmtReader::NumStmtFields + 1];
+      S = OMPTileDirective::CreateEmpty(Context, NumClauses, NumLoops);
       break;
     }
 
@@ -3693,10 +3688,6 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case EXPR_CXX_NULL_PTR_LITERAL:
       S = new (Context) CXXNullPtrLiteralExpr(Empty);
-      break;
-
-    case EXPR_CXX_PARAMETER_INFO:
-      S = new (Context) CXXParameterInfoExpr(Empty);
       break;
 
     case EXPR_CXX_TYPEID_EXPR:

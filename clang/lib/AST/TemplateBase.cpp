@@ -19,6 +19,7 @@
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -103,6 +104,23 @@ TemplateArgument::TemplateArgument(ASTContext &Ctx, const llvm::APSInt &Value,
   Integer.Type = Type.getAsOpaquePtr();
 }
 
+static PackSplice *CreatePackSplice(ASTContext &Ctx, Expr *Operand,
+                                    Optional<unsigned> NumExpansions,
+                                    Expr *const *Expansions) {
+  if (NumExpansions) {
+    return PackSplice::Create(Ctx, Operand,
+                              llvm::makeArrayRef(Expansions, *NumExpansions));
+  } else {
+    return PackSplice::Create(Ctx, Operand);
+  }
+}
+
+TemplateArgument::TemplateArgument(ASTContext &Ctx, Expr *Operand,
+                                   Optional<unsigned> NumExpansions,
+                                   Expr *const *Expansions)
+   : TemplateArgument(CreatePackSplice(Ctx, Operand, NumExpansions, Expansions))
+{ }
+
 TemplateArgument
 TemplateArgument::CreatePackCopy(ASTContext &Context,
                                  ArrayRef<TemplateArgument> Args) {
@@ -116,7 +134,7 @@ TemplateArgumentDependence TemplateArgument::getDependence() const {
   auto Deps = TemplateArgumentDependence::None;
   switch (getKind()) {
   case Null:
-    llvm_unreachable("Should not have a NULL template argument");
+    return TemplateArgumentDependence::Error;
 
   case Type:
     Deps = toTemplateArgumentDependence(getAsType()->getDependence());
@@ -145,18 +163,28 @@ TemplateArgumentDependence TemplateArgument::getDependence() const {
   case Integral:
     return TemplateArgumentDependence::None;
 
-  case Reflected:
   case Expression:
     Deps = toTemplateArgumentDependence(getAsExpr()->getDependence());
-    if (isa<PackExpansionExpr>(getAsExpr()))
-      Deps |= TemplateArgumentDependence::Dependent |
-              TemplateArgumentDependence::Instantiation;
     return Deps;
 
   case Pack:
     for (const auto &P : pack_elements())
       Deps |= P.getDependence();
     return Deps;
+
+  case PackSplice: {
+    const class PackSplice *PS = getPackSplice();
+    if (PS->isExpanded()) {
+      for (Expr *E : PS->getExpansions())
+        Deps |= toTemplateArgumentDependence(E->getDependence());
+      return Deps;
+    } else {
+      Expr *Operand = PS->getOperand();
+      Deps = toTemplateArgumentDependence(Operand->getDependence());
+      return Deps;
+    }
+  }
+
   }
   llvm_unreachable("unhandled ArgKind");
 }
@@ -185,31 +213,11 @@ bool TemplateArgument::isPackExpansion() const {
   case Type:
     return isa<PackExpansionType>(getAsType());
 
-  case Reflected:
   case Expression:
     return isa<PackExpansionExpr>(getAsExpr());
-  }
 
-  llvm_unreachable("Invalid TemplateArgument Kind!");
-}
-
-bool TemplateArgument::isVariadicReifier() const {
-  switch (getKind()) {
-  case Null:
-  case Declaration:
-  case Integral:
-  case Pack:
-  case Template:
-  case NullPtr:
-  case TemplateExpansion:
-    return false;
-
-  case Type:
-    return isa<CXXDependentVariadicReifierType>(getAsType());
-
-  case Reflected:
-  case Expression:
-    return isa<CXXDependentVariadicReifierExpr>(getAsExpr());
+  case PackSplice:
+    return !PackSpliceValue.IsPattern;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -241,12 +249,12 @@ QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
   case TemplateArgument::Pack:
+  case TemplateArgument::PackSplice:
     return QualType();
 
   case TemplateArgument::Integral:
     return getIntegralType();
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getAsExpr()->getType();
 
@@ -276,6 +284,7 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     break;
 
   case Declaration:
+    getParamTypeForDecl().Profile(ID);
     ID.AddPointer(getAsDecl()? getAsDecl()->getCanonicalDecl() : nullptr);
     break;
 
@@ -302,7 +311,6 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     getIntegralType().Profile(ID);
     break;
 
-  case Reflected:
   case Expression:
     getAsExpr()->Profile(ID, Context, true);
     break;
@@ -311,6 +319,11 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     ID.AddInteger(Args.NumArgs);
     for (unsigned I = 0; I != Args.NumArgs; ++I)
       Args.Args[I].Profile(ID, Context);
+    break;
+
+  case PackSplice:
+    getPackSplice()->Profile(ID, Context);
+    break;
   }
 }
 
@@ -320,12 +333,14 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
   switch (getKind()) {
   case Null:
   case Type:
-  case Reflected:
   case Expression:
-  case Template:
-  case TemplateExpansion:
   case NullPtr:
     return TypeOrValue.V == Other.TypeOrValue.V;
+
+  case Template:
+  case TemplateExpansion:
+    return TemplateArg.Name == Other.TemplateArg.Name &&
+           TemplateArg.NumExpansions == Other.TemplateArg.NumExpansions;
 
   case Declaration:
     return getAsDecl() == Other.getAsDecl();
@@ -340,6 +355,29 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
       if (!Args.Args[I].structurallyEquals(Other.Args.Args[I]))
         return false;
     return true;
+
+  case PackSplice: {
+    const class PackSplice *PS1 = getPackSplice();
+    const class PackSplice *PS2 = Other.getPackSplice();
+
+    if (PS1->isExpanded() != PS2->isExpanded())
+      return false;
+
+    if (PS1->isExpanded()) {
+      if (PS1->getOperand() != PS2->getOperand())
+        return false;
+    } else {
+      if (PS1->getExpansions() != PS2->getExpansions())
+        return false;
+
+      for (unsigned I = 0; I < PS1->getNumExpansions(); ++I)
+        if (PS1->getExpansion(I) != PS2->getExpansion(I))
+          return false;
+    }
+
+    return true;
+  }
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -353,13 +391,14 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case Type:
     return getAsType()->castAs<PackExpansionType>()->getPattern();
 
-  case Reflected:
   case Expression:
-    return TemplateArgument(cast<PackExpansionExpr>(getAsExpr())->getPattern(),
-                            TemplateArgKind);
+    return TemplateArgument(cast<PackExpansionExpr>(getAsExpr())->getPattern());
 
   case TemplateExpansion:
     return TemplateArgument(getAsTemplateOrTemplatePattern());
+
+  case PackSplice:
+    return TemplateArgument(getPackSplice(), /*IsPattern=*/true);
 
   case Declaration:
   case Integral:
@@ -419,12 +458,11 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
     printIntegral(*this, Out, Policy);
     break;
 
-  case Reflected:
   case Expression:
     getAsExpr()->printPretty(Out, nullptr, Policy);
     break;
 
-  case Pack:
+  case Pack: {
     Out << "<";
     bool First = true;
     for (const auto &P : pack_elements()) {
@@ -436,6 +474,13 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
       P.print(Policy, Out);
     }
     Out << ">";
+    break;
+  }
+
+  case PackSplice:
+    Out << "...[< ";
+    getPackSplice()->getOperand()->printPretty(Out, nullptr, Policy);
+    Out << ">]...";
     break;
   }
 }
@@ -455,7 +500,6 @@ LLVM_DUMP_METHOD void TemplateArgument::dump() const { dump(llvm::errs()); }
 
 SourceRange TemplateArgumentLoc::getSourceRange() const {
   switch (Argument.getKind()) {
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getSourceExpression()->getSourceRange();
 
@@ -489,6 +533,46 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
   case TemplateArgument::Pack:
   case TemplateArgument::Null:
     return SourceRange();
+
+  case TemplateArgument::PackSplice:
+    // FIXME: Improve this
+    return SourceRange();
+
+  }
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
+}
+
+SourceLocation TemplateArgumentLoc::getExpansionEllipsisLoc() const {
+  if (!Argument.isPackExpansion())
+    return SourceLocation();
+
+  switch (Argument.getKind()) {
+  case TemplateArgument::Null:
+  case TemplateArgument::Declaration:
+  case TemplateArgument::Integral:
+  case TemplateArgument::Pack:
+  case TemplateArgument::Template:
+  case TemplateArgument::NullPtr:
+    return SourceLocation();
+
+  case TemplateArgument::TemplateExpansion:
+    return getTemplateEllipsisLoc();
+
+  case TemplateArgument::PackSplice:
+    return LocInfo.getPackSpliceExpansionEllipsisLoc();
+
+  case TemplateArgument::Type: {
+    TypeLoc TL = LocInfo.getAsTypeSourceInfo()->getTypeLoc();
+    if (auto PETL = TL.getAs<PackExpansionTypeLoc>())
+      return PETL.getEllipsisLoc();
+    return SourceLocation();
+  }
+
+  case TemplateArgument::Expression:
+    if (auto *PE = dyn_cast<PackExpansionExpr>(Argument.getAsExpr()))
+      return PE->getEllipsisLoc();
+    return SourceLocation();
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -520,12 +604,12 @@ static const T &DiagTemplateArg(const T &DB, const TemplateArgument &Arg) {
   case TemplateArgument::TemplateExpansion:
     return DB << Arg.getAsTemplateOrTemplatePattern() << "...";
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
     return DB << Arg.getAsExpr();
   }
 
-  case TemplateArgument::Pack: {
+  case TemplateArgument::Pack:
+  case TemplateArgument::PackSplice: {
     // FIXME: We're guessing at LangOptions!
     SmallString<32> Str;
     llvm::raw_svector_ostream OS(Str);
@@ -535,6 +619,7 @@ static const T &DiagTemplateArg(const T &DB, const TemplateArgument &Arg) {
     Arg.print(Policy, OS);
     return DB << OS.str();
   }
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -551,9 +636,21 @@ clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
   TemplateTemplateArgLocInfo *Template = new (Ctx) TemplateTemplateArgLocInfo;
   Template->Qualifier = QualifierLoc.getNestedNameSpecifier();
   Template->QualifierLocData = QualifierLoc.getOpaqueData();
-  Template->TemplateNameLoc = TemplateNameLoc.getRawEncoding();
-  Template->EllipsisLoc = EllipsisLoc.getRawEncoding();
+  Template->TemplateNameLoc = TemplateNameLoc;
+  Template->EllipsisLoc = EllipsisLoc;
   Pointer = Template;
+}
+
+clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
+    ASTContext &Ctx, SourceLocation IntroEllipsisLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc,
+    SourceLocation ExpansionEllipsisLoc) {
+  auto *PackSplice = new (Ctx) PackSpliceArgLocInfo;
+  PackSplice->IntroEllipsisLoc = IntroEllipsisLoc.getRawEncoding();
+  PackSplice->SBELoc = SBELoc.getRawEncoding();
+  PackSplice->SEELoc = SEELoc.getRawEncoding();
+  PackSplice->ExpansionEllipsisLoc = ExpansionEllipsisLoc.getRawEncoding();
+  Pointer = PackSplice;
 }
 
 const ASTTemplateArgumentListInfo *

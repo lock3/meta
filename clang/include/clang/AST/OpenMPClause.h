@@ -28,6 +28,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
@@ -790,6 +791,100 @@ public:
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == llvm::omp::OMPC_simdlen;
+  }
+};
+
+/// This represents the 'sizes' clause in the '#pragma omp tile' directive.
+///
+/// \code
+/// #pragma omp tile sizes(5,5)
+/// for (int i = 0; i < 64; ++i)
+///   for (int j = 0; j < 64; ++j)
+/// \endcode
+class OMPSizesClause final
+    : public OMPClause,
+      private llvm::TrailingObjects<OMPSizesClause, Expr *> {
+  friend class OMPClauseReader;
+  friend class llvm::TrailingObjects<OMPSizesClause, Expr *>;
+
+  /// Location of '('.
+  SourceLocation LParenLoc;
+
+  /// Number of tile sizes in the clause.
+  unsigned NumSizes;
+
+  /// Build an empty clause.
+  explicit OMPSizesClause(int NumSizes)
+      : OMPClause(llvm::omp::OMPC_sizes, SourceLocation(), SourceLocation()),
+        NumSizes(NumSizes) {}
+
+public:
+  /// Build a 'sizes' AST node.
+  ///
+  /// \param C         Context of the AST.
+  /// \param StartLoc  Location of the 'sizes' identifier.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc    Location of ')'.
+  /// \param Sizes     Content of the clause.
+  static OMPSizesClause *Create(const ASTContext &C, SourceLocation StartLoc,
+                                SourceLocation LParenLoc, SourceLocation EndLoc,
+                                ArrayRef<Expr *> Sizes);
+
+  /// Build an empty 'sizes' AST node for deserialization.
+  ///
+  /// \param C     Context of the AST.
+  /// \param NumSizes Number of items in the clause.
+  static OMPSizesClause *CreateEmpty(const ASTContext &C, unsigned NumSizes);
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+  /// Returns the location of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the number of list items.
+  unsigned getNumSizes() const { return NumSizes; }
+
+  /// Returns the tile size expressions.
+  MutableArrayRef<Expr *> getSizesRefs() {
+    return MutableArrayRef<Expr *>(static_cast<OMPSizesClause *>(this)
+                                       ->template getTrailingObjects<Expr *>(),
+                                   NumSizes);
+  }
+  ArrayRef<Expr *> getSizesRefs() const {
+    return ArrayRef<Expr *>(static_cast<const OMPSizesClause *>(this)
+                                ->template getTrailingObjects<Expr *>(),
+                            NumSizes);
+  }
+
+  /// Sets the tile size expressions.
+  void setSizesRefs(ArrayRef<Expr *> VL) {
+    assert(VL.size() == NumSizes);
+    std::copy(VL.begin(), VL.end(),
+              static_cast<OMPSizesClause *>(this)
+                  ->template getTrailingObjects<Expr *>());
+  }
+
+  child_range children() {
+    MutableArrayRef<Expr *> Sizes = getSizesRefs();
+    return child_range(reinterpret_cast<Stmt **>(Sizes.begin()),
+                       reinterpret_cast<Stmt **>(Sizes.end()));
+  }
+  const_child_range children() const {
+    ArrayRef<Expr *> Sizes = getSizesRefs();
+    return const_child_range(reinterpret_cast<Stmt *const *>(Sizes.begin()),
+                             reinterpret_cast<Stmt *const *>(Sizes.end()));
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == llvm::omp::OMPC_sizes;
   }
 };
 
@@ -4738,8 +4833,9 @@ public:
   /// subscript it may not have any associated declaration. In that case the
   /// associated declaration is set to nullptr.
   class MappableComponent {
-    /// Expression associated with the component.
-    Expr *AssociatedExpression = nullptr;
+    /// Pair of Expression and Non-contiguous pair  associated with the
+    /// component.
+    llvm::PointerIntPair<Expr *, 1, bool> AssociatedExpressionNonContiguousPr;
 
     /// Declaration associated with the declaration. If the component does
     /// not have a declaration (e.g. array subscripts or section), this is set
@@ -4749,14 +4845,22 @@ public:
   public:
     explicit MappableComponent() = default;
     explicit MappableComponent(Expr *AssociatedExpression,
-                               ValueDecl *AssociatedDeclaration)
-        : AssociatedExpression(AssociatedExpression),
+                               ValueDecl *AssociatedDeclaration,
+                               bool IsNonContiguous)
+        : AssociatedExpressionNonContiguousPr(AssociatedExpression,
+                                              IsNonContiguous),
           AssociatedDeclaration(
               AssociatedDeclaration
                   ? cast<ValueDecl>(AssociatedDeclaration->getCanonicalDecl())
                   : nullptr) {}
 
-    Expr *getAssociatedExpression() const { return AssociatedExpression; }
+    Expr *getAssociatedExpression() const {
+      return AssociatedExpressionNonContiguousPr.getPointer();
+    }
+
+    bool isNonContiguous() const {
+      return AssociatedExpressionNonContiguousPr.getInt();
+    }
 
     ValueDecl *getAssociatedDeclaration() const {
       return AssociatedDeclaration;
@@ -5251,14 +5355,14 @@ public:
         if (!(--RemainingLists)) {
           ++DeclCur;
           ++NumListsCur;
-          if (SupportsMapper)
-            ++MapperCur;
           RemainingLists = *NumListsCur;
           assert(RemainingLists && "No lists in the following declaration??");
         }
       }
 
       ++ListSizeCur;
+      if (SupportsMapper)
+        ++MapperCur;
       return *this;
     }
   };
@@ -7748,22 +7852,22 @@ public:
 #define DISPATCH(CLASS) \
   return static_cast<ImplClass*>(this)->Visit##CLASS(static_cast<PTR(CLASS)>(S))
 
-#define OMP_CLAUSE_CLASS(Enum, Str, Class) \
-  RetTy Visit ## Class (PTR(Class) S) { DISPATCH(Class); }
-#include "llvm/Frontend/OpenMP/OMPKinds.def"
+#define GEN_CLANG_CLAUSE_CLASS
+#define CLAUSE_CLASS(Enum, Str, Class)                                         \
+  RetTy Visit##Class(PTR(Class) S) { DISPATCH(Class); }
+#include "llvm/Frontend/OpenMP/OMP.inc"
 
   RetTy Visit(PTR(OMPClause) S) {
     // Top switch clause: visit each OMPClause.
     switch (S->getClauseKind()) {
-#define OMP_CLAUSE_CLASS(Enum, Str, Class)                                     \
+#define GEN_CLANG_CLAUSE_CLASS
+#define CLAUSE_CLASS(Enum, Str, Class)                                         \
   case llvm::omp::Clause::Enum:                                                \
     return Visit##Class(static_cast<PTR(Class)>(S));
-#define OMP_CLAUSE_NO_CLASS(Enum, Str)                                         \
+#define CLAUSE_NO_CLASS(Enum, Str)                                             \
   case llvm::omp::Clause::Enum:                                                \
     break;
-#include "llvm/Frontend/OpenMP/OMPKinds.def"
-    default:
-      break;
+#include "llvm/Frontend/OpenMP/OMP.inc"
     }
   }
   // Base case, ignore it. :)
@@ -7794,9 +7898,9 @@ public:
   OMPClausePrinter(raw_ostream &OS, const PrintingPolicy &Policy)
       : OS(OS), Policy(Policy) {}
 
-#define OMP_CLAUSE_CLASS(Enum, Str, Class)                                     \
-  void Visit##Class(Class *S);
-#include "llvm/Frontend/OpenMP/OMPKinds.def"
+#define GEN_CLANG_CLAUSE_CLASS
+#define CLAUSE_CLASS(Enum, Str, Class) void Visit##Class(Class *S);
+#include "llvm/Frontend/OpenMP/OMP.inc"
 };
 
 struct OMPTraitProperty {

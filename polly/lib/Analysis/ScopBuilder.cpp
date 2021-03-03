@@ -25,6 +25,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -201,8 +202,8 @@ static bool containsErrorBlock(RegionNode *RN, const Region &R, LoopInfo &LI,
 static isl::map createNextIterationMap(isl::space SetSpace, unsigned Dim) {
   isl::space MapSpace = SetSpace.map_from_set();
   isl::map NextIterationMap = isl::map::universe(MapSpace);
-  for (unsigned u = 0; u < NextIterationMap.dim(isl::dim::in); u++)
-    if (u != Dim)
+  for (auto u : seq<isl_size>(0, NextIterationMap.dim(isl::dim::in)))
+    if (u != (isl_size)Dim)
       NextIterationMap =
           NextIterationMap.equate(isl::dim::in, u, isl::dim::out, u);
   isl::constraint C =
@@ -794,15 +795,15 @@ bool ScopBuilder::addLoopBoundsToHeaderDomain(
   auto Parts = partitionSetParts(HeaderBBDom, LoopDepth);
   HeaderBBDom = Parts.second;
 
-  // Check if there is a <nsw> tagged AddRec for this loop and if so do not add
-  // the bounded assumptions to the context as they are already implied by the
-  // <nsw> tag.
-  if (scop->hasNSWAddRecForLoop(L))
-    return true;
+  // Check if there is a <nsw> tagged AddRec for this loop and if so do not
+  // require a runtime check. The assumption is already implied by the <nsw>
+  // tag.
+  bool RequiresRTC = !scop->hasNSWAddRecForLoop(L);
 
   isl::set UnboundedCtx = Parts.first.params();
   recordAssumption(&RecordedAssumptions, INFINITELOOP, UnboundedCtx,
-                   HeaderBB->getTerminator()->getDebugLoc(), AS_RESTRICTION);
+                   HeaderBB->getTerminator()->getDebugLoc(), AS_RESTRICTION,
+                   nullptr, RequiresRTC);
   return true;
 }
 
@@ -1495,7 +1496,7 @@ void ScopBuilder::addRecordedAssumptions() {
 
     if (!AS.BB) {
       scop->addAssumption(AS.Kind, AS.Set, AS.Loc, AS.Sign,
-                          nullptr /* BasicBlock */);
+                          nullptr /* BasicBlock */, AS.RequiresRTC);
       continue;
     }
 
@@ -1519,7 +1520,8 @@ void ScopBuilder::addRecordedAssumptions() {
     else /* (AS.Sign == AS_ASSUMPTION) */
       S = isl_set_params(isl_set_subtract(Dom, S));
 
-    scop->addAssumption(AS.Kind, isl::manage(S), AS.Loc, AS_RESTRICTION, AS.BB);
+    scop->addAssumption(AS.Kind, isl::manage(S), AS.Loc, AS_RESTRICTION, AS.BB,
+                        AS.RequiresRTC);
   }
 }
 
@@ -2132,11 +2134,11 @@ void ScopBuilder::buildEqivClassBlockStmts(BasicBlock *BB) {
   // The order of statements must be preserved w.r.t. their ordered
   // instructions. Without this explicit scan, we would also use non-ordered
   // instructions (whose order is arbitrary) to determine statement order.
-  for (Instruction &Inst : *BB) {
-    if (!isOrderedInstruction(&Inst))
+  for (Instruction *Inst : ModeledInsts) {
+    if (!isOrderedInstruction(Inst))
       continue;
 
-    auto LeaderIt = UnionFind.findLeader(&Inst);
+    auto LeaderIt = UnionFind.findLeader(Inst);
     if (LeaderIt == UnionFind.member_end())
       continue;
 
@@ -2146,15 +2148,15 @@ void ScopBuilder::buildEqivClassBlockStmts(BasicBlock *BB) {
 
   // Collect the instructions of all leaders. UnionFind's member iterator
   // unfortunately are not in any specific order.
-  for (Instruction &Inst : *BB) {
-    auto LeaderIt = UnionFind.findLeader(&Inst);
+  for (Instruction *Inst : ModeledInsts) {
+    auto LeaderIt = UnionFind.findLeader(Inst);
     if (LeaderIt == UnionFind.member_end())
       continue;
 
-    if (&Inst == MainInst)
+    if (Inst == MainInst)
       MainLeader = *LeaderIt;
     std::vector<Instruction *> &InstList = LeaderToInstList[*LeaderIt];
-    InstList.push_back(&Inst);
+    InstList.push_back(Inst);
   }
 
   // Finally build the statements.
@@ -2842,7 +2844,7 @@ void ScopBuilder::addUserContext() {
     return;
   }
 
-  for (unsigned i = 0; i < Space.dim(isl::dim::param); i++) {
+  for (auto i : seq<isl_size>(0, Space.dim(isl::dim::param))) {
     std::string NameContext =
         scop->getContext().get_dim_name(isl::dim::param, i);
     std::string NameUserContext = UserContext.get_dim_name(isl::dim::param, i);

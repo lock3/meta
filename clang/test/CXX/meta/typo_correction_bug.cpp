@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 template <typename... Args>
@@ -11,7 +11,7 @@ consteval void impl(meta::info source) {
   int a = 1;
   -> fragment struct S {
     void foo() {
-      dummy(unqualid("foo_", %{a})); // expected-error {{use of undeclared identifier 'foo_1'}}
+      dummy([# "foo_", %{a} #]); // expected-error {{use of undeclared identifier 'foo_1'}}
     }
   };
 }

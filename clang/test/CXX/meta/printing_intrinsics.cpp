@@ -3,7 +3,7 @@
 #include "reflection_query.h"
 
 namespace meta {
-  using info = decltype(reflexpr(void));
+  using info = decltype(^void);
 }
 
 constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
@@ -16,22 +16,22 @@ struct S1 {
 };
 
 void test() {
-  constexpr auto x1 = reflexpr(int);
+  constexpr auto x1 = ^int;
 
   constexpr int* y1 = nullptr;
-  constexpr auto x2 = reflexpr(y1);
+  constexpr auto x2 = ^y1;
 
   constexpr int y2 = int();
-  constexpr auto x3 = reflexpr(y2);
+  constexpr auto x3 = ^y2;
 
   constexpr const int y3 = int();
-  constexpr auto x4 = reflexpr(y3);
+  constexpr auto x4 = ^y3;
 
   constexpr S1<int> y4 = S1<int>();
-  constexpr auto x5 = reflexpr(y4);
+  constexpr auto x5 = ^y4;
 
-  constexpr auto x6 = reflexpr(S1<int>::foo);
-  constexpr auto x7 = reflexpr(S1<int>::variable);
+  constexpr auto x6 = ^S1<int>::foo;
+  constexpr auto x7 = ^S1<int>::variable;
 
   // Generate output from reflections
   constexpr auto x1_pretty_print = __reflect_pretty_print(x1);
@@ -86,25 +86,25 @@ union U {
 
 void test_types() {
   {
-    constexpr auto type = reflexpr(C);
+    constexpr auto type = ^C;
     constexpr auto definition = __reflect(query_get_definition, type);
     { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
-    constexpr auto type = reflexpr(E);
+    constexpr auto type = ^E;
     constexpr auto definition = __reflect(query_get_definition, type);
     { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
-    constexpr auto type = reflexpr(EC);
+    constexpr auto type = ^EC;
     constexpr auto definition = __reflect(query_get_definition, type);
     { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
-    constexpr auto type = reflexpr(U);
+    constexpr auto type = ^U;
     constexpr auto definition = __reflect(query_get_definition, type);
     { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
@@ -113,22 +113,22 @@ void test_types() {
 
 template<typename T, int WN>
 void test_dependent() {
-  constexpr auto x1 = reflexpr(T);
+  constexpr auto x1 = ^T;
 
   constexpr T* y1 = nullptr;
-  constexpr auto x2 = reflexpr(y1);
+  constexpr auto x2 = ^y1;
 
   constexpr T y2 = T();
-  constexpr auto x3 = reflexpr(y2);
+  constexpr auto x3 = ^y2;
 
   constexpr const T y3 = T();
-  constexpr auto x4 = reflexpr(y3);
+  constexpr auto x4 = ^y3;
 
   constexpr S1<T> y4 = S1<T>();
-  constexpr auto x5 = reflexpr(y4);
+  constexpr auto x5 = ^y4;
 
-  constexpr auto x6 = reflexpr(S1<T>::foo);
-  constexpr auto x7 = reflexpr(S1<T>::variable);
+  constexpr auto x6 = ^S1<T>::foo;
+  constexpr auto x7 = ^S1<T>::variable;
 
   // Generate output
   constexpr auto x1_pretty_print = __reflect_pretty_print(x1);

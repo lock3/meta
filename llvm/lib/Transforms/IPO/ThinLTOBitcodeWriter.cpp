@@ -14,6 +14,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
@@ -194,6 +195,26 @@ void forEachVirtualFunction(Constant *C, function_ref<void(Function *)> Fn) {
     forEachVirtualFunction(cast<Constant>(Op), Fn);
 }
 
+// Clone any @llvm[.compiler].used over to the new module and append
+// values whose defs were cloned into that module.
+static void cloneUsedGlobalVariables(const Module &SrcM, Module &DestM,
+                                     bool CompilerUsed) {
+  SmallVector<GlobalValue *, 4> Used, NewUsed;
+  // First collect those in the llvm[.compiler].used set.
+  collectUsedGlobalVariables(SrcM, Used, CompilerUsed);
+  // Next build a set of the equivalent values defined in DestM.
+  for (auto *V : Used) {
+    auto *GV = DestM.getNamedValue(V->getName());
+    if (GV && !GV->isDeclaration())
+      NewUsed.push_back(GV);
+  }
+  // Finally, add them to a llvm[.compiler].used variable in DestM.
+  if (CompilerUsed)
+    appendToCompilerUsed(DestM, NewUsed);
+  else
+    appendToUsed(DestM, NewUsed);
+}
+
 // If it's possible to split M into regular and thin LTO parts, do so and write
 // a multi-module bitcode file with the two parts to OS. Otherwise, write only a
 // regular LTO bitcode file to OS.
@@ -260,7 +281,7 @@ void splitAndWriteThinLTOBitcode(
         if (!RT || RT->getBitWidth() > 64 || F->arg_empty() ||
             !F->arg_begin()->use_empty())
           return;
-        for (auto &Arg : make_range(std::next(F->arg_begin()), F->arg_end())) {
+        for (auto &Arg : drop_begin(F->args())) {
           auto *ArgT = dyn_cast<IntegerType>(Arg.getType());
           if (!ArgT || ArgT->getBitWidth() > 64)
             return;
@@ -285,6 +306,11 @@ void splitAndWriteThinLTOBitcode(
       }));
   StripDebugInfo(*MergedM);
   MergedM->setModuleInlineAsm("");
+
+  // Clone any llvm.*used globals to ensure the included values are
+  // not deleted.
+  cloneUsedGlobalVariables(M, *MergedM, /*CompilerUsed*/ false);
+  cloneUsedGlobalVariables(M, *MergedM, /*CompilerUsed*/ true);
 
   for (Function &F : *MergedM)
     if (!F.isDeclaration()) {
@@ -333,8 +359,7 @@ void splitAndWriteThinLTOBitcode(
       Linkage = CFL_Declaration;
     Elts.push_back(ConstantAsMetadata::get(
         llvm::ConstantInt::get(Type::getInt8Ty(Ctx), Linkage)));
-    for (auto Type : Types)
-      Elts.push_back(Type);
+    append_range(Elts, Types);
     CfiFunctionMDs.push_back(MDTuple::get(Ctx, Elts));
   }
 

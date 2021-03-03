@@ -48,7 +48,6 @@ namespace clang {
   class PoisonSEHIdentifiersRAIIObject;
   class OMPClause;
   class ObjCTypeParamList;
-  class ObjCTypeParameter;
   struct OMPTraitProperty;
   struct OMPTraitSelector;
   struct OMPTraitSet;
@@ -505,14 +504,15 @@ public:
   bool AnnotateIdentifierSplice();
   bool TryAnnotateIdentifierSplice();
 
-  bool isIdentifier() {
-    if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
-      AnnotateIdentifierSplice();
+  bool isIdentifier(unsigned LookAhead = 0) {
+    if (matchCXXSpliceBegin(tok::hash, LookAhead) &&
+        getRelativeToken(2 + LookAhead).isNot(tok::ellipsis)) {
+      if (!LookAhead)
+        AnnotateIdentifierSplice();
       return true;
     }
 
-    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice,
-                       tok::annot_invalid_identifier_splice);
+    return getRelativeToken(LookAhead).isIdentifier();
   }
 
   // FIXME: This should probably be private similar to the other
@@ -750,10 +750,6 @@ private:
   /// #pragma ms_struct...
   void HandlePragmaMSStruct();
 
-  /// Handle the annotation token produced for
-  /// #pragma comment...
-  void HandlePragmaMSComment();
-
   void HandlePragmaMSPointersToMembers();
 
   void HandlePragmaMSVtorDisp();
@@ -851,6 +847,13 @@ public:
   }
 
 private:
+  const Token &getRelativeToken(unsigned Dist) {
+    if (Dist == 0)
+      return Tok;
+
+    return PP.LookAhead(Dist - 1);
+  }
+
   static void setTypeAnnotation(Token &Tok, TypeResult T) {
     assert((T.isInvalid() || T.get()) &&
            "produced a valid-but-null type annotation?");
@@ -1782,7 +1785,6 @@ private:
 
   ParsedType ParseObjCTypeName(ObjCDeclSpec &DS, DeclaratorContext Ctx,
                                ParsedAttributes *ParamAttrs);
-  void ParseObjCMethodRequirement();
   Decl *ParseObjCMethodPrototype(
             tok::ObjCKeywordKind MethodImplKind = tok::objc_not_keyword,
             bool MethodDefinition = true);
@@ -1879,12 +1881,12 @@ private:
                                                      ParsedType &CastTy,
                                                      SourceRange &CastRange);
 
-  typedef SmallVector<Expr*, 20> ExprListTy;
   typedef SmallVector<SourceLocation, 20> CommaLocsTy;
 
   /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
   bool ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                            SmallVectorImpl<SourceLocation> &CommaLocs,
+                           bool IsCall,
                            llvm::function_ref<void()> ExpressionStarts =
                                llvm::function_ref<void()>());
 
@@ -2052,7 +2054,6 @@ private:
   bool ParseOptionalCXXInjectionContextSpecifier(
                                        CXXInjectionContextSpecifier &Specifier);
   StmtResult ParseCXXInjectionStatement();
-  StmtResult ParseCXXBaseInjectionStatement();
 
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while condition expression.
@@ -2086,8 +2087,11 @@ private:
   }
   bool MayBeDesignationStart();
   ExprResult ParseBraceInitializer();
-  ExprResult ParseInitializerWithPotentialDesignator(
-      llvm::function_ref<void(const Designation &)> CodeCompleteCB);
+  struct DesignatorCompletionInfo {
+    SmallVectorImpl<Expr *> &InitExprs;
+    QualType PreferredBaseType;
+  };
+  ExprResult ParseInitializerWithPotentialDesignator(DesignatorCompletionInfo);
 
   //===--------------------------------------------------------------------===//
   // clang Expressions
@@ -2418,16 +2422,12 @@ private:
                         ParsedAttributesWithRange &Attrs);
   DeclSpecContext
   getDeclSpecContextFromDeclaratorContext(DeclaratorContext Context);
-
   void ParseDeclarationSpecifiers(
       DeclSpec &DS,
       const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
       AccessSpecifier AS = AS_none,
       DeclSpecContext DSC = DeclSpecContext::DSC_normal,
       LateParsedAttrList *LateAttrs = nullptr);
-
-  void ParseParameterPassingSpecifier(DeclSpec &DS);
-
   bool DiagnoseMissingSemiAfterTagDefinition(
       DeclSpec &DS, AccessSpecifier AS, DeclSpecContext DSContext,
       LateParsedAttrList *LateAttrs = nullptr);
@@ -2602,10 +2602,6 @@ private:
   isCXXDeclarationSpecifier(TPResult BracedCastResult = TPResult::False,
                             bool *InvalidAsDeclSpec = nullptr);
 
-  /// Returns true if the next term is a parameter passing specifier
-  /// and false if it is not.
-  bool isParameterPassingSpecifier();
-
   /// Given that isCXXDeclarationSpecifier returns \c TPResult::True or
   /// \c TPResult::Ambiguous, determine whether the decl-specifier would be
   /// a type-specifier other than a cv-qualifier.
@@ -2653,12 +2649,11 @@ private:
   bool TrySkipAttributes();
 
 public:
-  TypeResult ParseTypeName(SourceRange *Range = nullptr,
-                           DeclaratorContext Context
-                             = DeclaratorContext::TypeNameContext,
-                           AccessSpecifier AS = AS_none,
-                           Decl **OwnedType = nullptr,
-                           ParsedAttributes *Attrs = nullptr);
+  TypeResult
+  ParseTypeName(SourceRange *Range = nullptr,
+                DeclaratorContext Context = DeclaratorContext::TypeName,
+                AccessSpecifier AS = AS_none, Decl **OwnedType = nullptr,
+                ParsedAttributes *Attrs = nullptr);
 
 private:
   void ParseBlockId(SourceLocation CaretLoc);
@@ -2738,6 +2733,61 @@ private:
                            IdentifierInfo *ScopeName, SourceLocation ScopeLoc,
                            ParsedAttr::Syntax Syntax);
 
+  enum ParseAttrKindMask {
+    PAKM_GNU = 1 << 0,
+    PAKM_Declspec = 1 << 1,
+    PAKM_CXX11 = 1 << 2,
+  };
+
+  /// \brief Parse attributes based on what syntaxes are desired, allowing for
+  /// the order to vary. e.g. with PAKM_GNU | PAKM_Declspec:
+  /// __attribute__((...)) __declspec(...) __attribute__((...)))
+  /// Note that Microsoft attributes (spelled with single square brackets) are
+  /// not supported by this because of parsing ambiguities with other
+  /// constructs.
+  ///
+  /// There are some attribute parse orderings that should not be allowed in
+  /// arbitrary order. e.g.,
+  ///
+  ///   [[]] __attribute__(()) int i; // OK
+  ///   __attribute__(()) [[]] int i; // Not OK
+  ///
+  /// Such situations should use the specific attribute parsing functionality.
+  void ParseAttributes(unsigned WhichAttrKinds,
+                       ParsedAttributesWithRange &Attrs,
+                       SourceLocation *End = nullptr,
+                       LateParsedAttrList *LateAttrs = nullptr);
+  void ParseAttributes(unsigned WhichAttrKinds, ParsedAttributes &Attrs,
+                       SourceLocation *End = nullptr,
+                       LateParsedAttrList *LateAttrs = nullptr) {
+    ParsedAttributesWithRange AttrsWithRange(AttrFactory);
+    ParseAttributes(WhichAttrKinds, AttrsWithRange, End, LateAttrs);
+    Attrs.takeAllFrom(AttrsWithRange);
+  }
+  /// \brief Possibly parse attributes based on what syntaxes are desired,
+  /// allowing for the order to vary.
+  bool MaybeParseAttributes(unsigned WhichAttrKinds,
+                            ParsedAttributesWithRange &Attrs,
+                            SourceLocation *End = nullptr,
+                            LateParsedAttrList *LateAttrs = nullptr) {
+    if (Tok.isOneOf(tok::kw___attribute, tok::kw___declspec) ||
+        (standardAttributesAllowed() && isCXX11AttributeSpecifier())) {
+      ParseAttributes(WhichAttrKinds, Attrs, End, LateAttrs);
+      return true;
+    }
+    return false;
+  }
+  bool MaybeParseAttributes(unsigned WhichAttrKinds, ParsedAttributes &Attrs,
+                            SourceLocation *End = nullptr,
+                            LateParsedAttrList *LateAttrs = nullptr) {
+    if (Tok.isOneOf(tok::kw___attribute, tok::kw___declspec) ||
+        (standardAttributesAllowed() && isCXX11AttributeSpecifier())) {
+      ParseAttributes(WhichAttrKinds, Attrs, End, LateAttrs);
+      return true;
+    }
+    return false;
+  }
+
   void MaybeParseGNUAttributes(Declarator &D,
                                LateParsedAttrList *LateAttrs = nullptr) {
     if (Tok.is(tok::kw___attribute)) {
@@ -2747,11 +2797,14 @@ private:
       D.takeAttributes(attrs, endLoc);
     }
   }
-  void MaybeParseGNUAttributes(ParsedAttributes &attrs,
+  bool MaybeParseGNUAttributes(ParsedAttributes &attrs,
                                SourceLocation *endLoc = nullptr,
                                LateParsedAttrList *LateAttrs = nullptr) {
-    if (Tok.is(tok::kw___attribute))
+    if (Tok.is(tok::kw___attribute)) {
       ParseGNUAttributes(attrs, endLoc, LateAttrs);
+      return true;
+    }
+    return false;
   }
   void ParseGNUAttributes(ParsedAttributes &attrs,
                           SourceLocation *endLoc = nullptr,
@@ -2788,12 +2841,15 @@ private:
     }
     return false;
   }
-  void MaybeParseCXX11Attributes(ParsedAttributesWithRange &attrs,
+  bool MaybeParseCXX11Attributes(ParsedAttributesWithRange &attrs,
                                  SourceLocation *endLoc = nullptr,
                                  bool OuterMightBeMessageSend = false) {
     if (standardAttributesAllowed() &&
-      isCXX11AttributeSpecifier(false, OuterMightBeMessageSend))
+        isCXX11AttributeSpecifier(false, OuterMightBeMessageSend)) {
       ParseCXX11Attributes(attrs, endLoc);
+      return true;
+    }
+    return false;
   }
 
   void ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
@@ -2818,11 +2874,14 @@ private:
   void ParseMicrosoftUuidAttributeArgs(ParsedAttributes &Attrs);
   void ParseMicrosoftAttributes(ParsedAttributes &attrs,
                                 SourceLocation *endLoc = nullptr);
-  void MaybeParseMicrosoftDeclSpecs(ParsedAttributes &Attrs,
+  bool MaybeParseMicrosoftDeclSpecs(ParsedAttributes &Attrs,
                                     SourceLocation *End = nullptr) {
     const auto &LO = getLangOpts();
-    if (LO.DeclSpecKeyword && Tok.is(tok::kw___declspec))
+    if (LO.DeclSpecKeyword && Tok.is(tok::kw___declspec)) {
       ParseMicrosoftDeclSpecs(Attrs, End);
+      return true;
+    }
+    return false;
   }
   void ParseMicrosoftDeclSpecs(ParsedAttributes &Attrs,
                                SourceLocation *End = nullptr);
@@ -2836,17 +2895,6 @@ private:
   void ParseBorlandTypeAttributes(ParsedAttributes &attrs);
   void ParseOpenCLKernelAttributes(ParsedAttributes &attrs);
   void ParseOpenCLQualifiers(ParsedAttributes &Attrs);
-  /// Parses opencl_unroll_hint attribute if language is OpenCL v2.0
-  /// or higher.
-  /// \return false if error happens.
-  bool MaybeParseOpenCLUnrollHintAttribute(ParsedAttributes &Attrs) {
-    if (getLangOpts().OpenCL)
-      return ParseOpenCLUnrollHintAttribute(Attrs);
-    return true;
-  }
-  /// Parses opencl_unroll_hint attribute.
-  /// \return false if error happens.
-  bool ParseOpenCLUnrollHintAttribute(ParsedAttributes &Attrs);
   void ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs);
 
   VersionTuple ParseVersionTuple(SourceRange &Range);
@@ -3079,14 +3127,6 @@ private:
                             SourceLocation AliasLoc, IdentifierInfo *Alias,
                             SourceLocation &DeclEnd);
 
-  Decl *ParseCXXRequiredTypenameDecl(SourceLocation RequiresLoc,
-                                     DeclaratorContext Ctx, AccessSpecifier AS);
-  Decl *ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
-                                       DeclaratorContext Ctx,
-                                       AccessSpecifier AS);
-  Decl *ParseCXXRequiredDecl(DeclaratorContext Ctx,
-                             AccessSpecifier AS = AS_none);
-
 private:
   bool ParsingTypenameRequires = false;
 
@@ -3126,16 +3166,6 @@ public:
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
-  bool
-  ParseReifMemInitializer(Decl *ConstructorDecl,
-                          llvm::SmallVectorImpl<QualType> &Typenames,
-                          llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);
-  bool ParseMemInitExprList(Decl *ConstructorDecl,
-                            CXXScopeSpec &SS, IdentifierInfo *II,
-                            DeclSpec const &DS, TypeResult const &TemplateTypeTy,
-                            SourceLocation IdLoc, SourceLocation &LParen,
-                            ExprVector &ArgExprs,
-                            SourceLocation &RParen, SourceLocation &Ellipsis);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
                                       Decl *ThisDecl);
 
@@ -3145,7 +3175,7 @@ public:
                                     SourceLocation &EndLocation);
   SmallVector<CXXBaseSpecifier *, 8> ParseCXXBaseSpecifierList(Decl *ClassDecl);
   void ParseBaseClause(Decl *ClassDecl);
-  SmallVector<BaseResult, 4> ParseBaseSpecifier(Decl *ClassDecl);
+  BaseResult ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -3168,8 +3198,8 @@ public:
   // C++ 14.3: Template arguments [temp.arg]
   typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
-  ParsedReflectionOperand ParseCXXReflectOperand();
-  ExprResult ParseCXXReflectExpression();
+  ParsedReflectionOperand ParseCXXReflectionOperand();
+  ExprResult ParseCXXReflectionExpression();
   ExprResult ParseCXXInvalidReflectionExpression();
   ExprResult ParseCXXReflectionReadQuery();
   ExprResult ParseCXXReflectionWriteQuery();
@@ -3177,37 +3207,32 @@ public:
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
+private:
+  bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
+  bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
 
+  bool isCXXPackSpliceBegin(unsigned LookAhead = 0);
+
+  bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
+  bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);
+public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc);
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
-  ExprResult ParseCXXIdExprExpression();
-  ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
-  ExprResult ParseCXXValueOfExpression();
-  TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                         SourceLocation &EndLoc);
-  ParsedTemplateArgument ParseReflectedTemplateArgument();
+  ExprResult ParseCXXExprSpliceExpr();
+  ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base);
+  ExprResult ParseCXXPackSpliceExpr();
+  SourceLocation ParseTypeSplice(DeclSpec &DS);
+  void AnnotateExistingTypeSplice(const DeclSpec &DS,
+                                  SourceLocation StartLoc,
+                                  SourceLocation EndLoc);
+  SourceLocation ParseTypePackSplice(DeclSpec &DS);
+  bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
+  ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
-
-  /// Returns true if reflection is enabled and the
-  /// current expression appears to be a variadic reifier.
-  bool isVariadicReifier() const;
-
-  /// Parse a variadic reifier. Returns true on error.
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);
-
-  /// Parse the two types of variadic reifiers that may appear in a template
-  /// argument list.
-  bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTemplateReifier(TemplateArgList &Args);
-
-  /// Parse a variadic reifier as a member/base initializer.
-  void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   /// Parse a __select expression
   ExprResult ParseCXXSelectMemberExpr();
@@ -3229,10 +3254,6 @@ public:
   ExprResult ParseCXXUnquoteOperator();
   bool ParseCXXFragmentCaptures(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
-
-  Decl *ParseCXXLegacyFragment(SmallVectorImpl<Expr *> &Captures);
-  ExprResult ParseCXXLegacyFragmentExpression();
-
   Decl *MaybeParseCXXInjectorDeclaration();
   Decl *ParseCXXMetaprogramDeclaration();
 private:
@@ -3294,6 +3315,13 @@ public:
   /// Parse clauses for '#pragma omp declare variant'.
   void ParseOMPDeclareVariantClauses(DeclGroupPtrTy Ptr, CachedTokens &Toks,
                                      SourceLocation Loc);
+
+  /// Parse 'omp [begin] assume[s]' directive.
+  void ParseOpenMPAssumesDirective(OpenMPDirectiveKind DKind,
+                                   SourceLocation Loc);
+
+  /// Parse 'omp end assumes' directive.
+  void ParseOpenMPEndAssumesDirective(SourceLocation Loc);
 
   /// Parse clauses for '#pragma omp declare target'.
   DeclGroupPtrTy ParseOMPDeclareTargetClauses();
@@ -3390,6 +3418,10 @@ public:
   OMPClause *ParseOpenMPSingleExprWithArgClause(OpenMPDirectiveKind DKind,
                                                 OpenMPClauseKind Kind,
                                                 bool ParseOnly);
+
+  /// Parses the 'sizes' clause of a '#pragma omp tile' directive.
+  OMPClause *ParseOpenMPSizesClause();
+
   /// Parses clause without any additional arguments.
   ///
   /// \param Kind Kind of current clause.
@@ -3498,8 +3530,6 @@ private:
   NamedDecl *ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position);
   bool isTypeConstraintAnnotation();
   bool TryAnnotateTypeConstraint();
-  NamedDecl *
-  ParseConstrainedTemplateTypeParameter(unsigned Depth, unsigned Position);
   void DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
                                  SourceLocation CorrectLoc,
                                  bool AlreadyHasEllipsis,

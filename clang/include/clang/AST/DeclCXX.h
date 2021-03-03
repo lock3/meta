@@ -761,9 +761,14 @@ public:
   ///
   /// This value is used for lazy creation of default constructors.
   bool needsImplicitDefaultConstructor() const {
-    return !data().UserDeclaredConstructor &&
-           !(data().DeclaredSpecialMembers & SMF_DefaultConstructor) &&
-           (!isLambda() || lambdaIsDefaultConstructibleAndAssignable());
+    return (!data().UserDeclaredConstructor &&
+            !(data().DeclaredSpecialMembers & SMF_DefaultConstructor) &&
+            (!isLambda() || lambdaIsDefaultConstructibleAndAssignable())) ||
+           // FIXME: Proposed fix to core wording issue: if a class inherits
+           // a default constructor and doesn't explicitly declare one, one
+           // is declared implicitly.
+           (data().HasInheritedDefaultConstructor &&
+            !(data().DeclaredSpecialMembers & SMF_DefaultConstructor));
   }
 
   /// Determine whether this class has any user-declared constructors.
@@ -1649,58 +1654,6 @@ public:
                                    CXXBasePath &Path,
                                    const CXXRecordDecl *BaseRecord);
 
-  /// Base-class lookup callback that determines whether there exists
-  /// a tag with the given name.
-  ///
-  /// This callback can be used with \c lookupInBases() to find tag members
-  /// of the given name within a C++ class hierarchy.
-  static bool FindTagMember(const CXXBaseSpecifier *Specifier,
-                            CXXBasePath &Path, DeclarationName Name);
-
-  /// Base-class lookup callback that determines whether there exists
-  /// a member with the given name.
-  ///
-  /// This callback can be used with \c lookupInBases() to find members
-  /// of the given name within a C++ class hierarchy.
-  static bool FindOrdinaryMember(const CXXBaseSpecifier *Specifier,
-                                 CXXBasePath &Path, DeclarationName Name);
-
-  /// Base-class lookup callback that determines whether there exists
-  /// a member with the given name.
-  ///
-  /// This callback can be used with \c lookupInBases() to find members
-  /// of the given name within a C++ class hierarchy, including dependent
-  /// classes.
-  static bool
-  FindOrdinaryMemberInDependentClasses(const CXXBaseSpecifier *Specifier,
-                                       CXXBasePath &Path, DeclarationName Name);
-
-  /// Base-class lookup callback that determines whether there exists
-  /// an OpenMP declare reduction member with the given name.
-  ///
-  /// This callback can be used with \c lookupInBases() to find members
-  /// of the given name within a C++ class hierarchy.
-  static bool FindOMPReductionMember(const CXXBaseSpecifier *Specifier,
-                                     CXXBasePath &Path, DeclarationName Name);
-
-  /// Base-class lookup callback that determines whether there exists
-  /// an OpenMP declare mapper member with the given name.
-  ///
-  /// This callback can be used with \c lookupInBases() to find members
-  /// of the given name within a C++ class hierarchy.
-  static bool FindOMPMapperMember(const CXXBaseSpecifier *Specifier,
-                                  CXXBasePath &Path, DeclarationName Name);
-
-  /// Base-class lookup callback that determines whether there exists
-  /// a member with the given name that can be used in a nested-name-specifier.
-  ///
-  /// This callback can be used with \c lookupInBases() to find members of
-  /// the given name within a C++ class hierarchy that can occur within
-  /// nested-name-specifiers.
-  static bool FindNestedNameSpecifierMember(const CXXBaseSpecifier *Specifier,
-                                            CXXBasePath &Path,
-                                            DeclarationName Name);
-
   /// Retrieve the final overriders for each virtual member
   /// function in the class hierarchy where this class is the
   /// most-derived class in the class hierarchy.
@@ -1709,12 +1662,20 @@ public:
   /// Get the indirect primary bases for this class.
   void getIndirectPrimaryBases(CXXIndirectPrimaryBaseSet& Bases) const;
 
+  /// Determine whether this class has a member with the given name, possibly
+  /// in a non-dependent base class.
+  ///
+  /// No check for ambiguity is performed, so this should never be used when
+  /// implementing language semantics, but it may be appropriate for warnings,
+  /// static analysis, or similar.
+  bool hasMemberName(DeclarationName N) const;
+
   /// Performs an imprecise lookup of a dependent name in this class.
   ///
   /// This function does not follow strict semantic rules and should be used
   /// only when lookup rules can be relaxed, e.g. indexing.
   std::vector<const NamedDecl *>
-  lookupDependentName(const DeclarationName &Name,
+  lookupDependentName(DeclarationName Name,
                       llvm::function_ref<bool(const NamedDecl *ND)> Filter);
 
   /// Renders and displays an inheritance diagram
@@ -1800,6 +1761,12 @@ public:
     getLambdaData().ContextDecl = ContextDecl;
     getLambdaData().HasKnownInternalLinkage = HasKnownInternalLinkage;
   }
+
+  /// Set the device side mangling number.
+  void setDeviceLambdaManglingNumber(unsigned Num) const;
+
+  /// Retrieve the device side mangling number.
+  unsigned getDeviceLambdaManglingNumber() const;
 
   /// Returns the inheritance model used for this record.
   MSInheritanceModel getMSInheritanceModel() const;
@@ -1934,7 +1901,7 @@ private:
                         const DeclarationNameInfo &NameInfo, QualType T,
                         TypeSourceInfo *TInfo, SourceLocation EndLocation)
       : FunctionDecl(CXXDeductionGuide, C, DC, StartLoc, NameInfo, T, TInfo,
-                     SC_None, false, CSK_unspecified),
+                     SC_None, false, ConstexprSpecKind::Unspecified),
         ExplicitSpec(ES) {
     if (EndLocation.isValid())
       setRangeEnd(EndLocation);
@@ -2254,6 +2221,10 @@ class CXXCtorInitializer final {
   llvm::PointerUnion<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *>
       Initializee;
 
+  /// The argument used to initialize the base or member, which may
+  /// end up constructing an object (when multiple arguments are involved).
+  Stmt *Init;
+
   /// The source location for the field name or, for a base initializer
   /// pack expansion, the location of the ellipsis.
   ///
@@ -2261,10 +2232,6 @@ class CXXCtorInitializer final {
   /// constructor, it will still include the type's source location as the
   /// Initializee points to the CXXConstructorDecl (to allow loop detection).
   SourceLocation MemberOrEllipsisLocation;
-
-  /// The argument used to initialize the base or member, which may
-  /// end up constructing an object (when multiple arguments are involved).
-  Stmt *Init;
 
   /// Location of the left paren of the ctor-initializer.
   SourceLocation LParenLoc;
@@ -4363,8 +4330,8 @@ public:
                                      SourceLocation BeginLoc, bool HasThisPtr);
 
   void setBody(Stmt *S) { Body = S; }
-  bool hasBody() const { return Body; }
-  Stmt *getBody() const { return Body; }
+  bool hasBody() const override { return Body; }
+  Stmt *getBody() const override { return Body; }
 
   bool hasThisPtr() const { return HasThisPtr; }
 
@@ -4377,110 +4344,6 @@ public:
     return static_cast<CXXStmtFragmentDecl *>(const_cast<DeclContext*>(DC));
   }
 };
-
-/// Represents a dependent requires declaration which was marked with
-/// \c typename
-/// Similar to a CXXRequiredDeclaratorDecl, this declares a type exists
-/// outside of the fragment, but lookup is not performed until injection.
-///
-/// \code
-/// __fragment {
-///   requires typename S;
-///   S instance;
-/// }
-/// \endcode
-///
-/// The type associated with a CXXRequiredTypeDecl is currently always
-/// always a typename type.
-class CXXRequiredTypeDecl : public TypeDecl {
-  /// The source location of the 'requires' keyword
-  SourceLocation RequiresLoc;
-
-  /// The source location of the 'typename' or 'class' keyword
-  SourceLocation SpecLoc;
-
-  /// True if this was declared with the 'typename' keyword
-  bool WasDeclaredWithTypename : 1;
-
-  CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
-                      SourceLocation SL, IdentifierInfo *Id,
-                      bool Typename);
-public:
-  static CXXRequiredTypeDecl *Create(ASTContext &Ctx, DeclContext *DC,
-                                     SourceLocation RL, SourceLocation SL,
-                                     IdentifierInfo *Id, bool Typename);
-  static CXXRequiredTypeDecl *CreateDeserialized(ASTContext &Ctx, unsigned ID);
-
-  /// Get the location of the 'requires' keyword.
-  SourceLocation getRequiresLoc() const { return RequiresLoc; }
-  /// Get the location of the 'typename' or 'class' keyword.
-  SourceLocation getSpecLoc() const { return SpecLoc; }
-
-  /// Was this declared with the 'typename' keyword?
-  bool wasDeclaredWithTypename() const { return WasDeclaredWithTypename; }
-
-  DeclarationNameInfo getNameInfo() const {
-    return DeclarationNameInfo(getDeclName(), getLocation());
-  }
-
-  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == CXXRequiredType; }
-};
-
-/// Represents a requires declaration which was not marked with
-/// \c typename
-/// This declares a typed name exists somewhere outside of the fragment,
-/// but does not look it up until the fragment is injected.
-///
-/// \code
-/// __fragment {
-///  requires int x;
-///  x = 42;
-/// }
-/// \endcode
-///
-/// Like an UnresolvedUsingValueDecl, these only declare non-types.
-class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
-  /// The location of the 'requires' keyword
-  SourceLocation RequiresLoc;
-
-  /// The actual declarator we are requiring, alternatively
-  /// the declarator owned by this declaration.
-  DeclaratorDecl *RequiredDeclarator;
-
-  CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
-                            DeclaratorDecl *DD, SourceLocation RL);
-public:
-  static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
-                                           DeclaratorDecl *RequiredDecl,
-                                           SourceLocation RequiresLoc);
-  static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
-                                                       unsigned ID);
-
-  SourceLocation getRequiresLoc() const { return RequiresLoc; }
-
-  QualType getDeclaratorType() const {
-    return RequiredDeclarator->getType();
-  }
-
-  TypeSourceInfo *getDeclaratorTInfo() const {
-    return RequiredDeclarator->getTypeSourceInfo();
-  }
-
-  DeclaratorDecl *getRequiredDeclarator() const { return RequiredDeclarator; }
-
-  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }
-};
-
-// class CXXRequiredFunctionDecl : public FunctionDecl {
-//   SourceLocation RequiresLoc;
-
-//   CXXRequiredFunctionDecl(FunctionDecl *D);
-// public:
-//   static CXXRequiredFunctionDecl *Create(ASTContext &Ctx, FunctionDecl *D,
-//                                          SourceLocation RequiresLoc);
-// };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.

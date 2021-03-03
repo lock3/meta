@@ -9,16 +9,12 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_MCTARGETDESC_AMDGPUTARGETSTREAMER_H
 #define LLVM_LIB_TARGET_AMDGPU_MCTARGETDESC_AMDGPUTARGETSTREAMER_H
 
-#include "AMDKernelCodeT.h"
 #include "Utils/AMDGPUPALMetadata.h"
-#include "llvm/BinaryFormat/MsgPackDocument.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/Support/AMDGPUMetadata.h"
-#include "llvm/Support/AMDHSAKernelDescriptor.h"
+
+struct amd_kernel_code_t;
 
 namespace llvm {
-#include "AMDGPUPTNote.h"
 
 class DataLayout;
 class Function;
@@ -27,6 +23,17 @@ class MCSymbol;
 class MDNode;
 class Module;
 class Type;
+class formatted_raw_ostream;
+
+namespace AMDGPU {
+namespace HSAMD {
+struct Metadata;
+}
+} // namespace AMDGPU
+
+namespace amdhsa {
+struct kernel_descriptor_t;
+}
 
 class AMDGPUTargetStreamer : public MCTargetStreamer {
   AMDGPUPALMetadata PALMetadata;
@@ -78,7 +85,7 @@ public:
   virtual bool EmitHSAMetadata(const AMDGPU::HSAMD::Metadata &HSAMetadata) = 0;
 
   /// \returns True on success, false on failure.
-  virtual bool EmitCodeEnd() = 0;
+  virtual bool EmitCodeEnd(const MCSubtargetInfo &STI) = 0;
 
   virtual void EmitAmdhsaKernelDescriptor(
       const MCSubtargetInfo &STI, StringRef KernelName,
@@ -122,7 +129,7 @@ public:
   bool EmitHSAMetadata(const AMDGPU::HSAMD::Metadata &HSAMetadata) override;
 
   /// \returns True on success, false on failure.
-  bool EmitCodeEnd() override;
+  bool EmitCodeEnd(const MCSubtargetInfo &STI) override;
 
   void EmitAmdhsaKernelDescriptor(
       const MCSubtargetInfo &STI, StringRef KernelName,
@@ -170,7 +177,7 @@ public:
   bool EmitHSAMetadata(const AMDGPU::HSAMD::Metadata &HSAMetadata) override;
 
   /// \returns True on success, false on failure.
-  bool EmitCodeEnd() override;
+  bool EmitCodeEnd(const MCSubtargetInfo &STI) override;
 
   void EmitAmdhsaKernelDescriptor(
       const MCSubtargetInfo &STI, StringRef KernelName,

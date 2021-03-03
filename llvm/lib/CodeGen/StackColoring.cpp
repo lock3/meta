@@ -678,9 +678,8 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
     // to this bb).
     BitVector BetweenStartEnd;
     BetweenStartEnd.resize(NumSlot);
-    for (MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(),
-             PE = MBB->pred_end(); PI != PE; ++PI) {
-      BlockBitVecMap::const_iterator I = SeenStartMap.find(*PI);
+    for (const MachineBasicBlock *Pred : MBB->predecessors()) {
+      BlockBitVecMap::const_iterator I = SeenStartMap.find(Pred);
       if (I != SeenStartMap.end()) {
         BetweenStartEnd |= I->second;
       }
@@ -819,9 +818,8 @@ void StackColoring::calculateLocalLiveness() {
 
       // Compute LiveIn by unioning together the LiveOut sets of all preds.
       BitVector LocalLiveIn;
-      for (MachineBasicBlock::const_pred_iterator PI = BB->pred_begin(),
-           PE = BB->pred_end(); PI != PE; ++PI) {
-        LivenessMap::const_iterator I = BlockLiveness.find(*PI);
+      for (MachineBasicBlock *Pred : BB->predecessors()) {
+        LivenessMap::const_iterator I = BlockLiveness.find(Pred);
         // PR37130: transformations prior to stack coloring can
         // sometimes leave behind statically unreachable blocks; these
         // can be safely skipped here.
@@ -1287,7 +1285,7 @@ bool StackColoring::runOnMachineFunction(MachineFunction &Func) {
 
   // This is a simple greedy algorithm for merging allocas. First, sort the
   // slots, placing the largest slots first. Next, perform an n^2 scan and look
-  // for disjoint slots. When you find disjoint slots, merge the samller one
+  // for disjoint slots. When you find disjoint slots, merge the smaller one
   // into the bigger one and update the live interval. Remove the small alloca
   // and continue.
 

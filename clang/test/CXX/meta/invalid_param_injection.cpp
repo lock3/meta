@@ -20,21 +20,21 @@ class invalid_reflection {
     {
       -> fragment struct {
         constexpr int new_do_thing(-> invalid_params) const { // expected-error {{no return statement in constexpr function}} expected-error {{cannot reify invalid reflection}} expected-note {{bang!}}
-          return add(unqualid(... invalid_params)); // expected-error {{cannot reify invalid reflection}} expected-note {{bang!}}
+          return add(...[: invalid_params :]...)); // expected-error {{cannot reify invalid reflection}} expected-note {{bang!}}
         }
       };
     }
   }
 };
 
-constexpr meta::info wrong_type_params [] = { reflexpr(bar) };
+constexpr meta::info wrong_type_params [] = { ^bar };
 
 class wrong_reflection_kind {
   consteval {
     {
       -> fragment struct {
         constexpr int new_do_thing(-> wrong_type_params) const { // expected-error {{no return statement in constexpr function}} expected-error {{reflection does not reflect a parameter}}
-          return add(unqualid(... wrong_type_params)); // expected-error {{'bar' does not refer to a value}}
+          return add(...[: wrong_type_params :]...); // expected-error {{'bar' does not refer to a value}}
         }
       };
     }

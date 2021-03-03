@@ -41,8 +41,8 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Linkage.h"
 #include "clang/Basic/Module.h"
+#include "clang/Basic/NoSanitizeList.h"
 #include "clang/Basic/PartialDiagnostic.h"
-#include "clang/Basic/SanitizerBlacklist.h"
 #include "clang/Basic/Sanitizers.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -325,41 +325,40 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
     switch (Arg.getKind()) {
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflected:
       continue;
 
     case TemplateArgument::Expression: {
       Expr *E = Arg.getAsExpr();
-      if (E->getType()->isReflectionType()) {
-        Expr::EvalResult Result;
-        Expr::EvalContext EvalCtx(Ctx, nullptr);
-        bool EvalStatus = E->EvaluateAsRValue(Result, EvalCtx);
-        assert(EvalStatus);
+      if (!E->getType()->isReflectionType())
+        continue;
 
-        Reflection Refl(Ctx, Result.Val);
-        switch (Refl.getKind()) {
-        case RK_type: {
-          QualType ReflTy = Refl.getAsType().getCanonicalType();
-          LV.merge(getLVForType(*ReflTy, computation));
-          continue;
-        }
-        case RK_declaration: {
-          const Decl *D = Refl.getAsDeclaration();
-          if (const auto *ND = dyn_cast<NamedDecl>(D)) {
-            LV.merge(getLVForDecl(ND, computation));
-            continue;
-          }
-          LLVM_FALLTHROUGH;
-        }
-        case RK_invalid:
-        case RK_expression:
-        case RK_fragment:
-        case RK_base_specifier: {
-          LV.merge(LinkageInfo::internal());
-          continue;
-        }
-        }
+      auto *CE = cast<ConstantExpr>(E);
+      assert(CE->hasAPValueResult());
+
+      Reflection Refl(Ctx, CE->getAPValueResult());
+      switch (Refl.getKind()) {
+      case RK_type: {
+        QualType ReflTy = Refl.getAsType().getCanonicalType();
+        LV.merge(getLVForType(*ReflTy, computation));
+        continue;
       }
+      case RK_declaration: {
+        const Decl *D = Refl.getAsDeclaration();
+        if (const auto *ND = dyn_cast<NamedDecl>(D)) {
+          LV.merge(getLVForDecl(ND, computation));
+          continue;
+        }
+        LLVM_FALLTHROUGH;
+      }
+      case RK_invalid:
+      case RK_expression:
+      case RK_fragment:
+      case RK_base_specifier: {
+        LV.merge(LinkageInfo::internal());
+        continue;
+      }
+      }
+
       continue;
     }
 
@@ -389,6 +388,10 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
       LV.merge(getLVForTemplateArgumentList(Ctx, Arg.getPackAsArray(),
                                             computation));
       continue;
+
+    case TemplateArgument::PackSplice:
+      llvm_unreachable("should have been expanded away");
+
     }
     llvm_unreachable("bad template argument kind");
   }
@@ -1436,6 +1439,15 @@ LinkageInfo LinkageComputer::computeLVForDecl(const NamedDecl *D,
 
       break;
     }
+
+    case Decl::TemplateParamObject: {
+      // The template parameter object can be referenced from anywhere its type
+      // and value can be referenced.
+      auto *TPO = cast<TemplateParamObjectDecl>(D);
+      LinkageInfo LV = getLVForType(*TPO->getType(), computation);
+      LV.merge(getLVForValue(TPO->getValue(), computation));
+      return LV;
+    }
   }
 
   // Handle linkage for namespace-scope names.
@@ -1632,21 +1644,37 @@ void NamedDecl::printNestedNameSpecifier(raw_ostream &OS,
   ContextsTy Contexts;
 
   // Collect named contexts.
-  while (Ctx) {
-    if (isa<NamedDecl>(Ctx))
-      Contexts.push_back(Ctx);
-    Ctx = Ctx->getParent();
+  DeclarationName NameInScope = getDeclName();
+  for (; Ctx; Ctx = Ctx->getParent()) {
+    // Suppress anonymous namespace if requested.
+    if (P.SuppressUnwrittenScope && isa<NamespaceDecl>(Ctx) &&
+        cast<NamespaceDecl>(Ctx)->isAnonymousNamespace())
+      continue;
+
+    // Suppress inline namespace if it doesn't make the result ambiguous.
+    if (P.SuppressInlineNamespace && Ctx->isInlineNamespace() && NameInScope &&
+        Ctx->lookup(NameInScope).size() ==
+            Ctx->getParent()->lookup(NameInScope).size())
+      continue;
+
+    // Skip non-named contexts such as linkage specifications and ExportDecls.
+    const NamedDecl *ND = dyn_cast<NamedDecl>(Ctx);
+    if (!ND)
+      continue;
+
+    Contexts.push_back(Ctx);
+    NameInScope = ND->getDeclName();
   }
 
-  for (const DeclContext *DC : llvm::reverse(Contexts)) {
+  for (unsigned I = Contexts.size(); I != 0; --I) {
+    const DeclContext *DC = Contexts[I - 1];
     if (const auto *Spec = dyn_cast<ClassTemplateSpecializationDecl>(DC)) {
       OS << Spec->getName();
       const TemplateArgumentList &TemplateArgs = Spec->getTemplateArgs();
-      printTemplateArgumentList(OS, TemplateArgs.asArray(), P);
+      printTemplateArgumentList(
+          OS, TemplateArgs.asArray(), P,
+          Spec->getSpecializedTemplate()->getTemplateParameters());
     } else if (const auto *ND = dyn_cast<NamespaceDecl>(DC)) {
-      if (P.SuppressUnwrittenScope &&
-          (ND->isAnonymousNamespace() || ND->isInline()))
-        continue;
       if (ND->isAnonymousNamespace()) {
         OS << (P.MSVCFormatting ? "`anonymous namespace\'"
                                 : "(anonymous namespace)");
@@ -1839,8 +1867,7 @@ template <typename DeclT>
 static SourceLocation getTemplateOrInnerLocStart(const DeclT *decl) {
   if (decl->getNumTemplateParameterLists() > 0)
     return decl->getTemplateParameterList(0)->getTemplateLoc();
-  else
-    return decl->getInnerLocStart();
+  return decl->getInnerLocStart();
 }
 
 SourceLocation DeclaratorDecl::getTypeSpecStartLoc() const {
@@ -2148,10 +2175,9 @@ VarDecl::isThisDeclarationADefinition(ASTContext &C) const {
                     TSK_ExplicitSpecialization) ||
          isa<VarTemplatePartialSpecializationDecl>(this)))
       return Definition;
-    else if (!isOutOfLine() && isInline())
+    if (!isOutOfLine() && isInline())
       return Definition;
-    else
-      return DeclarationOnly;
+    return DeclarationOnly;
   }
   // C99 6.7p5:
   //   A definition of an identifier is a declaration for that identifier that
@@ -2214,7 +2240,7 @@ VarDecl *VarDecl::getActingDefinition() {
     Kind = I->isThisDeclarationADefinition();
     if (Kind == Definition)
       return nullptr;
-    else if (Kind == TentativeDefinition)
+    if (Kind == TentativeDefinition)
       LastTentative = I;
   }
   return LastTentative;
@@ -2286,8 +2312,7 @@ VarDecl *VarDecl::getInitializingDeclaration() {
     if (I->isThisDeclarationADefinition()) {
       if (isStaticDataMember())
         return I;
-      else
-        Def = I;
+      Def = I;
     }
   }
   return Def;
@@ -2782,6 +2807,17 @@ SourceRange ParmVarDecl::getSourceRange() const {
   return DeclaratorDecl::getSourceRange();
 }
 
+bool ParmVarDecl::isDestroyedInCallee() const {
+  if (hasAttr<NSConsumedAttr>())
+    return true;
+
+  auto *RT = getType()->getAs<RecordType>();
+  if (RT && RT->getDecl()->isParamDestroyedInCallee())
+    return true;
+
+  return false;
+}
+
 Expr *ParmVarDecl::getDefaultArg() {
   assert(!hasUnparsedDefaultArg() && "Default argument is not yet parsed!");
   assert(!hasUninstantiatedDefaultArg() &&
@@ -2879,7 +2915,7 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.HasDefaultedFunctionInfo = false;
   FunctionDeclBits.HasImplicitReturnZero = false;
   FunctionDeclBits.IsLateTemplateParsed = false;
-  FunctionDeclBits.ConstexprKind = ConstexprKind;
+  FunctionDeclBits.ConstexprKind = static_cast<uint64_t>(ConstexprKind);
   FunctionDeclBits.InstantiationIsPending = false;
   FunctionDeclBits.UsesSEHTry = false;
   FunctionDeclBits.UsesFPIntrin = false;
@@ -3647,8 +3683,7 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
 OverloadedOperatorKind FunctionDecl::getOverloadedOperator() const {
   if (getDeclName().getNameKind() == DeclarationName::CXXOperatorName)
     return getDeclName().getCXXOverloadedOperator();
-  else
-    return OO_None;
+  return OO_None;
 }
 
 /// getLiteralIdentifier - The literal suffix identifier this function
@@ -3656,8 +3691,7 @@ OverloadedOperatorKind FunctionDecl::getOverloadedOperator() const {
 const IdentifierInfo *FunctionDecl::getLiteralIdentifier() const {
   if (getDeclName().getNameKind() == DeclarationName::CXXLiteralOperatorName)
     return getDeclName().getCXXLiteralIdentifier();
-  else
-    return nullptr;
+  return nullptr;
 }
 
 FunctionDecl::TemplatedKind FunctionDecl::getTemplatedKind() const {
@@ -3990,8 +4024,8 @@ SourceLocation FunctionDecl::getPointOfInstantiation() const {
         = TemplateOrSpecialization.dyn_cast<
                                         FunctionTemplateSpecializationInfo*>())
     return FTSInfo->getPointOfInstantiation();
-  else if (MemberSpecializationInfo *MSInfo
-             = TemplateOrSpecialization.dyn_cast<MemberSpecializationInfo*>())
+  if (MemberSpecializationInfo *MSInfo =
+          TemplateOrSpecialization.dyn_cast<MemberSpecializationInfo *>())
     return MSInfo->getPointOfInstantiation();
 
   return SourceLocation();
@@ -4105,29 +4139,29 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
     if (isExternC()) {
       if (FnInfo->isStr("memset"))
         return Builtin::BImemset;
-      else if (FnInfo->isStr("memcpy"))
+      if (FnInfo->isStr("memcpy"))
         return Builtin::BImemcpy;
-      else if (FnInfo->isStr("mempcpy"))
+      if (FnInfo->isStr("mempcpy"))
         return Builtin::BImempcpy;
-      else if (FnInfo->isStr("memmove"))
+      if (FnInfo->isStr("memmove"))
         return Builtin::BImemmove;
-      else if (FnInfo->isStr("memcmp"))
+      if (FnInfo->isStr("memcmp"))
         return Builtin::BImemcmp;
-      else if (FnInfo->isStr("bcmp"))
+      if (FnInfo->isStr("bcmp"))
         return Builtin::BIbcmp;
-      else if (FnInfo->isStr("strncpy"))
+      if (FnInfo->isStr("strncpy"))
         return Builtin::BIstrncpy;
-      else if (FnInfo->isStr("strncmp"))
+      if (FnInfo->isStr("strncmp"))
         return Builtin::BIstrncmp;
-      else if (FnInfo->isStr("strncasecmp"))
+      if (FnInfo->isStr("strncasecmp"))
         return Builtin::BIstrncasecmp;
-      else if (FnInfo->isStr("strncat"))
+      if (FnInfo->isStr("strncat"))
         return Builtin::BIstrncat;
-      else if (FnInfo->isStr("strndup"))
+      if (FnInfo->isStr("strndup"))
         return Builtin::BIstrndup;
-      else if (FnInfo->isStr("strlen"))
+      if (FnInfo->isStr("strlen"))
         return Builtin::BIstrlen;
-      else if (FnInfo->isStr("bzero"))
+      if (FnInfo->isStr("bzero"))
         return Builtin::BIbzero;
     } else if (isInStdNamespace()) {
       if (FnInfo->isStr("free"))
@@ -4667,7 +4701,7 @@ bool RecordDecl::mayInsertExtraPadding(bool EmitRemark) const {
       (SanitizerKind::Address | SanitizerKind::KernelAddress);
   if (!EnabledAsanMask || !Context.getLangOpts().SanitizeAddressFieldPadding)
     return false;
-  const auto &Blacklist = Context.getSanitizerBlacklist();
+  const auto &NoSanitizeList = Context.getNoSanitizeList();
   const auto *CXXRD = dyn_cast<CXXRecordDecl>(this);
   // We may be able to relax some of these requirements.
   int ReasonToReject = -1;
@@ -4683,12 +4717,11 @@ bool RecordDecl::mayInsertExtraPadding(bool EmitRemark) const {
     ReasonToReject = 4;  // has trivial destructor.
   else if (CXXRD->isStandardLayout())
     ReasonToReject = 5;  // is standard layout.
-  else if (Blacklist.isBlacklistedLocation(EnabledAsanMask, getLocation(),
+  else if (NoSanitizeList.containsLocation(EnabledAsanMask, getLocation(),
                                            "field-padding"))
     ReasonToReject = 6;  // is in an excluded file.
-  else if (Blacklist.isBlacklistedType(EnabledAsanMask,
-                                       getQualifiedNameAsString(),
-                                       "field-padding"))
+  else if (NoSanitizeList.containsType(
+               EnabledAsanMask, getQualifiedNameAsString(), "field-padding"))
     ReasonToReject = 7;  // The type is excluded.
 
   if (EmitRemark) {
@@ -4959,9 +4992,9 @@ FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
 }
 
 FunctionDecl *FunctionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) FunctionDecl(Function, C, nullptr, SourceLocation(),
-                                  DeclarationNameInfo(), QualType(), nullptr,
-                                  SC_None, false, CSK_unspecified, nullptr);
+  return new (C, ID) FunctionDecl(
+      Function, C, nullptr, SourceLocation(), DeclarationNameInfo(), QualType(),
+      nullptr, SC_None, false, ConstexprSpecKind::Unspecified, nullptr);
 }
 
 BlockDecl *BlockDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L) {

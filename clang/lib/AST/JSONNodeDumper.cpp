@@ -872,8 +872,7 @@ void JSONNodeDumper::VisitNonTypeTemplateParmDecl(
 
   if (D->hasDefaultArgument())
     JOS.attributeObject("defaultArg", [=] {
-      TemplateArgument Arg(D->getDefaultArgument(),
-                           TemplateArgument::Expression);
+      TemplateArgument Arg(D->getDefaultArgument());
       Visit(Arg, SourceRange(),
             D->getDefaultArgStorage().getInheritedFrom(),
             D->defaultArgumentWasInherited() ? "inherited from" : "previous");
@@ -1420,7 +1419,7 @@ void JSONNodeDumper::VisitFixedPointLiteral(const FixedPointLiteral *FPL) {
   JOS.attribute("value", FPL->getValueAsString(/*Radix=*/10));
 }
 void JSONNodeDumper::VisitFloatingLiteral(const FloatingLiteral *FL) {
-  llvm::SmallVector<char, 16> Buffer;
+  llvm::SmallString<16> Buffer;
   FL->getValue().toString(Buffer);
   JOS.attribute("value", Buffer);
 }

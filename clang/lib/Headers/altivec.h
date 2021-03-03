@@ -2996,12 +2996,12 @@ static __inline__ void __ATTRS_o_ai vec_xst_len_r(vector unsigned char __a,
 #ifdef __VSX__
 static __inline__ vector float __ATTRS_o_ai vec_cpsgn(vector float __a,
                                                       vector float __b) {
-  return __builtin_vsx_xvcpsgnsp(__a, __b);
+  return __builtin_vsx_xvcpsgnsp(__b, __a);
 }
 
 static __inline__ vector double __ATTRS_o_ai vec_cpsgn(vector double __a,
                                                        vector double __b) {
-  return __builtin_vsx_xvcpsgndp(__a, __b);
+  return __builtin_vsx_xvcpsgndp(__b, __a);
 }
 #endif
 
@@ -3502,7 +3502,7 @@ static __inline__ vector signed __int128 __ATTRS_o_ai
 vec_div(vector signed __int128 __a, vector signed __int128 __b) {
   return __a / __b;
 }
-#endif __POWER10_VECTOR__
+#endif /* __POWER10_VECTOR__ */
 
 /* vec_xvtdiv */
 
@@ -8281,6 +8281,46 @@ vec_sel(vector double __a, vector double __b, vector unsigned long long __c) {
                            ((vector long long)__b & (vector long long)__c);
   return (vector double)__res;
 }
+
+static __inline__ vector bool long long __ATTRS_o_ai
+vec_sel(vector bool long long __a, vector bool long long __b,
+        vector bool long long __c) {
+  return (__a & ~__c) | (__b & __c);
+}
+
+static __inline__ vector bool long long __ATTRS_o_ai
+vec_sel(vector bool long long __a, vector bool long long __b,
+        vector unsigned long long __c) {
+  return (__a & ~(vector bool long long)__c) |
+         (__b & (vector bool long long)__c);
+}
+
+static __inline__ vector signed long long __ATTRS_o_ai
+vec_sel(vector signed long long __a, vector signed long long __b,
+        vector bool long long __c) {
+  return (__a & ~(vector signed long long)__c) |
+         (__b & (vector signed long long)__c);
+}
+
+static __inline__ vector signed long long __ATTRS_o_ai
+vec_sel(vector signed long long __a, vector signed long long __b,
+        vector unsigned long long __c) {
+  return (__a & ~(vector signed long long)__c) |
+         (__b & (vector signed long long)__c);
+}
+
+static __inline__ vector unsigned long long __ATTRS_o_ai
+vec_sel(vector unsigned long long __a, vector unsigned long long __b,
+        vector bool long long __c) {
+  return (__a & ~(vector unsigned long long)__c) |
+         (__b & (vector unsigned long long)__c);
+}
+
+static __inline__ vector unsigned long long __ATTRS_o_ai
+vec_sel(vector unsigned long long __a, vector unsigned long long __b,
+        vector unsigned long long __c) {
+  return (__a & ~__c) | (__b & __c);
+}
 #endif
 
 /* vec_vsel */
@@ -12875,73 +12915,75 @@ vec_vxor(vector bool long long __a, vector bool long long __b) {
 /* vec_extract */
 
 static __inline__ signed char __ATTRS_o_ai vec_extract(vector signed char __a,
-                                                       int __b) {
-  return __a[__b];
+                                                       unsigned int __b) {
+  return __a[__b & 0xf];
 }
 
 static __inline__ unsigned char __ATTRS_o_ai
-vec_extract(vector unsigned char __a, int __b) {
-  return __a[__b];
+vec_extract(vector unsigned char __a, unsigned int __b) {
+  return __a[__b & 0xf];
 }
 
 static __inline__ unsigned char __ATTRS_o_ai vec_extract(vector bool char __a,
-                                                         int __b) {
-  return __a[__b];
+                                                         unsigned int __b) {
+  return __a[__b & 0xf];
 }
 
 static __inline__ signed short __ATTRS_o_ai vec_extract(vector signed short __a,
-                                                        int __b) {
-  return __a[__b];
+                                                        unsigned int __b) {
+  return __a[__b & 0x7];
 }
 
 static __inline__ unsigned short __ATTRS_o_ai
-vec_extract(vector unsigned short __a, int __b) {
-  return __a[__b];
+vec_extract(vector unsigned short __a, unsigned int __b) {
+  return __a[__b & 0x7];
 }
 
 static __inline__ unsigned short __ATTRS_o_ai vec_extract(vector bool short __a,
-                                                          int __b) {
-  return __a[__b];
+                                                          unsigned int __b) {
+  return __a[__b & 0x7];
 }
 
 static __inline__ signed int __ATTRS_o_ai vec_extract(vector signed int __a,
-                                                      int __b) {
-  return __a[__b];
+                                                      unsigned int __b) {
+  return __a[__b & 0x3];
 }
 
 static __inline__ unsigned int __ATTRS_o_ai vec_extract(vector unsigned int __a,
-                                                        int __b) {
-  return __a[__b];
+                                                        unsigned int __b) {
+  return __a[__b & 0x3];
 }
 
 static __inline__ unsigned int __ATTRS_o_ai vec_extract(vector bool int __a,
-                                                        int __b) {
-  return __a[__b];
+                                                        unsigned int __b) {
+  return __a[__b & 0x3];
 }
 
 #ifdef __VSX__
 static __inline__ signed long long __ATTRS_o_ai
-vec_extract(vector signed long long __a, int __b) {
-  return __a[__b];
+vec_extract(vector signed long long __a, unsigned int __b) {
+  return __a[__b & 0x1];
 }
 
 static __inline__ unsigned long long __ATTRS_o_ai
-vec_extract(vector unsigned long long __a, int __b) {
-  return __a[__b];
+vec_extract(vector unsigned long long __a, unsigned int __b) {
+  return __a[__b & 0x1];
 }
 
 static __inline__ unsigned long long __ATTRS_o_ai
-vec_extract(vector bool long long __a, int __b) {
-  return __a[__b];
+vec_extract(vector bool long long __a, unsigned int __b) {
+  return __a[__b & 0x1];
 }
 
-static __inline__ double __ATTRS_o_ai vec_extract(vector double __a, int __b) {
-  return __a[__b];
+static __inline__ double __ATTRS_o_ai vec_extract(vector double __a,
+                                                  unsigned int __b) {
+  return __a[__b & 0x1];
 }
 #endif
 
-static __inline__ float __ATTRS_o_ai vec_extract(vector float __a, int __b) {
-  return __a[__b];
+static __inline__ float __ATTRS_o_ai vec_extract(vector float __a,
+                                                 unsigned int __b) {
+  return __a[__b & 0x3];
 }
 
 #ifdef __POWER9_VECTOR__
@@ -13982,48 +14024,70 @@ static __inline__ void __ATTRS_o_ai vec_stvrxl(vector float __a, int __b,
 static __inline__ vector signed char __ATTRS_o_ai vec_promote(signed char __a,
                                                               int __b) {
   vector signed char __res = (vector signed char)(0);
-  __res[__b] = __a;
+  __res[__b & 0x7] = __a;
   return __res;
 }
 
 static __inline__ vector unsigned char __ATTRS_o_ai
 vec_promote(unsigned char __a, int __b) {
   vector unsigned char __res = (vector unsigned char)(0);
-  __res[__b] = __a;
+  __res[__b & 0x7] = __a;
   return __res;
 }
 
 static __inline__ vector short __ATTRS_o_ai vec_promote(short __a, int __b) {
   vector short __res = (vector short)(0);
-  __res[__b] = __a;
+  __res[__b & 0x7] = __a;
   return __res;
 }
 
 static __inline__ vector unsigned short __ATTRS_o_ai
 vec_promote(unsigned short __a, int __b) {
   vector unsigned short __res = (vector unsigned short)(0);
-  __res[__b] = __a;
+  __res[__b & 0x7] = __a;
   return __res;
 }
 
 static __inline__ vector int __ATTRS_o_ai vec_promote(int __a, int __b) {
   vector int __res = (vector int)(0);
-  __res[__b] = __a;
+  __res[__b & 0x3] = __a;
   return __res;
 }
 
 static __inline__ vector unsigned int __ATTRS_o_ai vec_promote(unsigned int __a,
                                                                int __b) {
   vector unsigned int __res = (vector unsigned int)(0);
-  __res[__b] = __a;
+  __res[__b & 0x3] = __a;
   return __res;
 }
 
 static __inline__ vector float __ATTRS_o_ai vec_promote(float __a, int __b) {
   vector float __res = (vector float)(0);
-  __res[__b] = __a;
+  __res[__b & 0x3] = __a;
   return __res;
 }
+
+#ifdef __VSX__
+static __inline__ vector double __ATTRS_o_ai vec_promote(double __a, int __b) {
+  vector double __res = (vector double)(0);
+  __res[__b & 0x1] = __a;
+  return __res;
+}
+
+static __inline__ vector signed long long __ATTRS_o_ai
+vec_promote(signed long long __a, int __b) {
+  vector signed long long __res = (vector signed long long)(0);
+  __res[__b & 0x1] = __a;
+  return __res;
+}
+
+static __inline__ vector unsigned long long __ATTRS_o_ai
+vec_promote(unsigned long long __a, int __b) {
+  vector unsigned long long __res = (vector unsigned long long)(0);
+  __res[__b & 0x1] = __a;
+  return __res;
+}
+#endif
 
 /* vec_splats */
 

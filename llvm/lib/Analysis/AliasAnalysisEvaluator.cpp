@@ -105,14 +105,13 @@ void AAEvaluator::runInternal(Function &F, AAResults &AA) {
     if (I.getType()->isPointerTy())    // Add all pointer arguments.
       Pointers.insert(&I);
 
-  for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-    if (I->getType()->isPointerTy()) // Add all pointer instructions.
-      Pointers.insert(&*I);
-    if (EvalAAMD && isa<LoadInst>(&*I))
-      Loads.insert(&*I);
-    if (EvalAAMD && isa<StoreInst>(&*I))
-      Stores.insert(&*I);
-    Instruction &Inst = *I;
+  for (Instruction &Inst : instructions(F)) {
+    if (Inst.getType()->isPointerTy()) // Add all pointer instructions.
+      Pointers.insert(&Inst);
+    if (EvalAAMD && isa<LoadInst>(&Inst))
+      Loads.insert(&Inst);
+    if (EvalAAMD && isa<StoreInst>(&Inst))
+      Stores.insert(&Inst);
     if (auto *Call = dyn_cast<CallBase>(&Inst)) {
       Value *Callee = Call->getCalledOperand();
       // Skip actual functions for direct function calls.
@@ -125,10 +124,9 @@ void AAEvaluator::runInternal(Function &F, AAResults &AA) {
       Calls.insert(Call);
     } else {
       // Consider all operands.
-      for (Instruction::op_iterator OI = Inst.op_begin(), OE = Inst.op_end();
-           OI != OE; ++OI)
-        if (isInterestingPointer(*OI))
-          Pointers.insert(*OI);
+      for (Use &Op : Inst.operands())
+        if (isInterestingPointer(Op))
+          Pointers.insert(Op);
     }
   }
 
@@ -140,13 +138,13 @@ void AAEvaluator::runInternal(Function &F, AAResults &AA) {
   // iterate over the worklist, and run the full (n^2)/2 disambiguations
   for (SetVector<Value *>::iterator I1 = Pointers.begin(), E = Pointers.end();
        I1 != E; ++I1) {
-    auto I1Size = LocationSize::unknown();
+    auto I1Size = LocationSize::afterPointer();
     Type *I1ElTy = cast<PointerType>((*I1)->getType())->getElementType();
     if (I1ElTy->isSized())
       I1Size = LocationSize::precise(DL.getTypeStoreSize(I1ElTy));
 
     for (SetVector<Value *>::iterator I2 = Pointers.begin(); I2 != I1; ++I2) {
-      auto I2Size = LocationSize::unknown();
+      auto I2Size = LocationSize::afterPointer();
       Type *I2ElTy = cast<PointerType>((*I2)->getType())->getElementType();
       if (I2ElTy->isSized())
         I2Size = LocationSize::precise(DL.getTypeStoreSize(I2ElTy));
@@ -231,7 +229,7 @@ void AAEvaluator::runInternal(Function &F, AAResults &AA) {
   // Mod/ref alias analysis: compare all pairs of calls and values
   for (CallBase *Call : Calls) {
     for (auto Pointer : Pointers) {
-      auto Size = LocationSize::unknown();
+      auto Size = LocationSize::afterPointer();
       Type *ElTy = cast<PointerType>(Pointer->getType())->getElementType();
       if (ElTy->isSized())
         Size = LocationSize::precise(DL.getTypeStoreSize(ElTy));

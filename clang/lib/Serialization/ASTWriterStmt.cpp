@@ -424,24 +424,19 @@ void ASTStmtWriter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
+void ASTStmtWriter::VisitCXXExprSpliceExpr(CXXExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitCXXMemberIdExprExpr(CXXMemberIdExprExpr *E) {
+void ASTStmtWriter::VisitCXXMemberExprSpliceExpr(CXXMemberExprSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitCXXDependentVariadicReifierExpr(
-  CXXDependentVariadicReifierExpr *E) {
+void ASTStmtWriter::VisitCXXPackSpliceExpr(CXXPackSpliceExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
 void ASTStmtWriter::VisitCXXDependentSpliceIdExpr(CXXDependentSpliceIdExpr *E) {
-  llvm_unreachable("unimplemented");
-}
-
-void ASTStmtWriter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
@@ -1653,12 +1648,6 @@ void ASTStmtWriter::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
   Code = serialization::STMT_CXX_INJECTION;
 }
 
-void ASTStmtWriter::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
-  VisitStmt(S);
-  // FIXME: Implement me.
-  Code = serialization::STMT_CXX_BASE_INJECTION;
-}
-
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   Record.AddSourceLocation(S->getKeywordLoc());
@@ -1815,13 +1804,6 @@ void ASTStmtWriter::VisitCXXNullPtrLiteralExpr(CXXNullPtrLiteralExpr *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getLocation());
   Code = serialization::EXPR_CXX_NULL_PTR_LITERAL;
-}
-
-void ASTStmtWriter::VisitCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
-  VisitExpr(E);
-  Record.AddDeclRef(E->getDecl());
-  Record.AddSourceLocation(E->getLocation());
-  Code = serialization::EXPR_CXX_PARAMETER_INFO;
 }
 
 void ASTStmtWriter::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
@@ -2295,10 +2277,14 @@ void ASTStmtWriter::VisitOMPExecutableDirective(OMPExecutableDirective *E) {
   Record.AddSourceLocation(E->getEndLoc());
 }
 
-void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
+void ASTStmtWriter::VisitOMPLoopBasedDirective(OMPLoopBasedDirective *D) {
   VisitStmt(D);
-  Record.writeUInt32(D->getCollapsedNumber());
+  Record.writeUInt32(D->getLoopsNumber());
   VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
+  VisitOMPLoopBasedDirective(D);
 }
 
 void ASTStmtWriter::VisitOMPParallelDirective(OMPParallelDirective *D) {
@@ -2311,6 +2297,11 @@ void ASTStmtWriter::VisitOMPParallelDirective(OMPParallelDirective *D) {
 void ASTStmtWriter::VisitOMPSimdDirective(OMPSimdDirective *D) {
   VisitOMPLoopDirective(D);
   Code = serialization::STMT_OMP_SIMD_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTileDirective(OMPTileDirective *D) {
+  VisitOMPLoopBasedDirective(D);
+  Code = serialization::STMT_OMP_TILE_DIRECTIVE;
 }
 
 void ASTStmtWriter::VisitOMPForDirective(OMPForDirective *D) {

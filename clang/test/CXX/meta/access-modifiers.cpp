@@ -60,7 +60,7 @@ namespace make_default_class_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -88,7 +88,7 @@ namespace make_default_class_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -120,7 +120,7 @@ namespace make_default_class_aborted_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -152,7 +152,7 @@ namespace make_default_class_aborted_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -184,7 +184,7 @@ namespace make_default_struct_test {
 
   struct New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -212,7 +212,7 @@ namespace make_default_struct_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -244,7 +244,7 @@ namespace make_default_struct_aborted_test {
 
   struct New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -276,7 +276,7 @@ namespace make_default_struct_aborted_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -308,7 +308,7 @@ namespace make_public_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -336,7 +336,7 @@ namespace make_public_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -368,7 +368,7 @@ namespace make_public_aborted_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -400,7 +400,7 @@ namespace make_public_aborted_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);
@@ -432,7 +432,7 @@ namespace make_protected_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -460,10 +460,10 @@ namespace make_protected_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_protected(field_1));
 
   // Methods
@@ -492,7 +492,7 @@ namespace make_protected_aborted_test {
 
   class New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -524,10 +524,10 @@ namespace make_protected_aborted_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_private(field_1));
 
   // Methods
@@ -556,7 +556,7 @@ namespace make_private_test {
 
   struct New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -584,10 +584,10 @@ namespace make_private_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_private(field_1));
 
   // Methods
@@ -616,7 +616,7 @@ namespace make_private_aborted_test {
 
   struct New {
     consteval {
-      meta::info refl = reflexpr(Existing);
+      meta::info refl = ^Existing;
 
       // Fields
       meta::info field_1 = front_member(refl);
@@ -648,7 +648,7 @@ namespace make_private_aborted_test {
     }
   };
 
-  constexpr meta::info refl = reflexpr(New);
+  constexpr meta::info refl = ^New;
 
   // Fields
   constexpr meta::info field_1 = front_member(refl);

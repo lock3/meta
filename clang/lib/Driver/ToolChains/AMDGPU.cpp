@@ -50,6 +50,8 @@ void RocmInstallationDetector::scanLibDevicePath(llvm::StringRef Path) {
       OpenCL = FilePath;
     } else if (BaseName == "hip") {
       HIP = FilePath;
+    } else if (BaseName == "asanrtl") {
+      AsanRTL = FilePath;
     } else if (BaseName == "oclc_finite_only_off") {
       FiniteOnly.Off = FilePath;
     } else if (BaseName == "oclc_finite_only_on") {
@@ -88,23 +90,30 @@ void RocmInstallationDetector::scanLibDevicePath(llvm::StringRef Path) {
   }
 }
 
-void RocmInstallationDetector::ParseHIPVersionFile(llvm::StringRef V) {
+// Parse and extract version numbers from `.hipVersion`. Return `true` if
+// the parsing fails.
+bool RocmInstallationDetector::parseHIPVersionFile(llvm::StringRef V) {
   SmallVector<StringRef, 4> VersionParts;
   V.split(VersionParts, '\n');
-  unsigned Major;
-  unsigned Minor;
+  unsigned Major = ~0U;
+  unsigned Minor = ~0U;
   for (auto Part : VersionParts) {
-    auto Splits = Part.split('=');
-    if (Splits.first == "HIP_VERSION_MAJOR")
-      Splits.second.getAsInteger(0, Major);
-    else if (Splits.first == "HIP_VERSION_MINOR")
-      Splits.second.getAsInteger(0, Minor);
-    else if (Splits.first == "HIP_VERSION_PATCH")
+    auto Splits = Part.rtrim().split('=');
+    if (Splits.first == "HIP_VERSION_MAJOR") {
+      if (Splits.second.getAsInteger(0, Major))
+        return true;
+    } else if (Splits.first == "HIP_VERSION_MINOR") {
+      if (Splits.second.getAsInteger(0, Minor))
+        return true;
+    } else if (Splits.first == "HIP_VERSION_PATCH")
       VersionPatch = Splits.second.str();
   }
+  if (Major == ~0U || Minor == ~0U)
+    return true;
   VersionMajorMinor = llvm::VersionTuple(Major, Minor);
   DetectedVersion =
       (Twine(Major) + "." + Twine(Minor) + "." + VersionPatch).str();
+  return false;
 }
 
 // For candidate specified by --rocm-path we do not do strict check.
@@ -290,7 +299,8 @@ void RocmInstallationDetector::detectHIPRuntime() {
       continue;
 
     if (HIPVersionArg.empty() && VersionFile)
-      ParseHIPVersionFile((*VersionFile)->getBuffer());
+      if (parseHIPVersionFile((*VersionFile)->getBuffer()))
+        continue;
 
     HasHIPRuntime = true;
     return;
@@ -399,8 +409,14 @@ void amdgpu::getAMDGPUTargetFeatures(const Driver &D,
 AMDGPUToolChain::AMDGPUToolChain(const Driver &D, const llvm::Triple &Triple,
                                  const ArgList &Args)
     : Generic_ELF(D, Triple, Args),
-      OptionsDefault({{options::OPT_O, "3"},
-                      {options::OPT_cl_std_EQ, "CL1.2"}}) {}
+      OptionsDefault(
+          {{options::OPT_O, "3"}, {options::OPT_cl_std_EQ, "CL1.2"}}) {
+  // Check code object version options. Emit warnings for legacy options
+  // and errors for the last invalid code object version options.
+  // It is done here to avoid repeated warning or error messages for
+  // each tool invocation.
+  (void)getOrCheckAMDGPUCodeObjectVersion(D, Args, /*Diagnose=*/true);
+}
 
 Tool *AMDGPUToolChain::buildLinker() const {
   return new tools::amdgpu::Linker(*this);
@@ -499,7 +515,7 @@ llvm::DenormalMode AMDGPUToolChain::getDefaultDenormalModeForType(
 bool AMDGPUToolChain::isWave64(const llvm::opt::ArgList &DriverArgs,
                                llvm::AMDGPU::GPUKind Kind) {
   const unsigned ArchAttr = llvm::AMDGPU::getArchAttrAMDGCN(Kind);
-  static bool HasWave32 = (ArchAttr & llvm::AMDGPU::FEATURE_WAVE32);
+  bool HasWave32 = (ArchAttr & llvm::AMDGPU::FEATURE_WAVE32);
 
   return !HasWave32 || DriverArgs.hasFlag(
     options::OPT_mwavefrontsize64, options::OPT_mno_wavefrontsize64, false);
@@ -591,47 +607,40 @@ void ROCMToolChain::addClangTargetOptions(
       DriverArgs.hasArg(options::OPT_cl_fp32_correctly_rounded_divide_sqrt);
 
   // Add the OpenCL specific bitcode library.
-  CC1Args.push_back("-mlink-builtin-bitcode");
-  CC1Args.push_back(DriverArgs.MakeArgString(RocmInstallation.getOpenCLPath()));
+  llvm::SmallVector<std::string, 12> BCLibs;
+  BCLibs.push_back(RocmInstallation.getOpenCLPath().str());
 
   // Add the generic set of libraries.
-  RocmInstallation.addCommonBitcodeLibCC1Args(
-      DriverArgs, CC1Args, LibDeviceFile, Wave64, DAZ, FiniteOnly,
-      UnsafeMathOpt, FastRelaxedMath, CorrectSqrt);
+  BCLibs.append(RocmInstallation.getCommonBitcodeLibs(
+      DriverArgs, LibDeviceFile, Wave64, DAZ, FiniteOnly, UnsafeMathOpt,
+      FastRelaxedMath, CorrectSqrt));
+
+  llvm::for_each(BCLibs, [&](StringRef BCFile) {
+    CC1Args.push_back("-mlink-builtin-bitcode");
+    CC1Args.push_back(DriverArgs.MakeArgString(BCFile));
+  });
 }
 
-void RocmInstallationDetector::addCommonBitcodeLibCC1Args(
-    const llvm::opt::ArgList &DriverArgs, llvm::opt::ArgStringList &CC1Args,
-    StringRef LibDeviceFile, bool Wave64, bool DAZ, bool FiniteOnly,
-    bool UnsafeMathOpt, bool FastRelaxedMath, bool CorrectSqrt) const {
-  static const char LinkBitcodeFlag[] = "-mlink-builtin-bitcode";
+llvm::SmallVector<std::string, 12>
+RocmInstallationDetector::getCommonBitcodeLibs(
+    const llvm::opt::ArgList &DriverArgs, StringRef LibDeviceFile, bool Wave64,
+    bool DAZ, bool FiniteOnly, bool UnsafeMathOpt, bool FastRelaxedMath,
+    bool CorrectSqrt) const {
 
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(getOCMLPath()));
+  llvm::SmallVector<std::string, 12> BCLibs;
 
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(getOCKLPath()));
+  auto AddBCLib = [&](StringRef BCFile) { BCLibs.push_back(BCFile.str()); };
 
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(getDenormalsAreZeroPath(DAZ)));
+  AddBCLib(getOCMLPath());
+  AddBCLib(getOCKLPath());
+  AddBCLib(getDenormalsAreZeroPath(DAZ));
+  AddBCLib(getUnsafeMathPath(UnsafeMathOpt || FastRelaxedMath));
+  AddBCLib(getFiniteOnlyPath(FiniteOnly || FastRelaxedMath));
+  AddBCLib(getCorrectlyRoundedSqrtPath(CorrectSqrt));
+  AddBCLib(getWavefrontSize64Path(Wave64));
+  AddBCLib(LibDeviceFile);
 
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(
-      getUnsafeMathPath(UnsafeMathOpt || FastRelaxedMath)));
-
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(
-      getFiniteOnlyPath(FiniteOnly || FastRelaxedMath)));
-
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(
-      DriverArgs.MakeArgString(getCorrectlyRoundedSqrtPath(CorrectSqrt)));
-
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(getWavefrontSize64Path(Wave64)));
-
-  CC1Args.push_back(LinkBitcodeFlag);
-  CC1Args.push_back(DriverArgs.MakeArgString(LibDeviceFile));
+  return BCLibs;
 }
 
 bool AMDGPUToolChain::shouldSkipArgument(const llvm::opt::Arg *A) const {

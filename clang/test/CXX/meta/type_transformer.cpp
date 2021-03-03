@@ -14,7 +14,7 @@ struct OldType {
   static constexpr int y = 20;
 };
 
-using struct NewType as dupe(reflexpr(OldType));
+using struct NewType as dupe(^OldType);
 
 int main() {
   static_assert(NewType::x == 10);

@@ -4,7 +4,7 @@
 
 void foo(int a, int b = 0) { }
 
-constexpr auto function_refl = reflexpr(foo);
+constexpr auto function_refl = ^foo;
 
 constexpr auto param_a_refl = __reflect(query_get_begin_param, function_refl);
 static_assert(__reflect(query_is_function_parameter, param_a_refl));
@@ -35,7 +35,7 @@ namespace templ_ns {
   void templ_templ_fn() { }
 }
 
-constexpr auto templ_type_fn_refl = __reflect(query_get_begin_member, reflexpr(templ_ns));
+constexpr auto templ_type_fn_refl = __reflect(query_get_begin_member, ^templ_ns);
 
 namespace templ_ns_fn_1 {
   constexpr auto templ_param_a_refl = __reflect(query_get_begin_template_param, templ_type_fn_refl);

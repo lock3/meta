@@ -1,7 +1,10 @@
 if (DEFINED LLVM_HAVE_TF_AOT OR DEFINED LLVM_HAVE_TF_API)
   if (DEFINED LLVM_HAVE_TF_AOT)
+    set(LLVM_INLINER_MODEL_PATH "models/inliner" 
+      CACHE STRING 
+      "ML-driven inliner policy location (path to saved model)")
     include(TensorFlowCompile)
-    tfcompile(models/inliner serve action InlinerSizeModel llvm::InlinerSizeModel)
+    tfcompile(${LLVM_INLINER_MODEL_PATH} serve action InlinerSizeModel llvm::InlinerSizeModel)
     list(APPEND GeneratedMLSources
       $<TARGET_OBJECTS:tf_xla_runtime_objects>
       ${GENERATED_OBJS}
@@ -39,6 +42,7 @@ add_llvm_component_library(LLVMAnalysis
   CodeMetrics.cpp
   ConstantFolding.cpp
   DDG.cpp
+  DDGPrinter.cpp
   ConstraintSystem.cpp
   Delinearization.cpp
   DemandedBits.cpp
@@ -57,6 +61,7 @@ add_llvm_component_library(LLVMAnalysis
   IRSimilarityIdentifier.cpp
   IVDescriptors.cpp
   IVUsers.cpp
+  ImportedFunctionsInliningStatistics.cpp
   IndirectCallPromotionAnalysis.cpp
   InlineCost.cpp
   InlineAdvisor.cpp
@@ -135,4 +140,11 @@ add_llvm_component_library(LLVMAnalysis
 
   LINK_LIBS
   ${MLLinkDeps}
+
+  LINK_COMPONENTS
+  BinaryFormat
+  Core
+  Object
+  ProfileData
+  Support
   )

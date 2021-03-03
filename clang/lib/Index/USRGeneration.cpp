@@ -731,9 +731,11 @@ void USRGenerator::VisitType(QualType T) {
 #define SVE_TYPE(Name, Id, SingletonId) \
         case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
-#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+#define PPC_VECTOR_TYPE(Name, Id, Size) \
         case BuiltinType::Id:
 #include "clang/Basic/PPCTypes.def"
+#define RVV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
+#include "clang/Basic/RISCVVTypes.def"
         case BuiltinType::ShortAccum:
         case BuiltinType::Accum:
         case BuiltinType::LongAccum:
@@ -950,6 +952,7 @@ void USRGenerator::VisitTemplateName(TemplateName Name) {
 void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
   switch (Arg.getKind()) {
   case TemplateArgument::Null:
+  case TemplateArgument::PackSplice: // FIXME: Is this right?
     break;
 
   case TemplateArgument::Declaration:
@@ -966,7 +969,6 @@ void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
     VisitTemplateName(Arg.getAsTemplateOrTemplatePattern());
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     // FIXME: Visit expressions.
     break;

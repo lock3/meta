@@ -66,8 +66,8 @@ consteval void gen_impl(info proto) {
 consteval void gen_void_fn(info fn) {
   meta::range params(fn);
   -> fragment struct {
-    virtual HRESULT unqualid(name_of(%{fn}))(-> %{params}) {
-      this->m_impl.unqualid(name_of(%{fn}))(unqualid(... %{params}));
+    virtual HRESULT [# name_of(%{fn}) #](-> %{params}) {
+      this->m_impl.[# name_of(%{fn}) #](...[: %{params} :]...);
       return HRESULT();
     }
   };
@@ -77,8 +77,8 @@ consteval void gen_non_void_fn(info fn) {
   info ret_type = return_type_of(fn);
   meta::range params(fn);
   -> fragment struct {
-    virtual HRESULT unqualid(name_of(%{fn}))(-> %{params}, typename(%{ret_type})* retval) {
-      *retval = this->m_impl.unqualid(name_of(%{fn}))(unqualid(... %{params}));
+    virtual HRESULT [# name_of(%{fn}) #](-> %{params}, typename [: %{ret_type} :]* retval) {
+      *retval = this->m_impl.[# name_of(%{fn}) #](...[: %{params} :]...);
       return HRESULT();
     }
   };
@@ -103,7 +103,7 @@ consteval void rt_class(info proto) {
       continue;
 
     auto ret_type = return_type_of(mem);
-    if (ret_type == reflexpr(void))
+    if (ret_type == ^void)
       gen_void_fn(mem);
     else
       gen_non_void_fn(mem);
@@ -118,7 +118,7 @@ class(rt_class) Circle {
 };
 
 consteval {
-  compiler_print_type_definition(reflexpr(Circle));
+  compiler_print_type_definition(^Circle);
 }
 
 int main() {

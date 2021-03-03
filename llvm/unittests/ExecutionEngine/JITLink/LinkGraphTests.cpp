@@ -18,10 +18,16 @@ using namespace llvm::jitlink;
 static auto RWFlags =
     sys::Memory::ProtectionFlags(sys::Memory::MF_READ | sys::Memory::MF_WRITE);
 
+static const char BlockContentBytes[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+                                         0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+                                         0x1C, 0x1D, 0x1E, 0x1F, 0x00};
+static StringRef BlockContent(BlockContentBytes);
+
 TEST(LinkGraphTest, Construction) {
   // Check that LinkGraph construction works as expected.
-  LinkGraph G("foo", 8, support::little);
+  LinkGraph G("foo", Triple("x86_64-apple-darwin"), 8, support::little);
   EXPECT_EQ(G.getName(), "foo");
+  EXPECT_EQ(G.getTargetTriple().str(), "x86_64-apple-darwin");
   EXPECT_EQ(G.getPointerSize(), 8U);
   EXPECT_EQ(G.getEndianness(), support::little);
   EXPECT_TRUE(llvm::empty(G.external_symbols()));
@@ -30,15 +36,25 @@ TEST(LinkGraphTest, Construction) {
   EXPECT_TRUE(llvm::empty(G.blocks()));
 }
 
+TEST(LinkGraphTest, AddressAccess) {
+  // Check that we can get addresses for blocks, symbols, and edges.
+  LinkGraph G("foo", Triple("x86_64-apple-darwin"), 8, support::little);
+
+  auto Sec1 = G.createSection("__data.1", RWFlags);
+  auto &B1 = G.createContentBlock(Sec1, BlockContent, 0x1000, 8, 0);
+  auto &S1 = G.addDefinedSymbol(B1, 4, "S1", 4, Linkage::Strong, Scope::Default,
+                                false, false);
+  B1.addEdge(Edge::FirstRelocation, 8, S1, 0);
+  auto &E1 = *B1.edges().begin();
+
+  EXPECT_EQ(B1.getAddress(), 0x1000U) << "Incorrect block address";
+  EXPECT_EQ(S1.getAddress(), 0x1004U) << "Incorrect symbol address";
+  EXPECT_EQ(B1.getFixupAddress(E1), 0x1008U) << "Incorrect fixup address";
+}
+
 TEST(LinkGraphTest, BlockAndSymbolIteration) {
   // Check that we can iterate over blocks within Sections and across sections.
-
-  const char BlockContentBytes[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-                                    0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
-                                    0x1C, 0x1D, 0x1E, 0x1F, 0x00};
-  StringRef BlockContent(BlockContentBytes);
-
-  LinkGraph G("foo", 8, support::little);
+  LinkGraph G("foo", Triple("x86_64-apple-darwin"), 8, support::little);
   auto &Sec1 = G.createSection("__data.1", RWFlags);
   auto &B1 = G.createContentBlock(Sec1, BlockContent, 0x1000, 8, 0);
   auto &B2 = G.createContentBlock(Sec1, BlockContent, 0x2000, 8, 0);
@@ -47,7 +63,7 @@ TEST(LinkGraphTest, BlockAndSymbolIteration) {
   auto &S2 = G.addDefinedSymbol(B2, 4, "S2", 4, Linkage::Strong, Scope::Default,
                                 false, false);
 
-  auto &Sec2 = G.createSection("__data.1", RWFlags);
+  auto &Sec2 = G.createSection("__data.2", RWFlags);
   auto &B3 = G.createContentBlock(Sec2, BlockContent, 0x3000, 8, 0);
   auto &B4 = G.createContentBlock(Sec2, BlockContent, 0x4000, 8, 0);
   auto &S3 = G.addDefinedSymbol(B3, 0, "S3", 4, Linkage::Strong, Scope::Default,
@@ -90,7 +106,7 @@ TEST(LinkGraphTest, SplitBlock) {
                                     0x1C, 0x1D, 0x1E, 0x1F, 0x00};
   StringRef BlockContent(BlockContentBytes);
 
-  LinkGraph G("foo", 8, support::little);
+  LinkGraph G("foo", Triple("x86_64-apple-darwin"), 8, support::little);
   auto &Sec = G.createSection("__data", RWFlags);
 
   // Create the block to split.

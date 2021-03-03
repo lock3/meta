@@ -10,8 +10,8 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/Function.h"
-#include "mlir/IR/Module.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/FunctionSupport.h"
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Transforms/Utils.h"
 #include "llvm/ADT/SetVector.h"
@@ -121,6 +121,9 @@ struct ConversionValueMapping {
 
   /// Drop the last mapping for the given value.
   void erase(Value value) { mapping.erase(value); }
+
+  /// Returns the inverse raw value mapping (without recursive query support).
+  BlockAndValueMapping getInverse() const { return mapping.getInverse(); }
 
 private:
   /// Current value mappings.
@@ -256,8 +259,10 @@ struct ArgConverter {
   /// Attempt to convert the signature of the given block, if successful a new
   /// block is returned containing the new arguments. Returns `block` if it did
   /// not require conversion.
-  FailureOr<Block *> convertSignature(Block *block, TypeConverter &converter,
-                                      ConversionValueMapping &mapping);
+  FailureOr<Block *>
+  convertSignature(Block *block, TypeConverter &converter,
+                   ConversionValueMapping &mapping,
+                   SmallVectorImpl<BlockArgument> &argReplacements);
 
   /// Apply the given signature conversion on the given block. The new block
   /// containing the updated signature is returned. If no conversions were
@@ -268,7 +273,8 @@ struct ArgConverter {
   Block *applySignatureConversion(
       Block *block, TypeConverter &converter,
       TypeConverter::SignatureConversion &signatureConversion,
-      ConversionValueMapping &mapping);
+      ConversionValueMapping &mapping,
+      SmallVectorImpl<BlockArgument> &argReplacements);
 
   /// Insert a new conversion into the cache.
   void insertConversion(Block *newBlock, ConvertedBlockInfo &&info);
@@ -365,11 +371,6 @@ void ArgConverter::applyRewrites(ConversionValueMapping &mapping) {
       // If the argument is still used, replace it with the generated cast.
       if (!origArg.use_empty())
         origArg.replaceAllUsesWith(mapping.lookupOrDefault(castValue));
-
-      // If all users of the cast were removed, we can drop it. Otherwise, keep
-      // the operation alive and let the user handle any remaining usages.
-      if (castValue.use_empty() && castValue.getDefiningOp())
-        castValue.getDefiningOp()->erase();
     }
   }
 }
@@ -430,9 +431,9 @@ LogicalResult ArgConverter::materializeLiveConversions(
 //===----------------------------------------------------------------------===//
 // Conversion
 
-FailureOr<Block *>
-ArgConverter::convertSignature(Block *block, TypeConverter &converter,
-                               ConversionValueMapping &mapping) {
+FailureOr<Block *> ArgConverter::convertSignature(
+    Block *block, TypeConverter &converter, ConversionValueMapping &mapping,
+    SmallVectorImpl<BlockArgument> &argReplacements) {
   // Check if the block was already converted. If the block is detached,
   // conservatively assume it is going to be deleted.
   if (hasBeenConverted(block) || !block->getParent())
@@ -440,14 +441,16 @@ ArgConverter::convertSignature(Block *block, TypeConverter &converter,
 
   // Try to convert the signature for the block with the provided converter.
   if (auto conversion = converter.convertBlockSignature(block))
-    return applySignatureConversion(block, converter, *conversion, mapping);
+    return applySignatureConversion(block, converter, *conversion, mapping,
+                                    argReplacements);
   return failure();
 }
 
 Block *ArgConverter::applySignatureConversion(
     Block *block, TypeConverter &converter,
     TypeConverter::SignatureConversion &signatureConversion,
-    ConversionValueMapping &mapping) {
+    ConversionValueMapping &mapping,
+    SmallVectorImpl<BlockArgument> &argReplacements) {
   // If no arguments are being changed or added, there is nothing to do.
   unsigned origArgCount = block->getNumArguments();
   auto convertedTypes = signatureConversion.getConvertedTypes();
@@ -482,6 +485,7 @@ Block *ArgConverter::applySignatureConversion(
              "invalid to provide a replacement value when the argument isn't "
              "dropped");
       mapping.map(origArg, inputMap->replacementValue);
+      argReplacements.push_back(origArg);
       continue;
     }
 
@@ -497,6 +501,7 @@ Block *ArgConverter::applySignatureConversion(
       newArg = replArgs.front();
     }
     mapping.map(origArg, newArg);
+    argReplacements.push_back(origArg);
     info.argInfo[i] =
         ConvertedArgInfo(inputMap->inputNo, inputMap->size, newArg);
   }
@@ -563,7 +568,7 @@ class OperationTransactionState {
 public:
   OperationTransactionState() = default;
   OperationTransactionState(Operation *op)
-      : op(op), loc(op->getLoc()), attrs(op->getMutableAttrDict()),
+      : op(op), loc(op->getLoc()), attrs(op->getAttrDictionary()),
         operands(op->operand_begin(), op->operand_end()),
         successors(op->successor_begin(), op->successor_end()) {}
 
@@ -583,7 +588,7 @@ public:
 private:
   Operation *op;
   LocationAttr loc;
-  MutableDictionaryAttr attrs;
+  DictionaryAttr attrs;
   SmallVector<Value, 8> operands;
   SmallVector<Block *, 2> successors;
 };
@@ -744,6 +749,10 @@ struct ConversionPatternRewriterImpl {
   convertRegionTypes(Region *region, TypeConverter &converter,
                      TypeConverter::SignatureConversion *entryConversion);
 
+  /// Convert the types of non-entry block arguments within the given region.
+  LogicalResult convertNonEntryRegionTypes(Region *region,
+                                           TypeConverter &converter);
+
   //===--------------------------------------------------------------------===//
   // Rewriter Notification Hooks
   //===--------------------------------------------------------------------===//
@@ -855,6 +864,7 @@ static void detachNestedAndErase(Operation *op) {
       block.dropAllDefinedValueUses();
     }
   }
+  op->dropAllUses();
   op->erase();
 }
 
@@ -989,7 +999,7 @@ void ConversionPatternRewriterImpl::undoBlockActions(
       Block *insertAfterBlock = action.originalPosition.insertAfterBlock;
       blockList.insert((insertAfterBlock
                             ? std::next(Region::iterator(insertAfterBlock))
-                            : blockList.end()),
+                            : blockList.begin()),
                        action.block);
       break;
     }
@@ -1117,9 +1127,10 @@ FailureOr<Block *> ConversionPatternRewriterImpl::convertBlockSignature(
     Block *block, TypeConverter &converter,
     TypeConverter::SignatureConversion *conversion) {
   FailureOr<Block *> result =
-      conversion ? argConverter.applySignatureConversion(block, converter,
-                                                         *conversion, mapping)
-                 : argConverter.convertSignature(block, converter, mapping);
+      conversion ? argConverter.applySignatureConversion(
+                       block, converter, *conversion, mapping, argReplacements)
+                 : argConverter.convertSignature(block, converter, mapping,
+                                                 argReplacements);
   if (Block *newBlock = result.getValue()) {
     if (newBlock != block)
       blockActions.push_back(BlockAction::getTypeConversion(newBlock));
@@ -1143,13 +1154,25 @@ FailureOr<Block *> ConversionPatternRewriterImpl::convertRegionTypes(
   if (region->empty())
     return nullptr;
 
-  // Convert the arguments of each block within the region.
+  if (failed(convertNonEntryRegionTypes(region, converter)))
+    return failure();
+
   FailureOr<Block *> newEntry =
       convertBlockSignature(&region->front(), converter, entryConversion);
+  return newEntry;
+}
+
+LogicalResult ConversionPatternRewriterImpl::convertNonEntryRegionTypes(
+    Region *region, TypeConverter &converter) {
+  argConverter.setConverter(region, &converter);
+  if (region->empty())
+    return success();
+
+  // Convert the arguments of each block within the region.
   for (Block &block : llvm::make_early_inc_range(llvm::drop_begin(*region, 1)))
     if (failed(convertBlockSignature(&block, converter)))
       return failure();
-  return newEntry;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1211,13 +1234,15 @@ void ConversionPatternRewriterImpl::notifyBlocksBeingMerged(Block *block,
 
 void ConversionPatternRewriterImpl::notifyRegionIsBeingInlinedBefore(
     Region &region, Region &parent, Region::iterator before) {
-  Block *origPrevBlock = nullptr;
-  for (auto &pair : llvm::enumerate(region)) {
-    Block &block = pair.value();
+  if (region.empty())
+    return;
+  Block *laterBlock = &region.back();
+  for (auto &earlierBlock : llvm::drop_begin(llvm::reverse(region), 1)) {
     blockActions.push_back(
-        BlockAction::getMove(&block, {&region, origPrevBlock}));
-    origPrevBlock = &block;
+        BlockAction::getMove(laterBlock, {&region, &earlierBlock}));
+    laterBlock = &earlierBlock;
   }
+  blockActions.push_back(BlockAction::getMove(laterBlock, {&region, nullptr}));
 }
 
 void ConversionPatternRewriterImpl::notifyRegionWasClonedBefore(
@@ -1252,6 +1277,21 @@ ConversionPatternRewriter::ConversionPatternRewriter(MLIRContext *ctx)
     : PatternRewriter(ctx),
       impl(new detail::ConversionPatternRewriterImpl(*this)) {}
 ConversionPatternRewriter::~ConversionPatternRewriter() {}
+
+/// PatternRewriter hook for replacing the results of an operation when the
+/// given functor returns true.
+void ConversionPatternRewriter::replaceOpWithIf(
+    Operation *op, ValueRange newValues, bool *allUsesReplaced,
+    llvm::unique_function<bool(OpOperand &) const> functor) {
+  // TODO: To support this we will need to rework a bit of how replacements are
+  // tracked, given that this isn't guranteed to replace all of the uses of an
+  // operation. The main change is that now an operation can be replaced
+  // multiple times, in parts. The current "set" based tracking is mainly useful
+  // for tracking if a replaced operation should be ignored, i.e. if all of the
+  // uses will be replaced.
+  llvm_unreachable(
+      "replaceOpWithIf is currently not supported by DialectConversion");
+}
 
 /// PatternRewriter hook for replacing the results of an operation.
 void ConversionPatternRewriter::replaceOp(Operation *op, ValueRange newValues) {
@@ -1297,6 +1337,11 @@ FailureOr<Block *> ConversionPatternRewriter::convertRegionTypes(
     Region *region, TypeConverter &converter,
     TypeConverter::SignatureConversion *entryConversion) {
   return impl->convertRegionTypes(region, converter, entryConversion);
+}
+
+LogicalResult ConversionPatternRewriter::convertNonEntryRegionTypes(
+    Region *region, TypeConverter &converter) {
+  return impl->convertNonEntryRegionTypes(region, converter);
 }
 
 void ConversionPatternRewriter::replaceUsesOfBlockArgument(BlockArgument from,
@@ -2110,7 +2155,8 @@ private:
   legalizeChangedResultType(Operation *op, OpResult result, Value newValue,
                             TypeConverter *replConverter,
                             ConversionPatternRewriter &rewriter,
-                            ConversionPatternRewriterImpl &rewriterImpl);
+                            ConversionPatternRewriterImpl &rewriterImpl,
+                            const BlockAndValueMapping &inverseMapping);
 
   /// The legalizer to use when converting operations.
   OperationLegalizer opLegalizer;
@@ -2200,6 +2246,11 @@ OperationConverter::finalize(ConversionPatternRewriter &rewriter) {
   if (failed(legalizeConvertedArgumentTypes(rewriter, rewriterImpl)))
     return failure();
 
+  if (rewriterImpl.operationsWithChangedResults.empty())
+    return success();
+
+  Optional<BlockAndValueMapping> inverseMapping;
+
   // Process requested operation replacements.
   for (unsigned i = 0, e = rewriterImpl.operationsWithChangedResults.size();
        i != e; ++i) {
@@ -2220,11 +2271,15 @@ OperationConverter::finalize(ConversionPatternRewriter &rewriter) {
       if (result.getType() == newValue.getType())
         continue;
 
+      // Compute the inverse mapping only if it is really needed.
+      if (!inverseMapping)
+        inverseMapping = rewriterImpl.mapping.getInverse();
+
       // Legalize this result.
       rewriter.setInsertionPoint(repl.first);
       if (failed(legalizeChangedResultType(repl.first, result, newValue,
                                            repl.second.converter, rewriter,
-                                           rewriterImpl)))
+                                           rewriterImpl, *inverseMapping)))
         return failure();
 
       // Update the end iterator for this loop in the case it was updated
@@ -2284,16 +2339,32 @@ LogicalResult OperationConverter::legalizeErasedResult(
   return success();
 }
 
+/// Finds a user of the given value, or of any other value that the given value
+/// replaced, that was not replaced in the conversion process.
+static Operation *
+findLiveUserOfReplaced(Value value, ConversionPatternRewriterImpl &rewriterImpl,
+                       const BlockAndValueMapping &inverseMapping) {
+  do {
+    // Walk the users of this value to see if there are any live users that
+    // weren't replaced during conversion.
+    auto liveUserIt = llvm::find_if_not(value.getUsers(), [&](Operation *user) {
+      return rewriterImpl.isOpIgnored(user);
+    });
+    if (liveUserIt != value.user_end())
+      return *liveUserIt;
+    value = inverseMapping.lookupOrNull(value);
+  } while (value != nullptr);
+  return nullptr;
+}
+
 LogicalResult OperationConverter::legalizeChangedResultType(
     Operation *op, OpResult result, Value newValue,
     TypeConverter *replConverter, ConversionPatternRewriter &rewriter,
-    ConversionPatternRewriterImpl &rewriterImpl) {
-  // Walk the users of this value to see if there are any live users that
-  // weren't replaced during conversion.
-  auto liveUserIt = llvm::find_if_not(result.getUsers(), [&](Operation *user) {
-    return rewriterImpl.isOpIgnored(user);
-  });
-  if (liveUserIt == result.user_end())
+    ConversionPatternRewriterImpl &rewriterImpl,
+    const BlockAndValueMapping &inverseMapping) {
+  Operation *liveUser =
+      findLiveUserOfReplaced(result, rewriterImpl, inverseMapping);
+  if (!liveUser)
     return success();
 
   // If the replacement has a type converter, attempt to materialize a
@@ -2319,8 +2390,8 @@ LogicalResult OperationConverter::legalizeChangedResultType(
                               << result.getResultNumber() << " of operation '"
                               << op->getName()
                               << "' that remained live after conversion";
-    diag.attachNote(liveUserIt->getLoc())
-        << "see existing live user here: " << *liveUserIt;
+    diag.attachNote(liveUser->getLoc())
+        << "see existing live user here: " << *liveUser;
     return failure();
   }
 
@@ -2503,41 +2574,52 @@ auto TypeConverter::convertBlockSignature(Block *block)
 }
 
 /// Create a default conversion pattern that rewrites the type signature of a
-/// FuncOp.
+/// FunctionLike op. This only supports FunctionLike ops which use FunctionType
+/// to represent their type.
 namespace {
-struct FuncOpSignatureConversion : public OpConversionPattern<FuncOp> {
-  FuncOpSignatureConversion(MLIRContext *ctx, TypeConverter &converter)
-      : OpConversionPattern(converter, ctx) {}
+struct FunctionLikeSignatureConversion : public ConversionPattern {
+  FunctionLikeSignatureConversion(StringRef functionLikeOpName,
+                                  MLIRContext *ctx, TypeConverter &converter)
+      : ConversionPattern(functionLikeOpName, /*benefit=*/1, converter, ctx) {}
 
-  /// Hook for derived classes to implement combined matching and rewriting.
+  /// Hook to implement combined matching and rewriting for FunctionLike ops.
   LogicalResult
-  matchAndRewrite(FuncOp funcOp, ArrayRef<Value> operands,
+  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
-    FunctionType type = funcOp.getType();
+    FunctionType type = mlir::impl::getFunctionType(op);
 
     // Convert the original function types.
     TypeConverter::SignatureConversion result(type.getNumInputs());
     SmallVector<Type, 1> newResults;
     if (failed(typeConverter->convertSignatureArgs(type.getInputs(), result)) ||
         failed(typeConverter->convertTypes(type.getResults(), newResults)) ||
-        failed(rewriter.convertRegionTypes(&funcOp.getBody(), *typeConverter,
-                                           &result)))
+        failed(rewriter.convertRegionTypes(&mlir::impl::getFunctionBody(op),
+                                           *typeConverter, &result)))
       return failure();
 
     // Update the function signature in-place.
-    rewriter.updateRootInPlace(funcOp, [&] {
-      funcOp.setType(FunctionType::get(result.getConvertedTypes(), newResults,
-                                       funcOp.getContext()));
-    });
+    auto newType = FunctionType::get(rewriter.getContext(),
+                                     result.getConvertedTypes(), newResults);
+
+    rewriter.updateRootInPlace(
+        op, [&] { mlir::impl::setFunctionType(op, newType); });
+
     return success();
   }
 };
 } // end anonymous namespace
 
+void mlir::populateFunctionLikeTypeConversionPattern(
+    StringRef functionLikeOpName, OwningRewritePatternList &patterns,
+    MLIRContext *ctx, TypeConverter &converter) {
+  patterns.insert<FunctionLikeSignatureConversion>(functionLikeOpName, ctx,
+                                                   converter);
+}
+
 void mlir::populateFuncOpTypeConversionPattern(
     OwningRewritePatternList &patterns, MLIRContext *ctx,
     TypeConverter &converter) {
-  patterns.insert<FuncOpSignatureConversion>(ctx, converter);
+  populateFunctionLikeTypeConversionPattern<FuncOp>(patterns, ctx, converter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2641,10 +2723,10 @@ auto ConversionTarget::getOpInfo(OperationName op) const
   if (it != legalOperations.end())
     return it->second;
   // Check for info for the parent dialect.
-  auto dialectIt = legalDialects.find(op.getDialect());
+  auto dialectIt = legalDialects.find(op.getDialectNamespace());
   if (dialectIt != legalDialects.end()) {
     Optional<DynamicLegalityCallbackFn> callback;
-    auto dialectFn = dialectLegalityFns.find(op.getDialect());
+    auto dialectFn = dialectLegalityFns.find(op.getDialectNamespace());
     if (dialectFn != dialectLegalityFns.end())
       callback = dialectFn->second;
     return LegalizationInfo{dialectIt->second, /*isRecursivelyLegal=*/false,

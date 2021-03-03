@@ -17,14 +17,14 @@ consteval const char *name_of(meta::info reflection) {
 
 consteval void gen_member(meta::info member) {
   -> fragment struct {
-    void unqualid("set_", meta::name_of(%{member}))(const typename(meta::type_of(%{member}))& unqualid(meta::name_of(%{member}))) {
-      this->unqualid(meta::name_of(%{member})) = unqualid(meta::name_of(%{member}));
+    void [# "set_", meta::name_of(%{member}) #](const typename [: meta::type_of(%{member}) :]& [# meta::name_of(%{member}) #]) {
+      this->[# meta::name_of(%{member}) #] = [# meta::name_of(%{member}) #];
     }
   };
 
   -> fragment struct {
-    typename(meta::type_of(%{member})) unqualid("get_", meta::name_of(%{member}))() {
-      return unqualid(meta::name_of(%{member}));
+    typename [: meta::type_of(%{member}) :] [# "get_", meta::name_of(%{member}) #]() {
+      return [# meta::name_of(%{member}) #];
     }
   };
 }
@@ -43,7 +43,7 @@ public:
     : author_name(author_name), page_count(page_count) { }
 
   consteval {
-    gen_members(reflexpr(book_model));
+    gen_members(^book_model);
   }
 };
 

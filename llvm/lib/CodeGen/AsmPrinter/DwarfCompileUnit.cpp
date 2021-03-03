@@ -16,6 +16,7 @@
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/DIE.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -73,11 +74,35 @@ void DwarfCompileUnit::addLabelAddress(DIE &Die, dwarf::Attribute Attribute,
   if (Label)
     DD->addArangeLabel(SymbolCU(this, Label));
 
-  unsigned idx = DD->getAddressPool().getIndex(Label);
-  Die.addValue(DIEValueAllocator, Attribute,
-               DD->getDwarfVersion() >= 5 ? dwarf::DW_FORM_addrx
-                                          : dwarf::DW_FORM_GNU_addr_index,
-               DIEInteger(idx));
+  bool UseAddrOffsetFormOrExpressions =
+      DD->useAddrOffsetForm() || DD->useAddrOffsetExpressions();
+
+  const MCSymbol *Base = nullptr;
+  if (Label->isInSection() && UseAddrOffsetFormOrExpressions)
+    Base = DD->getSectionLabel(&Label->getSection());
+
+  if (!Base || Base == Label) {
+    unsigned idx = DD->getAddressPool().getIndex(Label);
+    Die.addValue(DIEValueAllocator, Attribute,
+                 DD->getDwarfVersion() >= 5 ? dwarf::DW_FORM_addrx
+                                            : dwarf::DW_FORM_GNU_addr_index,
+                 DIEInteger(idx));
+    return;
+  }
+
+  // Could be extended to work with DWARFv4 Split DWARF if that's important for
+  // someone. In that case DW_FORM_data would be used.
+  assert(DD->getDwarfVersion() >= 5 &&
+         "Addr+offset expressions are only valuable when using debug_addr (to "
+         "reduce relocations) available in DWARFv5 or higher");
+  if (DD->useAddrOffsetExpressions()) {
+    auto *Loc = new (DIEValueAllocator) DIEBlock();
+    addPoolOpAddress(*Loc, Label);
+    addBlock(Die, Attribute, dwarf::DW_FORM_exprloc, Loc);
+  } else
+    Die.addValue(DIEValueAllocator, Attribute, dwarf::DW_FORM_LLVM_addrx_offset,
+                 new (DIEValueAllocator) DIEAddrOffset(
+                     DD->getAddressPool().getIndex(Base), Label, Base));
 }
 
 void DwarfCompileUnit::addLocalLabelAddress(DIE &Die,
@@ -422,10 +447,7 @@ DIE &DwarfCompileUnit::updateSubprogramScopeDIE(const DISubprogram *SP) {
       // FIXME: duplicated from Target/WebAssembly/WebAssembly.h
       // don't want to depend on target specific headers in this code?
       const unsigned TI_GLOBAL_RELOC = 3;
-      // FIXME: when writing dwo, we need to avoid relocations. Probably
-      // the "right" solution is to treat globals the way func and data symbols
-      // are (with entries in .debug_addr).
-      if (FrameBase.Location.WasmLoc.Kind == TI_GLOBAL_RELOC && !isDwoUnit()) {
+      if (FrameBase.Location.WasmLoc.Kind == TI_GLOBAL_RELOC) {
         // These need to be relocatable.
         assert(FrameBase.Location.WasmLoc.Index == 0);  // Only SP so far.
         auto SPSym = cast<MCSymbolWasm>(
@@ -443,8 +465,16 @@ DIE &DwarfCompileUnit::updateSubprogramScopeDIE(const DISubprogram *SP) {
         DIELoc *Loc = new (DIEValueAllocator) DIELoc;
         addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_WASM_location);
         addSInt(*Loc, dwarf::DW_FORM_sdata, TI_GLOBAL_RELOC);
-        addLabel(*Loc, dwarf::DW_FORM_data4, SPSym);
-        DD->addArangeLabel(SymbolCU(this, SPSym));
+        if (!isDwoUnit()) {
+          addLabel(*Loc, dwarf::DW_FORM_data4, SPSym);
+          DD->addArangeLabel(SymbolCU(this, SPSym));
+        } else {
+          // FIXME: when writing dwo, we need to avoid relocations. Probably
+          // the "right" solution is to treat globals the way func and data
+          // symbols are (with entries in .debug_addr).
+          // For now, since we only ever use index 0, this should work as-is.       
+          addUInt(*Loc, dwarf::DW_FORM_data4, FrameBase.Location.WasmLoc.Index);
+        }
         addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_stack_value);
         addBlock(*SPDie, dwarf::DW_AT_frame_base, Loc);
       } else {
@@ -558,7 +588,12 @@ void DwarfCompileUnit::addScopeRangeList(DIE &ScopeDIE,
 
 void DwarfCompileUnit::attachRangesOrLowHighPC(
     DIE &Die, SmallVector<RangeSpan, 2> Ranges) {
-  if (Ranges.size() == 1 || !DD->useRangesSection()) {
+  assert(!Ranges.empty());
+  if (!DD->useRangesSection() ||
+      (Ranges.size() == 1 &&
+       (!DD->alwaysUseRanges() ||
+        DD->getSectionLabel(&Ranges.front().Begin->getSection()) ==
+            Ranges.front().Begin))) {
     const RangeSpan &Front = Ranges.front();
     const RangeSpan &Back = Ranges.back();
     attachLowHighPC(Die, Front.Begin, Back.End);
@@ -715,6 +750,13 @@ DIE *DwarfCompileUnit::constructVariableDIEImpl(const DbgVariable &DV,
       addConstantFPValue(*VariableDie, DVal->getConstantFP());
     } else if (DVal->isConstantInt()) {
       addConstantValue(*VariableDie, DVal->getConstantInt(), DV.getType());
+    } else if (DVal->isTargetIndexLocation()) {
+      DIELoc *Loc = new (DIEValueAllocator) DIELoc;
+      DIEDwarfExpression DwarfExpr(*Asm, *this, *Loc);
+      const DIBasicType *BT = dyn_cast<DIBasicType>(
+          static_cast<const Metadata *>(DV.getVariable()->getType()));
+      DwarfDebug::emitDebugLocValue(*Asm, BT, *DVal, DwarfExpr);
+      addBlock(*VariableDie, dwarf::DW_AT_location, DwarfExpr.finalize());
     }
     return VariableDie;
   }
@@ -730,10 +772,14 @@ DIE *DwarfCompileUnit::constructVariableDIEImpl(const DbgVariable &DV,
     Register FrameReg;
     const DIExpression *Expr = Fragment.Expr;
     const TargetFrameLowering *TFI = Asm->MF->getSubtarget().getFrameLowering();
-    int Offset = TFI->getFrameIndexReference(*Asm->MF, Fragment.FI, FrameReg);
+    StackOffset Offset =
+        TFI->getFrameIndexReference(*Asm->MF, Fragment.FI, FrameReg);
     DwarfExpr.addFragmentOffset(Expr);
+
+    auto *TRI = Asm->MF->getSubtarget().getRegisterInfo();
     SmallVector<uint64_t, 8> Ops;
-    DIExpression::appendOffset(Ops, Offset);
+    TRI->getOffsetOpcodes(Offset, Ops);
+
     // According to
     // https://docs.nvidia.com/cuda/archive/10.0/ptx-writers-guide-to-interoperability/index.html#cuda-specific-dwarf
     // cuda-gdb requires DW_AT_address_class for all variables to be able to

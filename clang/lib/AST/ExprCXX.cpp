@@ -1311,6 +1311,10 @@ ArrayRef<NamedDecl *> LambdaExpr::getExplicitTemplateParameters() const {
   return Record->getLambdaExplicitTemplateParameters();
 }
 
+Expr *LambdaExpr::getTrailingRequiresClause() const {
+  return getCallOperator()->getTrailingRequiresClause();
+}
+
 bool LambdaExpr::isMutable() const { return !getCallOperator()->isConst(); }
 
 LambdaExpr::child_range LambdaExpr::children() {
@@ -1924,26 +1928,25 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
   return new (C) CXXCompilerErrorExpr(Empty);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::Create(
-    const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc) {
-  return new (C) CXXIdExprExpr(
-      C.DependentTy, Reflection, KeywordLoc, LParenLoc, RParenLoc);
+CXXExprSpliceExpr *CXXExprSpliceExpr::Create(
+    const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
+    SourceLocation SEELoc) {
+  return new (C) CXXExprSpliceExpr(C.DependentTy, Reflection, SBELoc, SEELoc);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXIdExprExpr(EmptyShell());
+CXXExprSpliceExpr *CXXExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXExprSpliceExpr(EmptyShell());
 }
 
-CXXMemberIdExprExpr::CXXMemberIdExprExpr(
+CXXMemberExprSpliceExpr::CXXMemberExprSpliceExpr(
     QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc,
     const TemplateArgumentListInfo *Args)
-    : Expr(CXXMemberIdExprExprClass, T, VK_RValue, OK_Ordinary),
+    : Expr(CXXMemberExprSpliceExprClass, T, VK_RValue, OK_Ordinary),
       Base(Base), Reflection(Reflection), IsArrow(IsArrow),
       HasTemplateKWAndArgsInfo(Args != nullptr || TemplateKWLoc.isValid()),
-      OpLoc(OpLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+      OpLoc(OpLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
   if (Args) {
     auto Deps = TemplateArgumentDependence::None;
     getTrailingObjects<ASTTemplateKWAndArgsInfo>()->initializeFrom(
@@ -1956,7 +1959,7 @@ CXXMemberIdExprExpr::CXXMemberIdExprExpr(
   setDependence(computeDependence(this));
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::Create(
     const ASTContext &C, Expr *Base, Expr *Reflection,
     bool IsArrow, SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -1966,13 +1969,32 @@ CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
       totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
           HasTemplateKWAndArgsInfo, Args ? Args->size() : 0);
   void *Mem = C.Allocate(Size);
-  return new (Mem) CXXMemberIdExprExpr(
+  return new (Mem) CXXMemberExprSpliceExpr(
       C.DependentTy, Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, Args);
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXMemberIdExprExpr(EmptyShell());
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXMemberExprSpliceExpr(EmptyShell());
+}
+
+CXXPackSpliceExpr::CXXPackSpliceExpr(
+    QualType T, const PackSplice *PS,
+    SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc)
+  : Expr(CXXPackSpliceExprClass, T, VK_RValue, OK_Ordinary), PS(PS),
+    EllipsisLoc(EllipsisLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
+  setDependence(computeDependence(this));
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::Create(
+    const ASTContext &C, const PackSplice *PS, SourceLocation EllipsisLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc) {
+  return new (C) CXXPackSpliceExpr(C.DependentTy, PS,
+                                   EllipsisLoc, SBELoc, SEELoc);
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXPackSpliceExpr(EmptyShell());
 }
 
 // Assume that the name is an ordinary lvalue for now.
@@ -2034,20 +2056,19 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
 
 CXXFragmentExpr::CXXFragmentExpr(
     QualType T, SourceLocation IntroLoc, CXXFragmentDecl *Frag,
-    ArrayRef<Expr *> Caps, bool IsLegacy)
+    ArrayRef<Expr *> Caps)
   : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary),
     NumCaptures(Caps.size()), Fragment(Frag) {
-  FragmentExprBits.IsLegacy = IsLegacy;
   FragmentExprBits.IntroLoc = IntroLoc;
 }
 
 CXXFragmentExpr *CXXFragmentExpr::Create(
     const ASTContext &C, SourceLocation IntroLoc,
-    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures, bool IsLegacy) {
+    CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures) {
   // Allocate buffered CXXFragmentExpr with space for trailing captures.
   void *Buffer = C.Allocate(totalSizeToAlloc<Expr *>(Captures.size()));
   auto *E = new (Buffer) CXXFragmentExpr(
-      C.MetaInfoTy, IntroLoc, Fragment, Captures, IsLegacy);
+      C.MetaInfoTy, IntroLoc, Fragment, Captures);
 
   // Add captures and compute dependence.
   std::copy(Captures.begin(), Captures.end(), E->getTrailingObjects<Expr *>());

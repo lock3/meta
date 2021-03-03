@@ -29,7 +29,7 @@ namespace new_ns {
 
 consteval {
   // Functions
-  auto fn_1 = __reflect(query_get_begin_member, reflexpr(existing_ns));
+  auto fn_1 = __reflect(query_get_begin_member, ^existing_ns);
   __reflect_mod(query_set_add_inline, fn_1, true);
 
   -> fn_1;
@@ -68,7 +68,7 @@ consteval {
 class class_1 {
   consteval {
     // Static Data Members
-    auto class_1 = reflexpr(existing_ns::class_1);
+    auto class_1 = ^existing_ns::class_1;
     auto static_var_1 = __reflect(query_get_begin_member, class_1);
     __reflect_mod(query_set_add_inline, static_var_1, true);
 
@@ -85,7 +85,7 @@ class class_1 {
 }
 
 // Functions
-constexpr auto fn_1 = __reflect(query_get_begin_member, reflexpr(new_ns));
+constexpr auto fn_1 = __reflect(query_get_begin_member, ^new_ns);
 static_assert(__reflect(query_is_inline, fn_1));
 
 constexpr auto fn_2 = __reflect(query_get_next_member, fn_1);

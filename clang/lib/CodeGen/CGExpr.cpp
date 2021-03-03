@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CGCUDARuntime.h"
 #include "CGCXXABI.h"
 #include "CGCall.h"
 #include "CGCleanup.h"
@@ -187,6 +188,7 @@ llvm::Value *CodeGenFunction::EvaluateExprAsBool(const Expr *E) {
 
   QualType BoolTy = getContext().BoolTy;
   SourceLocation Loc = E->getExprLoc();
+  CGFPOptionsRAII FPOptsRAII(*this, E);
   if (!E->getType()->isAnyComplexType())
     return EmitScalarConversion(EmitScalarExpr(E), E->getType(), BoolTy, Loc);
 
@@ -825,9 +827,9 @@ void CodeGenFunction::EmitTypeCheck(TypeCheckKind TCK, SourceLocation Loc,
     CGM.getCXXABI().getMangleContext().mangleCXXRTTI(Ty.getUnqualifiedType(),
                                                      Out);
 
-    // Blacklist based on the mangled type.
-    if (!CGM.getContext().getSanitizerBlacklist().isBlacklistedType(
-            SanitizerKind::Vptr, Out.str())) {
+    // Contained in NoSanitizeList based on the mangled type.
+    if (!CGM.getContext().getNoSanitizeList().containsType(SanitizerKind::Vptr,
+                                                           Out.str())) {
       llvm::hash_code TypeHash = hash_value(Out.str());
 
       // Load the vptr, and compute hash_16_bytes(TypeHash, vptr).
@@ -1287,9 +1289,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   default: return EmitUnsupportedLValue(E, "l-value expression");
 
   case Expr::ObjCPropertyRefExprClass:
-  case Expr::CXXIdExprExprClass:
-  case Expr::CXXMemberIdExprExprClass:
-  case Expr::CXXValueOfExprClass:
+  case Expr::CXXExprSpliceExprClass:
+  case Expr::CXXMemberExprSpliceExprClass:
     llvm_unreachable("cannot emit a property reference directly");
 
   case Expr::ObjCSelectorExprClass:
@@ -1529,6 +1530,29 @@ CodeGenFunction::tryEmitAsConstant(DeclRefExpr *refExpr) {
   if (result.HasSideEffects)
     return ConstantEmission();
 
+  // In CUDA/HIP device compilation, a lambda may capture a reference variable
+  // referencing a global host variable by copy. In this case the lambda should
+  // make a copy of the value of the global host variable. The DRE of the
+  // captured reference variable cannot be emitted as load from the host
+  // global variable as compile time constant, since the host variable is not
+  // accessible on device. The DRE of the captured reference variable has to be
+  // loaded from captures.
+  if (CGM.getLangOpts().CUDAIsDevice && result.Val.isLValue() &&
+      refExpr->refersToEnclosingVariableOrCapture()) {
+    auto *MD = dyn_cast_or_null<CXXMethodDecl>(CurCodeDecl);
+    if (MD && MD->getParent()->isLambda() &&
+        MD->getOverloadedOperator() == OO_Call) {
+      const APValue::LValueBase &base = result.Val.getLValueBase();
+      if (const ValueDecl *D = base.dyn_cast<const ValueDecl *>()) {
+        if (const VarDecl *VD = dyn_cast<const VarDecl>(D)) {
+          if (!VD->hasAttr<CUDADeviceAttr>()) {
+            return ConstantEmission();
+          }
+        }
+      }
+    }
+  }
+
   // Emit as a constant.
   auto C = ConstantEmitter(*this).emitAbstract(refExpr->getLocation(),
                                                result.Val, resultType);
@@ -1712,8 +1736,8 @@ llvm::Value *CodeGenFunction::EmitLoadOfScalar(Address Addr, bool Volatile,
         llvm::Value *V = Builder.CreateLoad(Cast, Volatile, "loadVec4");
 
         // Shuffle vector to get vec3.
-        V = Builder.CreateShuffleVector(V, llvm::UndefValue::get(vec4Ty),
-                                        ArrayRef<int>{0, 1, 2}, "extractVec");
+        V = Builder.CreateShuffleVector(V, ArrayRef<int>{0, 1, 2},
+                                        "extractVec");
         return EmitFromMemory(V, Ty);
       }
     }
@@ -1820,8 +1844,7 @@ void CodeGenFunction::EmitStoreOfScalar(llvm::Value *Value, Address Addr,
       // Handle vec3 special.
       if (VecTy && cast<llvm::FixedVectorType>(VecTy)->getNumElements() == 3) {
         // Our source is a vec3, do a shuffle vector to make it a vec4.
-        Value = Builder.CreateShuffleVector(Value, llvm::UndefValue::get(VecTy),
-                                            ArrayRef<int>{0, 1, 2, -1},
+        Value = Builder.CreateShuffleVector(Value, ArrayRef<int>{0, 1, 2, -1},
                                             "extractVec");
         SrcTy = llvm::FixedVectorType::get(VecTy->getElementType(), 4);
       }
@@ -1993,8 +2016,7 @@ RValue CodeGenFunction::EmitLoadOfExtVectorElementLValue(LValue LV) {
   for (unsigned i = 0; i != NumResultElts; ++i)
     Mask.push_back(getAccessedFieldNo(i, Elts));
 
-  Vec = Builder.CreateShuffleVector(Vec, llvm::UndefValue::get(Vec->getType()),
-                                    Mask);
+  Vec = Builder.CreateShuffleVector(Vec, Mask);
   return RValue::get(Vec);
 }
 
@@ -2250,8 +2272,7 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
       for (unsigned i = 0; i != NumSrcElts; ++i)
         Mask[getAccessedFieldNo(i, Elts)] = i;
 
-      Vec = Builder.CreateShuffleVector(
-          SrcVal, llvm::UndefValue::get(Vec->getType()), Mask);
+      Vec = Builder.CreateShuffleVector(SrcVal, Mask);
     } else if (NumDstElts > NumSrcElts) {
       // Extended the source vector to the same length and then shuffle it
       // into the destination.
@@ -2261,8 +2282,7 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
       for (unsigned i = 0; i != NumSrcElts; ++i)
         ExtMask.push_back(i);
       ExtMask.resize(NumDstElts, -1);
-      llvm::Value *ExtSrcVal = Builder.CreateShuffleVector(
-          SrcVal, llvm::UndefValue::get(SrcVal->getType()), ExtMask);
+      llvm::Value *ExtSrcVal = Builder.CreateShuffleVector(SrcVal, ExtMask);
       // build identity
       SmallVector<int, 4> Mask;
       for (unsigned i = 0; i != NumDstElts; ++i)
@@ -2745,6 +2765,7 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
     }
   }
 
+
   // FIXME: We should be able to assert this for FunctionDecls as well!
   // FIXME: We should be able to assert this for all DeclRefExprs, not just
   // those with a valid source location.
@@ -2796,14 +2817,9 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
       addr = emitBlockByrefAddress(addr, VD);
     }
 
-    // Get the variable type, adjusting as needed for parameter passing types.
-    QualType VarType = VD->getType();
-    if (auto *ParamType = dyn_cast<ParameterType>(VarType))
-      VarType = ParamType->getAdjustedType(getContext());
-
     // Drill into reference types.
-    LValue LV = VarType->isReferenceType() ?
-        EmitLoadOfReferenceLValue(addr, VarType, AlignmentSource::Decl) :
+    LValue LV = VD->getType()->isReferenceType() ?
+        EmitLoadOfReferenceLValue(addr, VD->getType(), AlignmentSource::Decl) :
         MakeAddrLValue(addr, T, AlignmentSource::Decl);
 
     bool isLocalStorage = VD->hasLocalStorage();
@@ -3201,7 +3217,7 @@ void CodeGenFunction::EmitCheck(
   }
 
   if (TrapCond)
-    EmitTrapCheck(TrapCond);
+    EmitTrapCheck(TrapCond, CheckHandler);
   if (!FatalCond && !RecoverableCond)
     return;
 
@@ -3381,7 +3397,7 @@ void CodeGenFunction::EmitCfiCheckFail() {
   StartFunction(GlobalDecl(), CGM.getContext().VoidTy, F, FI, Args,
                 SourceLocation());
 
-  // This function should not be affected by blacklist. This function does
+  // This function is not affected by NoSanitizeList. This function does
   // not have a source location, but "src:*" would still apply. Revert any
   // changes to SanOpts made in StartFunction.
   SanOpts = CGM.getLangOpts().Sanitize;
@@ -3396,7 +3412,7 @@ void CodeGenFunction::EmitCfiCheckFail() {
   // Data == nullptr means the calling module has trap behaviour for this check.
   llvm::Value *DataIsNotNullPtr =
       Builder.CreateICmpNE(Data, llvm::ConstantPointerNull::get(Int8PtrTy));
-  EmitTrapCheck(DataIsNotNullPtr);
+  EmitTrapCheck(DataIsNotNullPtr, SanitizerHandler::CFICheckFail);
 
   llvm::StructType *SourceLocationTy =
       llvm::StructType::get(VoidPtrTy, Int32Ty, Int32Ty);
@@ -3435,7 +3451,7 @@ void CodeGenFunction::EmitCfiCheckFail() {
       EmitCheck(std::make_pair(Cond, Mask), SanitizerHandler::CFICheckFail, {},
                 {Data, Addr, ValidVtable});
     else
-      EmitTrapCheck(Cond);
+      EmitTrapCheck(Cond, SanitizerHandler::CFICheckFail);
   }
 
   FinishFunction();
@@ -3455,20 +3471,39 @@ void CodeGenFunction::EmitUnreachable(SourceLocation Loc) {
   Builder.CreateUnreachable();
 }
 
-void CodeGenFunction::EmitTrapCheck(llvm::Value *Checked) {
+void CodeGenFunction::EmitTrapCheck(llvm::Value *Checked,
+                                    SanitizerHandler CheckHandlerID) {
   llvm::BasicBlock *Cont = createBasicBlock("cont");
 
   // If we're optimizing, collapse all calls to trap down to just one per
-  // function to save on code size.
+  // check-type per function to save on code size.
+  if (TrapBBs.size() <= CheckHandlerID)
+    TrapBBs.resize(CheckHandlerID + 1);
+  llvm::BasicBlock *&TrapBB = TrapBBs[CheckHandlerID];
+
   if (!CGM.getCodeGenOpts().OptimizationLevel || !TrapBB) {
     TrapBB = createBasicBlock("trap");
     Builder.CreateCondBr(Checked, Cont, TrapBB);
     EmitBlock(TrapBB);
-    llvm::CallInst *TrapCall = EmitTrapCall(llvm::Intrinsic::trap);
+
+    llvm::CallInst *TrapCall =
+        Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::ubsantrap),
+                           llvm::ConstantInt::get(CGM.Int8Ty, CheckHandlerID));
+
+    if (!CGM.getCodeGenOpts().TrapFuncName.empty()) {
+      auto A = llvm::Attribute::get(getLLVMContext(), "trap-func-name",
+                                    CGM.getCodeGenOpts().TrapFuncName);
+      TrapCall->addAttribute(llvm::AttributeList::FunctionIndex, A);
+    }
     TrapCall->setDoesNotReturn();
     TrapCall->setDoesNotThrow();
     Builder.CreateUnreachable();
   } else {
+    auto Call = TrapBB->begin();
+    assert(isa<llvm::CallInst>(Call) && "Expected call in trap BB");
+
+    Call->applyMergedLocation(Call->getDebugLoc(),
+                              Builder.getCurrentDebugLocation());
     Builder.CreateCondBr(Checked, Cont, TrapBB);
   }
 
@@ -3476,7 +3511,8 @@ void CodeGenFunction::EmitTrapCheck(llvm::Value *Checked) {
 }
 
 llvm::CallInst *CodeGenFunction::EmitTrapCall(llvm::Intrinsic::ID IntrID) {
-  llvm::CallInst *TrapCall = Builder.CreateCall(CGM.getIntrinsic(IntrID));
+  llvm::CallInst *TrapCall =
+      Builder.CreateCall(CGM.getIntrinsic(IntrID));
 
   if (!CGM.getCodeGenOpts().TrapFuncName.empty()) {
     auto A = llvm::Attribute::get(getLLVMContext(), "trap-func-name",
@@ -3830,7 +3866,7 @@ LValue CodeGenFunction::EmitMatrixSubscriptExpr(const MatrixSubscriptExpr *E) {
   llvm::Value *ColIdx = EmitScalarExpr(E->getColumnIdx());
   llvm::Value *NumRows = Builder.getIntN(
       RowIdx->getType()->getScalarSizeInBits(),
-      E->getBase()->getType()->getAs<ConstantMatrixType>()->getNumRows());
+      E->getBase()->getType()->castAs<ConstantMatrixType>()->getNumRows());
   llvm::Value *FinalIdx =
       Builder.CreateAdd(Builder.CreateMul(ColIdx, NumRows), RowIdx);
   return LValue::MakeMatrixElt(
@@ -4731,23 +4767,19 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   }
   case CK_ZeroToOCLOpaqueType:
     llvm_unreachable("NULL to OpenCL opaque type lvalue cast is not valid");
-
-  case CK_ParameterQualification:
-    // This is a no-op. See through the qualification.
-    return EmitLValue(E->getSubExpr());
   }
 
   llvm_unreachable("Unhandled lvalue cast kind?");
 }
 
 LValue CodeGenFunction::EmitOpaqueValueLValue(const OpaqueValueExpr *e) {
-  assert(OpaqueValueMappingData::shouldBindAsLValue(*this, e));
+  assert(OpaqueValueMappingData::shouldBindAsLValue(e));
   return getOrCreateOpaqueLValueMapping(e);
 }
 
 LValue
 CodeGenFunction::getOrCreateOpaqueLValueMapping(const OpaqueValueExpr *e) {
-  assert(OpaqueValueMapping::shouldBindAsLValue(*this, e));
+  assert(OpaqueValueMapping::shouldBindAsLValue(e));
 
   llvm::DenseMap<const OpaqueValueExpr*,LValue>::iterator
       it = OpaqueLValues.find(e);
@@ -4761,7 +4793,7 @@ CodeGenFunction::getOrCreateOpaqueLValueMapping(const OpaqueValueExpr *e) {
 
 RValue
 CodeGenFunction::getOrCreateOpaqueRValueMapping(const OpaqueValueExpr *e) {
-  assert(!OpaqueValueMapping::shouldBindAsLValue(*this, e));
+  assert(!OpaqueValueMapping::shouldBindAsLValue(e));
 
   llvm::DenseMap<const OpaqueValueExpr*,RValue>::iterator
       it = OpaqueRValues.find(e);
@@ -4852,8 +4884,12 @@ static CGCallee EmitDirectCallee(CodeGenFunction &CGF, GlobalDecl GD) {
       return CGCallee::forBuiltin(builtinID, FD);
   }
 
-  llvm::Constant *calleePtr = EmitFunctionDeclPointer(CGF.CGM, GD);
-  return CGCallee::forDirect(calleePtr, GD);
+  llvm::Constant *CalleePtr = EmitFunctionDeclPointer(CGF.CGM, GD);
+  if (CGF.CGM.getLangOpts().CUDA && !CGF.CGM.getLangOpts().CUDAIsDevice &&
+      FD->hasAttr<CUDAGlobalAttr>())
+    CalleePtr = CGF.CGM.getCUDARuntime().getKernelStub(
+        cast<llvm::GlobalValue>(CalleePtr->stripPointerCasts()));
+  return CGCallee::forDirect(CalleePtr, GD);
 }
 
 CGCallee CodeGenFunction::EmitCallee(const Expr *E) {
@@ -4942,9 +4978,7 @@ LValue CodeGenFunction::EmitBinaryOperatorLValue(const BinaryOperator *E) {
     }
 
     RValue RV = EmitAnyExpr(E->getRHS());
-
     LValue LV = EmitCheckedLValue(E->getLHS(), TCK_Store);
-
     if (RV.isScalar())
       EmitNullabilityCheck(LV, RV.getScalarVal(), E->getExprLoc());
     EmitStoreThroughLValue(RV, LV);
@@ -5249,6 +5283,18 @@ RValue CodeGenFunction::EmitCall(QualType CalleeType, const CGCallee &OrigCallee
     Callee.setFunctionPointer(CalleePtr);
   }
 
+  // HIP function pointer contains kernel handle when it is used in triple
+  // chevron. The kernel stub needs to be loaded from kernel handle and used
+  // as callee.
+  if (CGM.getLangOpts().HIP && !CGM.getLangOpts().CUDAIsDevice &&
+      isa<CUDAKernelCallExpr>(E) &&
+      (!TargetDecl || !isa<FunctionDecl>(TargetDecl))) {
+    llvm::Value *Handle = Callee.getFunctionPointer();
+    auto *Cast =
+        Builder.CreateBitCast(Handle, Handle->getType()->getPointerTo());
+    auto *Stub = Builder.CreateLoad(Address(Cast, CGM.getPointerAlign()));
+    Callee.setFunctionPointer(Stub);
+  }
   llvm::CallBase *CallOrInvoke = nullptr;
   RValue Call = EmitCall(FnInfo, Callee, ReturnValue, Args, &CallOrInvoke,
                          E->getExprLoc());
@@ -5349,7 +5395,7 @@ static LValueOrRValue emitPseudoObjectExpr(CodeGenFunction &CGF,
       typedef CodeGenFunction::OpaqueValueMappingData OVMA;
       OVMA opaqueData;
       if (ov == resultExpr && ov->isRValue() && !forLValue &&
-          CGF.hasAggregateEvaluationKind(ov->getType())) {
+          CodeGenFunction::hasAggregateEvaluationKind(ov->getType())) {
         CGF.EmitAggExpr(ov->getSourceExpr(), slot);
         LValue LV = CGF.MakeAddrLValue(slot.getAddress(), ov->getType(),
                                        AlignmentSource::Decl);

@@ -11,7 +11,7 @@ class Foo {
 };
 
 namespace foo_base {
-  constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(Foo));
+  constexpr meta::info method_1 = __reflect(query_get_begin, ^Foo);
   static_assert(__reflect(query_is_static_member_function, method_1));
   static_assert(!__reflect(query_is_nonstatic_member_function, method_1));
   static_assert(__reflect(query_is_normal, method_1));
@@ -68,7 +68,7 @@ class FooChildImplicit : Foo {
 };
 
 namespace foo_child_implicit {
-  constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(FooChildImplicit));
+  constexpr meta::info method_1 = __reflect(query_get_begin, ^FooChildImplicit);
   static_assert(!__reflect(query_is_static_member_function, method_1));
   static_assert(__reflect(query_is_nonstatic_member_function, method_1));
   static_assert(__reflect(query_is_normal, method_1));
@@ -95,7 +95,7 @@ class FooChildExplicit : Foo {
 };
 
 namespace foo_child_explicit {
-  constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(FooChildExplicit));
+  constexpr meta::info method_1 = __reflect(query_get_begin, ^FooChildExplicit);
   static_assert(!__reflect(query_is_static_member_function, method_1));
   static_assert(__reflect(query_is_nonstatic_member_function, method_1));
   static_assert(__reflect(query_is_normal, method_1));
