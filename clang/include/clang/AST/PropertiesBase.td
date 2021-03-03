@@ -421,6 +421,11 @@ let Class = PropertyTypeCase<APValue, "AddrLabelDiff"> in {
     return APValue(cast<AddrLabelExpr>(lhs), cast<AddrLabelExpr>(rhs));
   }]>;
 }
+let Class = PropertyTypeCase<APValue, "Reflection"> in {
+  def : Creator<[{
+    llvm_unreachable("unimplemented");
+  }]>;
+}
 let Class = PropertyTypeCase<APValue, "MemberPointer"> in {
   def : Property<"isDerived", Bool> {
     let Read = [{ node.isMemberPointerToDerivedMember() }];
