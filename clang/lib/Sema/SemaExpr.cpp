@@ -16535,6 +16535,11 @@ static void RemoveNestedImmediateInvocation(
       DRSet.erase(E);
       return E;
     }
+    ExprResult TransformSubExprAsWritten(CastExpr *E) {
+      // FIXME: This is kind of a hack to make sure we don't break
+      // calls on immediately constructed temporaries.
+      return TransformExpr(E->getSubExpr());
+    }
     bool AlwaysRebuild() { return false; }
     bool ReplacingOriginal() { return true; }
     bool AllowSkippingCXXConstructExpr() {

@@ -1765,13 +1765,10 @@ Expr *CastExpr::getSubExprAsWritten() {
 
     // Conversions by constructor and conversion functions have a
     // subexpression describing the call; strip it off.
-    if (E->getCastKind() == CK_ConstructorConversion) {
-      if (isa<ConstantExpr>(SubExpr))
-        break;
-
+    if (E->getCastKind() == CK_ConstructorConversion)
       SubExpr =
         skipImplicitTemporary(cast<CXXConstructExpr>(SubExpr->IgnoreImplicit())->getArg(0));
-    } else if (E->getCastKind() == CK_UserDefinedConversion) {
+    else if (E->getCastKind() == CK_UserDefinedConversion) {
       assert((isa<CXXMemberCallExpr>(SubExpr) ||
               isa<BlockExpr>(SubExpr)) &&
              "Unexpected SubExpr for CK_UserDefinedConversion.");

@@ -405,6 +405,10 @@ public:
   /// \returns the transformed expression.
   ExprResult TransformExpr(Expr *E);
 
+  ExprResult TransformSubExprAsWritten(CastExpr *E) {
+    return TransformExpr(E->getSubExprAsWritten());
+  }
+
   /// Transform the given initializer.
   ///
   /// By default, this routine transforms an initializer by stripping off the
@@ -12296,8 +12300,7 @@ TreeTransform<Derived>::TransformCXXFunctionalCastExpr(
   if (!Type)
     return ExprError();
 
-  ExprResult SubExpr
-    = getDerived().TransformExpr(E->getSubExprAsWritten());
+  ExprResult SubExpr = getDerived().TransformSubExprAsWritten(E);
   if (SubExpr.isInvalid())
     return ExprError();
 
