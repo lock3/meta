@@ -10307,6 +10307,22 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
+  enum class SpliceKind
+  {
+    Invalid,
+    Type,
+    Expression,
+    Template,
+    Namespace,
+    Range,
+    Dependent,
+  };
+
+  SpliceKind DetermineSpliceKind(Expr *Refl);
+
+  TypeResult ActOnCXXTypenameSpecifierSplice(Expr *Refl);
+
+
   ExprResult ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
                                     Expr *Reflection,
                                     SourceLocation SEELoc);
@@ -10440,6 +10456,9 @@ public:
       IdentifierInfo *Id, SourceLocation IdLoc,
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgs,
       SourceLocation RAngleLoc);
+
+  bool ActOnCXXNestedNameSpecifierSplice(CXXScopeSpec &SS, ExprResult E,
+                                         SourceLocation ColonColonLoc);
 
   bool ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
                                              const DeclSpec &DS,

@@ -1845,8 +1845,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
           Tok.is(tok::kw___super)) &&
          "Cannot be a type or scope token!");
 
-  if (Tok.is(tok::kw_typename) &&
-      !matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
+  if (Tok.is(tok::kw_typename)) {
     // MSVC lets you do stuff like:
     //   typename typedef T_::D D;
     //
@@ -1879,7 +1878,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                                        /*IsTypename*/ true))
       return true;
 
-    // Determine if this is an identifier splice
+    // Determine if this is an identifier splice.
     bool IsIdentifierSplice = false;
     if (isIdentifier() && Tok.is(tok::annot_identifier_splice)) {
       IsIdentifierSplice = true;
@@ -1888,10 +1887,27 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
       IsIdentifierSplice = TemplateId->NameSpliced;
     }
 
-    // If we have an identifier splice, we don't need a scope specifier.
-    if (SS.isEmpty() && !IsIdentifierSplice) {
-      if (isIdentifier() || Tok.is(tok::annot_template_id) ||
-          Tok.is(tok::annot_decltype)) {
+    // Determine if this is a reflection splice.
+    //
+    // FIXME: We should be looking for a specific annotation. Does it matter
+    // if this is a template-id whose splice is a template-name? I don't know.
+    bool IsReflectionSplice = false;
+    if (Tok.is(tok::annot_reflection_splice)) {
+      IsReflectionSplice = true;
+    }
+    
+    bool IsSplice = IsIdentifierSplice || IsReflectionSplice;
+
+    // Except for splices, a typename-specifier always contains a
+    // nested-name-specifier.
+    //
+    //    typename [: whatever :]       // OK: no nested-name-specifier
+    //    typename [: whatever :]::type // OK: splice in nested-name-specifier
+    //
+    // This is true for both reflection and identifier splices. The splice in
+    // the nested-name-specifier is handled by ParseOptionalCXXScopeSpecifier.
+    if (SS.isEmpty() && !IsSplice) {
+      if (isIdentifier() || Tok.is(tok::annot_template_id) || Tok.is(tok::annot_decltype)) {
         // Attempt to recover by skipping the invalid 'typename'
         if (Tok.is(tok::annot_decltype) ||
             (!TryAnnotateTypeOrScopeToken() && Tok.isAnnotation())) {
@@ -1910,7 +1926,14 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
       Diag(Tok.getLocation(), diag::err_expected_qualified_after_typename);
       return true;
     }
+    
+    // A reflection splice cannot appear after the nested-name-specifier.
+    if (SS.isValid() && IsReflectionSplice) {
+      Diag(Tok.getLocation(), diag::err_unexpected_splice_after_nns);
+      return true;
+    }
 
+    // Process identifier splices here.
     if (IsIdentifierSplice) {
       IdentifierInfo *Id;
       SourceLocation IdLoc;
@@ -1975,6 +1998,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                                      *Tok.getIdentifierInfo(),
                                      Tok.getLocation());
     } else if (Tok.is(tok::annot_template_id)) {
+      // FIXME: Make sure this works for spliced template-ids too.
       TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
       if (!TemplateId->mightBeType()) {
         Diag(Tok, diag::err_typename_refers_to_non_type_template)
@@ -1992,6 +2016,9 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                      TemplateId->Template, TemplateId->Name,
                      TemplateId->TemplateNameLoc, TemplateId->LAngleLoc,
                      TemplateArgsPtr, TemplateId->RAngleLoc);
+    } else if (Tok.is(tok::annot_reflection_splice)) {
+      ExprResult Refl = getExprAnnotation(Tok);
+      Ty = Actions.ActOnCXXTypenameSpecifierSplice(Refl.get());
     } else {
       Diag(Tok, diag::err_expected_type_name_after_typename)
         << SS.getRange();

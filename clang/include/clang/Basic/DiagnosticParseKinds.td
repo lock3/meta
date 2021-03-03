@@ -821,6 +821,9 @@ def err_expected_qualified_after_typename : Error<
 def warn_expected_qualified_after_typename : ExtWarn<
   "expected a qualified name after 'typename'">;
 
+def err_unexpected_splice_after_nns : Error<
+  "unexpected splice after nested name specifier">;
+
 def err_typename_refers_to_non_type_template : Error<
   "typename specifier refers to a non-type template">;
 def err_expected_type_name_after_typename : Error<

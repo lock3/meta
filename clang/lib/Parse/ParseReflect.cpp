@@ -584,7 +584,8 @@ bool Parser::ParseCXXIdentifierSplice(
 ///
 /// \verbatim
 ///   type-splice:
-///     'typename' '[' '<' reflection '>' ']'
+///     [: reflection :]
+///     [: reflection :] template < template-argument-list >
 /// \endverbatim
 ///
 /// The constant expression must be a reflection of a type.
@@ -650,6 +651,69 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
                     DS.getRepAsExpr() : ExprError());
   Tok.setAnnotationEndLoc(EndLoc);
   Tok.setLocation(StartLoc);
+  PP.AnnotateCachedTokens(Tok);
+}
+
+/// Parse a reflection splice.
+///
+///   splice:
+///     [: constant-expression :]
+///
+/// \param IsTypename True if this is part of a typename-specifier. A typename
+/// specifier can be followed by template arguments.
+///
+/// \return True if the splice is obviously ill-formed.
+bool Parser::ParseReflectionSplice(ParsedSplice &Splice, bool IsTypename) {
+  // This is already a splice token.
+  if (Tok.is(tok::annot_reflection_splice)) {
+    Splice.Start = Tok.getLocation();
+    Splice.End = Tok.getEndLoc();
+    Splice.Refl = getExprAnnotation(Tok);
+    return false;
+  }
+
+  assert(matchCXXReflectionSpliceBegin());
+
+  // Parse the splice.  
+  parseCXXReflectionSpliceBegin(Splice.Start);
+  Splice.Refl = ParseConstantExpression();
+  if (Splice.Refl.isInvalid())
+    return true;
+  if (parseCXXReflectionSpliceEnd(Splice.End))
+    return true;
+
+  // Inside a typename-specifier, we could have a template-id. Note that
+  // the typename-specifier does not permit the 'template' keyword after
+  // the splice.
+  if (IsTypename) {
+    // FIXME: Use AnnotateTemplateIdToken() to parse and annotate the
+    // template-id. However, doing so means we need to turn the splice
+    // into a TemplateName, and we need a new TemplateNameKind for splices,
+    // which may be dependent.
+    if (Tok.is(tok::less))
+      assert(false && "Spliced template id not implemented");
+  }
+
+  return false;
+}
+
+void Parser::AnnotateExistingReflectionSplice(ParsedSplice &Splice) {
+  // Make sure we have a token we can turn into an annotation token.
+  if (PP.isBacktrackEnabled())
+    PP.RevertCachedTokens(1);
+  else
+    PP.EnterToken(Tok, /*IsReinject*/true);
+
+  // Annotate the token with the spliced expression. 
+  //
+  // FIXME: See TemplateIdAnnotation for an example of how to create something
+  // more complex than just an expression. That would prevent multiple
+  // evaluations of the same construct.
+  assert(Splice.Refl.get() && "Missing expr");
+  Tok.setKind(tok::annot_reflection_splice);
+  setExprAnnotation(Tok, Splice.Refl);
+  Tok.setAnnotationEndLoc(Splice.End);
+  Tok.setLocation(Splice.Start);
   PP.AnnotateCachedTokens(Tok);
 }
 

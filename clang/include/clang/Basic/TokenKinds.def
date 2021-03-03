@@ -775,6 +775,10 @@ ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
 ANNOTATION(type_splice)  // annotation for a spliced type of the
                          // form "typename [< reflection >]".
+                         //
+                         // FIXME: This should be deprecated.
+ANNOTATION(reflection_splice)  // annotation of [: reflection :], along with
+                               // its kind (type, expression, template, etc.).
 ANNOTATION(identifier_splice) // annotation for an identifier splice.
                               // e.g. "[# "a", 1 #]"
 ANNOTATION(invalid_identifier_splice) // annotation for an

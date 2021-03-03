@@ -2844,6 +2844,10 @@ def err_invalid_reflection_wrong_operand_type : Error<
   "expected a string operand">;
 def err_splice_invalid_reflection : Error<
   "cannot splice invalid reflection">;
+def err_splice_wrong_type : Error<
+  "cannot splice an expression of type %0">;
+def err_expected_namespace_splice : Error<
+  "expected namespace splice">;
 def err_expression_unexpandable : Error<
   "cannot expand expression">;
 def note_user_defined_note : Note<
