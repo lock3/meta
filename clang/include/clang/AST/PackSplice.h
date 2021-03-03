@@ -34,6 +34,8 @@ class PackSplice final : private llvm::TrailingObjects<PackSplice, Expr *> {
   PackSplice(Expr *Operand, llvm::ArrayRef<Expr *> Expansions);
 
 public:
+  PackSplice(const PackSplice &PS);
+
   // We use an enum representation to ease integration with table gen.
   enum SpliceKind : unsigned {
     Unexpanded,

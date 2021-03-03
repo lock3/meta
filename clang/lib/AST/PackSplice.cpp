@@ -48,6 +48,15 @@ PackSplice::PackSplice(Expr *Operand, llvm::ArrayRef<Expr *> Expansions)
                           getTrailingObjects<Expr *>());
 }
 
+PackSplice::PackSplice(const PackSplice &PS) {
+  // FIXME: This overload is needed for PropertiesBase.td
+  // to function properly.
+  //
+  // Likely the correct fix is to fix the codegeneration associated
+  // with PropertiesBase.td
+  llvm_unreachable("unimplemented");
+}
+
 PackSplice *PackSplice::Create(const ASTContext &Ctx, Expr *Operand) {
   return new (Ctx) PackSplice(Operand);
 }
