@@ -319,7 +319,6 @@ bool Parser::matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead) {
     return false;
   if (getRelativeToken(LookAhead + 1).isNot(T))
     return false;
-
   return true;
 }
 
@@ -328,7 +327,6 @@ bool Parser::matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead) {
     return false;
   if (getRelativeToken(LookAhead + 1).isNot(tok::r_square))
     return false;
-
   return true;
 }
 
