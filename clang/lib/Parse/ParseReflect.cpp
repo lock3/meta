@@ -695,10 +695,9 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
   // the typename-specifier does not permit the 'template' keyword after
   // the splice.
   if (IsTypename) {
-    // FIXME: Use AnnotateTemplateIdToken() or similar to parse and annotate the
-    // template-id.
     if (Tok.is(tok::less)) {
-      // Build the template name.
+      // We have something template of the form 'typename [:x:]<args>'. Try
+      // to interpret this as a template-id.
       TemplateTy Template;
       TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SourceLocation(),
                                                           Splice.Refl.get(),
@@ -708,19 +707,29 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
       UnqualifiedId TemplateName;
       TemplateName.setSplicedTemplateName(Template, Splice.Start);
 
-      // Annotate the current token as a template-id. This will also parse
-      // the template argument list.
+      // Annotate the current token as a typename or template-id, depending
+      // on what follows.
       if (AnnotateTemplateIdToken(Template, Kind, SS, SourceLocation(),
                                   TemplateName, /*NameSpliced=*/true,
                                   /*AllowTypeAnnotation=*/true))
         return true;
     }
+
+    // Fall through. This may or may not be a type (either dependently or
+    // erroneouly). We'll figure out what to do with it later.
   }
 
   return false;
 }
 
 void Parser::AnnotateExistingReflectionSplice(ParsedSplice &Splice) {
+  // The Token may have been previously annotated as a type or template-id.
+  // 
+  // TODO: The annotation should contain the splice. It would be nice to
+  // check that, but we may not keep enough information around to do so.
+  if (Tok.isAnnotation())
+    return;
+
   // Make sure we have a token we can turn into an annotation token.
   if (PP.isBacktrackEnabled())
     PP.RevertCachedTokens(1);

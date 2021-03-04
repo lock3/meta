@@ -1878,6 +1878,12 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                                        /*IsTypename*/ true))
       return true;
 
+    // While parsing the nested-name-specifier, we might have annotated
+    // something of the form `[:x:]<args>` as a template specialization.
+    // No further anlysis is needed.
+    if (Tok.is(tok::annot_typename))
+      return false;
+
     // Determine if this is an identifier splice.
     bool IsIdentifierSplice = false;
     if (isIdentifier() && Tok.is(tok::annot_identifier_splice)) {
