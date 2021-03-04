@@ -232,17 +232,17 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
 
   // Check for these case:
   //
-  //    [: refl :] :: 
+  //    [: refl :] ::
   //
   // If this is part of a typename-specifier (i.e. IsTypename is true), then
   // this has to be a type splice. Otherwise, we assume it's an expression
-  // splice. 
+  // splice.
   //
   // Note that reflection splices can only appear at the front of a nested-name
   // specifier. Identifier splices can appear pretty much anywhere.
   //
   // TODO: Handle identifier splices here as well.
-  if (!HasScopeSpecifier && 
+  if (!HasScopeSpecifier &&
       (matchCXXReflectionSpliceBegin() || Tok.is(tok::annot_reflection_splice))) {
     SourceLocation StartLoc = Tok.getLocation();
 

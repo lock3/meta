@@ -178,8 +178,7 @@ public:
 /// liklely want a Splice construct to abstract the differences. We should
 /// probably have that anyway.
 class SplicedTemplateReflectionStorage
-  : public UncommonTemplateNameStorage, public llvm::FoldingSetNode
-{
+  : public UncommonTemplateNameStorage, public llvm::FoldingSetNode {
   // The expression computing the reflection.
   Expr *Refl;
 
@@ -206,7 +205,7 @@ public:
   const TemplateDecl *getDesignatedTemplate() const {
     return Temp;
   }
-  TemplateDecl *getDesignatedTemplate() { 
+  TemplateDecl *getDesignatedTemplate() {
     return const_cast<TemplateDecl *>(Temp);
   }
 

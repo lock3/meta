@@ -1967,23 +1967,23 @@ TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Expr *Refl) {
   // Evaluate the expression to see what's been reflected.
   //
   // FIXME: What about references to meta::infos.
-  if (T == Context.MetaInfoTy) {
+  if (T->isReflectionType()) {
     assert(Result.isReflection() && "Value of meta::info is not a reflection");
     switch (Result.getReflectionKind()) {
     case RK_invalid:
       Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
       return TypeError();
-    
+
     case RK_declaration: {
       const Decl *D = Result.getReflectedDeclaration();
       if (TypeDecl const* TD = dyn_cast<TypeDecl>(D))
         return ParsedType::make(Context.getTypeDeclType(TD));
       break;
     }
-    
+
     case RK_type:
       return ParsedType::make(Result.getReflectedType());
-    
+
     default:
       break;
     }

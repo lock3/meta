@@ -520,10 +520,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       *S2 = N1.getAsSplicedTemplateReflection();
     return IsStructurallyEquivalent(Context, S1->getReflection(),
                                     S2->getReflection()) &&
-            IsStructurallyEquivalent(Context, S1->getDesignatedTemplate(),
+           IsStructurallyEquivalent(Context, S1->getDesignatedTemplate(),
                                     S2->getDesignatedTemplate());
   }
-   
+
   case TemplateName::Template:
   case TemplateName::QualifiedTemplate:
   case TemplateName::SubstTemplateTemplateParm:

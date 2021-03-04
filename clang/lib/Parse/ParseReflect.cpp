@@ -599,7 +599,7 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
 
   assert(matchCXXReflectionSpliceBegin());
 
-  // Parse the splice.  
+  // Parse the splice.
   parseCXXReflectionSpliceBegin(Splice.Start);
   Splice.Refl = ParseConstantExpression();
   if (Splice.Refl.isInvalid())
@@ -640,7 +640,7 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
 
 void Parser::AnnotateExistingReflectionSplice(ParsedSplice &Splice) {
   // The Token may have been previously annotated as a type or template-id.
-  // 
+  //
   // TODO: The annotation should contain the splice. It would be nice to
   // check that, but we may not keep enough information around to do so.
   if (Tok.isAnnotation())
@@ -652,7 +652,7 @@ void Parser::AnnotateExistingReflectionSplice(ParsedSplice &Splice) {
   else
     PP.EnterToken(Tok, /*IsReinject*/true);
 
-  // Annotate the token with the spliced expression. 
+  // Annotate the token with the spliced expression.
   //
   // FIXME: See TemplateIdAnnotation for an example of how to create something
   // more complex than just an expression. That would prevent multiple

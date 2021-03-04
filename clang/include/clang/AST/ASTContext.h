@@ -2067,7 +2067,7 @@ public:
                                             TemplateName replacement) const;
   TemplateName getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
                                         const TemplateArgument &ArgPack) const;
-  TemplateName getSplicedTemplateReflection(Expr *E, 
+  TemplateName getSplicedTemplateReflection(Expr *E,
                                             const TemplateDecl *D) const;
 
   enum GetBuiltinTypeError {

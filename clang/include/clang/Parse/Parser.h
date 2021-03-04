@@ -3255,8 +3255,7 @@ public:
   ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
 
-  struct ParsedSplice
-  {
+  struct ParsedSplice {
     SourceLocation Start;
     SourceLocation End;
     ExprResult Refl;
@@ -3264,7 +3263,7 @@ public:
 
   bool ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice& Splice,
                              bool IsTypename);
-  
+
   void AnnotateExistingReflectionSplice(ParsedSplice &Splice);
 
   /// Parse a __select expression

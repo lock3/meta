@@ -7704,7 +7704,7 @@ public:
   TemplateNameKind ActOnTemplateSplice(
       CXXScopeSpec &SS, SourceLocation TemplateKWLoc, Expr *Refl,
       TemplateTy &Template);
-  
+
   DeclResult ActOnClassTemplateSpecialization(
       Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
       SourceLocation ModulePrivateLoc, CXXScopeSpec &SS,

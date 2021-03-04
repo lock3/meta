@@ -1900,7 +1900,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     if (Tok.is(tok::annot_reflection_splice)) {
       IsReflectionSplice = true;
     }
-    
+
     bool IsSplice = IsIdentifierSplice || IsReflectionSplice;
 
     // Except for splices, a typename-specifier always contains a
@@ -1931,7 +1931,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
       Diag(Tok.getLocation(), diag::err_expected_qualified_after_typename);
       return true;
     }
-    
+
     // A reflection splice cannot appear after the nested-name-specifier.
     if (SS.isValid() && IsReflectionSplice) {
       Diag(Tok.getLocation(), diag::err_unexpected_splice_after_nns);
