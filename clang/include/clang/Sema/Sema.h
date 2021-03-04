@@ -10372,19 +10372,6 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  enum class SpliceKind
-  {
-    Invalid,
-    Type,
-    Expression,
-    Template,
-    Namespace,
-    Range,
-    Dependent,
-  };
-
-  SpliceKind DetermineSpliceKind(Expr *Refl);
-
   TypeResult ActOnCXXTypenameSpecifierSplice(Expr *Refl);
 
 
