@@ -4094,6 +4094,11 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return Cache::get(cast<PipeType>(T)->getElementType());
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    return Cache::get(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4182,6 +4187,11 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
     return computeTypeLinkageInfo(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return computeTypeLinkageInfo(cast<PipeType>(T)->getElementType());
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    return computeTypeLinkageInfo(cast<ParameterType>(T)->getParameterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -4351,6 +4361,15 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::Pipe:
   case Type::ExtInt:
   case Type::DependentExtInt:
+    return false;
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    // TODO: This could be wrong. It seems like these may be nullable
+    // if their underlying type is nullable. But maybe that's not what
+    // this function computes.
     return false;
   }
   llvm_unreachable("bad type kind!");
@@ -4598,6 +4617,15 @@ AutoType::AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
   }
 }
 
+AutoType::AutoType(QualType Expected)
+    : DeducedType(Auto, QualType(), TypeDependence::None) {
+  AutoTypeBits.Keyword = (unsigned)AutoTypeKeyword::Auto;
+  AutoTypeBits.NumArgs = 0;
+  TypeConstraintConcept = nullptr;
+  ExpectedDeduction = Expected;
+}
+
+
 void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
@@ -4608,4 +4636,68 @@ void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
   ID.AddPointer(CD);
   for (const TemplateArgument &Arg : Arguments)
     Arg.Profile(ID, Context);
+}
+
+void AutoType::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      QualType Expected) {
+  Expected.Profile(ID);
+}
+
+QualType ParameterType::getAdjustedType(const ASTContext &Ctx)  const {
+  // Use the canonical type for forming the adjusted type. Otherwise, we might
+  // have sugar affecting the results of analyses.
+  QualType T = Ctx.getCanonicalType(getParameterType());
+  switch (getParameterPassingMode()) {
+  case PPK_in:
+    if (InParameterType::isPassByReference(Ctx, T))
+      T = Ctx.getLValueReferenceType(Ctx.getConstType(T));
+    return T;
+
+  case PPK_out:
+  case PPK_inout:
+    return Ctx.getLValueReferenceType(T);
+
+  case PPK_move:
+    if (InParameterType::isPassByReference(Ctx, T))
+      T = Ctx.getRValueReferenceType(T);
+    return T;
+
+  default:
+    break;
+  }
+  llvm_unreachable("Invalid parameter passing mode");
+}
+
+static bool shouldPassByValue(const ASTContext &Ctx, QualType T) {
+  assert(!T->isParameterType());
+
+  // Scalar types are always passed by value.
+  if (T->isScalarType())
+    return true;
+
+  // Function and array types decay to pointers, so those are also passed
+  // by value (presumably).
+  if (T->isFunctionType() || T->isArrayType())
+    return true;
+
+  // Trivially copyable class types whose size is less or equal to that of a
+  // pointer are passed by value.
+  //
+  // TODO: Some ABIs allow certain types to be coerced into multiple integer
+  // registers. By comparing against just the size of a pointer, we might
+  // actually be inhibiting some optimizations in those cases.
+  if (const CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+    if (Class->isTriviallyCopyable())
+      if (Ctx.getTypeSize(T) <= Ctx.getTypeSize(Ctx.VoidPtrTy))
+        return true;
+  
+  return false;
+}
+
+bool InParameterType::isPassByValue(const ASTContext &Ctx, QualType T) {
+  return shouldPassByValue(Ctx, T);
+}
+
+bool MoveParameterType::isPassByValue(const ASTContext &Ctx, QualType T) {
+  return shouldPassByValue(Ctx, T);
 }

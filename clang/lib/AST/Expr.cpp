@@ -1728,6 +1728,7 @@ bool CastExpr::CastConsistency() const {
   case CK_UserDefinedConversion:    // operator bool()
   case CK_BuiltinFnToFnPtr:
   case CK_FixedPointToBoolean:
+  case CK_ParameterQualification:
   CheckNoBasePath:
     assert(path_empty() && "Cast kind should not have a base path!");
     break;
@@ -3322,6 +3323,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXInjectedValueExprClass:
   case CXXSelectMemberExprClass:
   case CXXSelectPackExprClass:
+  case CXXParameterInfoExprClass:
     // These never have a side-effect.
     return false;
 

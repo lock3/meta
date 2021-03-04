@@ -1093,6 +1093,9 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
     case CK_FixedPointToIntegral:
     case CK_IntegralToFixedPoint:
       llvm_unreachable("Fixed point types are disabled for Objective-C");
+
+    case CK_ParameterQualification:
+      llvm_unreachable("Not implemented");
     }
   }
 

@@ -1096,6 +1096,7 @@ public:
     case CK_NonAtomicToAtomic:
     case CK_NoOp:
     case CK_ConstructorConversion:
+    case CK_ParameterQualification:
       return Visit(subExpr, destType);
 
     case CK_IntToOCLSampler:
@@ -1171,6 +1172,7 @@ public:
     case CK_IntegralToFixedPoint:
     case CK_ZeroToOCLOpaqueType:
       return nullptr;
+
     case CK_ReflectionToBoolean:
       llvm_unreachable("reflection emitted as runtime value");
     }

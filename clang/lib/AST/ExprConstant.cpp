@@ -11507,6 +11507,10 @@ EvaluateBuiltinClassifyType(QualType T, const LangOptions &LangOpts) {
 
   case Type::LValueReference:
   case Type::RValueReference:
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
     llvm_unreachable("invalid type for expression");
   }
 
@@ -13697,6 +13701,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_AtomicToNonAtomic:
   case CK_NoOp:
   case CK_LValueToRValueBitCast:
+  case CK_ParameterQualification:
     return ExprEvaluatorBaseTy::VisitCastExpr(E);
 
   case CK_MemberPointerToBoolean:
@@ -13803,6 +13808,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return false;
     return Success(Value, E);
   }
+
   }
 
   llvm_unreachable("unknown cast resulting in integral value");
@@ -14564,6 +14570,10 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
            HandleIntToFloatCast(Info, E, FPO, From, Result.IntImag,
                                 To, Result.FloatImag);
   }
+
+  case CK_ParameterQualification:
+    // Evaluate the subexpression.
+    return Visit(E->getSubExpr());
   }
 
   llvm_unreachable("unknown cast resulting in complex value");
@@ -15892,6 +15902,7 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CXXMemberExprSpliceExprClass:
   case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
+  case Expr::CXXParameterInfoExprClass:
     return NoDiag();
 
   case Expr::CallExprClass:

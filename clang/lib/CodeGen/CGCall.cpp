@@ -140,17 +140,35 @@ static void addExtParameterInfosForCall(
   paramInfos.resize(totalArgs);
 }
 
+static CanQualType getAdjustedParameterType(ASTContext &Ctx, CanQualType T) {
+  if (auto const *Parm = dyn_cast<ParameterType>(T))
+    T = Ctx.getCanonicalType(Parm->getAdjustedType(Ctx));
+  return T;
+}
+
 /// Adds the formal parameters in FPT to the given prefix. If any parameter in
 /// FPT has pass_object_size attrs, then we'll add parameters for those, too.
+/// Same for in- and out-parameters.
 static void appendParameterTypes(const CodeGenTypes &CGT,
                                  SmallVectorImpl<CanQualType> &prefix,
               SmallVectorImpl<FunctionProtoType::ExtParameterInfo> &paramInfos,
                                  CanQual<FunctionProtoType> FPT) {
+  ASTContext &Ctx = CGT.getContext();
+
   // Fast path: don't touch param info if we don't need to.
   if (!FPT->hasExtParameterInfos()) {
     assert(paramInfos.empty() &&
            "We have paramInfos, but the prototype doesn't?");
-    prefix.append(FPT->param_type_begin(), FPT->param_type_end());
+    // Copy out parameters, performing adjustments as needed.
+    for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
+      CanQualType PT = FPT->getParamType(I);
+      prefix.push_back(getAdjustedParameterType(Ctx, PT));
+
+      // If the original was an input or output parameter, add a new parameter
+      // to communicate call-site information to function.
+      if (isa<InParameterType>(PT) || isa<OutParameterType>(PT))
+        prefix.push_back(Ctx.BoolTy);
+    }
     return;
   }
 
@@ -163,9 +181,11 @@ static void appendParameterTypes(const CodeGenTypes &CGT,
   auto ExtInfos = FPT->getExtParameterInfos();
   assert(ExtInfos.size() == FPT->getNumParams());
   for (unsigned I = 0, E = FPT->getNumParams(); I != E; ++I) {
-    prefix.push_back(FPT->getParamType(I));
+    // Adjust the parameter type as needed.
+    CanQualType PT = getAdjustedParameterType(Ctx, FPT->getParamType(I));
+    prefix.push_back(PT);
     if (ExtInfos[I].hasPassObjectSize())
-      prefix.push_back(CGT.getContext().getSizeType());
+      prefix.push_back(Ctx.getSizeType());
   }
 
   addExtParameterInfosForCall(paramInfos, FPT.getTypePtr(), PrefixSize,
@@ -1576,8 +1596,7 @@ llvm::FunctionType *CodeGenTypes::GetFunctionType(GlobalDecl GD) {
   return GetFunctionType(FI);
 }
 
-llvm::FunctionType *
-CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI) {
+llvm::FunctionType *CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI) {
 
   bool Inserted = FunctionsBeingProcessed.insert(&FI).second;
   (void)Inserted;
@@ -2511,12 +2530,19 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
     const VarDecl *Arg = *i;
     const ABIArgInfo &ArgI = info_it->info;
 
-    bool isPromoted =
-      isa<ParmVarDecl>(Arg) && cast<ParmVarDecl>(Arg)->isKNRPromoted();
     // We are converting from ABIArgInfo type to VarDecl type directly, unless
     // the parameter is promoted. In this case we convert to
     // CGFunctionInfo::ArgInfo type with subsequent argument demotion.
-    QualType Ty = isPromoted ? info_it->type : Arg->getType();
+    //
+    // We are also covnerting if the parameter has parameter passing mode.
+    bool isPromoted = false;
+    bool isAdjusted = false;
+    if (const ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(Arg)) {
+      isPromoted = Parm->isKNRPromoted();
+      isAdjusted = Parm->hasParameterPassingMode();
+    }
+    QualType Ty = (isPromoted || isAdjusted) ? info_it->type : Arg->getType();
+
     assert(hasScalarEvaluationKind(Ty) ==
            hasScalarEvaluationKind(Arg->getType()));
 
@@ -3958,6 +3984,7 @@ void CodeGenFunction::EmitCallArgs(
       assert(Arg != ArgRange.end() && "Running over edge of argument list!");
       assert(
           (isGenericMethod || Ty->isVariablyModifiedType() ||
+           Ty->isParameterType() || // FIXME: Stop ignoring these
            Ty.getNonReferenceType()->isObjCRetainableType() ||
            getContext()
                    .getCanonicalType(Ty.getNonReferenceType())
@@ -4039,7 +4066,8 @@ void CodeGenFunction::EmitCallArgs(
     assert(InitialArgSize + 1 == Args.size() &&
            "The code below depends on only adding one arg per EmitCallArg");
     (void)InitialArgSize;
-    // Since pointer argument are never emitted as LValue, it is safe to emit
+
+    // Since pointer arguments are never emitted as LValue, it is safe to emit
     // non-null argument check for r-value only.
     if (!Args.back().hasLValue()) {
       RValue RVArg = Args.back().getKnownRValue();
@@ -4049,6 +4077,36 @@ void CodeGenFunction::EmitCallArgs(
       // destruction/cleanups, so we can safely "emit" it after its arg,
       // regardless of right-to-leftness
       MaybeEmitImplicitObjectSize(Idx, *Arg, RVArg);
+    }
+
+    // Insert additional arguments for in- and out-parameters types.
+    if (const auto *PT = dyn_cast<ParameterType>(ArgTypes[Idx])) {
+      const Expr *E = *Arg;
+      llvm::Value *True = llvm::ConstantInt::getTrue(getLLVMContext());
+      llvm::Value *False = llvm::ConstantInt::getFalse(getLLVMContext());
+      llvm::Value *V;
+      if (PT->isInParameter()) {
+        // An input parameter is finally movable if it is passed as a prvalue
+        // or xvalue.
+        //
+        // TODO: Can we move a const rvalue or xvalue? Can we even get const
+        // expressions in these contexts?
+        V = E->isRValue() || E->isXValue() ? True : False;
+      }
+      else if (PT->isOutParameter())
+        // An output parameter is either uninitialized or not.
+        //
+        // TODO: Everything in C++ is initialzed. How would I know whether
+        // something is initialized or not?
+        V = True;
+      else
+        // Inout and move parameters do not have etra parameters.
+        continue;
+
+      // Add the argument, swapping order as needed.
+      Args.add(RValue::get(V), getContext().BoolTy);
+      if (!LeftToRight)
+        std::swap(Args.back(), *(&Args.back() - 1));
     }
   }
 
@@ -4131,6 +4189,15 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
     assert(getLangOpts().ObjCAutoRefCount);
     return emitWritebackArg(*this, args, CRE);
   }
+
+  // Get the adjusted parameter type as needed.
+  if (type->isParameterType())
+    type = cast<ParameterType>(type)->getAdjustedType(getContext());
+
+  // Ignore parameter adjustments.
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E))
+    if (Cast->getCastKind() == CK_ParameterQualification)
+      E = Cast->getSubExpr();
 
   assert(type->isReferenceType() == E->isGLValue() &&
          "reference binding to unmaterialized r-value!");

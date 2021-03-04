@@ -943,6 +943,8 @@ public:
 
   QualType getNonReferenceType() const;
 
+  QualType getParameterType() const;
+
   /// Determine the type of a (typically non-lvalue) expression with the
   /// specified result type.
   ///
@@ -1785,6 +1787,15 @@ protected:
     unsigned NumTemplateArgs;
   };
 
+  class ParameterTypeBitfields {
+    friend class ParameterType;
+
+    unsigned : NumTypeBits;
+
+    /// The parameter passing mode of the type.
+    unsigned PassingMode : 1;
+  };
+
   union {
     TypeBitfields TypeBits;
     ArrayTypeBitfields ArrayTypeBits;
@@ -1804,6 +1815,7 @@ protected:
       DependentTemplateSpecializationTypeBits;
     PackExpansionTypeBitfields PackExpansionTypeBits;
     DependentIdentifierSpliceTypeBitfields DependentIdentifierSpliceTypeBits;
+    ParameterTypeBitfields ParameterTypeBits;
 
     static_assert(sizeof(TypeBitfields) <= 8,
                   "TypeBitfields is larger than 8 bytes!");
@@ -1840,6 +1852,8 @@ protected:
                   "PackExpansionTypeBitfields is larger than 8 bytes");
     static_assert(sizeof(DependentIdentifierSpliceTypeBitfields) <= 8,
                   "DependentIdentifierSpliceTypeBitfields is larger than 8 bytes");
+    static_assert(sizeof(ParameterTypeBitfields) <= 8,
+                  "ParameterTypeBitfields is larger than 8 bytes");
   };
 
 private:
@@ -2172,6 +2186,8 @@ public:
   bool isPipeType() const;                      // OpenCL pipe type
   bool isExtIntType() const;                    // Extended Int Type
   bool isOpenCLSpecificType() const;            // Any OpenCL specific type
+
+  bool isParameterType() const;                 // In, out, etc.
 
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
@@ -5201,11 +5217,17 @@ public:
 class alignas(8) AutoType : public DeducedType, public llvm::FoldingSetNode {
   friend class ASTContext; // ASTContext creates these
 
+  /// TODO: Put this into a union with the matched type.
   ConceptDecl *TypeConstraintConcept;
+
+  /// Implicitly equivalent to std::same_as<T>.
+  QualType ExpectedDeduction;
 
   AutoType(QualType DeducedAsType, AutoTypeKeyword Keyword,
            TypeDependence ExtraDependence, ConceptDecl *CD,
            ArrayRef<TemplateArgument> TypeConstraintArgs);
+
+  AutoType(QualType Expected);
 
   const TemplateArgument *getArgBuffer() const {
     return reinterpret_cast<const TemplateArgument*>(this+1);
@@ -5248,6 +5270,15 @@ public:
     return (AutoTypeKeyword)AutoTypeBits.Keyword;
   }
 
+  bool hasExpectedDeduction() const {
+    return !ExpectedDeduction.isNull();
+  }
+
+  QualType getExpectedDeduction() const {
+    assert(hasExpectedDeduction());
+    return ExpectedDeduction;
+  }
+
   void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context) {
     Profile(ID, Context, getDeducedType(), getKeyword(), isDependentType(),
             getTypeConstraintConcept(), getTypeConstraintArguments());
@@ -5257,6 +5288,9 @@ public:
                       QualType Deduced, AutoTypeKeyword Keyword,
                       bool IsDependent, ConceptDecl *CD,
                       ArrayRef<TemplateArgument> Arguments);
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      QualType Expected);
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == Auto;
@@ -6577,6 +6611,144 @@ public:
   }
 };
 
+/// Base for LValueReferenceType and RValueReferenceType
+class ParameterType : public Type, public llvm::FoldingSetNode {
+  /// The underlying parameter type.
+  QualType ParmType;
+
+  /// The parameter passing mode.
+  ParameterPassingKind PassingMode;
+
+protected:
+  ParameterType(TypeClass tc, QualType Parm, QualType CanonicalParm,
+                ParameterPassingKind PPK)
+      : Type(tc, CanonicalParm, Parm->getDependence(), false),
+        ParmType(Parm), PassingMode(PPK) {
+    ParameterTypeBits.PassingMode = PPK;
+  }
+
+public:
+  ParameterPassingKind getParameterPassingMode() const { return PassingMode; }
+  bool isInParameter() const { return PassingMode == PPK_in; }
+  bool isOutParameter() const { return PassingMode == PPK_out; }
+  bool isInOutParameter() const { return PassingMode == PPK_inout; }
+  bool isMoveParameter() const { return PassingMode == PPK_move; }
+
+  /// Returns the underlying type of the parameter.
+  QualType getParameterType() const { return ParmType; }
+
+  /// Returns the adjusted parameter type used for overloading, initialization,
+  /// and code generation.
+  QualType getAdjustedType(const ASTContext &Ctx) const;
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, ParmType, PassingMode);
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      QualType Parm,
+                      ParameterPassingKind PPK) {
+    ID.AddPointer(Parm.getAsOpaquePtr());
+    ID.AddInteger(PPK);
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InParameter ||
+           T->getTypeClass() == OutParameter ||
+           T->getTypeClass() == InOutParameter ||
+           T->getTypeClass() == MoveParameter;
+  }
+};
+
+/// An input parameter type.
+class InParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  InParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(InParameter, Parm, Canonical, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_in;
+
+  /// Returns true if `T` should be passed by value.
+  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InParameter;
+  }
+};
+
+/// An output parameter type.
+class OutParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  OutParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(OutParameter, Parm, Canonical, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_out;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == OutParameter;
+  }
+};
+
+/// An input parameter type.
+class InOutParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  InOutParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(InOutParameter, Parm, Canonical, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_inout;
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InOutParameter;
+  }
+};
+
+/// An input parameter type.
+class MoveParameterType : public ParameterType {
+  friend class ASTContext; // ASTContext creates these
+
+  MoveParameterType(QualType Parm, QualType Canonical)
+    : ParameterType(MoveParameter, Parm, Canonical, PassingMode) {}
+
+public:
+  static constexpr ParameterPassingKind PassingMode = PPK_move;
+
+  /// Returns true if `T` should be passed by value, presumably in registers.
+  /// If false, arguments are passed by reference.
+  static bool isPassByValue(const ASTContext &Cxt, QualType T);
+
+  /// Returns true if `T` should be passed by reference.
+  static bool isPassByReference(const ASTContext &Cxt, QualType T) {
+    return !isPassByValue(Cxt, T);
+  }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == MoveParameter;
+  }
+};
+
 /// A qualifier set is used to build a set of qualifiers.
 class QualifierCollector : public Qualifiers {
 public:
@@ -6839,6 +7011,14 @@ inline QualType QualType::getNonReferenceType() const {
     return RefType->getPointeeType();
   else
     return *this;
+}
+
+/// If Type is a parameter type (e.g., in int), returns the underlying
+/// type of the parameter (i.e., int).
+inline QualType QualType::getParameterType() const {
+  if (const auto *ParmType = (*this)->getAs<ParameterType>())
+    return ParmType->getParameterType();
+  return *this;
 }
 
 inline bool QualType::isCForbiddenLValueType() const {
@@ -7110,6 +7290,10 @@ inline bool Type::isPipeType() const {
 
 inline bool Type::isExtIntType() const {
   return isa<ExtIntType>(CanonicalType);
+}
+
+inline bool Type::isParameterType() const {
+  return isa<ParameterType>(CanonicalType);
 }
 
 #define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \

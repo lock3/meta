@@ -3485,6 +3485,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_StdInitializerListConstructorCall:
   case SK_OCLSamplerInit:
   case SK_OCLZeroOpaqueType:
+  case SK_ParameterModeInit:
     break;
 
   case SK_ConversionSequence:
@@ -3789,6 +3790,14 @@ void InitializationSequence::RewrapReferenceInitList(QualType T,
   S.Kind = SK_RewrapInitList;
   S.Type = T;
   S.WrappingSyntacticList = Syntactic;
+  Steps.push_back(S);
+}
+
+void InitializationSequence::AddParameterAdjustmentStep(QualType T)
+{
+  Step S;
+  S.Kind = SK_ParameterModeInit;
+  S.Type = T;
   Steps.push_back(S);
 }
 
@@ -4272,6 +4281,11 @@ static void TryReferenceListInitialization(Sema &S,
   }
 
   QualType DestType = Entity.getType();
+
+  // For parameter types, initialize an object of the underlying type.
+  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
+
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4352,6 +4366,10 @@ static void TryListInitialization(Sema &S,
                                   InitializationSequence &Sequence,
                                   bool TreatUnavailableAsInvalid) {
   QualType DestType = Entity.getType();
+
+  // For parameter types, initialize an object of the underlying type.
+  if (const auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
 
   // C++ doesn't allow scalar initialization with more than one argument.
   // But C99 complex numbers are scalars and it makes sense there.
@@ -4736,6 +4754,11 @@ static void TryReferenceInitialization(Sema &S,
                                        Expr *Initializer,
                                        InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+
+  // Adjust parameter types as needed.
+  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
+
   QualType cv1T1 = DestType->castAs<ReferenceType>()->getPointeeType();
   Qualifiers T1Quals;
   QualType T1 = S.Context.getUnqualifiedArrayType(cv1T1, T1Quals);
@@ -4777,6 +4800,11 @@ static void TryReferenceInitializationCore(Sema &S,
                                            Qualifiers T2Quals,
                                            InitializationSequence &Sequence) {
   QualType DestType = Entity.getType();
+
+  // Adjust the parameter type as needed.
+  if (auto *ParamType = dyn_cast<ParameterType>(DestType))
+    DestType = ParamType->getAdjustedType(S.Context);
+
   SourceLocation DeclLoc = Initializer->getBeginLoc();
 
   // Compute some basic properties of the types and the initializer.
@@ -5716,6 +5744,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //   parenthesized list of expressions.
   QualType DestType = Entity.getType();
 
+  // Adjust destination parameter types as needed.
+  auto *ParamType = DestType->getAs<ParameterType>();
+  if (ParamType)
+    DestType = ParamType->getAdjustedType(Context);
+
   if (DestType->isDependentType() ||
       Expr::hasAnyTypeDependentArguments(Args)) {
     SequenceKind = DependentSequence;
@@ -5753,6 +5786,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
     if (InitListExpr *InitList = dyn_cast_or_null<InitListExpr>(Initializer)) {
       TryListInitialization(S, Entity, Kind, InitList, *this,
                             TreatUnavailableAsInvalid);
+
+      // Re-adjust to a parameter type as needed.
+      if (!Failed() && ParamType)
+        AddParameterAdjustmentStep(QualType(ParamType, 0));
+
       return;
     }
   }
@@ -5774,6 +5812,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
       SetFailed(FK_ParenthesizedListInitForReference);
     else
       TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
+
+    // Re-adjust to a parameter type as needed.
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -5938,6 +5981,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
     else
       TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                                TopLevelOfInitList);
+
+    // In either case, if this was a paramter type, add the adjustment.
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -5970,8 +6018,14 @@ void InitializationSequence::InitializeFrom(Sema &S,
     TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                              TopLevelOfInitList);
     MaybeProduceObjCObject(S, *this, Entity);
+
     if (!Failed() && NeedAtomicConversion)
       AddAtomicConversionStep(Entity.getType());
+
+    // Re-adjust to a parameter type as needed.
+    if (!Failed() && ParamType)
+      AddParameterAdjustmentStep(QualType(ParamType, 0));
+
     return;
   }
 
@@ -5993,7 +6047,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //      conversions (Clause 4) will be used, if necessary, to convert the
   //      initializer expression to the cv-unqualified version of the
   //      destination type; no user-defined conversions are considered.
-
   ImplicitConversionSequence ICS
     = S.TryImplicitConversion(Initializer, DestType,
                               /*SuppressUserConversions*/true,
@@ -6042,6 +6095,9 @@ void InitializationSequence::InitializeFrom(Sema &S,
 
     MaybeProduceObjCObject(S, *this, Entity);
   }
+
+  if (!Failed() && ParamType)
+    AddParameterAdjustmentStep(QualType(ParamType, 0));
 }
 
 InitializationSequence::~InitializationSequence() {
@@ -8149,7 +8205,8 @@ ExprResult InitializationSequence::Perform(Sema &S,
   case SK_ProduceObjCObject:
   case SK_StdInitializerList:
   case SK_OCLSamplerInit:
-  case SK_OCLZeroOpaqueType: {
+  case SK_OCLZeroOpaqueType: 
+  case SK_ParameterModeInit: {
     assert(Args.size() == 1);
     CurInit = Args[0];
     if (!CurInit.get()) return ExprError();
@@ -8845,6 +8902,18 @@ ExprResult InitializationSequence::Perform(Sema &S,
       CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type,
                                     CK_ZeroToOCLOpaqueType,
                                     CurInit.get()->getValueKind());
+      break;
+    }
+
+    case SK_ParameterModeInit: {
+      // Build a conversion back to the original parameter type; that will
+      // essentially be a no-op.
+      //
+      // We can't hack around this and just update ResultType, since there's
+      // no guarantee it's actually provided.
+      CurInit = ImplicitCastExpr::Create(
+          S.Context, Step->Type, CK_ParameterQualification, CurInit.get(),
+          nullptr, CurInit.get()->getValueKind(), S.getCurFPFeatures());
       break;
     }
     }
@@ -9777,6 +9846,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_OCLZeroOpaqueType:
       OS << "OpenCL opaque type from zero";
+      break;
+
+    case SK_ParameterModeInit:
+      OS << "initialize parameter";
       break;
     }
 

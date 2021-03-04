@@ -795,6 +795,15 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     ResultType = llvm::Type::getIntNTy(getLLVMContext(), EIT->getNumBits());
     break;
   }
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    // Convert to the adjusted type.
+    ResultType = ConvertType(
+      Ty->getAs<ParameterType>()->getAdjustedType(getContext()));
+    break;
   }
 
   assert(ResultType && "Didn't convert a type?");

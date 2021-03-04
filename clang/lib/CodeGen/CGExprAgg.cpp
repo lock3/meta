@@ -846,9 +846,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
 
       return;
     }
-
     LLVM_FALLTHROUGH;
-
 
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -915,6 +913,10 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_FixedPointToIntegral:
   case CK_IntegralToFixedPoint:
     llvm_unreachable("cast kind invalid for aggregate types");
+  
+  case CK_ParameterQualification:
+    // This is a no-op. See through the qualification.
+    return Visit(E->getSubExpr());
   }
 }
 
@@ -1481,6 +1483,7 @@ static bool castPreservesZero(const CastExpr *CE) {
   case CK_LValueToRValue:
   case CK_LValueToRValueBitCast:
   case CK_UncheckedDerivedToBase:
+  case CK_ParameterQualification: // FIXME: Is this right?
     return false;
   }
   llvm_unreachable("Unhandled clang::CastKind enum");

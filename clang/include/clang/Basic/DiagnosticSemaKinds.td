@@ -439,6 +439,14 @@ def warn_modifying_shadowing_decl :
           "field of %1">,
   InGroup<ShadowFieldInConstructorModified>, DefaultIgnore;
 
+// Parameter passing.
+def err_cv_qualified_parameter_passing :
+  Error<"%select{in|out|inout|forward|move}0 parameter cannot be cv-qualified">;
+def err_ref_qualified_parameter_passing :
+  Error<"%select{in|out|inout|forward|move}0 parameter cannot be a reference">;
+def err_read_from_out_parameter :
+  Error<"cannot read from an out parameter">;
+
 // C++ decomposition declarations
 def err_decomp_decl_context : Error<
   "decomposition declaration not permitted in this context">;
@@ -2189,6 +2197,9 @@ def err_selected_explicit_constructor : Error<
   "chosen constructor is explicit in copy-initialization">;
 def note_explicit_ctor_deduction_guide_here : Note<
   "explicit %select{constructor|deduction guide}0 declared here">;
+
+def err_move_from_lvalue : Error<
+  "initialization of a move parameter from an lvalue expression">;
 
 // C++11 decltype
 def err_decltype_in_declarator : Error<
@@ -4490,6 +4501,11 @@ def note_ovl_candidate_non_deduced_mismatch : Note<
 // can handle that case properly.
 def note_ovl_candidate_non_deduced_mismatch_qualified : Note<
     "candidate template ignored: could not match %q0 against %q1">;
+
+// FIXME: This should probably provide more context about which parameter and
+// argument.
+def note_ovl_candidate_unexpected_deduction : Note<
+  "candidate ignored; expected deduced type %0 but got %1">;
 
 // Note that we don't treat templates differently for this diagnostic.
 def note_ovl_candidate_arity : Note<"candidate "

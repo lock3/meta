@@ -2765,7 +2765,6 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
     }
   }
 
-
   // FIXME: We should be able to assert this for FunctionDecls as well!
   // FIXME: We should be able to assert this for all DeclRefExprs, not just
   // those with a valid source location.
@@ -2817,9 +2816,14 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
       addr = emitBlockByrefAddress(addr, VD);
     }
 
+    // Get the variable type, adjusting as needed for parameter passing types.
+    QualType VarType = VD->getType();
+    if (auto *ParamType = dyn_cast<ParameterType>(VarType))
+      VarType = ParamType->getAdjustedType(getContext());
+
     // Drill into reference types.
-    LValue LV = VD->getType()->isReferenceType() ?
-        EmitLoadOfReferenceLValue(addr, VD->getType(), AlignmentSource::Decl) :
+    LValue LV = VarType->isReferenceType() ?
+        EmitLoadOfReferenceLValue(addr, VarType, AlignmentSource::Decl) :
         MakeAddrLValue(addr, T, AlignmentSource::Decl);
 
     bool isLocalStorage = VD->hasLocalStorage();
@@ -4767,19 +4771,23 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   }
   case CK_ZeroToOCLOpaqueType:
     llvm_unreachable("NULL to OpenCL opaque type lvalue cast is not valid");
+
+  case CK_ParameterQualification:
+    // This is a no-op. See through the qualification.
+    return EmitLValue(E->getSubExpr());
   }
 
   llvm_unreachable("Unhandled lvalue cast kind?");
 }
 
 LValue CodeGenFunction::EmitOpaqueValueLValue(const OpaqueValueExpr *e) {
-  assert(OpaqueValueMappingData::shouldBindAsLValue(e));
+  assert(OpaqueValueMappingData::shouldBindAsLValue(*this, e));
   return getOrCreateOpaqueLValueMapping(e);
 }
 
 LValue
 CodeGenFunction::getOrCreateOpaqueLValueMapping(const OpaqueValueExpr *e) {
-  assert(OpaqueValueMapping::shouldBindAsLValue(e));
+  assert(OpaqueValueMapping::shouldBindAsLValue(*this, e));
 
   llvm::DenseMap<const OpaqueValueExpr*,LValue>::iterator
       it = OpaqueLValues.find(e);
@@ -4793,7 +4801,7 @@ CodeGenFunction::getOrCreateOpaqueLValueMapping(const OpaqueValueExpr *e) {
 
 RValue
 CodeGenFunction::getOrCreateOpaqueRValueMapping(const OpaqueValueExpr *e) {
-  assert(!OpaqueValueMapping::shouldBindAsLValue(e));
+  assert(!OpaqueValueMapping::shouldBindAsLValue(*this, e));
 
   llvm::DenseMap<const OpaqueValueExpr*,RValue>::iterator
       it = OpaqueRValues.find(e);
@@ -4978,7 +4986,9 @@ LValue CodeGenFunction::EmitBinaryOperatorLValue(const BinaryOperator *E) {
     }
 
     RValue RV = EmitAnyExpr(E->getRHS());
+
     LValue LV = EmitCheckedLValue(E->getLHS(), TCK_Store);
+
     if (RV.isScalar())
       EmitNullabilityCheck(LV, RV.getScalarVal(), E->getExprLoc());
     EmitStoreThroughLValue(RV, LV);
@@ -5395,7 +5405,7 @@ static LValueOrRValue emitPseudoObjectExpr(CodeGenFunction &CGF,
       typedef CodeGenFunction::OpaqueValueMappingData OVMA;
       OVMA opaqueData;
       if (ov == resultExpr && ov->isRValue() && !forLValue &&
-          CodeGenFunction::hasAggregateEvaluationKind(ov->getType())) {
+          CGF.hasAggregateEvaluationKind(ov->getType())) {
         CGF.EmitAggExpr(ov->getSourceExpr(), slot);
         LValue LV = CGF.MakeAddrLValue(slot.getAddress(), ov->getType(),
                                        AlignmentSource::Decl);

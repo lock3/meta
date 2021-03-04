@@ -242,6 +242,10 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<PipeType> PipeTypes;
   mutable llvm::FoldingSet<ExtIntType> ExtIntTypes;
   mutable llvm::FoldingSet<DependentExtIntType> DependentExtIntTypes;
+  mutable llvm::FoldingSet<InParameterType> InParameterTypes;
+  mutable llvm::FoldingSet<OutParameterType> OutParameterTypes;
+  mutable llvm::FoldingSet<InOutParameterType> InOutParameterTypes;
+  mutable llvm::FoldingSet<MoveParameterType> MoveParameterTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
   mutable llvm::FoldingSet<DependentTemplateName> DependentTemplateNames;
@@ -1429,6 +1433,16 @@ public:
     return getFunctionTypeInternal(ResultTy, Args, EPI, false);
   }
 
+private:
+  template<typename T>
+  QualType getParameterType(llvm::FoldingSet<T>& Types, QualType ParmType);
+
+public:
+  QualType getInParameterType(QualType ParmType) const;
+  QualType getOutParameterType(QualType ParmType) const;
+  QualType getInOutParameterType(QualType ParmType) const;
+  QualType getMoveParameterType(QualType ParmType) const;
+
   QualType adjustStringLiteralBaseType(QualType StrLTy) const;
 
 private:
@@ -1597,11 +1611,19 @@ public:
                        ConceptDecl *TypeConstraintConcept = nullptr,
                        ArrayRef<TemplateArgument> TypeConstraintArgs ={}) const;
 
+  /// Deduced auto type with expected result.
+  QualType getAutoType(QualType DeducedType, AutoTypeKeyword Keyword,
+                       bool IsDependent, bool IsPack,
+                       QualType Expected) const;
+
   /// C++11 deduction pattern for 'auto' type.
   QualType getAutoDeductType() const;
 
   /// C++11 deduction pattern for 'auto &&' type.
   QualType getAutoRRefDeductType() const;
+
+  /// An auto type with an expected deduction.
+  QualType getAutoExpectType(QualType Expected) const;
 
   /// C++17 deduced class template specialization type.
   QualType getDeducedTemplateSpecializationType(TemplateName Template,

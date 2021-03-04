@@ -1362,8 +1362,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
 
   // If the argument type is a pack expansion, look at its pattern.
   // This isn't explicitly called out
-  if (const PackExpansionType *ArgExpansion
-                                            = dyn_cast<PackExpansionType>(Arg))
+  if (const PackExpansionType *ArgExpansion = dyn_cast<PackExpansionType>(Arg))
     Arg = ArgExpansion->getPattern();
 
   if (PartialOrdering) {
@@ -1541,6 +1540,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     if (RecanonicalizeArg)
       DeducedType = S.Context.getCanonicalType(DeducedType);
 
+
     DeducedTemplateArgument NewDeduced(DeducedType, DeducedFromArrayBound);
     DeducedTemplateArgument Result = checkDeducedTemplateArguments(S.Context,
                                                                  Deduced[Index],
@@ -1550,6 +1550,17 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       Info.FirstArg = Deduced[Index];
       Info.SecondArg = NewDeduced;
       return Sema::TDK_Inconsistent;
+    }
+
+    // If the template type parameter has a deduction constraint, make sure
+    // the deduced type matches.
+    auto *PD = cast<TemplateTypeParmDecl>(TemplateParams->getParam(Index));
+    if (PD->hasExpectedDeduction()) {
+      if (PD->getExpectedDeduction() != DeducedType) {
+        Info.Param = makeTemplateParameter(PD);
+        Info.FirstArg = NewDeduced;
+        return Sema::TDK_UnexpectedDeduction;
+      }
     }
 
     Deduced[Index] = Result;
@@ -2295,6 +2306,13 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       return Sema::TDK_NonDeducedMismatch;
     }
 
+    case Type::InParameter:
+    case Type::OutParameter:
+    case Type::InOutParameter:
+    case Type::MoveParameter:
+      // FIXME: The above parameter types should likely can be usable
+      // for deduction. If this is changed, make sure to update
+      // MarkUsedTemplateParameters.
     case Type::TypeOfExpr:
     case Type::TypeOf:
     case Type::DependentName:
@@ -3439,6 +3457,10 @@ CheckOriginalCallArgDeduction(Sema &S, TemplateDeductionInfo &Info,
   if (Context.hasSameUnqualifiedType(A, DeducedA))
     return Sema::TDK_Success;
 
+  // Strip parameter passing modes.
+  if (const ParameterType *ParmType = DeducedA->getAs<ParameterType>())
+    DeducedA = ParmType->getParameterType();
+
   // Strip off references on the argument types; they aren't needed for
   // the following checks.
   if (const ReferenceType *DeducedARef = DeducedA->getAs<ReferenceType>())
@@ -3863,6 +3885,10 @@ ResolveOverloadForDeduction(Sema &S, TemplateParameterList *TemplateParams,
 static bool AdjustFunctionParmAndArgTypesForDeduction(
     Sema &S, TemplateParameterList *TemplateParams, unsigned FirstInnerIndex,
     QualType &ParamType, QualType &ArgType, Expr *Arg, unsigned &TDF) {
+  // If P is a parameter type of the form <mode> T, adjust it to T. 
+  if (const auto *PT = dyn_cast<ParameterType>(ParamType))
+    ParamType = PT->getParameterType();
+
   // C++0x [temp.deduct.call]p3:
   //   If P is a cv-qualified type, the top level cv-qualifiers of P's type
   //   are ignored for type deduction.
@@ -4145,8 +4171,9 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     NumExplicitlySpecified = Deduced.size();
   } else {
     // Just fill in the parameter types from the function declaration.
-    for (unsigned I = 0; I != NumParams; ++I)
+    for (unsigned I = 0; I != NumParams; ++I) {
       ParamTypes.push_back(Function->getParamDecl(I)->getType());
+    }
   }
 
   SmallVector<OriginalCallArg, 8> OriginalCallArgs;
@@ -4584,6 +4611,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     TemplateArgumentListInfo *ExplicitTemplateArgs,
     FunctionDecl *&Specialization, TemplateDeductionInfo &Info,
     bool IsAddressOfFunction) {
+
   return DeduceTemplateArguments(FunctionTemplate, ExplicitTemplateArgs,
                                  QualType(), Specialization, Info,
                                  IsAddressOfFunction);
@@ -6145,6 +6173,15 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::DependentExtInt:
     MarkUsedTemplateParameters(Ctx,
                                cast<DependentExtIntType>(T)->getNumBitsExpr(),
+                               OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::InParameter:
+  case Type::OutParameter:
+  case Type::InOutParameter:
+  case Type::MoveParameter:
+    // Search in the underlying type.
+    MarkUsedTemplateParameters(Ctx, cast<ParameterType>(T)->getParameterType(),
                                OnlyDeduced, Depth, Used);
     break;
 

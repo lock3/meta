@@ -4121,6 +4121,47 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
   }
 }
 
+static void SetParmSpec(DeclSpec &DS, ParameterPassingKind K,
+                        SourceLocation Loc) {
+  DS.SetParameterPassingSpecifier(K, Loc);
+}
+
+bool Parser::isParameterPassingSpecifier() {
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+    return II->isStr("in")
+        || II->isStr("out")
+        || II->isStr("inout")
+        || II->isStr("move")
+        || II->isStr("forward");
+  }
+  return false;
+}
+
+/// Parse an optional parameter passing specifier.
+///
+///   parameter-passing-specifier: one of
+///     in out inout move forward
+///
+void Parser::ParseParameterPassingSpecifier(DeclSpec &DS) {
+  // TODO: If users have types with these names, we'll get some weird
+  // errors. Note that users can fully qualify their user-defiened types
+  // in order to be compatible with parameter passing specifers.
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+    if (II->isStr("in"))
+      return SetParmSpec(DS, PPK_in, ConsumeIdentifier());
+    if (II->isStr("out"))
+      return SetParmSpec(DS, PPK_out, ConsumeIdentifier());
+    if (II->isStr("inout"))
+      return SetParmSpec(DS, PPK_inout, ConsumeIdentifier());
+    if (II->isStr("move"))
+      return SetParmSpec(DS, PPK_move, ConsumeIdentifier());
+    if (II->isStr("forward"))
+      return SetParmSpec(DS, PPK_forward, ConsumeIdentifier());
+  }
+}
+
 /// ParseStructDeclaration - Parse a struct declaration without the terminating
 /// semicolon.
 ///
@@ -6874,6 +6915,8 @@ void Parser::ParseParameterDeclarationClause(
     // get rid of a parameter (FirstArgAttrs) and this statement. It might be
     // too much hassle.
     DS.takeAttributesFrom(FirstArgAttrs);
+
+    ParseParameterPassingSpecifier(DS);
 
     ParseDeclarationSpecifiers(DS);
 

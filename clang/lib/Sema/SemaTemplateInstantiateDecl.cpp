@@ -2043,6 +2043,7 @@ static ConstexprSpecKind getNewConstexprSpecKind(
 Decl *TemplateDeclInstantiator::VisitFunctionDecl(
     FunctionDecl *D, TemplateParameterList *TemplateParams,
     RewriteKind FunctionRewriteKind) {
+
   // Check whether there is already a function template specialization for
   // this declaration.
   FunctionTemplateDecl *FunctionTemplate = D->getDescribedFunctionTemplate();

@@ -919,7 +919,10 @@ public:
     SK_OCLSamplerInit,
 
     /// Initialize an opaque OpenCL type (event_t, queue_t, etc.) with zero
-    SK_OCLZeroOpaqueType
+    SK_OCLZeroOpaqueType,
+
+    /// Initialize a parameter with a passing mode.
+    SK_ParameterModeInit,
   };
 
   /// A single step in the initialization sequence.
@@ -1352,6 +1355,9 @@ public:
   /// Add a step to initialzie an OpenCL opaque type (event_t, queue_t, etc.)
   /// from a zero constant.
   void AddOCLZeroOpaqueTypeStep(QualType T);
+
+  /// Add a step to passing an argument to an in/out/etc. paraemter.
+  void AddParameterAdjustmentStep(QualType T);
 
   /// Add steps to unwrap a initializer list for a reference around a
   /// single element and rewrap it at the end.

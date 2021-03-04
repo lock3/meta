@@ -6909,6 +6909,75 @@ QualType TreeTransform<Derived>::TransformDependentExtIntType(
   return Result;
 }
 
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformInParameterType(TypeLocBuilder &TLB,
+                                                        InParameterTypeLoc TL) {
+  // Substitute through the inner type.
+  QualType ParmType = getDerived().TransformType(TLB, TL.getParameterTypeLoc());
+  if (ParmType.isNull())
+    return QualType();
+
+  // Rebuild the type.
+  QualType Result = getSema().getASTContext().getInParameterType(ParmType);
+
+  InParameterTypeLoc NewTL = TLB.push<InParameterTypeLoc>(Result);
+  NewTL.setModeLoc(TL.getModeLoc());
+
+  return Result;
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformOutParameterType(TypeLocBuilder &TLB,
+                                                       OutParameterTypeLoc TL) {
+  // Substitute through the inner type.
+  QualType ParmType = getDerived().TransformType(TLB, TL.getParameterTypeLoc());
+  if (ParmType.isNull())
+    return QualType();
+
+  // Rebuild the type.
+  QualType Result = getSema().getASTContext().getOutParameterType(ParmType);
+
+  InParameterTypeLoc NewTL = TLB.push<InParameterTypeLoc>(Result);
+  NewTL.setModeLoc(TL.getModeLoc());
+
+  return Result;
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformInOutParameterType(
+                                                            TypeLocBuilder &TLB,
+                                                     InOutParameterTypeLoc TL) {
+  // Substitute through the inner type.
+  QualType ParmType = getDerived().TransformType(TLB, TL.getParameterTypeLoc());
+  if (ParmType.isNull())
+    return QualType();
+
+  // Rebuild the type.
+  QualType Result = getSema().getASTContext().getInOutParameterType(ParmType);
+
+  InParameterTypeLoc NewTL = TLB.push<InParameterTypeLoc>(Result);
+  NewTL.setModeLoc(TL.getModeLoc());
+
+  return Result;
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformMoveParameterType(TypeLocBuilder &TLB,
+                                                      MoveParameterTypeLoc TL) {
+  // Substitute through the inner type.
+  QualType ParmType = getDerived().TransformType(TLB, TL.getParameterTypeLoc());
+  if (ParmType.isNull())
+    return QualType();
+
+  // Rebuild the type.
+  QualType Result = getSema().getASTContext().getMoveParameterType(ParmType);
+
+  InParameterTypeLoc NewTL = TLB.push<InParameterTypeLoc>(Result);
+  NewTL.setModeLoc(TL.getModeLoc());
+
+  return Result;
+}
+
   /// Simple iterator that traverses the template arguments in a
   /// container that provides a \c getArgLoc() member function.
   ///
@@ -8461,8 +8530,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
     QualType New  = getDerived().TransformType(Old);
     if (New.isNull())
       return ExprError();
-    // llvm::outs() << "SUBST TYPE\n";
-    // New->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New,
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
@@ -8477,8 +8544,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
     TemplateName New = getDerived().TransformTemplateName(SS, Old, Loc);
     if (New.isNull())
       return ExprError();
-    // llvm::outs() << "SUBST TEMPLATE\n";
-    // New.getAsTemplateDecl()->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New,
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
@@ -8493,8 +8558,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
     ExprResult New = getDerived().TransformExpr(Old);
     if (New.isInvalid())
       return ExprError();
-    // llvm::outs() << "SUBST EXPR\n";
-    // New.get()->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New.get(),
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
@@ -12602,6 +12665,17 @@ ExprResult
 TreeTransform<Derived>::TransformCXXNullPtrLiteralExpr(
                                                      CXXNullPtrLiteralExpr *E) {
   return E;
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXParameterInfoExpr(CXXParameterInfoExpr *E) {
+  auto *D = cast<ValueDecl>(TransformDecl(E->getLocation(), E->getDecl()));
+  if (!getDerived().AlwaysRebuild() && D == E->getDecl())
+    return E;
+
+  ASTContext &Ctx = getSema().getASTContext();
+  return new (Ctx) CXXParameterInfoExpr(D, Ctx.BoolTy, E->getLocation());
 }
 
 template<typename Derived>
