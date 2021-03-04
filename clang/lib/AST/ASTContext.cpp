@@ -5932,6 +5932,17 @@ ASTContext::getNameForTemplate(TemplateName Name,
     return DeclarationNameInfo(subst->getParameterPack()->getDeclName(),
                                NameLoc);
   }
+
+  case TemplateName::SplicedTemplateReflection: {
+    SplicedTemplateReflectionStorage *splice
+      = Name.getAsSplicedTemplateReflection();
+    if (!splice->isDependent()) {
+      TemplateDecl *D = splice->getDesignatedTemplate();
+      return DeclarationNameInfo(D->getDeclName(), NameLoc);
+    }
+    // FIXME: How do we generate a declaration name from a dependent splice?
+    assert(false && "no declaration name for dependent splice");
+  }
   }
 
   llvm_unreachable("bad template name kind!");
@@ -5973,6 +5984,16 @@ TemplateName ASTContext::getCanonicalTemplateName(TemplateName Name) const {
     TemplateArgument canonArgPack
       = getCanonicalTemplateArgument(subst->getArgumentPack());
     return getSubstTemplateTemplateParmPack(canonParameter, canonArgPack);
+  }
+
+  case TemplateName::SplicedTemplateReflection: {
+    SplicedTemplateReflectionStorage *splice
+      = Name.getAsSplicedTemplateReflection();
+    if (!splice->isDependent()) {
+      TemplateDecl *D = splice->getDesignatedTemplate();
+      return TemplateName(cast<TemplateDecl>(D->getCanonicalDecl()));
+    }
+    llvm_unreachable("cannot canonicalize dependent spliced template");
   }
   }
 
@@ -8509,6 +8530,22 @@ ASTContext::getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
   }
 
   return TemplateName(Subst);
+}
+
+TemplateName
+ASTContext::getSplicedTemplateReflection(Expr *E, const TemplateDecl *D) const {
+  llvm::FoldingSetNodeID ID;
+  SplicedTemplateReflectionStorage::Profile(ID, E, D);
+
+  void *InsertPos = nullptr;
+  SplicedTemplateReflectionStorage *Splice
+    = SplicedTemplateReflections.FindNodeOrInsertPos(ID, InsertPos);
+  if (!Splice) {
+    Splice = new (*this) SplicedTemplateReflectionStorage(E, D);
+    SplicedTemplateReflections.InsertNode(Splice, InsertPos);
+  }
+
+  return TemplateName(Splice);
 }
 
 /// getFromTargetType - Given one of the integer types provided by

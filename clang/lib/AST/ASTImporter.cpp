@@ -8596,6 +8596,10 @@ Expected<TemplateName> ASTImporter::Import(TemplateName From) {
     return ToContext.getSubstTemplateTemplateParmPack(
         cast<TemplateTemplateParmDecl>(*ParamOrErr), *ArgPackOrErr);
   }
+
+  case TemplateName::SplicedTemplateReflection: {
+    assert(false && "not implemented");
+  }
   }
 
   llvm_unreachable("Invalid template name kind");

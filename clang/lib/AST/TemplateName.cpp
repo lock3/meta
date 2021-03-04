@@ -61,6 +61,28 @@ void SubstTemplateTemplateParmPackStorage::Profile(llvm::FoldingSetNodeID &ID,
   ArgPack.Profile(ID, Context);
 }
 
+void SplicedTemplateReflectionStorage::Profile(llvm::FoldingSetNodeID &ID) {
+  Profile(ID, Refl, Temp);
+}
+
+void SplicedTemplateReflectionStorage::Profile(llvm::FoldingSetNodeID &ID,
+                                               Expr *E,
+                                               const TemplateDecl *D) {
+  ID.AddPointer(E);
+  ID.AddPointer(D);
+}
+
+TemplateNameDependence SplicedTemplateReflectionStorage::getDependence() const {
+  // Well, this is awkward, but it's probably right:
+  return toTemplateNameDependence(
+    toNestedNameSpecifierDependendence(
+      toTypeDependence(Refl->getDependence())));
+}
+
+bool SplicedTemplateReflectionStorage::isDependent() const {
+  return getDependence() & TemplateNameDependence::Dependent;
+}
+
 TemplateName::TemplateName(void *Ptr) {
   Storage = StorageType::getFromOpaqueValue(Ptr);
 }
@@ -73,6 +95,8 @@ TemplateName::TemplateName(AssumedTemplateStorage *Storage)
 TemplateName::TemplateName(SubstTemplateTemplateParmStorage *Storage)
     : Storage(Storage) {}
 TemplateName::TemplateName(SubstTemplateTemplateParmPackStorage *Storage)
+    : Storage(Storage) {}
+TemplateName::TemplateName(SplicedTemplateReflectionStorage *Storage)
     : Storage(Storage) {}
 TemplateName::TemplateName(QualifiedTemplateName *Qual) : Storage(Qual) {}
 TemplateName::TemplateName(DependentTemplateName *Dep) : Storage(Dep) {}
@@ -93,6 +117,8 @@ TemplateName::NameKind TemplateName::getKind() const {
     return OverloadedTemplate;
   if (uncommon->getAsAssumedTemplateName())
     return AssumedTemplate;
+  if (uncommon->getAsSplicedTemplateReflection())
+    return SplicedTemplateReflection;
   if (uncommon->getAsSubstTemplateTemplateParm())
     return SubstTemplateTemplateParm;
   return SubstTemplateTemplateParmPack;
@@ -107,6 +133,9 @@ TemplateDecl *TemplateName::getAsTemplateDecl() const {
 
   if (SubstTemplateTemplateParmStorage *sub = getAsSubstTemplateTemplateParm())
     return sub->getReplacement().getAsTemplateDecl();
+
+  if (auto *splice = getAsSplicedTemplateReflection())
+    return splice->getDesignatedTemplate();
 
   return nullptr;
 }
@@ -141,6 +170,15 @@ TemplateName::getAsSubstTemplateTemplateParmPack() const {
   if (UncommonTemplateNameStorage *Uncommon =
           Storage.dyn_cast<UncommonTemplateNameStorage *>())
     return Uncommon->getAsSubstTemplateTemplateParmPack();
+
+  return nullptr;
+}
+
+SplicedTemplateReflectionStorage *
+TemplateName::getAsSplicedTemplateReflection() const {
+  if (UncommonTemplateNameStorage *Uncommon =
+          Storage.dyn_cast<UncommonTemplateNameStorage *>())
+    return Uncommon->getAsSplicedTemplateReflection();
 
   return nullptr;
 }
@@ -183,6 +221,9 @@ TemplateNameDependence TemplateName::getDependence() const {
     break;
   case TemplateName::NameKind::SubstTemplateTemplateParmPack:
     D |= TemplateNameDependence::UnexpandedPack;
+    break;
+  case TemplateName::NameKind::SplicedTemplateReflection:
+    D |= getAsSplicedTemplateReflection()->getDependence();
     break;
   case TemplateName::NameKind::OverloadedTemplate:
     llvm_unreachable("overloaded templates shouldn't survive to here.");
@@ -248,7 +289,11 @@ TemplateName::print(raw_ostream &OS, const PrintingPolicy &Policy,
     OS << *SubstPack->getParameterPack();
   else if (AssumedTemplateStorage *Assumed = getAsAssumedTemplateName()) {
     Assumed->getDeclName().print(OS, Policy);
-  } else {
+  } else if (SplicedTemplateReflectionStorage *Splice = getAsSplicedTemplateReflection()) {
+    Expr *E = Splice->getReflection();
+    E->printPretty(OS, nullptr, Policy);
+  }
+  else {
     OverloadedTemplateStorage *OTS = getAsOverloadedTemplate();
     (*OTS->begin())->printName(OS);
   }

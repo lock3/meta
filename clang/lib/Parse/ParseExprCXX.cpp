@@ -248,10 +248,10 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
 
     // Parse the reflection splice.
     ParsedSplice Splice;
-    if (ParseReflectionSplice(Splice, IsTypename))
+    if (ParseReflectionSplice(SS, Splice, IsTypename))
       return true;
 
-    // Look for the :: after splice. If non, then this is not a nested-name
+    // Look for the :: after splice. If not, then this is not a nested-name
     // specifier.
     SourceLocation ScopeLoc;
     if (!TryConsumeToken(tok::coloncolon, ScopeLoc)) {

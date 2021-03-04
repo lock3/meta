@@ -4946,6 +4946,66 @@ TemplateNameKind Sema::ActOnTemplateName(Scope *S,
   return TNK_Non_template;
 }
 
+// Analyze a spliced expression, returning information that would be needed
+// to construct a template-name. This is typically called when parsing
+// nested-name-specifiers to help annotate tokens as template-ids.
+//
+// If this returns TNK_Non_template, we will also have produced a diagnostic.
+TemplateNameKind Sema::ActOnTemplateSplice(CXXScopeSpec &SS,
+                                           SourceLocation TemplateKWLoc,
+                                           Expr *Refl,
+                                           TemplateTy &Template) {
+  // If the expression is dependent, the template name is also dependent.
+  if (Refl->isTypeDependent() || Refl->isValueDependent()) {
+    // FIXME: Build a dependent template name from the splice.
+    assert(false && "Dependent template splice not implemented");
+    return TNK_Dependent_template_name;
+  }
+
+  // Evaluate the reflection.
+  Expr::EvalResult Eval;
+  Expr::EvalContext EvalCtx(Context, nullptr);
+  if (!Refl->EvaluateAsConstantExpr(Eval, EvalCtx))
+    return TNK_Non_template;
+  APValue const& Result = Eval.Val;
+
+  // The kind depends on the type. See through cv-references.
+  QualType T = Refl->getType().getCanonicalType();
+  if (T->isReferenceType())
+    T = T->getPointeeType();
+  T = T.getUnqualifiedType();
+  T = Context.getCanonicalType(T);
+
+  // Evaluate the expression to see what's been reflected.
+  if (T == Context.MetaInfoTy) {
+    assert(Result.isReflection() && "Value of meta::info is not a reflection");
+
+    // FIXME: What if the splice names an overload set? We should
+
+    if (Result.getReflectionKind() == RK_declaration) {
+      if (auto *TD = dyn_cast<TemplateDecl>(Result.getReflectedDeclaration())) {
+        TemplateName N = Context.getSplicedTemplateReflection(Refl, TD);
+        Template = TemplateTy::make(N);
+        if (isa<FunctionTemplateDecl>(TD))
+          return TNK_Function_template;
+        if (isa<VarTemplateDecl>(TD))
+          return TNK_Var_template;
+        if (isa<ConceptDecl>(TD))
+          return TNK_Concept_template;
+        return TNK_Type_template;
+      }
+    }
+  }
+
+  llvm::errs() << "WTF?\n";
+  Refl->dump();
+  T->dump();
+
+  // FIXME: Do better with diagnostics.
+  Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+  return TNK_Non_template;  
+}
+
 bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                      TemplateArgumentLoc &AL,
                           SmallVectorImpl<TemplateArgument> &Converted) {

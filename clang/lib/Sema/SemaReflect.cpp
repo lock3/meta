@@ -1991,6 +1991,14 @@ DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
   return SemaRef.PP.getDiagnostics();
 }
 
+// This is called from when analylzing typename-specifiers (generally when
+// optionally parsing nested-name-specifiers) to determine that a type splice
+// is valid. For example:
+//
+//    typename [:^int:]
+//    typename [:^some_class:]::type
+//
+// If the splice operand is dependent, then this is a dependent type.
 TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Expr *Refl) {
   // If the expression is dependent, the type is dependent.
   if (Refl->isTypeDependent() || Refl->isValueDependent())

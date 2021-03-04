@@ -28,6 +28,7 @@ class ASTContext;
 class DependentTemplateName;
 class DiagnosticBuilder;
 class IdentifierInfo;
+class Expr;
 class NamedDecl;
 class NestedNameSpecifier;
 enum OverloadedOperatorKind : int;
@@ -38,6 +39,7 @@ struct PrintingPolicy;
 class QualifiedTemplateName;
 class SubstTemplateTemplateParmPackStorage;
 class SubstTemplateTemplateParmStorage;
+class SplicedTemplateReflectionStorage;
 class TemplateArgument;
 class TemplateDecl;
 class TemplateTemplateParmDecl;
@@ -50,16 +52,17 @@ protected:
     Overloaded,
     Assumed, // defined in DeclarationName.h
     SubstTemplateTemplateParm,
-    SubstTemplateTemplateParmPack
+    SubstTemplateTemplateParmPack,
+    SplicedTemplateReflection,
   };
 
   struct BitsTag {
     /// A Kind.
-    unsigned Kind : 2;
+    unsigned Kind : 3;
 
     /// The number of stored templates or template arguments,
     /// depending on which subclass we have.
-    unsigned Size : 30;
+    unsigned Size : 29;
   };
 
   union {
@@ -96,6 +99,12 @@ public:
   SubstTemplateTemplateParmPackStorage *getAsSubstTemplateTemplateParmPack() {
     return Bits.Kind == SubstTemplateTemplateParmPack
              ? reinterpret_cast<SubstTemplateTemplateParmPackStorage *>(this)
+             : nullptr;
+  }
+
+  SplicedTemplateReflectionStorage *getAsSplicedTemplateReflection() {
+    return Bits.Kind == SplicedTemplateReflection
+             ? reinterpret_cast<SplicedTemplateReflectionStorage *>(this)
              : nullptr;
   }
 };
@@ -162,6 +171,52 @@ public:
                       const TemplateArgument &ArgPack);
 };
 
+/// A structure for storing a spliced expression that designates a template.
+/// Note that this can also be a dependent template name.
+///
+/// TODO: Can this be used for both reflection and identifier splices? We'd
+/// liklely want a Splice construct to abstract the differences. We should
+/// probably have that anyway.
+class SplicedTemplateReflectionStorage
+  : public UncommonTemplateNameStorage, public llvm::FoldingSetNode
+{
+  // The expression computing the reflection.
+  Expr *Refl;
+
+  // The designated template, null if Refl is dependent.
+  const TemplateDecl *Temp;
+
+public:
+  SplicedTemplateReflectionStorage(Expr *E, const TemplateDecl *D)
+      : UncommonTemplateNameStorage(SplicedTemplateReflection, 0),
+        Refl(E), Temp(D) {}
+
+  /// Returns the expression designating the template.
+  Expr *getReflection() { return Refl; }
+  const Expr *getReflection() const { return Refl; }
+
+  /// Returns the dependence for the template name.
+  TemplateNameDependence getDependence() const;
+
+  /// True if the name is dependent.
+  bool isDependent() const;
+
+  /// Returns the designated template declaration. This is only valid when
+  /// the splice is non-dependent.
+  const TemplateDecl *getDesignatedTemplate() const {
+    return Temp;
+  }
+  TemplateDecl *getDesignatedTemplate() { 
+    return const_cast<TemplateDecl *>(Temp);
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID);
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      Expr *E, const TemplateDecl *D);
+};
+
+
 /// Represents a C++ template name within the type system.
 ///
 /// A C++ template name refers to a template within the C++ type
@@ -226,7 +281,10 @@ public:
     /// A template template parameter pack that has been substituted for
     /// a template template argument pack, but has not yet been expanded into
     /// individual arguments.
-    SubstTemplateTemplateParmPack
+    SubstTemplateTemplateParmPack,
+
+    /// A template designated by a reflection splice.
+    SplicedTemplateReflection,
   };
 
   TemplateName() = default;
@@ -235,6 +293,7 @@ public:
   explicit TemplateName(AssumedTemplateStorage *Storage);
   explicit TemplateName(SubstTemplateTemplateParmStorage *Storage);
   explicit TemplateName(SubstTemplateTemplateParmPackStorage *Storage);
+  explicit TemplateName(SplicedTemplateReflectionStorage *Storage);
   explicit TemplateName(QualifiedTemplateName *Qual);
   explicit TemplateName(DependentTemplateName *Dep);
 
@@ -280,6 +339,10 @@ public:
   /// if known. Otherwise, returns NULL.
   SubstTemplateTemplateParmPackStorage *
   getAsSubstTemplateTemplateParmPack() const;
+
+  /// \returns The storage for the spliced template reflection if known, or
+  /// null otherwise.
+  SplicedTemplateReflectionStorage *getAsSplicedTemplateReflection() const;
 
   /// Retrieve the underlying qualified template name
   /// structure, if any.

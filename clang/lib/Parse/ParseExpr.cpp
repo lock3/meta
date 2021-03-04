@@ -402,6 +402,8 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
   // Check to see if this is a valid splice ending token sequence. If
   // so, this isn't a binary expression at all, this is the end of a
   // splice.
+  //
+  // FIXME: What purpose does this serve?
   if (matchCXXSpliceEnd(tok::colon))
     return LHS;
 
@@ -1641,19 +1643,25 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     LLVM_FALLTHROUGH;
   }
 
-  // [Meta] id-expression: template [# reflection #]
-  case tok::kw_template: {
-    if (Tok.is(tok::kw_template) &&
-        !matchCXXSpliceBegin(tok::hash, /*LookAhead=*/1)) {
-      NotCastExpr = true;
-      return ExprError();
-    }
-
-    LLVM_FALLTHROUGH;
-  }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
+
+  // Match primary-expressions of this form:
+  //
+  //    template reflection-splice < template-argument-list >
+  //    template identifier-splice < template-argument-list >
+  //
+  // FIXME: This may be wrong.
+  case tok::kw_template:
+    if (matchCXXReflectionSpliceBegin(/*LookAhead=*/1))
+      assert(false && "Template reflection splice expressions not implemented");
+
+    if (matchCXXIdentifierSpliceBegin(/*LookAhead=*/1))
+      assert(false && "Template identifier expressions not implemented");
+
+    NotCastExpr = true;
+    return ExprError();
 
   case tok::coloncolon: {
     // ::foo::bar -> global qualified name etc.   If TryAnnotateTypeOrScopeToken
@@ -1794,19 +1802,14 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     cutOffParsing();
     return ExprError();
   }
-  case tok::ellipsis:
-    if (getLangOpts().Reflection) {
-      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
-        Res = ParseCXXPackSpliceExpr();
-      }
-      break;
-    }
 
-    // FIXME: duplication of the default case
-    NotCastExpr = true;
-    return ExprError();
   case tok::l_square:
     if (getLangOpts().CPlusPlus11) {
+
+      // Primary expression cases for splices:
+      //
+      //    [: constant-expression :]
+      //    [# identifier-concatenation-list #]
       if (getLangOpts().Reflection) {
         if (NextToken().is(tok::colon)) {
           Res = ParseCXXExprSpliceExpr();
@@ -2161,18 +2164,38 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
     }
     case tok::arrow:
     case tok::period: {
-      // postfix-expression: p-e '->' decl-splice
-      if (matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
-        // The template case isn't in p1240, leave it off for now.
-        //
-        // (NextToken().is(tok::kw_template) &&
-        //    GetLookAheadToken(2).is(tok::kw_idexpr))) {
+      // Match these cases...
+      //
+      //    postfix-expression ['.' | '->'] reflection-splice
+      //    postfix-expression ['.' | '->'] identifier-splice
+      //
+      // FIXME: This is a little bit broken. We could have:
+      //
+      //    x.[:refl:]::member
+      //
+      // Here, the splice is part of a nested-name-specifier and does not
+      // designate the member. This is broken for the tests below as well.
+      // What should happen is that the splices get annotated by the call
+      // to ParseOptionalCXXScopeSpecifier below, and then we handle them
+      // separately.
+      //
+      // FIXME: Re-add support for identifier splices.
+      if (matchCXXReflectionSpliceBegin(/*LookAhead=*/1)) {
+        LHS = ParseCXXMemberExprSpliceExpr(LHS.get(), /*IsTemplate=*/false);
+        break;
+      }
 
-        // FIXME: How does this happen? Does this happen?
-        // if (LHS.isInvalid())
-        //  break;
-
-        LHS = ParseCXXMemberExprSpliceExpr(LHS.get());
+      // ... and these:
+      //
+      //    postfix-expression ['.' | '->'] 'template' reflection-splice
+      //      '<' template-argument-list '>'
+      //    postfix-expression ['.' | '->'] 'template' identifier-splice
+      //      '<' template-argument-list '>'
+      //
+      // FIXME: These can be cleaned up.
+      if (GetLookAheadToken(1).is(tok::kw_template) &&
+          matchCXXReflectionSpliceBegin(/*LookAhead=*/2)) {
+        assert(false && "Member template splice not implemented");
         break;
       }
 

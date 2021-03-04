@@ -495,12 +495,21 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                     P2->getParameterPack());
   }
 
-   case TemplateName::Template:
-   case TemplateName::QualifiedTemplate:
-   case TemplateName::SubstTemplateTemplateParm:
-     // It is sufficient to check value of getAsTemplateDecl.
-     break;
-
+  case TemplateName::SplicedTemplateReflection: {
+    SplicedTemplateReflectionStorage
+      *S1 = N1.getAsSplicedTemplateReflection(),
+      *S2 = N1.getAsSplicedTemplateReflection();
+    return IsStructurallyEquivalent(Context, S1->getReflection(),
+                                    S2->getReflection()) &&
+            IsStructurallyEquivalent(Context, S1->getDesignatedTemplate(),
+                                    S2->getDesignatedTemplate());
+  }
+   
+  case TemplateName::Template:
+  case TemplateName::QualifiedTemplate:
+  case TemplateName::SubstTemplateTemplateParm:
+    // It is sufficient to check value of getAsTemplateDecl.
+    break;
   }
 
   return true;

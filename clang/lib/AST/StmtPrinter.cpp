@@ -2438,7 +2438,8 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
 }
 
 void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
-  OS << "reflexpr(...)";
+  // FIXME: Make this better.
+  OS << "^(...)";
   #if 0
   OS << "reflexpr(";
   APValue Reflection = S->getValue();

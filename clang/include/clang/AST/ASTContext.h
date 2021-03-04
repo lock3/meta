@@ -249,6 +249,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::ContextualFoldingSet<SubstTemplateTemplateParmPackStorage,
                                      ASTContext&>
     SubstTemplateTemplateParmPacks;
+  mutable llvm::FoldingSet<SplicedTemplateReflectionStorage>
+    SplicedTemplateReflections;
 
   /// The set of nested name specifiers.
   ///
@@ -2052,6 +2054,8 @@ public:
                                             TemplateName replacement) const;
   TemplateName getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
                                         const TemplateArgument &ArgPack) const;
+  TemplateName getSplicedTemplateReflection(Expr *E, 
+                                            const TemplateDecl *D) const;
 
   enum GetBuiltinTypeError {
     /// No error

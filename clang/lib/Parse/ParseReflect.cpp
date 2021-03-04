@@ -429,7 +429,10 @@ ExprResult Parser::ParseCXXExprSpliceExpr() {
   return Actions.ActOnCXXExprSpliceExpr(SBELoc, Expr.get(), SEELoc);
 }
 
-ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base) {
+ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base, bool IsTemplate) {
+
+  // FIXME: This is broken for template parsing.
+
   assert(Tok.isOneOf(tok::arrow, tok::period));
 
   bool IsArrow = Tok.getKind() == tok::arrow;
@@ -663,7 +666,13 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
 /// specifier can be followed by template arguments.
 ///
 /// \return True if the splice is obviously ill-formed.
-bool Parser::ParseReflectionSplice(ParsedSplice &Splice, bool IsTypename) {
+///
+///
+/// FIXME: We need to pass the 'template' keyword as part of the template name,
+/// if its present. It would also be nice to parse pass the 'typename' keyword,
+/// but I don't think we have access to it in the calling contexts.
+bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
+                                   bool IsTypename) {
   // This is already a splice token.
   if (Tok.is(tok::annot_reflection_splice)) {
     Splice.Start = Tok.getLocation();
@@ -686,12 +695,26 @@ bool Parser::ParseReflectionSplice(ParsedSplice &Splice, bool IsTypename) {
   // the typename-specifier does not permit the 'template' keyword after
   // the splice.
   if (IsTypename) {
-    // FIXME: Use AnnotateTemplateIdToken() to parse and annotate the
-    // template-id. However, doing so means we need to turn the splice
-    // into a TemplateName, and we need a new TemplateNameKind for splices,
-    // which may be dependent.
-    if (Tok.is(tok::less))
-      assert(false && "Spliced template id not implemented");
+    // FIXME: Use AnnotateTemplateIdToken() or similar to parse and annotate the
+    // template-id.
+    if (Tok.is(tok::less)) {
+      // Build the template name.
+      TemplateTy Template;
+      TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SourceLocation(),
+                                                          Splice.Refl.get(),
+                                                          Template);
+      if (Kind == TNK_Non_template)
+        return true;
+      UnqualifiedId TemplateName;
+      TemplateName.setSplicedTemplateName(Template, Splice.Start);
+
+      // Annotate the current token as a template-id. This will also parse
+      // the template argument list.
+      if (AnnotateTemplateIdToken(Template, Kind, SS, SourceLocation(),
+                                  TemplateName, /*NameSpliced=*/true,
+                                  /*AllowTypeAnnotation=*/true))
+        return true;
+    }
   }
 
   return false;
