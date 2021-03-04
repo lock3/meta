@@ -1356,12 +1356,12 @@ ExprWithCleanups *ExprWithCleanups::Create(const ASTContext &C,
   return new (buffer) ExprWithCleanups(empty, numObjects);
 }
 
-CXXUnresolvedConstructExpr::CXXUnresolvedConstructExpr(TypeSourceInfo *TSI,
+CXXUnresolvedConstructExpr::CXXUnresolvedConstructExpr(QualType T,
+                                                       TypeSourceInfo *TSI,
                                                        SourceLocation LParenLoc,
                                                        ArrayRef<Expr *> Args,
                                                        SourceLocation RParenLoc)
-    : Expr(CXXUnresolvedConstructExprClass,
-           TSI->getType().getNonReferenceType(),
+    : Expr(CXXUnresolvedConstructExprClass, T,
            (TSI->getType()->isLValueReferenceType()
                 ? VK_LValue
                 : TSI->getType()->isRValueReferenceType() ? VK_XValue
@@ -1376,10 +1376,11 @@ CXXUnresolvedConstructExpr::CXXUnresolvedConstructExpr(TypeSourceInfo *TSI,
 }
 
 CXXUnresolvedConstructExpr *CXXUnresolvedConstructExpr::Create(
-    const ASTContext &Context, TypeSourceInfo *TSI, SourceLocation LParenLoc,
+    const ASTContext &Context, QualType T, TypeSourceInfo *TSI, SourceLocation LParenLoc,
     ArrayRef<Expr *> Args, SourceLocation RParenLoc) {
   void *Mem = Context.Allocate(totalSizeToAlloc<Expr *>(Args.size()));
-  return new (Mem) CXXUnresolvedConstructExpr(TSI, LParenLoc, Args, RParenLoc);
+  return new (Mem)
+      CXXUnresolvedConstructExpr(T, TSI, LParenLoc, Args, RParenLoc);
 }
 
 CXXUnresolvedConstructExpr *
@@ -1604,6 +1605,15 @@ SizeOfPackExpr *SizeOfPackExpr::CreateDeserialized(ASTContext &Context,
   return new (Storage) SizeOfPackExpr(EmptyShell(), NumPartialArgs);
 }
 
+QualType SubstNonTypeTemplateParmExpr::getParameterType(
+    const ASTContext &Context) const {
+  // Note that, for a class type NTTP, we will have an lvalue of type 'const
+  // T', so we can't just compute this from the type and value category.
+  if (isReferenceParameter())
+    return Context.getLValueReferenceType(getType());
+  return getType().getUnqualifiedType();
+}
+
 SubstNonTypeTemplateParmPackExpr::SubstNonTypeTemplateParmPackExpr(
     QualType T, ExprValueKind ValueKind, NonTypeTemplateParmDecl *Param,
     SourceLocation NameLoc, const TemplateArgument &ArgPack)
@@ -1675,6 +1685,20 @@ void MaterializeTemporaryExpr::setExtendingDecl(ValueDecl *ExtendedBy,
   auto ES = State.get<LifetimeExtendedTemporaryDecl *>();
   ES->ExtendingDecl = ExtendedBy;
   ES->ManglingNumber = ManglingNumber;
+}
+
+bool MaterializeTemporaryExpr::isUsableInConstantExpressions(
+    const ASTContext &Context) const {
+  // C++20 [expr.const]p4:
+  //   An object or reference is usable in constant expressions if it is [...]
+  //   a temporary object of non-volatile const-qualified literal type
+  //   whose lifetime is extended to that of a variable that is usable
+  //   in constant expressions
+  auto *VD = dyn_cast_or_null<VarDecl>(getExtendingDecl());
+  return VD && getType().isConstant(Context) &&
+         !getType().isVolatileQualified() &&
+         getType()->isLiteralType(Context) &&
+         VD->isUsableInConstantExpressions(Context);
 }
 
 TypeTraitExpr::TypeTraitExpr(QualType T, SourceLocation Loc, TypeTrait Kind,
@@ -1886,26 +1910,25 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
   return new (C) CXXCompilerErrorExpr(Empty);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::Create(
-    const ASTContext &C, Expr *Reflection, SourceLocation KeywordLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc) {
-  return new (C) CXXIdExprExpr(
-      C.DependentTy, Reflection, KeywordLoc, LParenLoc, RParenLoc);
+CXXExprSpliceExpr *CXXExprSpliceExpr::Create(
+    const ASTContext &C, SourceLocation SBELoc, Expr *Reflection,
+    SourceLocation SEELoc) {
+  return new (C) CXXExprSpliceExpr(C.DependentTy, Reflection, SBELoc, SEELoc);
 }
 
-CXXIdExprExpr *CXXIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXIdExprExpr(EmptyShell());
+CXXExprSpliceExpr *CXXExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXExprSpliceExpr(EmptyShell());
 }
 
-CXXMemberIdExprExpr::CXXMemberIdExprExpr(
+CXXMemberExprSpliceExpr::CXXMemberExprSpliceExpr(
     QualType T, Expr *Base, Expr *Reflection, bool IsArrow,
     SourceLocation OpLoc, SourceLocation TemplateKWLoc,
-    SourceLocation LParenLoc, SourceLocation RParenLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc,
     const TemplateArgumentListInfo *Args)
-    : Expr(CXXMemberIdExprExprClass, T, VK_RValue, OK_Ordinary),
+    : Expr(CXXMemberExprSpliceExprClass, T, VK_RValue, OK_Ordinary),
       Base(Base), Reflection(Reflection), IsArrow(IsArrow),
       HasTemplateKWAndArgsInfo(Args != nullptr || TemplateKWLoc.isValid()),
-      OpLoc(OpLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+      OpLoc(OpLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
   if (Args) {
     auto Deps = TemplateArgumentDependence::None;
     getTrailingObjects<ASTTemplateKWAndArgsInfo>()->initializeFrom(
@@ -1918,7 +1941,7 @@ CXXMemberIdExprExpr::CXXMemberIdExprExpr(
   setDependence(computeDependence(this));
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::Create(
     const ASTContext &C, Expr *Base, Expr *Reflection,
     bool IsArrow, SourceLocation OpLoc, SourceLocation TemplateKWLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc,
@@ -1928,13 +1951,32 @@ CXXMemberIdExprExpr *CXXMemberIdExprExpr::Create(
       totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
           HasTemplateKWAndArgsInfo, Args ? Args->size() : 0);
   void *Mem = C.Allocate(Size);
-  return new (Mem) CXXMemberIdExprExpr(
+  return new (Mem) CXXMemberExprSpliceExpr(
       C.DependentTy, Base, Reflection, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, Args);
 }
 
-CXXMemberIdExprExpr *CXXMemberIdExprExpr::CreateEmpty(const ASTContext &C) {
-  return new (C) CXXMemberIdExprExpr(EmptyShell());
+CXXMemberExprSpliceExpr *CXXMemberExprSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXMemberExprSpliceExpr(EmptyShell());
+}
+
+CXXPackSpliceExpr::CXXPackSpliceExpr(
+    QualType T, const PackSplice *PS,
+    SourceLocation EllipsisLoc, SourceLocation SBELoc, SourceLocation SEELoc)
+  : Expr(CXXPackSpliceExprClass, T, VK_RValue, OK_Ordinary), PS(PS),
+    EllipsisLoc(EllipsisLoc), SBELoc(SBELoc), SEELoc(SEELoc) {
+  setDependence(computeDependence(this));
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::Create(
+    const ASTContext &C, const PackSplice *PS, SourceLocation EllipsisLoc,
+    SourceLocation SBELoc, SourceLocation SEELoc) {
+  return new (C) CXXPackSpliceExpr(C.DependentTy, PS,
+                                   EllipsisLoc, SBELoc, SEELoc);
+}
+
+CXXPackSpliceExpr *CXXPackSpliceExpr::CreateEmpty(const ASTContext &C) {
+  return new (C) CXXPackSpliceExpr(EmptyShell());
 }
 
 // Assume that the name is an ordinary lvalue for now.

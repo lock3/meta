@@ -5,5 +5,5 @@ class template_a {
 };
 
 int main() {
-  constexpr auto refl_a = reflexpr(template_a<int>); // expected-error {{template argument for non-type template parameter must be an expression}}
+  constexpr auto refl_a = ^template_a<int>; // expected-error {{template argument for non-type template parameter must be an expression}}
 }

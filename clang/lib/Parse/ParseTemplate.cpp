@@ -1511,17 +1511,29 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).
 ///
 ///       template-argument: [C++ 14.2]
+///         pack-splice
 ///         constant-expression
 ///         type-id
 ///         id-expression
-///         templarg ( reflection )
 ParsedTemplateArgument Parser::ParseTemplateArgument() {
   EnterExpressionEvaluationContext EnterConstantEvaluated(
     Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
     /*LambdaContextDecl=*/nullptr,
     /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
-  if (Tok.is(tok::kw_templarg)) {
-    return ParseReflectedTemplateArgument();
+
+  // Pack splices have a special template argument kind that can
+  // become either a type or non-type template argument when expanded.
+  if (isCXXPackSpliceBegin()) {
+    TentativeParsingAction TPA(*this);
+
+    ParsedTemplateArgument PackSpliceTemplateArgument
+      = ParseCXXTemplateArgumentPackSplice();
+    if (!PackSpliceTemplateArgument.isInvalid()) {
+      TPA.Commit();
+      return PackSpliceTemplateArgument;
+    }
+
+    TPA.Revert();
   }
 
   // C++ [temp.arg]p2:
@@ -1533,7 +1545,6 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
   // up and annotate an identifier as an id-expression during disambiguation,
   // so enter the appropriate context for a constant expression template
   // argument before trying to disambiguate.
-
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     TypeResult TypeArg = ParseTypeName(
         /*Range=*/nullptr, DeclaratorContext::TemplateArgContext);
@@ -1577,13 +1588,6 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-    if (isVariadicReifier()) {
-      if (ParseTemplateReifier(TemplateArgs))
-        return true;
-
-      continue;
-    }
-
     ParsedTemplateArgument Arg = ParseTemplateArgument();
     SourceLocation EllipsisLoc;
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))

@@ -10,7 +10,6 @@
 #include "ClangdServer.h"
 #include "CodeComplete.h"
 #include "Compiler.h"
-#include "CompletionModel.h"
 #include "Matchers.h"
 #include "Protocol.h"
 #include "Quality.h"
@@ -112,8 +111,6 @@ CodeCompleteResult completions(const TestTU &TU, Position Point,
 
   MockFS FS;
   auto Inputs = TU.inputs(FS);
-  Inputs.Opts.BuildRecoveryAST = true;
-  Inputs.Opts.PreserveRecoveryASTType = true;
   IgnoreDiagnostics Diags;
   auto CI = buildCompilerInvocation(Inputs, Diags);
   if (!CI) {
@@ -163,14 +160,65 @@ Symbol withReferences(int N, Symbol S) {
   return S;
 }
 
-TEST(DecisionForestRuntime, SanityTest) {
-  using Example = clangd::Example;
-  using clangd::Evaluate;
-  Example E1;
-  E1.setContextKind(ContextKind::CCC_ArrowMemberAccess);
-  Example E2;
-  E2.setContextKind(ContextKind::CCC_SymbolOrNewName);
-  EXPECT_GT(Evaluate(E1), Evaluate(E2));
+TEST(DecisionForestRankingModel, NameMatchSanityTest) {
+  clangd::CodeCompleteOptions Opts;
+  Opts.RankingModel = CodeCompleteOptions::DecisionForest;
+  auto Results = completions(
+      R"cpp(
+struct MemberAccess {
+  int ABG();
+  int AlphaBetaGamma();
+};
+int func() { MemberAccess().ABG^ }
+)cpp",
+      /*IndexSymbols=*/{}, Opts);
+  EXPECT_THAT(Results.Completions,
+              ElementsAre(Named("ABG"), Named("AlphaBetaGamma")));
+}
+
+TEST(DecisionForestRankingModel, ReferencesAffectRanking) {
+  clangd::CodeCompleteOptions Opts;
+  Opts.RankingModel = CodeCompleteOptions::DecisionForest;
+  constexpr int NumReferences = 100000;
+  EXPECT_THAT(
+      completions("int main() { clang^ }",
+                  {ns("clangA"), withReferences(NumReferences, func("clangD"))},
+                  Opts)
+          .Completions,
+      ElementsAre(Named("clangD"), Named("clangA")));
+  EXPECT_THAT(
+      completions("int main() { clang^ }",
+                  {withReferences(NumReferences, ns("clangA")), func("clangD")},
+                  Opts)
+          .Completions,
+      ElementsAre(Named("clangA"), Named("clangD")));
+}
+
+TEST(DecisionForestRankingModel, DecisionForestScorerCallbackTest) {
+  clangd::CodeCompleteOptions Opts;
+  constexpr float MagicNumber = 1234.5678f;
+  Opts.RankingModel = CodeCompleteOptions::DecisionForest;
+  Opts.DecisionForestScorer = [&](const SymbolQualitySignals &,
+                                  const SymbolRelevanceSignals &, float Base) {
+    DecisionForestScores Scores;
+    Scores.Total = MagicNumber;
+    Scores.ExcludingName = MagicNumber;
+    return Scores;
+  };
+  llvm::StringRef Code = "int func() { int xyz; xy^ }";
+  auto Results = completions(Code,
+                             /*IndexSymbols=*/{}, Opts);
+  ASSERT_EQ(Results.Completions.size(), 1u);
+  EXPECT_EQ(Results.Completions[0].Score.Total, MagicNumber);
+  EXPECT_EQ(Results.Completions[0].Score.ExcludingName, MagicNumber);
+
+  // Do not use DecisionForestScorer for heuristics model.
+  Opts.RankingModel = CodeCompleteOptions::Heuristics;
+  Results = completions(Code,
+                        /*IndexSymbols=*/{}, Opts);
+  ASSERT_EQ(Results.Completions.size(), 1u);
+  EXPECT_NE(Results.Completions[0].Score.Total, MagicNumber);
+  EXPECT_NE(Results.Completions[0].Score.ExcludingName, MagicNumber);
 }
 
 TEST(CompletionTest, Limit) {
@@ -1077,8 +1125,6 @@ SignatureHelp signatures(llvm::StringRef Text, Position Point,
   MockFS FS;
   auto Inputs = TU.inputs(FS);
   Inputs.Index = Index.get();
-  Inputs.Opts.BuildRecoveryAST = true;
-  Inputs.Opts.PreserveRecoveryASTType = true;
   IgnoreDiagnostics Diags;
   auto CI = buildCompilerInvocation(Inputs, Diags);
   if (!CI) {
@@ -2558,6 +2604,29 @@ TEST(CompletionTest, Lambda) {
   EXPECT_EQ(A.Kind, CompletionItemKind::Variable);
   EXPECT_EQ(A.ReturnType, "float");
   EXPECT_EQ(A.SnippetSuffix, "(${1:int a}, ${2:const double &b})");
+}
+
+TEST(CompletionTest, StructuredBinding) {
+  clangd::CodeCompleteOptions Opts = {};
+
+  auto Results = completions(R"cpp(
+    struct S {
+      using Float = float;
+      int x;
+      Float y;
+    };
+    void function() {
+      const auto &[xxx, yyy] = S{};
+      yyy^
+    }
+  )cpp",
+                             {}, Opts);
+
+  ASSERT_EQ(Results.Completions.size(), 1u);
+  const auto &A = Results.Completions.front();
+  EXPECT_EQ(A.Name, "yyy");
+  EXPECT_EQ(A.Kind, CompletionItemKind::Variable);
+  EXPECT_EQ(A.ReturnType, "const Float");
 }
 
 TEST(CompletionTest, ObjectiveCMethodNoArguments) {

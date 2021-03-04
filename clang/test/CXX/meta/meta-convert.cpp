@@ -4,7 +4,7 @@
 
 namespace meta {
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 consteval bool is_invalid(info x) {
   return __reflect(query_is_invalid, x);
@@ -19,7 +19,7 @@ consteval info get_parent(info x) {
 namespace N { }
 
 consteval meta::info get_reflection() {
-  return reflexpr(N);
+  return ^N;
 }
 
 consteval meta::info get_invalid_reflection() {

@@ -19,6 +19,7 @@
 
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSpliceLoc.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/AttrKinds.h"
@@ -1794,12 +1795,6 @@ protected:
     unsigned PassingMode : 1;
   };
 
-  class CXXDependentVariadicReifierTypeBitfields {
-    friend class CXXDependentVariadicReifierType;
-
-    unsigned : NumTypeBits;
-  };
-
   union {
     TypeBitfields TypeBits;
     ArrayTypeBitfields ArrayTypeBits;
@@ -2120,6 +2115,8 @@ public:
   bool isObjCObjectOrInterfaceType() const;
   bool isObjCIdType() const;                    // id
   bool isDecltypeType() const;
+  bool isTypePackSpliceType() const;
+
   /// Was this type written with the special inert-in-ARC __unsafe_unretained
   /// qualifier?
   ///
@@ -2560,6 +2557,9 @@ public:
 // SVE Types
 #define SVE_TYPE(Name, Id, SingletonId) Id,
 #include "clang/Basic/AArch64SVEACLETypes.def"
+// PPC MMA Types
+#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) Id,
+#include "clang/Basic/PPCTypes.def"
 // All other builtin types
 #define BUILTIN_TYPE(Id, SingletonId) Id,
 #define LAST_BUILTIN_TYPE(Id) LastKind = Id
@@ -4662,40 +4662,40 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs);
 };
 
-/// \brief Representation of reflected types.
+/// Representation of spliced types.
 ///
-/// Reflected types have the form 'typename(x)' where x is a reflection.
-class ReflectedType : public Type {
-  friend class ASTContext;  // ASTContext creates these.
-
+/// Spliced types have the form 'typename [< x >]' where x is a reflection.
+class TypeSpliceType : public Type {
   Expr *Reflection;
   QualType UnderlyingType;
 
 protected:
-  ReflectedType(Expr *E, QualType T, QualType Can = QualType());
+  friend class ASTContext;  // ASTContext creates these.
+
+  TypeSpliceType(Expr *E, QualType T, QualType Can = QualType());
 
 public:
-  /// \brief Returns the reflection (expression) of the operator.
+  /// Returns the reflection (expression) of the operator.
   Expr *getReflection() const { return Reflection; }
 
-  /// \brief Returns the underlying type; the one reflected.
+  /// Returns the underlying type; the one spliced.
   QualType getUnderlyingType() const { return UnderlyingType; }
 
-  /// \brief Returns whether this type provides sugar.
-  bool isSugared() const;
-
-  /// \brief Removes one level of sugar.
+  /// Removes one level of sugar.
   QualType desugar() const;
 
-  static bool classof(const Type *T) { return T->getTypeClass() == Reflected; }
+  /// Returns whether this type provides sugar.
+  bool isSugared() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == TypeSplice; }
 };
 
-/// \brief Representation of dependent reflected types.
-class DependentReflectedType : public ReflectedType,
-                               public llvm::FoldingSetNode {
+/// Representation of dependent type splice types.
+class DependentTypeSpliceType : public TypeSpliceType,
+                                public llvm::FoldingSetNode {
   const ASTContext &Context;
 public:
-  DependentReflectedType(const ASTContext &Context, Expr *E);
+  DependentTypeSpliceType(const ASTContext &Context, Expr *E);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, Context, getReflection());
@@ -4703,6 +4703,50 @@ public:
 
   static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                       Expr *E);
+};
+
+/// Represents pack splice types.
+class TypePackSpliceType : public Type, public llvm::FoldingSetNode {
+  friend class ASTContext; // ASTContext creates these.
+
+  const PackSplice *PS;
+
+  TypePackSpliceType(const ASTContext &Ctx, const PackSplice *PS);
+public:
+  const PackSplice *getPackSplice() const { return PS; }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypePackSplice;
+  }
+};
+
+/// Represents the result of substituting a type for a pack splice.
+class SubstTypePackSpliceType : public Type, public llvm::FoldingSetNode {
+  friend class ASTContext;
+
+  Expr *ExpansionExpr;
+
+  SubstTypePackSpliceType(Expr *ExpansionExpr, QualType Canon);
+public:
+  /// Returns the expression which was spliced to form this type
+  Expr *getExpansionExpr() const { return ExpansionExpr; }
+
+  QualType getReplacementType() const {
+    return getCanonicalTypeInternal();
+  }
+
+  bool isSugared() const { return true; }
+  QualType desugar() const { return getReplacementType(); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == SubstTypePackSplice;
+  }
 };
 
 /// A unary type transform, which is a type constructed from another.
@@ -5814,15 +5858,7 @@ class PackExpansionType : public Type, public llvm::FoldingSetNode {
   QualType Pattern;
 
   PackExpansionType(QualType Pattern, QualType Canon,
-                    Optional<unsigned> NumExpansions)
-      : Type(PackExpansion, Canon,
-             (Pattern->getDependence() | TypeDependence::Dependent |
-              TypeDependence::Instantiation) &
-                 ~TypeDependence::UnexpandedPack, /*MetaType=*/false),
-        Pattern(Pattern) {
-    PackExpansionTypeBits.NumExpansions =
-        NumExpansions ? *NumExpansions + 1 : 0;
-  }
+                    Optional<unsigned> NumExpansions);
 
 public:
   /// Retrieve the pattern of this pack expansion, which is the
@@ -5857,49 +5893,6 @@ public:
     return T->getTypeClass() == PackExpansion;
   }
 };
-
-class CXXDependentVariadicReifierType : public Type {
-  Expr *Range;
-
-  SourceLocation KeywordLoc;
-  SourceLocation EllipsisLoc;
-  SourceLocation RParenLoc;
-public:
-  CXXDependentVariadicReifierType(Expr *Range,
-                                  SourceLocation KeywordLoc,
-                                  SourceLocation EllipsisLoc,
-                                  SourceLocation RParenLoc)
-    : Type(CXXDependentVariadicReifier, QualType(),
-           TypeDependence::DependentInstantiation, /*MetaType=*/false),
-      Range(Range), KeywordLoc(KeywordLoc), EllipsisLoc(EllipsisLoc),
-      RParenLoc(RParenLoc)
-    {}
-
-  Expr *getRange() const { return Range; }
-
-  SourceLocation getBeginLoc() const { return KeywordLoc; }
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
-  SourceLocation getEndLoc() const { return RParenLoc; }
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    // Profile(ID, Context, Range);
-    // TODO: Implement me
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      ASTContext const& Context, Expr *Range) {
-    // Range->Profile(ID, Context, /*Canonical=*/false);
-    // TODO: Implement me
-  }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == CXXDependentVariadicReifier;
-  }
-};
-
 
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.
@@ -7221,6 +7214,10 @@ inline bool Type::isDecltypeType() const {
   return isa<DecltypeType>(this);
 }
 
+inline bool Type::isTypePackSpliceType() const {
+  return isa<TypePackSpliceType>(this);
+}
+
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   inline bool Type::is##Id##Type() const { \
     return isSpecificBuiltinType(BuiltinType::Id); \
@@ -7491,55 +7488,28 @@ inline const Type *Type::getPointeeOrArrayElementType() const {
     return type->getBaseElementTypeUnsafe();
   return type;
 }
-/// Insertion operator for diagnostics. This allows sending address spaces into
-/// a diagnostic with <<.
-inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
-                                           LangAS AS) {
-  DB.AddTaggedVal(static_cast<std::underlying_type_t<LangAS>>(AS),
-                  DiagnosticsEngine::ArgumentKind::ak_addrspace);
-  return DB;
-}
-
 /// Insertion operator for partial diagnostics. This allows sending adress
 /// spaces into a diagnostic with <<.
-inline const PartialDiagnostic &operator<<(const PartialDiagnostic &PD,
-                                           LangAS AS) {
+inline const StreamingDiagnostic &operator<<(const StreamingDiagnostic &PD,
+                                             LangAS AS) {
   PD.AddTaggedVal(static_cast<std::underlying_type_t<LangAS>>(AS),
                   DiagnosticsEngine::ArgumentKind::ak_addrspace);
   return PD;
 }
 
-/// Insertion operator for diagnostics. This allows sending Qualifiers into a
-/// diagnostic with <<.
-inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
-                                           Qualifiers Q) {
-  DB.AddTaggedVal(Q.getAsOpaqueValue(),
-                  DiagnosticsEngine::ArgumentKind::ak_qual);
-  return DB;
-}
-
 /// Insertion operator for partial diagnostics. This allows sending Qualifiers
 /// into a diagnostic with <<.
-inline const PartialDiagnostic &operator<<(const PartialDiagnostic &PD,
-                                           Qualifiers Q) {
+inline const StreamingDiagnostic &operator<<(const StreamingDiagnostic &PD,
+                                             Qualifiers Q) {
   PD.AddTaggedVal(Q.getAsOpaqueValue(),
                   DiagnosticsEngine::ArgumentKind::ak_qual);
   return PD;
 }
 
-/// Insertion operator for diagnostics.  This allows sending QualType's into a
-/// diagnostic with <<.
-inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
-                                           QualType T) {
-  DB.AddTaggedVal(reinterpret_cast<intptr_t>(T.getAsOpaquePtr()),
-                  DiagnosticsEngine::ak_qualtype);
-  return DB;
-}
-
 /// Insertion operator for partial diagnostics.  This allows sending QualType's
 /// into a diagnostic with <<.
-inline const PartialDiagnostic &operator<<(const PartialDiagnostic &PD,
-                                           QualType T) {
+inline const StreamingDiagnostic &operator<<(const StreamingDiagnostic &PD,
+                                             QualType T) {
   PD.AddTaggedVal(reinterpret_cast<intptr_t>(T.getAsOpaquePtr()),
                   DiagnosticsEngine::ak_qualtype);
   return PD;

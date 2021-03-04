@@ -16,6 +16,7 @@
 #include "clang/AST/ExprConcepts.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
 #include "llvm/ADT/ArrayRef.h"
 
@@ -309,8 +310,15 @@ ExprDependence clang::computeDependence(CXXNoexceptExpr *E, CanThrowResult CT) {
 }
 
 ExprDependence clang::computeDependence(PackExpansionExpr *E) {
-  return (E->getPattern()->getDependence() & ~ExprDependence::UnexpandedPack) |
-         ExprDependence::TypeValueInstantiation;
+  Expr *Pattern = E->getPattern();
+  auto D = Pattern->getDependence() & ~ExprDependence::UnexpandedPack;
+
+  // If a pack expansion is dependent in any way, its type, value, and
+  // instantiation dependent.
+  if (D)
+    D |= ExprDependence::TypeValueInstantiation;
+
+  return D;
 }
 
 ExprDependence clang::computeDependence(SubstNonTypeTemplateParmExpr *E) {
@@ -336,10 +344,14 @@ ExprDependence clang::computeDependence(CXXReflectExpr *E) {
   switch (Operand.getKind()) {
   case ReflectionOperand::Type: {
     QualType T = Operand.getAsType();
-    if (T->isDependentType())
-      return ExprDependence::ValueInstantiation;
 
-    return ExprDependence::None;
+    ExprDependence D = ExprDependence::None;
+    if (T->isDependentType())
+      D |= ExprDependence::ValueInstantiation;
+    if (T->containsUnexpandedParameterPack())
+      D |= ExprDependence::UnexpandedPack;
+
+    return D;
   }
   case ReflectionOperand::Template: {
     TemplateName T = Operand.getAsTemplate();
@@ -350,10 +362,14 @@ ExprDependence clang::computeDependence(CXXReflectExpr *E) {
   }
   case ReflectionOperand::Expression: {
     Expr *E = Operand.getAsExpression();
-    if (E->isTypeDependent() || E->isValueDependent())
-      return ExprDependence::ValueInstantiation;
 
-    return ExprDependence::None;
+    ExprDependence D = ExprDependence::None;
+    if (E->isTypeDependent() || E->isValueDependent())
+      D |= ExprDependence::ValueInstantiation;
+    if (E->containsUnexpandedParameterPack())
+      D |= ExprDependence::UnexpandedPack;
+
+    return D;
   }
   case ReflectionOperand::Invalid:
   case ReflectionOperand::Namespace:
@@ -404,16 +420,31 @@ ExprDependence clang::computeDependence(CXXCompilerErrorExpr *E) {
   return D;
 }
 
-ExprDependence clang::computeDependence(CXXIdExprExpr *E) {
+ExprDependence clang::computeDependence(CXXExprSpliceExpr *E) {
+  auto D = ExprDependence::TypeValueInstantiation;
+  D |= E->getReflection()->getDependence() & ExprDependence::UnexpandedPack;
+  return D;
+}
+
+ExprDependence clang::computeDependence(CXXMemberExprSpliceExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(CXXMemberIdExprExpr *E) {
-  return ExprDependence::TypeValueInstantiation;
-}
+ExprDependence clang::computeDependence(CXXPackSpliceExpr *E) {
+  // FIXME: Duplicated by the computePackSpliceDependence function in
+  // Type.cpp
 
-ExprDependence clang::computeDependence(CXXDependentVariadicReifierExpr *E) {
-  return E->getRange()->getDependence() | ExprDependence::TypeValue;
+  ExprDependence Depends = ExprDependence::UnexpandedPack;
+
+  const PackSplice *PS = E->getPackSplice();
+  if (PS->isExpanded()) {
+    for (Expr *SE : PS->getExpansions())
+      Depends |= SE->getDependence();
+  } else {
+    Depends |= PS->getOperand()->getDependence();
+  }
+
+  return Depends;
 }
 
 ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
@@ -423,10 +454,6 @@ ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
 }
 
 ExprDependence clang::computeDependence(CXXDependentSpliceIdExpr *E) {
-  return ExprDependence::TypeValueInstantiation;
-}
-
-ExprDependence clang::computeDependence(CXXValueOfExpr *E) {
   return ExprDependence::TypeValueInstantiation;
 }
 
@@ -574,10 +601,12 @@ ExprDependence clang::computeDependence(DeclRefExpr *E, const ASTContext &Ctx) {
              : Var->getType()->isIntegralOrEnumerationType()) &&
         (Var->getType().isConstQualified() ||
          Var->getType()->isReferenceType())) {
-      if (const Expr *Init = Var->getAnyInitializer())
-        if (Init->isValueDependent()) {
+      if (const Expr *Init = Var->getAnyInitializer()) {
+        if (Init->isValueDependent())
           Deps |= ExprDependence::ValueInstantiation;
-        }
+        if (Init->containsErrors())
+          Deps |= ExprDependence::Error;
+      }
     }
 
     // (VD) - FIXME: Missing from the standard:
@@ -817,8 +846,6 @@ ExprDependence clang::computeDependence(LambdaExpr *E,
 ExprDependence clang::computeDependence(CXXUnresolvedConstructExpr *E) {
   auto D = ExprDependence::ValueInstantiation;
   D |= toExprDependence(E->getType()->getDependence());
-  if (E->getType()->getContainedDeducedType())
-    D |= ExprDependence::Type;
   for (auto *A : E->arguments())
     D |= A->getDependence() &
          (ExprDependence::UnexpandedPack | ExprDependence::Error);

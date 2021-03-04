@@ -6,7 +6,7 @@
 
 namespace meta {
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 consteval bool is_invalid(info m) {
   return __reflect(query_is_invalid, m);
@@ -40,7 +40,7 @@ template<meta::info X, typename T>
 bool compare(const T& a, const T& b) {
   if constexpr (!meta::is_invalid(X)) {
     if constexpr (meta::is_data_member(X)) {
-      auto p = valueof(X);
+      auto p = &[:X:];
       if (a.*p != b.*p)
         return false;
     }
@@ -51,7 +51,7 @@ bool compare(const T& a, const T& b) {
 
 template<typename T>
 bool equal(const T& a, const T& b) {
-  return compare<meta::front(reflexpr(T))>(a, b);
+  return compare<meta::front(^T)>(a, b);
 }
 
 int main() {

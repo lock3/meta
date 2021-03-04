@@ -381,8 +381,8 @@ void Sema::DiagnoseUnterminatedPragmaPack() {
     // The user might have already reset the alignment, so suggest replacing
     // the reset with a pop.
     if (IsInnermost && PackStack.CurrentValue == PackStack.DefaultValue) {
-      DiagnosticBuilder DB = Diag(PackStack.CurrentPragmaLocation,
-                                  diag::note_pragma_pack_pop_instead_reset);
+      auto DB = Diag(PackStack.CurrentPragmaLocation,
+                     diag::note_pragma_pack_pop_instead_reset);
       SourceLocation FixItLoc = Lexer::findLocationAfterToken(
           PackStack.CurrentPragmaLocation, tok::l_paren, SourceMgr, LangOpts,
           /*SkipTrailing=*/false);
@@ -982,7 +982,9 @@ void Sema::ActOnPragmaFPReassociate(SourceLocation Loc, bool IsEnabled) {
 void Sema::setRoundingMode(SourceLocation Loc, llvm::RoundingMode FPR) {
   // C2x: 7.6.2p3  If the FE_DYNAMIC mode is specified and FENV_ACCESS is "off",
   // the translator may assume that the default rounding mode is in effect.
-  if (FPR == llvm::RoundingMode::Dynamic && !CurFPFeatures.getAllowFEnvAccess())
+  if (FPR == llvm::RoundingMode::Dynamic &&
+      !CurFPFeatures.getAllowFEnvAccess() &&
+      CurFPFeatures.getFPExceptionMode() == LangOptions::FPE_Ignore)
     FPR = llvm::RoundingMode::NearestTiesToEven;
 
   FPOptionsOverride NewFPFeatures = CurFPFeatureOverrides();
@@ -1001,6 +1003,7 @@ void Sema::setExceptionMode(SourceLocation Loc,
 
 void Sema::ActOnPragmaFEnvAccess(SourceLocation Loc, bool IsEnabled) {
   FPOptionsOverride NewFPFeatures = CurFPFeatureOverrides();
+  auto LO = getLangOpts();
   if (IsEnabled) {
     // Verify Microsoft restriction:
     // You can't enable fenv_access unless precise semantics are enabled.
@@ -1009,10 +1012,20 @@ void Sema::ActOnPragmaFEnvAccess(SourceLocation Loc, bool IsEnabled) {
     if (!isPreciseFPEnabled())
       Diag(Loc, diag::err_pragma_fenv_requires_precise);
     NewFPFeatures.setAllowFEnvAccessOverride(true);
-  } else
+    // Enabling FENV access sets the RoundingMode to Dynamic.
+    // and ExceptionBehavior to Strict
+    NewFPFeatures.setRoundingModeOverride(llvm::RoundingMode::Dynamic);
+    NewFPFeatures.setFPExceptionModeOverride(LangOptions::FPE_Strict);
+  } else {
     NewFPFeatures.setAllowFEnvAccessOverride(false);
+  }
   FpPragmaStack.Act(Loc, PSK_Set, StringRef(), NewFPFeatures);
-  CurFPFeatures = NewFPFeatures.applyOverrides(getLangOpts());
+  CurFPFeatures = NewFPFeatures.applyOverrides(LO);
+}
+
+void Sema::ActOnPragmaFPExceptions(SourceLocation Loc,
+                                   LangOptions::FPExceptionModeKind FPE) {
+  setExceptionMode(Loc, FPE);
 }
 
 void Sema::PushNamespaceVisibilityAttr(const VisibilityAttr *Attr,

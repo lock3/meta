@@ -138,9 +138,6 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   tok::TokenKind kind = Tok.getKind();
   // Consume everything up to (and including) the left brace of the
   // function body.
-
-  // FIXME: a memember initializer list will parse to here.
-
   if (ConsumeAndStoreFunctionPrologue(Toks)) {
     // We didn't find the left-brace we expected after the
     // constructor initializer; we already printed an error, and it's likely
@@ -408,14 +405,21 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
         ConsumeAnyToken();
     } else if (HasUnparsed) {
       assert(Param->hasInheritedDefaultArg());
-      FunctionDecl *Old = cast<FunctionDecl>(LM.Method)->getPreviousDecl();
-      ParmVarDecl *OldParam = Old->getParamDecl(I);
-      assert (!OldParam->hasUnparsedDefaultArg());
-      if (OldParam->hasUninstantiatedDefaultArg())
-        Param->setUninstantiatedDefaultArg(
-            OldParam->getUninstantiatedDefaultArg());
+      const FunctionDecl *Old;
+      if (const auto *FunTmpl = dyn_cast<FunctionTemplateDecl>(LM.Method))
+        Old =
+            cast<FunctionDecl>(FunTmpl->getTemplatedDecl())->getPreviousDecl();
       else
-        Param->setDefaultArg(OldParam->getInit());
+        Old = cast<FunctionDecl>(LM.Method)->getPreviousDecl();
+      if (Old) {
+        ParmVarDecl *OldParam = const_cast<ParmVarDecl*>(Old->getParamDecl(I));
+        assert(!OldParam->hasUnparsedDefaultArg());
+        if (OldParam->hasUninstantiatedDefaultArg())
+          Param->setUninstantiatedDefaultArg(
+              OldParam->getUninstantiatedDefaultArg());
+        else
+          Param->setDefaultArg(OldParam->getInit());
+      }
     }
   }
 
@@ -932,6 +936,18 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         return true;
       }
     }
+
+    if (isCXXPackSpliceBegin()) {
+      // Use the location of the '[' token
+      SourceLocation OpenLoc = NextToken().getLocation();
+
+      if (!ConsumeAndStoreTypePackSplice(Toks)) {
+        Diag(Tok.getLocation(), diag::err_expected_end_of_splice);
+        Diag(OpenLoc, diag::note_matching);
+        return true;
+      }
+    }
+
     do {
       // Walk over a component of a nested-name-specifier.
       if (Tok.is(tok::coloncolon)) {
@@ -984,27 +1000,6 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         // We're not just missing the initializer, we're also missing the
         // function body!
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_brace;
-      }
-    } else if(isVariadicReifier()) {
-      if (!ConsumeAndStoreUntil(tok::l_paren, Toks, /*StopAtSemi=*/true,
-                               /*ConsumeFinalToken=*/true))
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::l_paren;
-      if (!ConsumeAndStoreUntil(tok::ellipsis, Toks, /*StopAtSemi=*/true,
-                               /*ConsumeFinalToken=*/true)){
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::ellipsis;
-      }
-      if (!isIdentifier())
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
-      Toks.push_back(Tok);
-      ConsumeIdentifier();
-
-      // if(!Tok.is(tok::r_paren))
-      //   return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
-      // Toks.push_back(Tok);
-      // ConsumeToken();
-      if (!ConsumeAndStoreUntil(tok::r_paren, Toks, /*StopAtSemi=*/true,
-                                /*ConsumeFinalToken=*/true)) {
-        return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
       }
     } else if (Tok.isNot(tok::l_paren) && Tok.isNot(tok::l_brace)) {
       // We found something weird in a mem-initializer-id.

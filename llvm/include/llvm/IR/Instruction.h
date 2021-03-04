@@ -256,13 +256,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Return true if this instruction has any metadata attached to it.
-  bool hasMetadata() const { return DbgLoc || hasMetadataHashEntry(); }
+  bool hasMetadata() const { return DbgLoc || Value::hasMetadata(); }
 
   /// Return true if this instruction has metadata attached to it other than a
   /// debug location.
-  bool hasMetadataOtherThanDebugLoc() const {
-    return hasMetadataHashEntry();
-  }
+  bool hasMetadataOtherThanDebugLoc() const { return Value::hasMetadata(); }
 
   /// Return true if this instruction has the given type of metadata attached.
   bool hasMetadata(unsigned KindID) const {
@@ -301,8 +299,7 @@ public:
   /// debug location.
   void getAllMetadataOtherThanDebugLoc(
       SmallVectorImpl<std::pair<unsigned, MDNode *>> &MDs) const {
-    if (hasMetadataOtherThanDebugLoc())
-      getAllMetadataOtherThanDebugLocImpl(MDs);
+    Value::getAllMetadata(MDs);
   }
 
   /// Fills the AAMDNodes structure with AA metadata from this instruction.
@@ -492,21 +489,26 @@ public:
   /// merged DebugLoc.
   void applyMergedLocation(const DILocation *LocA, const DILocation *LocB);
 
-private:
-  /// Return true if we have an entry in the on-the-side metadata hash.
-  bool hasMetadataHashEntry() const {
-    return Bitfield::test<HasMetadataField>(getSubclassDataFromValue());
-  }
+  /// Updates the debug location given that the instruction has been hoisted
+  /// from a block to a predecessor of that block.
+  /// Note: it is undefined behavior to call this on an instruction not
+  /// currently inserted into a function.
+  void updateLocationAfterHoist();
 
+  /// Drop the instruction's debug location. This does not guarantee removal
+  /// of the !dbg source location attachment, as it must set a line 0 location
+  /// with scope information attached on call instructions. To guarantee
+  /// removal of the !dbg attachment, use the \ref setDebugLoc() API.
+  /// Note: it is undefined behavior to call this on an instruction not
+  /// currently inserted into a function.
+  void dropLocation();
+
+private:
   // These are all implemented in Metadata.cpp.
   MDNode *getMetadataImpl(unsigned KindID) const;
   MDNode *getMetadataImpl(StringRef Kind) const;
   void
   getAllMetadataImpl(SmallVectorImpl<std::pair<unsigned, MDNode *>> &) const;
-  void getAllMetadataOtherThanDebugLocImpl(
-      SmallVectorImpl<std::pair<unsigned, MDNode *>> &) const;
-  /// Clear all hashtable-based metadata from this instruction.
-  void clearMetadataHashEntries();
 
 public:
   //===--------------------------------------------------------------------===//
@@ -786,8 +788,6 @@ private:
   unsigned short getSubclassDataFromValue() const {
     return Value::getSubclassDataFromValue();
   }
-
-  void setHasMetadataHashEntry(bool V) { setSubclassData<HasMetadataField>(V); }
 
   void setParent(BasicBlock *P);
 

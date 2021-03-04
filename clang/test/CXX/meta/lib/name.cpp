@@ -23,31 +23,31 @@ consteval string_type name_of(meta::info reflection) {
 
 namespace namespace_name {}
 
-static_assert(is_named(reflexpr(namespace_name)));
-static_assert(string_eq(name_of(reflexpr(namespace_name)), "namespace_name"));
+static_assert(is_named(^namespace_name));
+static_assert(string_eq(name_of(^namespace_name), "namespace_name"));
 
 namespace namespace_alias_name = namespace_name;
 
-static_assert(is_named(reflexpr(namespace_alias_name)));
-static_assert(string_eq(name_of(reflexpr(namespace_alias_name)), "namespace_alias_name"));
+static_assert(is_named(^namespace_alias_name));
+static_assert(string_eq(name_of(^namespace_alias_name), "namespace_alias_name"));
 
-static_assert(is_named(reflexpr(int)));
-static_assert(string_eq(name_of(reflexpr(int)), "int"));
+static_assert(is_named(^int));
+static_assert(string_eq(name_of(^int), "int"));
 
 using builtin_type_alias_name = int;
 
-static_assert(is_named(reflexpr(builtin_type_alias_name)));
-static_assert(string_eq(name_of(reflexpr(builtin_type_alias_name)), "builtin_type_alias_name"));
+static_assert(is_named(^builtin_type_alias_name));
+static_assert(string_eq(name_of(^builtin_type_alias_name), "builtin_type_alias_name"));
 
 class type_name;
 
-static_assert(is_named(reflexpr(type_name)));
-static_assert(string_eq(name_of(reflexpr(type_name)), "type_name"));
+static_assert(is_named(^type_name));
+static_assert(string_eq(name_of(^type_name), "type_name"));
 
 using type_alias_name = type_name;
 
-static_assert(is_named(reflexpr(type_alias_name)));
-static_assert(string_eq(name_of(reflexpr(type_alias_name)), "type_alias_name"));
+static_assert(is_named(^type_alias_name));
+static_assert(string_eq(name_of(^type_alias_name), "type_alias_name"));
 
 namespace container {
   template<typename T>
@@ -61,7 +61,7 @@ namespace container {
   };
 }
 
-constexpr meta::info base_templ_refl = __reflect(query_get_begin_member, reflexpr(container));
+constexpr meta::info base_templ_refl = __reflect(query_get_begin_member, ^container);
 
 static_assert(is_named(base_templ_refl));
 static_assert(string_eq(name_of(base_templ_refl), "base_templ_name"));
@@ -88,7 +88,7 @@ struct class_with_named_special_members {
   int operator++();
 };
 
-constexpr meta::info constructor_refl = __reflect(query_get_begin_member, reflexpr(class_with_named_special_members));
+constexpr meta::info constructor_refl = __reflect(query_get_begin_member, ^class_with_named_special_members);
 
 static_assert(is_named(constructor_refl));
 static_assert(string_eq(name_of(constructor_refl), "class_with_named_special_members"));

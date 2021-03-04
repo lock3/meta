@@ -129,6 +129,8 @@ public:
   static const TST TST_typeofExpr = clang::TST_typeofExpr;
   static const TST TST_decltype = clang::TST_decltype;
   static const TST TST_decltype_auto = clang::TST_decltype_auto;
+  static const TST TST_type_splice = clang::TST_type_splice;
+  static const TST TST_type_pack_splice = clang::TST_type_pack_splice;
   static const TST TST_underlyingType = clang::TST_underlyingType;
   static const TST TST_auto = clang::TST_auto;
   static const TST TST_auto_type = clang::TST_auto_type;
@@ -247,7 +249,9 @@ private:
             T == TST_underlyingType || T == TST_atomic);
   }
   static bool isExprRep(TST T) {
-    return (T == TST_typeofExpr || T == TST_decltype || T == TST_extint);
+    return (T == TST_typeofExpr || T == TST_decltype ||
+            T == TST_type_splice || T == TST_type_pack_splice ||
+            T == TST_extint);
   }
   static bool isTemplateIdRep(TST T) {
     return (T == TST_auto || T == TST_decltype_auto);
@@ -1220,6 +1224,10 @@ struct DeclaratorChunk {
     /// type specified.
     UnionParsedType TrailingReturnType;
 
+    /// If HasTrailingReturnType is true, this is the location of the trailing
+    /// return type.
+    unsigned TrailingReturnTypeLoc;
+
     /// Reset the parameter list to having zero parameters.
     ///
     /// This is used in various places for error recovery.
@@ -1355,7 +1363,16 @@ struct DeclaratorChunk {
     bool hasTrailingReturnType() const { return HasTrailingReturnType; }
 
     /// Get the trailing-return-type for this function declarator.
-    ParsedType getTrailingReturnType() const { return TrailingReturnType; }
+    ParsedType getTrailingReturnType() const {
+      assert(HasTrailingReturnType);
+      return TrailingReturnType;
+    }
+
+    /// Get the trailing-return-type location for this function declarator.
+    SourceLocation getTrailingReturnTypeLoc() const {
+      assert(HasTrailingReturnType);
+      return SourceLocation::getFromRawEncoding(TrailingReturnTypeLoc);
+    }
   };
 
   struct BlockPointerTypeInfo {
@@ -1490,6 +1507,8 @@ struct DeclaratorChunk {
                                      Declarator &TheDeclarator,
                                      TypeResult TrailingReturnType =
                                                     TypeResult(),
+                                     SourceLocation TrailingReturnTypeLoc =
+                                                    SourceLocation(),
                                      DeclSpec *MethodQualifiers = nullptr);
 
   /// Return a DeclaratorChunk for a block.

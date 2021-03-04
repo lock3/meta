@@ -50,8 +50,8 @@ entry:
 ; CHECK-NEXT: bitcast i8* %dec1.spill.addr.i to i32*
 ; CHECK-NEXT: store i32 4
 ; CHECK-NEXT: call void @print(i32 4)
-; CHECK-NEXT: %index.addr13.i = getelementptr inbounds i8, i8* %call.i, i64 24
-; CHECK-NEXT: bitcast i8* %index.addr13.i to i1*
+; CHECK-NEXT: %index.addr12.i = getelementptr inbounds i8, i8* %call.i, i64 24
+; CHECK-NEXT: bitcast i8* %index.addr12.i to i1*
 ; CHECK-NEXT: store i1 false
 ; CHECK-NEXT: store i32 3
 ; CHECK-NEXT: store i32 3

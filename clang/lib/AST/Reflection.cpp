@@ -18,6 +18,8 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
+#include "clang/Sema/Sema.h"
+#include "clang/Sema/SemaDiagnostic.h"
 
 namespace clang {
   enum ReflectionQuery : unsigned {
@@ -242,6 +244,10 @@ namespace clang {
     query_get_next_param,
     query_get_begin_member,
     query_get_next_member,
+
+    query_get_begin_subobject,
+    query_get_next_subobject,
+
     query_get_begin_base_spec,
     query_get_next_base_spec,
 
@@ -2296,12 +2302,27 @@ static bool makeReflection(APValue &Result) {
   return true;
 }
 
+/// Same as above.
+///
+/// TODO: Deprecate the fucntion above.
+static bool makeInvalidReflection(APValue &Result) {
+  Result = APValue(RK_invalid, nullptr);
+  return true;
+}
+
 /// Set Result to a reflection of D.
 static bool makeReflection(const Decl *D, APValue &Result) {
   if (!D)
     return makeReflection(Result);
   Result = APValue(RK_declaration, D);
   return true;
+}
+
+/// Same as above but avoid ambiguous overloads.
+///
+/// TODO: Deprecate the function above.
+static bool makeDeclReflection(const Decl *D, APValue &Result) {
+  return makeReflection(D, Result);
 }
 
 /// Set Result to a reflection of D.
@@ -2625,7 +2646,6 @@ static bool getBeginMember(const Reflection &R, APValue &Result) {
     const Decl *Member = findIterableMember(*DC->decls_begin());
     return makeReflection(Member, Result);
   }
-
   return Error(R);
 }
 
@@ -2635,9 +2655,94 @@ static bool getNextMember(const Reflection &R, APValue &Result) {
     const Decl *Member = findIterableMember(D->getNextDeclInContext());
     return makeReflection(Member, Result);
   }
+  return Error(R);
+}
+
+static void CollectFields(CXXRecordDecl const* Class,
+                          std::vector<const FieldDecl*> &Subobjects) {
+  for (const FieldDecl *Field : Class->fields())
+    Subobjects.push_back(Field);
+}
+
+static void CollectVirtualSubobjects(CXXRecordDecl const* Class,
+                              std::vector<const FieldDecl*> &Subobjects) {
+  for (CXXBaseSpecifier Spec : Class->vbases())
+    CollectFields(Spec.getType()->getAsCXXRecordDecl(), Subobjects);
+}
+
+static void CollectDirectSubobjects(CXXRecordDecl const* Class,
+                              std::vector<const FieldDecl*> &Subobjects) {
+  // Skip virtual bases. Those get pulled in explicitly.
+  for (CXXBaseSpecifier Spec : Class->bases())
+    if (!Spec.isVirtual())
+      CollectDirectSubobjects(Spec.getType()->getAsCXXRecordDecl(), Subobjects);
+  CollectFields(Class, Subobjects);
+}
+
+static void CollectSubobjects(CXXRecordDecl const* Class,
+                              std::vector<const FieldDecl*> &Subobjects) {
+  CollectVirtualSubobjects(Class, Subobjects);
+  CollectDirectSubobjects(Class, Subobjects);
+}
+
+/// Sets Result to be a subobject index. The "value" is the field, N is the
+/// index into the list, and Class stores the declaration used to "key" the
+/// list.
+static bool makeSubobjectIndex(const FieldDecl *F, unsigned N,
+                               const APValue &Class, APValue &Result) {
+  Result = APValue(RK_declaration, F, N, Class);
+  return true;
+}
+
+// Returns the first subobject of a class.
+static bool getBeginSubobject(const Reflection &R, APValue &Result) {
+  if (const CXXRecordDecl *Class = getReachableClassDecl(R)) {
+    ASTContext &Ctx = R.getContext();
+    auto Insertion =
+      Ctx.AllSubobjects.try_emplace(Class, std::vector<const FieldDecl *>());
+    auto &Subobjects = Insertion.first->second;
+    if (Insertion.second)
+      CollectSubobjects(Class, Subobjects);
+    
+    if (Subobjects.empty())
+      return makeInvalidReflection(Result);
+
+    // The iterator is kind of complicated.
+    APValue ClassValue;
+    makeDeclReflection(Class, ClassValue);
+    makeSubobjectIndex(Subobjects[0], 0, ClassValue, Result);
+    assert(Result.hasParentReflection());
+    return true;
+  }
 
   return Error(R);
 }
+
+// Returns the next subobject in a class.
+static bool getNextSubobject(const Reflection &R, APValue &Result) {
+  // FIXME: Implement some kind of error checking.
+  //
+  // Get the class from the reflection.
+  Reflection ClassRefl = R.getParent(); // Not really a parent.
+  auto const *Class =
+    cast<CXXRecordDecl>(ClassRefl.getAsDeclaration());
+
+  // Build the value.
+  ASTContext &Ctx = R.getContext();
+  auto Iter = Ctx.AllSubobjects.find(Class);
+  if (Iter != Ctx.AllSubobjects.end()) {
+    auto &Subobjects = Iter->second;
+    std::size_t N = R.getOffset() + 1;
+    if (N == Subobjects.size())
+      return makeInvalidReflection(Result);
+    APValue ClassValue;
+    makeDeclReflection(Class, ClassValue);
+    return makeSubobjectIndex(Subobjects[N], N, ClassValue, Result);
+  }
+
+  return Error(R);
+}
+
 
 static const CXXBaseSpecifier *
 getBaseSpecifier(const CXXRecordDecl *RD, unsigned Index) {
@@ -2976,6 +3081,12 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getBeginMember(*this, Result);
   case query_get_next_member:
     return getNextMember(*this, Result);
+
+  case query_get_begin_subobject:
+    return getBeginSubobject(*this, Result);
+  case query_get_next_subobject:
+    return getNextSubobject(*this, Result);
+
   case query_get_begin_base_spec:
     return getBeginBaseSpec(*this, Result);
   case query_get_next_base_spec:
@@ -3050,7 +3161,7 @@ static bool getName(const Reflection R, APValue &Result) {
     // Generate the result value.
     Expr::EvalResult Eval;
     Expr::EvalContext EvalCtx(Ctx, nullptr);
-    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
+    if (!Str->EvaluateAsConstantExpr(Eval, EvalCtx))
       return false;
     Result = Eval.Val;
     return true;
@@ -3064,7 +3175,7 @@ static bool getName(const Reflection R, APValue &Result) {
     // Generate the result value.
     Expr::EvalResult Eval;
     Expr::EvalContext EvalCtx(Ctx, nullptr);
-    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
+    if (!Str->EvaluateAsConstantExpr(Eval, EvalCtx))
       return false;
     Result = Eval.Val;
     return true;
@@ -3126,4 +3237,43 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
   default:
     return false;
   }
+}
+
+namespace clang {
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
+    S.Diag(E->getExprLoc(), diag::err_reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return true;
+  }
+
+  R = Reflection(S.Context, Result.Val);
+  return false;
+}
+
+void DiagnoseInvalidReflection(Sema &SemaRef, Expr *E, const Reflection &R) {
+  SemaRef.Diag(E->getExprLoc(), diag::err_splice_invalid_reflection);
+
+  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
+  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
+  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.c_str(), 1, Buf.size() - 2);
+
+  SemaRef.Diag(E->getExprLoc(), diag::note_user_defined_note) << NonQuote;
+}
+
 }

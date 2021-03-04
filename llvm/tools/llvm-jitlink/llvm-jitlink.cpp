@@ -482,12 +482,11 @@ LLVMJITLinkObjectLinkingLayer::LLVMJITLinkObjectLinkingLayer(
     Session &S, JITLinkMemoryManager &MemMgr)
     : ObjectLinkingLayer(S.ES, MemMgr), S(S) {}
 
-Error LLVMJITLinkObjectLinkingLayer::add(JITDylib &JD,
-                                         std::unique_ptr<MemoryBuffer> O,
-                                         VModuleKey K) {
+Error LLVMJITLinkObjectLinkingLayer::add(ResourceTrackerSP RT,
+                                         std::unique_ptr<MemoryBuffer> O) {
 
   if (S.HarnessFiles.empty() || S.HarnessFiles.count(O->getBufferIdentifier()))
-    return ObjectLinkingLayer::add(JD, std::move(O), std::move(K));
+    return ObjectLinkingLayer::add(std::move(RT), std::move(O));
 
   // Use getObjectSymbolInfo to compute the init symbol, but ignore
   // the symbols field. We'll handle that manually to include promotion.
@@ -556,14 +555,15 @@ Error LLVMJITLinkObjectLinkingLayer::add(JITDylib &JD,
   }
 
   auto MU = std::make_unique<BasicObjectLayerMaterializationUnit>(
-      *this, K, std::move(O), std::move(SymbolFlags), std::move(InitSymbol));
+      *this, std::move(O), std::move(SymbolFlags), std::move(InitSymbol));
 
-  return JD.define(std::move(MU));
+  auto &JD = RT->getJITDylib();
+  return JD.define(std::move(MU), std::move(RT));
 }
 
-class PhonyExternalsGenerator : public JITDylib::DefinitionGenerator {
+class PhonyExternalsGenerator : public DefinitionGenerator {
 public:
-  Error tryToGenerate(LookupKind K, JITDylib &JD,
+  Error tryToGenerate(LookupState &LS, LookupKind K, JITDylib &JD,
                       JITDylibLookupFlags JDLookupFlags,
                       const SymbolLookupSet &LookupSet) override {
     SymbolMap PhonySymbols;
@@ -586,6 +586,11 @@ Expected<std::unique_ptr<Session>> Session::Create(Triple TT) {
   return std::move(S);
 }
 
+Session::~Session() {
+  if (auto Err = ES.endSession())
+    ES.reportError(std::move(Err));
+}
+
 // FIXME: Move to createJITDylib if/when we start using Platform support in
 // llvm-jitlink.
 Session::Session(Triple TT, uint64_t PageSize, Error &Err)
@@ -603,6 +608,15 @@ Session::Session(Triple TT, uint64_t PageSize, Error &Err)
       S.modifyPassConfig(TT, PassConfig);
     }
 
+    Error notifyFailed(MaterializationResponsibility &MR) override {
+      return Error::success();
+    }
+    Error notifyRemovingResources(ResourceKey K) override {
+      return Error::success();
+    }
+    void notifyTransferringResources(ResourceKey DstKey,
+                                     ResourceKey SrcKey) override {}
+
   private:
     Session &S;
   };
@@ -618,7 +632,7 @@ Session::Session(Triple TT, uint64_t PageSize, Error &Err)
 
   if (!NoExec && !TT.isOSWindows())
     ObjLayer.addPlugin(std::make_unique<EHFrameRegistrationPlugin>(
-        std::make_unique<InProcessEHFrameRegistrar>()));
+        ES, std::make_unique<InProcessEHFrameRegistrar>()));
 
   ObjLayer.addPlugin(std::make_unique<JITLinkSessionPlugin>(*this));
 
@@ -770,7 +784,7 @@ Session::findSymbolInfo(StringRef SymbolName, Twine ErrorMsgStem) {
 
 } // end namespace llvm
 
-Triple getFirstFileTriple() {
+static Triple getFirstFileTriple() {
   assert(!InputFiles.empty() && "InputFiles can not be empty");
   auto ObjBuffer =
       ExitOnErr(errorOrToExpected(MemoryBuffer::getFile(InputFiles.front())));
@@ -779,7 +793,7 @@ Triple getFirstFileTriple() {
   return Obj->makeTriple();
 }
 
-Error sanitizeArguments(const Session &S) {
+static Error sanitizeArguments(const Session &S) {
   if (EntryPointName.empty()) {
     if (S.TPC->getTargetTriple().getObjectFormat() == Triple::MachO)
       EntryPointName = "_main";
@@ -801,7 +815,7 @@ Error sanitizeArguments(const Session &S) {
   return Error::success();
 }
 
-Error loadProcessSymbols(Session &S) {
+static Error loadProcessSymbols(Session &S) {
   auto InternedEntryPointName = S.ES.intern(EntryPointName);
   auto FilterMainEntryPoint = [InternedEntryPointName](SymbolStringPtr Name) {
     return Name != InternedEntryPointName;
@@ -813,7 +827,7 @@ Error loadProcessSymbols(Session &S) {
   return Error::success();
 }
 
-Error loadDylibs() {
+static Error loadDylibs() {
   // FIXME: This should all be handled inside DynamicLibrary.
   for (const auto &Dylib : Dylibs) {
     if (!sys::fs::is_regular_file(Dylib))
@@ -827,12 +841,11 @@ Error loadDylibs() {
   return Error::success();
 }
 
-void addPhonyExternalsGenerator(Session &S) {
+static void addPhonyExternalsGenerator(Session &S) {
   S.MainJD->addGenerator(std::make_unique<PhonyExternalsGenerator>());
 }
 
-Error loadObjects(Session &S) {
-
+static Error loadObjects(Session &S) {
   std::map<unsigned, JITDylib *> IdxToJLD;
 
   // First, set up JITDylibs.
@@ -941,7 +954,7 @@ Error loadObjects(Session &S) {
   return Error::success();
 }
 
-Error runChecks(Session &S) {
+static Error runChecks(Session &S) {
 
   auto TripleName = S.TPC->getTargetTriple().str();
   std::string ErrorStr;
@@ -1036,12 +1049,14 @@ static Expected<JITEvaluatedSymbol> getMainEntryPoint(Session &S) {
   return S.ES.lookup(S.JDSearchOrder, EntryPointName);
 }
 
+namespace {
 struct JITLinkTimers {
   TimerGroup JITLinkTG{"llvm-jitlink timers", "timers for llvm-jitlink phases"};
   Timer LoadObjectsTimer{"load", "time to load/add object files", JITLinkTG};
   Timer LinkTimer{"link", "time to link object files", JITLinkTG};
   Timer RunTimer{"run", "time to execute jitlink'd code", JITLinkTG};
 };
+} // namespace
 
 int main(int argc, char *argv[]) {
   InitLLVM X(argc, argv);

@@ -5,7 +5,6 @@
 // Only run this test under supported configurations.
 
 #if defined(_LIBUNWIND_USE_DL_ITERATE_PHDR) &&                                 \
-    defined(_LIBUNWIND_SUPPORT_DWARF_INDEX) &&                                 \
     defined(_LIBUNWIND_USE_FRAME_HEADER_CACHE)
 
 #include <link.h>
@@ -20,7 +19,7 @@
 
 using namespace libunwind;
 
-int main() {
+int main(int, char**) {
   FrameHeaderCache FHC;
   struct dl_phdr_info PInfo;
   memset(&PInfo, 0, sizeof(PInfo));
@@ -69,5 +68,5 @@ int main() {
 }
 
 #else
-int main() { return 0;}
+int main(int, char**) { return 0;}
 #endif

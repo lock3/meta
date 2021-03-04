@@ -827,6 +827,16 @@ void PPCRegisterInfo::lowerCRBitSpilling(MachineBasicBlock::iterator II,
     SpillsKnownBit = true;
     break;
   default:
+    // On Power10, we can use SETNBC to spill all CR bits. SETNBC will set all
+    // bits (specifically, it produces a -1 if the CR bit is set). Ultimately,
+    // the bit that is of importance to us is bit 32 (bit 0 of a 32-bit
+    // register), and SETNBC will set this.
+    if (Subtarget.isISA3_1()) {
+      BuildMI(MBB, II, dl, TII.get(LP64 ? PPC::SETNBC8 : PPC::SETNBC), Reg)
+          .addReg(SrcReg, RegState::Undef);
+      break;
+    }
+
     // On Power9, we can use SETB to extract the LT bit. This only works for
     // the LT bit since SETB produces -1/1/0 for LT/GT/<neither>. So the value
     // of the bit we care about (32-bit sign bit) will be set to the value of
@@ -921,59 +931,6 @@ void PPCRegisterInfo::lowerCRBitRestore(MachineBasicBlock::iterator II,
       // sequence of instructions. We can't have the other bits in the CR
       // modified in between the mfocrf and the mtocrf.
       .addReg(getCRFromCRBit(DestReg), RegState::Implicit);
-
-  // Discard the pseudo instruction.
-  MBB.erase(II);
-}
-
-void PPCRegisterInfo::lowerVRSAVESpilling(MachineBasicBlock::iterator II,
-                                          unsigned FrameIndex) const {
-  // Get the instruction.
-  MachineInstr &MI = *II;       // ; SPILL_VRSAVE <SrcReg>, <offset>
-  // Get the instruction's basic block.
-  MachineBasicBlock &MBB = *MI.getParent();
-  MachineFunction &MF = *MBB.getParent();
-  const PPCSubtarget &Subtarget = MF.getSubtarget<PPCSubtarget>();
-  const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
-  DebugLoc dl = MI.getDebugLoc();
-
-  const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
-  Register Reg = MF.getRegInfo().createVirtualRegister(GPRC);
-  Register SrcReg = MI.getOperand(0).getReg();
-
-  BuildMI(MBB, II, dl, TII.get(PPC::MFVRSAVEv), Reg)
-      .addReg(SrcReg, getKillRegState(MI.getOperand(0).isKill()));
-
-  addFrameReference(
-      BuildMI(MBB, II, dl, TII.get(PPC::STW)).addReg(Reg, RegState::Kill),
-      FrameIndex);
-
-  // Discard the pseudo instruction.
-  MBB.erase(II);
-}
-
-void PPCRegisterInfo::lowerVRSAVERestore(MachineBasicBlock::iterator II,
-                                         unsigned FrameIndex) const {
-  // Get the instruction.
-  MachineInstr &MI = *II;       // ; <DestReg> = RESTORE_VRSAVE <offset>
-  // Get the instruction's basic block.
-  MachineBasicBlock &MBB = *MI.getParent();
-  MachineFunction &MF = *MBB.getParent();
-  const PPCSubtarget &Subtarget = MF.getSubtarget<PPCSubtarget>();
-  const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
-  DebugLoc dl = MI.getDebugLoc();
-
-  const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
-  Register Reg = MF.getRegInfo().createVirtualRegister(GPRC);
-  Register DestReg = MI.getOperand(0).getReg();
-  assert(MI.definesRegister(DestReg) &&
-    "RESTORE_VRSAVE does not define its destination");
-
-  addFrameReference(BuildMI(MBB, II, dl, TII.get(PPC::LWZ),
-                              Reg), FrameIndex);
-
-  BuildMI(MBB, II, dl, TII.get(PPC::MTVRSAVEv), DestReg)
-             .addReg(Reg, RegState::Kill);
 
   // Discard the pseudo instruction.
   MBB.erase(II);
@@ -1109,12 +1066,6 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     return;
   } else if (OpC == PPC::RESTORE_CRBIT) {
     lowerCRBitRestore(II, FrameIndex);
-    return;
-  } else if (OpC == PPC::SPILL_VRSAVE) {
-    lowerVRSAVESpilling(II, FrameIndex);
-    return;
-  } else if (OpC == PPC::RESTORE_VRSAVE) {
-    lowerVRSAVERestore(II, FrameIndex);
     return;
   }
 

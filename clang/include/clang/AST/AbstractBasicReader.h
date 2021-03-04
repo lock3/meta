@@ -10,6 +10,7 @@
 #define CLANG_AST_ABSTRACTBASICREADER_H
 
 #include "clang/AST/DeclTemplate.h"
+#include "clang/AST/PackSplice.h"
 
 namespace clang {
 namespace serialization {

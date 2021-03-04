@@ -15,7 +15,7 @@ class Foo {
 };
 
 namespace foo {
-  constexpr meta::info member_1 = __reflect(query_get_begin, reflexpr(Foo));
+  constexpr meta::info member_1 = __reflect(query_get_begin, ^Foo);
   static_assert(__reflect(query_is_constructor, member_1));
   static_assert(__reflect(query_is_default_constructor, member_1));
   static_assert(!__reflect(query_is_copy_constructor, member_1));
@@ -106,7 +106,7 @@ class FooWrapper {
 };
 
 namespace foo_wrapper {
-  constexpr meta::info member_1 = __reflect(query_get_begin, reflexpr(FooWrapper));
+  constexpr meta::info member_1 = __reflect(query_get_begin, ^FooWrapper);
   static_assert(__reflect(query_is_constructor, member_1));
   static_assert(__reflect(query_is_default_constructor, member_1));
   static_assert(!__reflect(query_is_copy_constructor, member_1));

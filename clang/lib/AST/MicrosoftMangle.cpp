@@ -504,7 +504,12 @@ void MicrosoftCXXNameMangler::mangle(const NamedDecl *D, StringRef Prefix) {
     // MSVC appears to mangle GUIDs as if they were variables of type
     // 'const struct __s_GUID'.
     Out << "3U__s_GUID@@B";
-  else
+  else if (isa<TemplateParamObjectDecl>(D)) {
+    DiagnosticsEngine &Diags = Context.getDiags();
+    unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+      "cannot mangle template parameter objects yet");
+    Diags.Report(SourceLocation(), DiagID);
+  } else
     llvm_unreachable("Tried to mangle unexpected NamedDecl!");
 }
 
@@ -1324,7 +1329,7 @@ void MicrosoftCXXNameMangler::mangleSourceName(StringRef Name) {
 }
 
 void MicrosoftCXXNameMangler::mangleObjCMethodName(const ObjCMethodDecl *MD) {
-  Context.mangleObjCMethodName(MD, Out);
+  Context.mangleObjCMethodNameAsSourceName(MD, Out);
 }
 
 void MicrosoftCXXNameMangler::mangleTemplateInstantiationName(
@@ -1438,6 +1443,8 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     llvm_unreachable("Can't mangle null template arguments!");
   case TemplateArgument::TemplateExpansion:
     llvm_unreachable("Can't mangle template expansion arguments!");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
   case TemplateArgument::Type: {
     QualType T = TA.getAsType();
     mangleType(T, SourceRange(), QMM_Escape);
@@ -1538,8 +1545,6 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     }
     break;
   }
-  case TemplateArgument::Reflected:
-    llvm_unreachable("This should not exist at codegen");
   }
 }
 
@@ -2125,6 +2130,9 @@ void MicrosoftCXXNameMangler::mangleType(const BuiltinType *T, Qualifiers,
 #define SVE_TYPE(Name, Id, SingletonId) \
   case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
+#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+  case BuiltinType::Id:
+#include "clang/Basic/PPCTypes.def"
   case BuiltinType::ShortAccum:
   case BuiltinType::Accum:
   case BuiltinType::LongAccum:
@@ -2264,10 +2272,20 @@ void MicrosoftCXXNameMangler::mangleFunctionType(const FunctionType *T,
       return;
     }
     Out << '@';
+  } else if (IsInLambda && D && isa<CXXConversionDecl>(D)) {
+    // The only lambda conversion operators are to function pointers, which
+    // can differ by their calling convention and are typically deduced.  So
+    // we make sure that this type gets mangled properly.
+    mangleType(T->getReturnType(), Range, QMM_Result);
   } else {
     QualType ResultType = T->getReturnType();
-    if (const auto *AT =
-            dyn_cast_or_null<AutoType>(ResultType->getContainedAutoType())) {
+    if (IsInLambda && isa<CXXConversionDecl>(D)) {
+      // The only lambda conversion operators are to function pointers, which
+      // can differ by their calling convention and are typically deduced.  So
+      // we make sure that this type gets mangled properly.
+      mangleType(ResultType, Range, QMM_Result);
+    } else if (const auto *AT = dyn_cast_or_null<AutoType>(
+                   ResultType->getContainedAutoType())) {
       Out << '?';
       mangleQualifiers(ResultType.getLocalQualifiers(), /*IsMember=*/false);
       Out << '?';
@@ -2920,11 +2938,11 @@ void MicrosoftCXXNameMangler::mangleType(const DecltypeType *T, Qualifiers,
     << Range;
 }
 
-void MicrosoftCXXNameMangler::mangleType(const ReflectedType *T, Qualifiers,
+void MicrosoftCXXNameMangler::mangleType(const TypeSpliceType *T, Qualifiers,
                                          SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-    "cannot mangle this typename() yet");
+    "cannot mangle this typename [< >] yet");
   Diags.Report(Range.getBegin(), DiagID)
     << Range;
 }

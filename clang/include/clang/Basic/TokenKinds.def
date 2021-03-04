@@ -401,11 +401,6 @@ MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
 // C++ metaprogramming keywords
-KEYWORD(reflexpr                    , KEYREFLECT)
-KEYWORD(templarg                    , KEYREFLECT)
-KEYWORD(unqualid                    , KEYREFLECT)
-KEYWORD(idexpr                      , KEYREFLECT)
-KEYWORD(valueof                     , KEYREFLECT)
 KEYWORD(__reflect                   , KEYREFLECT)
 KEYWORD(__invalid_reflection        , KEYREFLECT)
 KEYWORD(__reflect_print             , KEYREFLECT)
@@ -713,7 +708,6 @@ ALIAS("__char16_t"   , char16_t     , KEYCXX)
 ALIAS("__char32_t"   , char32_t     , KEYCXX)
 KEYWORD(__builtin_bit_cast          , KEYALL)
 KEYWORD(__builtin_available         , KEYALL)
-KEYWORD(__builtin_unique_stable_name, KEYALL)
 
 // Clang-specific keywords enabled only in testing.
 TESTING_KEYWORD(__unknown_anytype , KEYALL)
@@ -778,13 +772,13 @@ ANNOTATION(primary_expr) // annotation for a primary expression, used when
                          // message send
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
-ANNOTATION(refltype)     // annotation for a reflected type specifier of the
-                         // form "typename(reflection)".
+ANNOTATION(type_splice)  // annotation for a spliced type of the
+                         // form "typename [< reflection >]".
 ANNOTATION(identifier_splice) // annotation for an identifier splice.
-                              // e.g. "unqualid("a", 1)"
+                              // e.g. "[# "a", 1 #]"
 ANNOTATION(invalid_identifier_splice) // annotation for an
                                       // invalid identifier splice
-                                      // e.g. "unqualid foo )"
+                                      // e.g. "[# #]"
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

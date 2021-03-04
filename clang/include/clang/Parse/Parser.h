@@ -504,14 +504,15 @@ public:
   bool AnnotateIdentifierSplice();
   bool TryAnnotateIdentifierSplice();
 
-  bool isIdentifier() {
-    if (Tok.is(tok::kw_unqualid) && GetLookAheadToken(2).isNot(tok::ellipsis)) {
-      AnnotateIdentifierSplice();
+  bool isIdentifier(unsigned LookAhead = 0) {
+    if (matchCXXSpliceBegin(tok::hash, LookAhead) &&
+        getRelativeToken(2 + LookAhead).isNot(tok::ellipsis)) {
+      if (!LookAhead)
+        AnnotateIdentifierSplice();
       return true;
     }
 
-    return Tok.isOneOf(tok::identifier, tok::annot_identifier_splice,
-                       tok::annot_invalid_identifier_splice);
+    return getRelativeToken(LookAhead).isIdentifier();
   }
 
   // FIXME: This should probably be private similar to the other
@@ -850,6 +851,13 @@ public:
   }
 
 private:
+  const Token &getRelativeToken(unsigned Dist) {
+    if (Dist == 0)
+      return Tok;
+
+    return PP.LookAhead(Dist - 1);
+  }
+
   static void setTypeAnnotation(Token &Tok, TypeResult T) {
     assert((T.isInvalid() || T.get()) &&
            "produced a valid-but-null type annotation?");
@@ -1414,7 +1422,7 @@ private:
 
     void ParseLexedMethodDeclarations() override;
 
-    Parser* Self;
+    Parser *Self;
 
     /// Method - The method declaration.
     Decl *Method;
@@ -1872,7 +1880,6 @@ private:
   ExprResult ParsePostfixExpressionSuffix(ExprResult LHS);
   ExprResult ParseUnaryExprOrTypeTraitExpression();
   ExprResult ParseBuiltinPrimaryExpression();
-  ExprResult ParseUniqueStableNameExpression();
 
   ExprResult ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
                                                      bool &isCastExpr,
@@ -1885,6 +1892,7 @@ private:
   /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
   bool ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                            SmallVectorImpl<SourceLocation> &CommaLocs,
+                           bool IsCall,
                            llvm::function_ref<void()> ExpressionStarts =
                                llvm::function_ref<void()>());
 
@@ -2864,6 +2872,14 @@ private:
                                        SourceLocation ScopeLoc,
                                        ParsedAttr::Syntax Syntax);
 
+  void ParseSwiftNewTypeAttribute(IdentifierInfo &AttrName,
+                                  SourceLocation AttrNameLoc,
+                                  ParsedAttributes &Attrs,
+                                  SourceLocation *EndLoc,
+                                  IdentifierInfo *ScopeName,
+                                  SourceLocation ScopeLoc,
+                                  ParsedAttr::Syntax Syntax);
+
   void ParseTypeTagForDatatypeAttribute(IdentifierInfo &AttrName,
                                         SourceLocation AttrNameLoc,
                                         ParsedAttributes &Attrs,
@@ -3093,16 +3109,6 @@ private:
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
-  bool
-  ParseReifMemInitializer(Decl *ConstructorDecl,
-                          llvm::SmallVectorImpl<QualType> &Typenames,
-                          llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);
-  bool ParseMemInitExprList(Decl *ConstructorDecl,
-                            CXXScopeSpec &SS, IdentifierInfo *II,
-                            DeclSpec const &DS, TypeResult const &TemplateTypeTy,
-                            SourceLocation IdLoc, SourceLocation &LParen,
-                            ExprVector &ArgExprs,
-                            SourceLocation &RParen, SourceLocation &Ellipsis);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
                                       Decl *ThisDecl);
 
@@ -3111,9 +3117,7 @@ private:
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
-  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
-                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
-  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
+  BaseResult ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -3136,45 +3140,40 @@ private:
   // C++ 14.3: Template arguments [temp.arg]
   typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
-  ParsedReflectionOperand ParseCXXReflectOperand();
-  ExprResult ParseCXXReflectExpression();
+  ParsedReflectionOperand ParseCXXReflectionOperand();
+  ExprResult ParseCXXReflectionExpression();
   ExprResult ParseCXXInvalidReflectionExpression();
   ExprResult ParseCXXReflectionReadQuery();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
+private:
+  bool matchCXXSpliceBegin(tok::TokenKind T, unsigned LookAhead = 0);
+  bool matchCXXSpliceEnd(tok::TokenKind T, unsigned LookAhead = 0);
 
+  bool isCXXPackSpliceBegin(unsigned LookAhead = 0);
+
+  bool parseCXXSpliceBegin(tok::TokenKind T, SourceLocation &SL);
+  bool parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL);
+public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc);
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
-  ExprResult ParseCXXIdExprExpression();
-  ExprResult ParseCXXMemberIdExprExpression(Expr *Base);
-  ExprResult ParseCXXValueOfExpression();
-  TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                         SourceLocation &EndLoc);
-  ParsedTemplateArgument ParseReflectedTemplateArgument();
+  ExprResult ParseCXXExprSpliceExpr();
+  ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base);
+  ExprResult ParseCXXPackSpliceExpr();
+  SourceLocation ParseTypeSplice(DeclSpec &DS);
+  void AnnotateExistingTypeSplice(const DeclSpec &DS,
+                                  SourceLocation StartLoc,
+                                  SourceLocation EndLoc);
+  SourceLocation ParseTypePackSplice(DeclSpec &DS);
+  bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
+  ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
-
-  /// Returns true if reflection is enabled and the
-  /// current expression appears to be a variadic reifier.
-  bool isVariadicReifier() const;
-
-  /// Parse a variadic reifier. Returns true on error.
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
-  bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);
-
-  /// Parse the two types of variadic reifiers that may appear in a template
-  /// argument list.
-  bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTemplateReifier(TemplateArgList &Args);
-
-  /// Parse a variadic reifier as a member/base initializer.
-  void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   /// Parse a __select expression
   ExprResult ParseCXXSelectMemberExpr();

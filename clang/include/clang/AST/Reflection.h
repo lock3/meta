@@ -387,6 +387,10 @@ public:
     return Ref.getReflectedBaseSpecifier();
   }
 
+  unsigned getOffset() const {
+    return Ref.getReflectionOffset();
+  }
+
   unsigned getOffsetInParent() const {
     return Ref.getReflectionOffset();
   }
@@ -458,6 +462,10 @@ public:
   /// Evaluates the predicate designated by Q.
   bool EvaluatePredicate(SmallVectorImpl<APValue> &Args, APValue &Result);
 };
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
+
+void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
 
 } // namespace clang
 

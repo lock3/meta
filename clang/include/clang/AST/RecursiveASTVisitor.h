@@ -28,8 +28,10 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/LambdaCapture.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OpenMPClause.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
@@ -290,6 +292,18 @@ public:
   bool TraverseTemplateArguments(const TemplateArgument *Args,
                                  unsigned NumArgs);
 
+  /// Recursively visit a pack splice and dispatch to the
+  /// appropriate method for the operand(s).
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraversePackSplice(const PackSplice *PS);
+
+  /// Recursively visit a pack splice with location information and dispatch
+  /// to the appropriate method for the operand(s).
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraversePackSpliceLoc(PackSpliceLoc PSLoc);
+
   /// Recursively visit a base specifier. This can be overridden by a
   /// subclass.
   ///
@@ -461,6 +475,13 @@ public:
 
   bool canIgnoreChildDeclWhileTraversingDeclContext(const Decl *Child);
 
+#define DEF_TRAVERSE_TMPL_INST(TMPLDECLKIND)                                   \
+  bool TraverseTemplateInstantiations(TMPLDECLKIND##TemplateDecl *D);
+  DEF_TRAVERSE_TMPL_INST(Class)
+  DEF_TRAVERSE_TMPL_INST(Var)
+  DEF_TRAVERSE_TMPL_INST(Function)
+#undef DEF_TRAVERSE_TMPL_INST
+
 private:
   // These are helper methods used by more than one Traverse* method.
   bool TraverseTemplateParameterListHelper(TemplateParameterList *TPL);
@@ -469,12 +490,6 @@ private:
   template <typename T>
   bool TraverseDeclTemplateParameterLists(T *D);
 
-#define DEF_TRAVERSE_TMPL_INST(TMPLDECLKIND)                                   \
-  bool TraverseTemplateInstantiations(TMPLDECLKIND##TemplateDecl *D);
-  DEF_TRAVERSE_TMPL_INST(Class)
-  DEF_TRAVERSE_TMPL_INST(Var)
-  DEF_TRAVERSE_TMPL_INST(Function)
-#undef DEF_TRAVERSE_TMPL_INST
   bool TraverseTemplateArgumentLocsHelper(const TemplateArgumentLoc *TAL,
                                           unsigned Count);
   bool TraverseArrayTypeLocHelper(ArrayTypeLoc TL);
@@ -775,13 +790,15 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(Arg.getAsExpr());
 
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::PackSplice:
+    return getDerived().TraversePackSplice(Arg.getPackSplice());
+
   }
 
   return true;
@@ -817,13 +834,16 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(ArgLoc.getSourceExpression());
 
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::PackSplice: {
+    return getDerived().TraversePackSpliceLoc(ArgLoc.getAsPackSpliceLoc());
+  }
+
   }
 
   return true;
@@ -989,8 +1009,18 @@ DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
                                    T->getNumArgs()));
 })
 
-DEF_TRAVERSE_TYPE(ReflectedType,
-                  { TRY_TO(TraverseStmt(T->getReflection())); })
+DEF_TRAVERSE_TYPE(TypeSpliceType, {
+  TRY_TO(TraverseStmt(T->getReflection()));
+})
+
+DEF_TRAVERSE_TYPE(TypePackSpliceType, {
+  TRY_TO(TraversePackSplice(T->getPackSplice()));
+})
+
+DEF_TRAVERSE_TYPE(SubstTypePackSpliceType, {
+  TRY_TO(TraverseStmt(T->getExpansionExpr()));
+  TRY_TO(TraverseType(T->getReplacementType()));
+})
 
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
   TRY_TO(TraverseType(T->getBaseType()));
@@ -1050,7 +1080,6 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
 })
 
 DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
-DEF_TRAVERSE_TYPE(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPE(ObjCTypeParamType, {})
 
@@ -1285,8 +1314,17 @@ DEF_TRAVERSE_TYPELOC(DependentIdentifierSpliceType, {
   }
 })
 
-DEF_TRAVERSE_TYPELOC(ReflectedType, {
-  TRY_TO(TraverseStmt(TL.getTypePtr()->getReflection()));
+DEF_TRAVERSE_TYPELOC(TypeSpliceType, {
+  TRY_TO(TraverseStmt(TL.getReflection()));
+})
+
+DEF_TRAVERSE_TYPELOC(TypePackSpliceType, {
+  TRY_TO(TraversePackSpliceLoc(TL.getAsPackSpliceLoc()));
+})
+
+DEF_TRAVERSE_TYPELOC(SubstTypePackSpliceType, {
+  TRY_TO(TraverseStmt(TL.getExpansionExpr()));
+  TRY_TO(TraverseType(TL.getReplacementType()));
 })
 
 DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
@@ -1359,8 +1397,6 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPELOC(PackExpansionType,
                      { TRY_TO(TraverseTypeLoc(TL.getPatternLoc())); })
-
-DEF_TRAVERSE_TYPELOC(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPELOC(ObjCTypeParamType, {})
 
@@ -1893,6 +1929,24 @@ bool RecursiveASTVisitor<Derived>::TraverseRecordHelper(RecordDecl *D) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraversePackSplice(const PackSplice *PS) {
+  TRY_TO(TraverseStmt(PS->getOperand()));
+
+  if (!PS->isExpanded())
+    return true;
+
+  for (Expr *E : PS->getExpansions())
+    TRY_TO(TraverseStmt(E));
+
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraversePackSpliceLoc(PackSpliceLoc PSLoc) {
+  return TraversePackSplice(PSLoc.getPackSplice());
+}
+
+template <typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseCXXBaseSpecifier(
     const CXXBaseSpecifier &Base) {
   TRY_TO(TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc()));
@@ -2014,6 +2068,8 @@ DEF_TRAVERSE_DECL(BindingDecl, {
 DEF_TRAVERSE_DECL(MSPropertyDecl, { TRY_TO(TraverseDeclaratorHelper(D)); })
 
 DEF_TRAVERSE_DECL(MSGuidDecl, {})
+
+DEF_TRAVERSE_DECL(TemplateParamObjectDecl, {})
 
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
@@ -2747,19 +2803,42 @@ DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, {})
 DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
-DEF_TRAVERSE_STMT(CXXReflectExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectExpr, {
+  const ReflectionOperand &Op = S->getOperand();
+  switch (Op.getKind()) {
+  case ReflectionOperand::Type: {
+    QualType T = Op.getAsType();
+    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+      T = LIT->getType();
+    TRY_TO(TraverseType(T));
+    break;
+  }
+  case ReflectionOperand::Expression:
+    TRY_TO(TraverseStmt(Op.getAsExpression()));
+    break;
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Template:
+  case ReflectionOperand::Namespace:
+  case ReflectionOperand::BaseSpecifier:
+  case ReflectionOperand::Declaration:
+    break;
+  }
+})
 DEF_TRAVERSE_STMT(CXXInvalidReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectionReadQueryExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintLiteralExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectDumpReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXCompilerErrorExpr, {})
-DEF_TRAVERSE_STMT(CXXIdExprExpr, {})
-DEF_TRAVERSE_STMT(CXXMemberIdExprExpr, {})
+DEF_TRAVERSE_STMT(CXXExprSpliceExpr, {
+    TRY_TO(TraverseStmt(S->getReflection()));
+})
+DEF_TRAVERSE_STMT(CXXMemberExprSpliceExpr, {})
+DEF_TRAVERSE_STMT(CXXPackSpliceExpr, {
+  TRY_TO(TraversePackSpliceLoc(S->getAsPackSpliceLoc()));
+})
 DEF_TRAVERSE_STMT(CXXDependentSpliceIdExpr, {})
-DEF_TRAVERSE_STMT(CXXValueOfExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
-DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
 
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {
   if (S->getLifetimeExtendedTemporaryDecl()) {

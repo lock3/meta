@@ -28,7 +28,7 @@ bool is_same_v(A, B) {
 
 namespace meta {
 
-using info = decltype(reflexpr(void));
+using info = decltype(^void);
 
 consteval info get_type(info x) {
   return __reflect(query_get_type, x);
@@ -38,11 +38,11 @@ consteval info get_type(info x) {
 
 template<typename T>
 void foo() {
-  constexpr auto type = reflexpr(T);
-  static_assert(std::is_same_v<typename(type), T>);
+  constexpr auto type = ^T;
+  static_assert(std::is_same_v<typename [:type:], T>);
 
-  typename(type) x = 0;
-  static_assert(std::is_same_v<typename(type), int>);
+  typename [:type:] x = 0;
+  static_assert(std::is_same_v<typename [:type:], int>);
 }
 
 struct S { };
@@ -52,36 +52,36 @@ constexpr int test() {
   int local = 0;
 
   {
-    constexpr meta::info x = reflexpr(local);
+    constexpr meta::info x = ^local;
     constexpr meta::info t = meta::get_type(x);
 
-    static_assert(t == reflexpr(int));
-    static_assert(std::is_same_v<typename(t), int>);
+    static_assert(t == ^int);
+    static_assert(std::is_same_v<typename [:t:], int>);
   }
 
   {
     S s;
-    constexpr meta::info x = reflexpr(s);
+    constexpr meta::info x = ^s;
     constexpr meta::info t = meta::get_type(x);
 
-    static_assert(t == reflexpr(S));
-    static_assert(std::is_same_v<typename(t), S>);
+    static_assert(t == ^S);
+    static_assert(std::is_same_v<typename [:t:], S>);
   }
 
   return 0;
 }
 
 constexpr meta::info get_type() {
-  return reflexpr(S);
+  return ^S;
 }
 
-template<typename T, meta::info X = reflexpr(T)>
+template<typename T, meta::info X = ^T>
 constexpr T check() {
-  typename(X) var = 0;
+  typename [:X:] var = 0;
   return var + 42;
 }
 
-typename(get_type()) global;
+typename [:get_type():] global;
 
 int main(int argc, const char* argv[]) {
   constexpr int n = test();

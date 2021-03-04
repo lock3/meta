@@ -698,6 +698,26 @@ class Foo {})cpp";
          HI.Parameters->back().Name = "v";
          HI.AccessSpecifier = "public";
        }},
+      {// Setter (move)
+       R"cpp(
+          namespace std { template<typename T> T&& move(T&& t); }
+          struct X { int Y; void [[^setY]](float v) { Y = std::move(v); } };
+          )cpp",
+       [](HoverInfo &HI) {
+         HI.Name = "setY";
+         HI.Kind = index::SymbolKind::InstanceMethod;
+         HI.NamespaceScope = "";
+         HI.Definition = "void setY(float v)";
+         HI.LocalScope = "X::";
+         HI.Documentation = "Trivial setter for `Y`.";
+         HI.Type = "void (float)";
+         HI.ReturnType = "void";
+         HI.Parameters.emplace();
+         HI.Parameters->emplace_back();
+         HI.Parameters->back().Type = "float";
+         HI.Parameters->back().Name = "v";
+         HI.AccessSpecifier = "public";
+       }},
       {// Field type initializer.
        R"cpp(
           struct X { int x = 2; };
@@ -802,8 +822,8 @@ class Foo {})cpp";
          HI.Type = "int";
          HI.AccessSpecifier = "public";
        }},
-       {// No crash on InitListExpr.
-        R"cpp(
+      {// No crash on InitListExpr.
+       R"cpp(
           struct Foo {
             int a[10];
           };
@@ -1971,6 +1991,34 @@ TEST(Hover, All) {
             HI.NamespaceScope = "ObjC::"; // FIXME: fix it
             HI.Definition = "char data";
           }},
+      {
+          R"cpp(
+          @interface MYObject
+          @end
+          @interface Interface
+          @property(retain) [[MYOb^ject]] *x;
+          @end
+          )cpp",
+          [](HoverInfo &HI) {
+            HI.Name = "MYObject";
+            HI.Kind = index::SymbolKind::Class;
+            HI.NamespaceScope = "";
+            HI.Definition = "@interface MYObject\n@end";
+          }},
+      {
+          R"cpp(
+          @interface MYObject
+          @end
+          @interface Interface
+          - (void)doWith:([[MYOb^ject]] *)object;
+          @end
+          )cpp",
+          [](HoverInfo &HI) {
+            HI.Name = "MYObject";
+            HI.Kind = index::SymbolKind::Class;
+            HI.NamespaceScope = "";
+            HI.Definition = "@interface MYObject\n@end";
+          }},
   };
 
   // Create a tiny index, so tests above can verify documentation is fetched.
@@ -2029,7 +2077,7 @@ TEST(Hover, DocsFromIndex) {
   TestTU TU = TestTU::withCode(T.code());
   auto AST = TU.build();
   Symbol IndexSym;
-  IndexSym.ID = *getSymbolID(&findDecl(AST, "X"));
+  IndexSym.ID = getSymbolID(&findDecl(AST, "X"));
   IndexSym.Documentation = "comment from index";
   SymbolSlab::Builder Symbols;
   Symbols.insert(IndexSym);

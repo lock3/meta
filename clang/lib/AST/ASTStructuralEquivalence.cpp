@@ -73,6 +73,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PackSplice.h"
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/TemplateBase.h"
@@ -506,6 +507,34 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return true;
 }
 
+/// Determine whether two pack splices are equivalent.
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     const PackSplice *Splice1,
+                                     const PackSplice *Splice2) {
+  if (Splice1->isExpanded() != Splice2->isExpanded())
+    return false;
+
+  if (Splice1->isExpanded()) {
+    return IsStructurallyEquivalent(Context,
+                                    Splice1->getOperand(),
+                                    Splice2->getOperand());
+  } else {
+    unsigned SpliceExpansions1 = Splice1->getNumExpansions();
+    unsigned SpliceExpansions2 = Splice2->getNumExpansions();
+
+    if (SpliceExpansions1 != SpliceExpansions2)
+      return false;
+
+    for (unsigned I = 0; I < SpliceExpansions1; ++I)
+      if (!IsStructurallyEquivalent(Context,
+                                    Splice1->getExpansion(I),
+                                    Splice2->getExpansion(I)))
+        return false;
+
+    return true;
+  }
+}
+
 /// Determine whether two template arguments are equivalent.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      const TemplateArgument &Arg1,
@@ -543,7 +572,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                     Arg1.getAsTemplateOrTemplatePattern(),
                                     Arg2.getAsTemplateOrTemplatePattern());
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return IsStructurallyEquivalent(Context, Arg1.getAsExpr(),
                                     Arg2.getAsExpr());
@@ -558,6 +586,12 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         return false;
 
     return true;
+
+  case TemplateArgument::PackSplice: {
+    return IsStructurallyEquivalent(Context, Arg1.getPackSplice(),
+                                    Arg2.getPackSplice());
+  }
+
   }
 
   llvm_unreachable("Invalid template argument kind");
@@ -961,13 +995,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::Reflected:
-    if (!IsStructurallyEquivalent(Context,
-                                  cast<ReflectedType>(T1)->getReflection(),
-                                  cast<ReflectedType>(T2)->getReflection()))
-      return false;
-    break;
-
   case Type::DependentIdentifierSplice:
     if (!IsStructurallyEquivalent(
         Context,
@@ -975,6 +1002,30 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         cast<DependentIdentifierSpliceType>(T2)->getIdentifierInfo()))
       return false;
     break;
+
+  case Type::TypeSplice:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<TypeSpliceType>(T1)->getReflection(),
+                                  cast<TypeSpliceType>(T2)->getReflection()))
+      return false;
+    break;
+
+  case Type::TypePackSplice:
+    if (!IsStructurallyEquivalent(
+        Context,
+        cast<TypePackSpliceType>(T1)->getPackSplice(),
+        cast<TypePackSpliceType>(T2)->getPackSplice()))
+      return false;
+    break;
+
+  case Type::SubstTypePackSplice: {
+    const auto *Subst1 = cast<SubstTypePackSpliceType>(T1);
+    const auto *Subst2 = cast<SubstTypePackSpliceType>(T2);
+    if (!IsStructurallyEquivalent(Context, Subst1->getReplacementType(),
+                                  Subst2->getReplacementType()))
+      return false;
+    break;
+  }
 
   case Type::Auto: {
     auto *Auto1 = cast<AutoType>(T1);
@@ -1141,14 +1192,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-  case Type::CXXDependentVariadicReifier:
-    if (!IsStructurallyEquivalent
-        (Context,
-         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType(),
-         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType()))
-      return false;
-    break;
-
   case Type::ObjCInterface: {
     const auto *Iface1 = cast<ObjCInterfaceType>(T1);
     const auto *Iface2 = cast<ObjCInterfaceType>(T2);
@@ -1295,48 +1338,9 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return false;
   }
 
-  if (Field1->isBitField() != Field2->isBitField()) {
-    if (Context.Complain) {
-      Context.Diag2(
-          Owner2->getLocation(),
-          Context.getApplicableDiagnostic(diag::err_odr_tag_type_inconsistent))
-          << Context.ToCtx.getTypeDeclType(Owner2);
-      if (Field1->isBitField()) {
-        Context.Diag1(Field1->getLocation(), diag::note_odr_bit_field)
-            << Field1->getDeclName() << Field1->getType()
-            << Field1->getBitWidthValue(Context.FromCtx);
-        Context.Diag2(Field2->getLocation(), diag::note_odr_not_bit_field)
-            << Field2->getDeclName();
-      } else {
-        Context.Diag2(Field2->getLocation(), diag::note_odr_bit_field)
-            << Field2->getDeclName() << Field2->getType()
-            << Field2->getBitWidthValue(Context.ToCtx);
-        Context.Diag1(Field1->getLocation(), diag::note_odr_not_bit_field)
-            << Field1->getDeclName();
-      }
-    }
-    return false;
-  }
-
-  if (Field1->isBitField()) {
-    // Make sure that the bit-fields are the same length.
-    unsigned Bits1 = Field1->getBitWidthValue(Context.FromCtx);
-    unsigned Bits2 = Field2->getBitWidthValue(Context.ToCtx);
-
-    if (Bits1 != Bits2) {
-      if (Context.Complain) {
-        Context.Diag2(Owner2->getLocation(),
-                      Context.getApplicableDiagnostic(
-                          diag::err_odr_tag_type_inconsistent))
-            << Context.ToCtx.getTypeDeclType(Owner2);
-        Context.Diag2(Field2->getLocation(), diag::note_odr_bit_field)
-            << Field2->getDeclName() << Field2->getType() << Bits2;
-        Context.Diag1(Field1->getLocation(), diag::note_odr_bit_field)
-            << Field1->getDeclName() << Field1->getType() << Bits1;
-      }
-      return false;
-    }
-  }
+  if (Field1->isBitField())
+    return IsStructurallyEquivalent(Context, Field1->getBitWidth(),
+                                    Field2->getBitWidth());
 
   return true;
 }

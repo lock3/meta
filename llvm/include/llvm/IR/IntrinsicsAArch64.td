@@ -767,6 +767,10 @@ def int_aarch64_irg_sp   : Intrinsic<[llvm_ptr_ty], [llvm_i64_ty],
 // ptr1 = tagp(ptr0, baseptr, tag_offset) returns a pointer where
 // * address is the address in ptr0
 // * tag is a function of (tag in baseptr, tag_offset).
+// ** Beware, this is not the same function as implemented by the ADDG instruction!
+//    Backend optimizations may change tag_offset; the only guarantee is that calls
+//    to tagp with the same pair of (baseptr, tag_offset) will produce pointers
+//    with the same tag value, assuming the set of excluded tags has not changed.
 // Address bits in baseptr and tag bits in ptr0 are ignored.
 // When offset between ptr0 and baseptr is a compile time constant, this can be emitted as
 //   ADDG ptr1, baseptr, (ptr0 - baseptr), tag_offset
@@ -1300,7 +1304,7 @@ class AdvSIMD_GatherLoad_VS_Intrinsic
                   llvm_anyvector_ty,
                   llvm_i64_ty
                 ],
-                [IntrReadMem, IntrArgMemOnly]>;
+                [IntrReadMem]>;
 
 class AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic
     : Intrinsic<[],
@@ -1329,7 +1333,7 @@ class AdvSIMD_ScatterStore_VS_Intrinsic
                  LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
                  llvm_anyvector_ty, llvm_i64_ty
                ],
-               [IntrWriteMem, IntrArgMemOnly]>;
+               [IntrWriteMem]>;
 
 
 class SVE_gather_prf_SV

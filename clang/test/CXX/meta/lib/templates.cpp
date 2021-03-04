@@ -7,7 +7,7 @@ namespace class_template {
   class Foo { };
 }
 
-constexpr auto class_templ_refl = __reflect(query_get_begin, reflexpr(class_template));
+constexpr auto class_templ_refl = __reflect(query_get_begin, ^class_template);
 static_assert(__reflect(query_is_template, class_templ_refl));
 static_assert(__reflect(query_is_class_template, class_templ_refl));
 static_assert(!__reflect(query_is_alias_template, class_templ_refl));
@@ -24,7 +24,7 @@ namespace fn_template {
   void foo(T x) { }
 }
 
-constexpr auto fn_templ_refl = __reflect(query_get_begin, reflexpr(fn_template));
+constexpr auto fn_templ_refl = __reflect(query_get_begin, ^fn_template);
 static_assert(__reflect(query_is_template, fn_templ_refl));
 static_assert(!__reflect(query_is_class_template, fn_templ_refl));
 static_assert(!__reflect(query_is_alias_template, fn_templ_refl));
@@ -41,7 +41,7 @@ namespace var_template {
   T x;
 }
 
-constexpr auto var_templ_refl = __reflect(query_get_begin, reflexpr(var_template));
+constexpr auto var_templ_refl = __reflect(query_get_begin, ^var_template);
 static_assert(__reflect(query_is_template, var_templ_refl));
 static_assert(!__reflect(query_is_class_template, var_templ_refl));
 static_assert(!__reflect(query_is_alias_template, var_templ_refl));
@@ -68,7 +68,7 @@ namespace normal_class {
     class nested_class { };
   };
 
-  constexpr auto member_1 = __reflect(query_get_begin, reflexpr(clazz));
+  constexpr auto member_1 = __reflect(query_get_begin, ^clazz);
   static_assert(!__reflect(query_is_template, member_1));
   static_assert(!__reflect(query_is_class_template, member_1));
   static_assert(!__reflect(query_is_alias_template, member_1));
@@ -143,7 +143,7 @@ namespace templ_class {
     };
   }
 
-  constexpr auto member_1 = __reflect(query_get_begin, __reflect(query_get_begin, reflexpr(container)));
+  constexpr auto member_1 = __reflect(query_get_begin, __reflect(query_get_begin, ^container));
   static_assert(__reflect(query_is_template, member_1));
   static_assert(!__reflect(query_is_class_template, member_1));
   static_assert(!__reflect(query_is_alias_template, member_1));

@@ -13,12 +13,13 @@
 #include "mlir/CAPI/IR.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/StandardTypes.h"
+#include "mlir/IR/Types.h"
 
 using namespace mlir;
 
-/* ========================================================================== */
-/* Integer types.                                                             */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Integer types.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAInteger(MlirType type) {
   return unwrap(type).isa<IntegerType>();
@@ -52,9 +53,9 @@ int mlirIntegerTypeIsUnsigned(MlirType type) {
   return unwrap(type).cast<IntegerType>().isUnsigned();
 }
 
-/* ========================================================================== */
-/* Index type.                                                                */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Index type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAIndex(MlirType type) { return unwrap(type).isa<IndexType>(); }
 
@@ -62,9 +63,9 @@ MlirType mlirIndexTypeGet(MlirContext ctx) {
   return wrap(IndexType::get(unwrap(ctx)));
 }
 
-/* ========================================================================== */
-/* Floating-point types.                                                      */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Floating-point types.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsABF16(MlirType type) { return unwrap(type).isBF16(); }
 
@@ -90,9 +91,9 @@ MlirType mlirF64TypeGet(MlirContext ctx) {
   return wrap(FloatType::getF64(unwrap(ctx)));
 }
 
-/* ========================================================================== */
-/* None type.                                                                 */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// None type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsANone(MlirType type) { return unwrap(type).isa<NoneType>(); }
 
@@ -100,9 +101,9 @@ MlirType mlirNoneTypeGet(MlirContext ctx) {
   return wrap(NoneType::get(unwrap(ctx)));
 }
 
-/* ========================================================================== */
-/* Complex type.                                                              */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Complex type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAComplex(MlirType type) {
   return unwrap(type).isa<ComplexType>();
@@ -116,9 +117,9 @@ MlirType mlirComplexTypeGetElementType(MlirType type) {
   return wrap(unwrap(type).cast<ComplexType>().getElementType());
 }
 
-/* ========================================================================== */
-/* Shaped type.                                                               */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Shaped type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAShaped(MlirType type) { return unwrap(type).isa<ShapedType>(); }
 
@@ -155,9 +156,9 @@ int mlirShapedTypeIsDynamicStrideOrOffset(int64_t val) {
   return ShapedType::isDynamicStrideOrOffset(val);
 }
 
-/* ========================================================================== */
-/* Vector type.                                                               */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Vector type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAVector(MlirType type) { return unwrap(type).isa<VectorType>(); }
 
@@ -175,9 +176,9 @@ MlirType mlirVectorTypeGetChecked(intptr_t rank, int64_t *shape,
       unwrap(loc)));
 }
 
-/* ========================================================================== */
-/* Ranked / Unranked tensor type.                                             */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Ranked / Unranked tensor type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsATensor(MlirType type) { return unwrap(type).isa<TensorType>(); }
 
@@ -213,9 +214,9 @@ MlirType mlirUnrankedTensorTypeGetChecked(MlirType elementType,
   return wrap(UnrankedTensorType::getChecked(unwrap(elementType), unwrap(loc)));
 }
 
-/* ========================================================================== */
-/* Ranked / Unranked MemRef type.                                             */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Ranked / Unranked MemRef type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsAMemRef(MlirType type) { return unwrap(type).isa<MemRefType>(); }
 
@@ -277,9 +278,9 @@ unsigned mlirUnrankedMemrefGetMemorySpace(MlirType type) {
   return unwrap(type).cast<UnrankedMemRefType>().getMemorySpace();
 }
 
-/* ========================================================================== */
-/* Tuple type.                                                                */
-/* ========================================================================== */
+//===----------------------------------------------------------------------===//
+// Tuple type.
+//===----------------------------------------------------------------------===//
 
 int mlirTypeIsATuple(MlirType type) { return unwrap(type).isa<TupleType>(); }
 
@@ -296,4 +297,42 @@ intptr_t mlirTupleTypeGetNumTypes(MlirType type) {
 
 MlirType mlirTupleTypeGetType(MlirType type, intptr_t pos) {
   return wrap(unwrap(type).cast<TupleType>().getType(static_cast<size_t>(pos)));
+}
+
+//===----------------------------------------------------------------------===//
+// Function type.
+//===----------------------------------------------------------------------===//
+
+int mlirTypeIsAFunction(MlirType type) {
+  return unwrap(type).isa<FunctionType>();
+}
+
+MlirType mlirFunctionTypeGet(MlirContext ctx, intptr_t numInputs,
+                             MlirType *inputs, intptr_t numResults,
+                             MlirType *results) {
+  SmallVector<Type, 4> inputsList;
+  SmallVector<Type, 4> resultsList;
+  (void)unwrapList(numInputs, inputs, inputsList);
+  (void)unwrapList(numResults, results, resultsList);
+  return wrap(FunctionType::get(inputsList, resultsList, unwrap(ctx)));
+}
+
+intptr_t mlirFunctionTypeGetNumInputs(MlirType type) {
+  return unwrap(type).cast<FunctionType>().getNumInputs();
+}
+
+intptr_t mlirFunctionTypeGetNumResults(MlirType type) {
+  return unwrap(type).cast<FunctionType>().getNumResults();
+}
+
+MlirType mlirFunctionTypeGetInput(MlirType type, intptr_t pos) {
+  assert(pos >= 0 && "pos in array must be positive");
+  return wrap(
+      unwrap(type).cast<FunctionType>().getInput(static_cast<unsigned>(pos)));
+}
+
+MlirType mlirFunctionTypeGetResult(MlirType type, intptr_t pos) {
+  assert(pos >= 0 && "pos in array must be positive");
+  return wrap(
+      unwrap(type).cast<FunctionType>().getResult(static_cast<unsigned>(pos)));
 }

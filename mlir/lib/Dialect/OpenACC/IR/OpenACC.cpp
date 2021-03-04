@@ -149,6 +149,10 @@ static OptionalParseResult parserOptionalOperandAndTypeWithPrefix(
   return llvm::None;
 }
 
+static bool isComputeOperation(Operation *op) {
+  return isa<acc::ParallelOp>(op) || isa<acc::LoopOp>(op);
+}
+
 //===----------------------------------------------------------------------===//
 // ParallelOp
 //===----------------------------------------------------------------------===//
@@ -445,175 +449,6 @@ static void print(OpAsmPrinter &printer, ParallelOp &op) {
 }
 
 //===----------------------------------------------------------------------===//
-// DataOp
-//===----------------------------------------------------------------------===//
-
-/// Parse acc.data operation
-/// operation := `acc.parallel` (`present` `(` value-list `)`)?
-///                             (`copy` `(` value-list `)`)?
-///                             (`copyin` `(` value-list `)`)?
-///                             (`copyin_readonly` `(` value-list `)`)?
-///                             (`copyout` `(` value-list `)`)?
-///                             (`copyout_zero` `(` value-list `)`)?
-///                             (`create` `(` value-list `)`)?
-///                             (`create_zero` `(` value-list `)`)?
-///                             (`no_create` `(` value-list `)`)?
-///                             (`delete` `(` value-list `)`)?
-///                             (`attach` `(` value-list `)`)?
-///                             (`detach` `(` value-list `)`)?
-///                             region attr-dict?
-static ParseResult parseDataOp(OpAsmParser &parser, OperationState &result) {
-  Builder &builder = parser.getBuilder();
-  SmallVector<OpAsmParser::OperandType, 2> presentOperands, copyOperands,
-      copyinOperands, copyinReadonlyOperands, copyoutOperands,
-      copyoutZeroOperands, createOperands, createZeroOperands, noCreateOperands,
-      deleteOperands, attachOperands, detachOperands;
-  SmallVector<Type, 2> presentOperandTypes, copyOperandTypes,
-      copyinOperandTypes, copyinReadonlyOperandTypes, copyoutOperandTypes,
-      copyoutZeroOperandTypes, createOperandTypes, createZeroOperandTypes,
-      noCreateOperandTypes, deleteOperandTypes, attachOperandTypes,
-      detachOperandTypes;
-
-  // present(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getPresentKeyword(),
-                              presentOperands, presentOperandTypes, result)))
-    return failure();
-
-  // copy(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCopyKeyword(), copyOperands,
-                              copyOperandTypes, result)))
-    return failure();
-
-  // copyin(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCopyinKeyword(),
-                              copyinOperands, copyinOperandTypes, result)))
-    return failure();
-
-  // copyin_readonly(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCopyinReadonlyKeyword(),
-                              copyinReadonlyOperands, copyinOperandTypes,
-                              result)))
-    return failure();
-
-  // copyout(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCopyoutKeyword(),
-                              copyoutOperands, copyoutOperandTypes, result)))
-    return failure();
-
-  // copyout_zero(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCopyoutZeroKeyword(),
-                              copyoutZeroOperands, copyoutZeroOperandTypes,
-                              result)))
-    return failure();
-
-  // create(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCreateKeyword(),
-                              createOperands, createOperandTypes, result)))
-    return failure();
-
-  // create_zero(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getCreateZeroKeyword(),
-                              createZeroOperands, createZeroOperandTypes,
-                              result)))
-    return failure();
-
-  // no_create(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getNoCreateKeyword(),
-                              noCreateOperands, noCreateOperandTypes, result)))
-    return failure();
-
-  // delete(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getDeleteKeyword(),
-                              deleteOperands, deleteOperandTypes, result)))
-    return failure();
-
-  // attach(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getAttachKeyword(),
-                              attachOperands, attachOperandTypes, result)))
-    return failure();
-
-  // detach(value-list)?
-  if (failed(parseOperandList(parser, DataOp::getDetachKeyword(),
-                              detachOperands, detachOperandTypes, result)))
-    return failure();
-
-  // Data op region
-  if (failed(parseRegions<ParallelOp>(parser, result)))
-    return failure();
-
-  result.addAttribute(ParallelOp::getOperandSegmentSizeAttr(),
-                      builder.getI32VectorAttr(
-                          {static_cast<int32_t>(presentOperands.size()),
-                           static_cast<int32_t>(copyOperands.size()),
-                           static_cast<int32_t>(copyinOperands.size()),
-                           static_cast<int32_t>(copyinReadonlyOperands.size()),
-                           static_cast<int32_t>(copyoutOperands.size()),
-                           static_cast<int32_t>(copyoutZeroOperands.size()),
-                           static_cast<int32_t>(createOperands.size()),
-                           static_cast<int32_t>(createZeroOperands.size()),
-                           static_cast<int32_t>(noCreateOperands.size()),
-                           static_cast<int32_t>(deleteOperands.size()),
-                           static_cast<int32_t>(attachOperands.size()),
-                           static_cast<int32_t>(detachOperands.size())}));
-
-  // Additional attributes
-  if (failed(parser.parseOptionalAttrDictWithKeyword(result.attributes)))
-    return failure();
-
-  return success();
-}
-
-static void print(OpAsmPrinter &printer, DataOp &op) {
-  printer << DataOp::getOperationName();
-
-  // present(value-list)?
-  printOperandList(op.presentOperands(), DataOp::getPresentKeyword(), printer);
-
-  // copy(value-list)?
-  printOperandList(op.copyOperands(), DataOp::getCopyKeyword(), printer);
-
-  // copyin(value-list)?
-  printOperandList(op.copyinOperands(), DataOp::getCopyinKeyword(), printer);
-
-  // copyin_readonly(value-list)?
-  printOperandList(op.copyinReadonlyOperands(),
-                   DataOp::getCopyinReadonlyKeyword(), printer);
-
-  // copyout(value-list)?
-  printOperandList(op.copyoutOperands(), DataOp::getCopyoutKeyword(), printer);
-
-  // copyout(value-list)?
-  printOperandList(op.copyoutZeroOperands(), DataOp::getCopyoutZeroKeyword(),
-                   printer);
-
-  // create(value-list)?
-  printOperandList(op.createOperands(), DataOp::getCreateKeyword(), printer);
-
-  // create_zero(value-list)?
-  printOperandList(op.createZeroOperands(), DataOp::getCreateZeroKeyword(),
-                   printer);
-
-  // no_create(value-list)?
-  printOperandList(op.noCreateOperands(), DataOp::getNoCreateKeyword(),
-                   printer);
-
-  // delete(value-list)?
-  printOperandList(op.deleteOperands(), DataOp::getDeleteKeyword(), printer);
-
-  // attach(value-list)?
-  printOperandList(op.attachOperands(), DataOp::getAttachKeyword(), printer);
-
-  // detach(value-list)?
-  printOperandList(op.detachOperands(), DataOp::getDetachKeyword(), printer);
-
-  printer.printRegion(op.region(),
-                      /*printEntryBlockArgs=*/false,
-                      /*printBlockTerminators=*/true);
-  printer.printOptionalAttrDictWithKeyword(
-      op.getAttrs(), ParallelOp::getOperandSegmentSizeAttr());
-}
-
-//===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
 
@@ -799,6 +634,150 @@ static LogicalResult verifyLoopOp(acc::LoopOp loopOp) {
     loopOp.emitError("expected non-empty body.");
     return failure();
   }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DataOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::DataOp dataOp) {
+  // 2.6.5. Data Construct restriction
+  // At least one copy, copyin, copyout, create, no_create, present, deviceptr,
+  // attach, or default clause must appear on a data construct.
+  if (dataOp.getOperands().size() == 0 && !dataOp.defaultAttr())
+    return dataOp.emitError("at least one operand or the default attribute "
+                            "must appear on the data operation");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ExitDataOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::ExitDataOp op) {
+  // 2.6.6. Data Exit Directive restriction
+  // At least one copyout, delete, or detach clause must appear on an exit data
+  // directive.
+  if (op.copyoutOperands().empty() && op.deleteOperands().empty() &&
+      op.detachOperands().empty())
+    return op.emitError(
+        "at least one operand in copyout, delete or detach must appear on the "
+        "exit data operation");
+
+  // The async attribute represent the async clause without value. Therefore the
+  // attribute and operand cannot appear at the same time.
+  if (op.asyncOperand() && op.async())
+    return op.emitError("async attribute cannot appear with asyncOperand");
+
+  // The wait attribute represent the wait clause without values. Therefore the
+  // attribute and operands cannot appear at the same time.
+  if (!op.waitOperands().empty() && op.wait())
+    return op.emitError("wait attribute cannot appear with waitOperands");
+
+  if (op.waitDevnum() && op.waitOperands().empty())
+    return op.emitError("wait_devnum cannot appear without waitOperands");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DataEnterOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::EnterDataOp op) {
+  // 2.6.6. Data Enter Directive restriction
+  // At least one copyin, create, or attach clause must appear on an enter data
+  // directive.
+  if (op.copyinOperands().empty() && op.createOperands().empty() &&
+      op.createZeroOperands().empty() && op.attachOperands().empty())
+    return op.emitError(
+        "at least one operand in copyin, create, "
+        "create_zero or attach must appear on the enter data operation");
+
+  // The async attribute represent the async clause without value. Therefore the
+  // attribute and operand cannot appear at the same time.
+  if (op.asyncOperand() && op.async())
+    return op.emitError("async attribute cannot appear with asyncOperand");
+
+  // The wait attribute represent the wait clause without values. Therefore the
+  // attribute and operands cannot appear at the same time.
+  if (!op.waitOperands().empty() && op.wait())
+    return op.emitError("wait attribute cannot appear with waitOperands");
+
+  if (op.waitDevnum() && op.waitOperands().empty())
+    return op.emitError("wait_devnum cannot appear without waitOperands");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// InitOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::InitOp initOp) {
+  Operation *currOp = initOp;
+  while ((currOp = currOp->getParentOp())) {
+    if (isComputeOperation(currOp))
+      return initOp.emitOpError("cannot be nested in a compute operation");
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ShutdownOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::ShutdownOp op) {
+  Operation *currOp = op;
+  while ((currOp = currOp->getParentOp())) {
+    if (isComputeOperation(currOp))
+      return op.emitOpError("cannot be nested in a compute operation");
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// UpdateOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::UpdateOp updateOp) {
+  // At least one of host or device should have a value.
+  if (updateOp.hostOperands().size() == 0 &&
+      updateOp.deviceOperands().size() == 0)
+    return updateOp.emitError("at least one value must be present in"
+                              " hostOperands or deviceOperands");
+
+  // The async attribute represent the async clause without value. Therefore the
+  // attribute and operand cannot appear at the same time.
+  if (updateOp.asyncOperand() && updateOp.async())
+    return updateOp.emitError("async attribute cannot appear with "
+                              " asyncOperand");
+
+  // The wait attribute represent the wait clause without values. Therefore the
+  // attribute and operands cannot appear at the same time.
+  if (updateOp.waitOperands().size() > 0 && updateOp.wait())
+    return updateOp.emitError("wait attribute cannot appear with waitOperands");
+
+  if (updateOp.waitDevnum() && updateOp.waitOperands().size() == 0)
+    return updateOp.emitError("wait_devnum cannot appear without waitOperands");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// WaitOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verify(acc::WaitOp waitOp) {
+  // The async attribute represent the async clause without value. Therefore the
+  // attribute and operand cannot appear at the same time.
+  if (waitOp.asyncOperand() && waitOp.async())
+    return waitOp.emitError("async attribute cannot appear with asyncOperand");
+
+  if (waitOp.waitDevnum() && waitOp.waitOperands().empty())
+    return waitOp.emitError("wait_devnum cannot appear without waitOperands");
 
   return success();
 }

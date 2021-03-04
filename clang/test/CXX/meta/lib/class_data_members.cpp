@@ -9,7 +9,7 @@ class Foo {
   mutable int a;
 };
 
-constexpr meta::info field_1 = __reflect(query_get_begin, reflexpr(Foo));
+constexpr meta::info field_1 = __reflect(query_get_begin, ^Foo);
 static_assert(__reflect(query_is_static_data_member, field_1));
 static_assert(!__reflect(query_is_nonstatic_data_member, field_1));
 static_assert(!__reflect(query_is_bit_field, field_1));

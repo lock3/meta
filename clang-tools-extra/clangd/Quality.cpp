@@ -8,6 +8,7 @@
 
 #include "Quality.h"
 #include "AST.h"
+#include "CompletionModel.h"
 #include "FileDistance.h"
 #include "SourceCode.h"
 #include "URI.h"
@@ -200,7 +201,7 @@ void SymbolQualitySignals::merge(const Symbol &IndexResult) {
   ReservedName = ReservedName || isReserved(IndexResult.Name);
 }
 
-float SymbolQualitySignals::evaluate() const {
+float SymbolQualitySignals::evaluateHeuristics() const {
   float Score = 1;
 
   // This avoids a sharp gradient for tail symbols, and also neatly avoids the
@@ -252,7 +253,7 @@ float SymbolQualitySignals::evaluate() const {
 
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const SymbolQualitySignals &S) {
-  OS << llvm::formatv("=== Symbol quality: {0}\n", S.evaluate());
+  OS << llvm::formatv("=== Symbol quality: {0}\n", S.evaluateHeuristics());
   OS << llvm::formatv("\tReferences: {0}\n", S.References);
   OS << llvm::formatv("\tDeprecated: {0}\n", S.Deprecated);
   OS << llvm::formatv("\tReserved name: {0}\n", S.ReservedName);
@@ -363,7 +364,7 @@ SymbolRelevanceSignals::calculateDerivedSignals() const {
   return Derived;
 }
 
-float SymbolRelevanceSignals::evaluate() const {
+float SymbolRelevanceSignals::evaluateHeuristics() const {
   DerivedSignals Derived = calculateDerivedSignals();
   float Score = 1;
 
@@ -444,7 +445,7 @@ float SymbolRelevanceSignals::evaluate() const {
 
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const SymbolRelevanceSignals &S) {
-  OS << llvm::formatv("=== Symbol relevance: {0}\n", S.evaluate());
+  OS << llvm::formatv("=== Symbol relevance: {0}\n", S.evaluateHeuristics());
   OS << llvm::formatv("\tName: {0}\n", S.Name);
   OS << llvm::formatv("\tName match: {0}\n", S.NameMatch);
   if (S.ContextWords)
@@ -484,6 +485,47 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
 
 float evaluateSymbolAndRelevance(float SymbolQuality, float SymbolRelevance) {
   return SymbolQuality * SymbolRelevance;
+}
+
+DecisionForestScores
+evaluateDecisionForest(const SymbolQualitySignals &Quality,
+                       const SymbolRelevanceSignals &Relevance, float Base) {
+  Example E;
+  E.setIsDeprecated(Quality.Deprecated);
+  E.setIsReservedName(Quality.ReservedName);
+  E.setIsImplementationDetail(Quality.ImplementationDetail);
+  E.setNumReferences(Quality.References);
+  E.setSymbolCategory(Quality.Category);
+
+  SymbolRelevanceSignals::DerivedSignals Derived =
+      Relevance.calculateDerivedSignals();
+  E.setIsNameInContext(Derived.NameMatchesContext);
+  E.setIsForbidden(Relevance.Forbidden);
+  E.setIsInBaseClass(Relevance.InBaseClass);
+  E.setFileProximityDistance(Derived.FileProximityDistance);
+  E.setSemaFileProximityScore(Relevance.SemaFileProximityScore);
+  E.setSymbolScopeDistance(Derived.ScopeProximityDistance);
+  E.setSemaSaysInScope(Relevance.SemaSaysInScope);
+  E.setScope(Relevance.Scope);
+  E.setContextKind(Relevance.Context);
+  E.setIsInstanceMember(Relevance.IsInstanceMember);
+  E.setHadContextType(Relevance.HadContextType);
+  E.setHadSymbolType(Relevance.HadSymbolType);
+  E.setTypeMatchesPreferred(Relevance.TypeMatchesPreferred);
+  E.setFilterLength(Relevance.FilterLength);
+
+  DecisionForestScores Scores;
+  // Exponentiating DecisionForest prediction makes the score of each tree a
+  // multiplciative boost (like NameMatch). This allows us to weigh the
+  // prediciton score and NameMatch appropriately.
+  Scores.ExcludingName = pow(Base, Evaluate(E));
+  // NeedsFixIts is not part of the DecisionForest as generating training
+  // data that needs fixits is not-feasible.
+  if (Relevance.NeedsFixIts)
+    Scores.ExcludingName *= 0.5;
+  // NameMatch should be a multiplier on total score to support rescoring.
+  Scores.Total = Relevance.NameMatch * Scores.ExcludingName;
+  return Scores;
 }
 
 // Produces an integer that sorts in the same order as F.

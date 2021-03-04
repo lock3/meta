@@ -404,6 +404,9 @@ TypeSpecifierType BuiltinTypeLoc::getWrittenTypeSpec() const {
 #define SVE_TYPE(Name, Id, SingletonId) \
   case BuiltinType::Id:
 #include "clang/Basic/AArch64SVEACLETypes.def"
+#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+  case BuiltinType::Id:
+#include "clang/Basic/PPCTypes.def"
   case BuiltinType::BuiltinFn:
   case BuiltinType::IncompleteMatrixIdx:
   case BuiltinType::OMPArraySection:
@@ -451,10 +454,6 @@ TypeLoc TypeLoc::findExplicitQualifierLoc() const {
   }
 
   return {};
-}
-
-QualType CXXDependentVariadicReifierTypeLoc::getInnerType() const {
-  return getTypePtr()->getRange()->getType();
 }
 
 void ObjCTypeParamTypeLoc::initializeLocal(ASTContext &Context,
@@ -523,6 +522,27 @@ void DependentIdentifierSpliceTypeLoc::initializeLocal(ASTContext &Context,
                                                    getArgInfos(), Loc);
 }
 
+void TypeSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                        SourceLocation Loc) {
+  setTypenameKeywordLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
+void TypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                            SourceLocation Loc) {
+  setEllipsisLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
+void SubstTypePackSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                                 SourceLocation Loc) {
+  setEllipsisLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
 void UnaryTransformTypeLoc::initializeLocal(ASTContext &Context,
                                        SourceLocation Loc) {
     setKWLoc(Loc);
@@ -585,7 +605,6 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
 
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       ArgInfos[i] = TemplateArgumentLocInfo(Args[i].getAsExpr());
       break;
@@ -613,6 +632,10 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
     }
 
     case TemplateArgument::Pack:
+      ArgInfos[i] = TemplateArgumentLocInfo();
+      break;
+
+    case TemplateArgument::PackSplice:
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
     }

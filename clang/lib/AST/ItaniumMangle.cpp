@@ -127,9 +127,8 @@ class ItaniumMangleContextImpl : public ItaniumMangleContext {
 
 public:
   explicit ItaniumMangleContextImpl(ASTContext &Context,
-                                    DiagnosticsEngine &Diags,
-                                    bool IsUniqueNameMangler)
-      : ItaniumMangleContext(Context, Diags, IsUniqueNameMangler) {}
+                                    DiagnosticsEngine &Diags)
+      : ItaniumMangleContext(Context, Diags) {}
 
   /// @name Mangler Entry Points
   /// @{
@@ -663,7 +662,12 @@ void CXXNameMangler::mangle(GlobalDecl GD) {
     mangleName(GuidD);
   else if (const BindingDecl *BD = dyn_cast<BindingDecl>(GD.getDecl()))
     mangleName(BD);
-  else
+  else if (isa<TemplateParamObjectDecl>(GD.getDecl())) {
+    DiagnosticsEngine &Diags = Context.getDiags();
+    unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+      "cannot mangle template parameter objects yet");
+    Diags.Report(SourceLocation(), DiagID);
+  } else
     llvm_unreachable("unexpected kind of global decl");
 }
 
@@ -1415,8 +1419,7 @@ void CXXNameMangler::mangleUnqualifiedName(GlobalDecl GD,
     // <lambda-sig> ::= <template-param-decl>* <parameter-type>+
     //     # Parameter types or 'v' for 'void'.
     if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(TD)) {
-      if (Record->isLambda() && (Record->getLambdaManglingNumber() ||
-                                 Context.isUniqueNameMangler())) {
+      if (Record->isLambda() && Record->getLambdaManglingNumber()) {
         assert(!AdditionalAbiTags &&
                "Lambda type cannot have additional abi tags");
         mangleLambda(Record);
@@ -1791,37 +1794,6 @@ void CXXNameMangler::mangleTemplateParamDecl(const NamedDecl *Decl) {
   }
 }
 
-// Handles the __builtin_unique_stable_name feature for lambdas.  Instead of the
-// ordinal of the lambda in its mangling, this does line/column to uniquely and
-// reliably identify the lambda.  Additionally, macro expansions are expressed
-// as well to prevent macros causing duplicates.
-static void mangleUniqueNameLambda(CXXNameMangler &Mangler, SourceManager &SM,
-                                   raw_ostream &Out,
-                                   const CXXRecordDecl *Lambda) {
-  SourceLocation Loc = Lambda->getLocation();
-
-  PresumedLoc PLoc = SM.getPresumedLoc(Loc);
-  Mangler.mangleNumber(PLoc.getLine());
-  Out << "_";
-  Mangler.mangleNumber(PLoc.getColumn());
-
-  while(Loc.isMacroID()) {
-    SourceLocation SLToPrint = Loc;
-    if (SM.isMacroArgExpansion(Loc))
-      SLToPrint = SM.getImmediateExpansionRange(Loc).getBegin();
-
-    PLoc = SM.getPresumedLoc(SM.getSpellingLoc(SLToPrint));
-    Out << "m";
-    Mangler.mangleNumber(PLoc.getLine());
-    Out << "_";
-    Mangler.mangleNumber(PLoc.getColumn());
-
-    Loc = SM.getImmediateMacroCallerLoc(Loc);
-    if (Loc.isFileID())
-      Loc = SM.getImmediateMacroCallerLoc(SLToPrint);
-  }
-}
-
 void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
   // If the context of a closure type is an initializer for a class member
   // (static or nonstatic), it is encoded in a qualified name with a final
@@ -1851,12 +1823,6 @@ void CXXNameMangler::mangleLambda(const CXXRecordDecl *Lambda) {
   Out << "Ul";
   mangleLambdaSig(Lambda);
   Out << "E";
-
-  if (Context.isUniqueNameMangler()) {
-    mangleUniqueNameLambda(
-        *this, Context.getASTContext().getSourceManager(), Out, Lambda);
-    return;
-  }
 
   // The number is omitted for the first closure type with a given
   // <lambda-sig> in a given context; it is n-2 for the nth closure type
@@ -2096,7 +2062,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::DependentIdentifierSplice:
-  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -2127,7 +2092,9 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
-  case Type::Reflected:
+  case Type::TypeSplice:
+  case Type::TypePackSplice:
+  case Type::SubstTypePackSplice:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -2525,7 +2492,7 @@ void CXXNameMangler::mangleRefQualifier(RefQualifierKind RefQualifier) {
 }
 
 void CXXNameMangler::mangleObjCMethodName(const ObjCMethodDecl *MD) {
-  Context.mangleObjCMethodName(MD, Out);
+  Context.mangleObjCMethodNameAsSourceName(MD, Out);
 }
 
 static bool isTypeSubstitutable(Qualifiers Quals, const Type *Ty,
@@ -2879,6 +2846,12 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
         << type_name;                                                          \
     break;
 #include "clang/Basic/AArch64SVEACLETypes.def"
+#define PPC_MMA_VECTOR_TYPE(Name, Id, Size) \
+  case BuiltinType::Id: \
+    type_name = #Name; \
+    Out << 'u' << type_name.size() << type_name; \
+    break;
+#include "clang/Basic/PPCTypes.def"
   }
 }
 
@@ -3532,8 +3505,8 @@ void CXXNameMangler::mangleType(const DependentSizedMatrixType *T) {
   // U<Len>matrix_type<row expr><column expr><element type>
   StringRef VendorQualifier = "matrix_type";
   Out << "U" << VendorQualifier.size() << VendorQualifier;
-  mangleTemplateArg({T->getRowExpr(), TemplateArgument::Expression});
-  mangleTemplateArg({T->getColumnExpr(), TemplateArgument::Expression});
+  mangleTemplateArg(TemplateArgument(T->getRowExpr()));
+  mangleTemplateArg(TemplateArgument(T->getColumnExpr()));
   mangleType(T->getElementType());
 }
 
@@ -3697,7 +3670,7 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
   Out << 'E';
 }
 
-void CXXNameMangler::mangleType(const ReflectedType *T) {
+void CXXNameMangler::mangleType(const TypeSpliceType *T) {
   // <type> ::= RT <expression> E  # typename of an expression
   Out << "RT";
   mangleExpression(T->getReflection());
@@ -3731,13 +3704,18 @@ void CXXNameMangler::mangleType(const AutoType *T) {
 }
 
 void CXXNameMangler::mangleType(const DeducedTemplateSpecializationType *T) {
-  // FIXME: This is not the right mangling. We also need to include a scope
-  // here in some cases.
-  QualType D = T->getDeducedType();
-  if (D.isNull())
-    mangleUnscopedTemplateName(T->getTemplateName(), nullptr);
-  else
-    mangleType(D);
+  QualType Deduced = T->getDeducedType();
+  if (!Deduced.isNull())
+    mangleType(Deduced);
+  else if (TemplateDecl *TD = T->getTemplateName().getAsTemplateDecl())
+    mangleName(GlobalDecl(TD));
+  else {
+    // For an unresolved template-name, mangle it as if it were a template
+    // specialization but leave off the template arguments.
+    Out << 'N';
+    mangleTemplatePrefix(T->getTemplateName());
+    Out << 'E';
+  }
 }
 
 void CXXNameMangler::mangleType(const AtomicType *T) {
@@ -3768,7 +3746,7 @@ void CXXNameMangler::mangleType(const ExtIntType *T) {
 
 void CXXNameMangler::mangleType(const DependentExtIntType *T) {
   Out << "U7_ExtInt";
-  TemplateArgument TA(T->getNumBitsExpr(), TemplateArgument::Expression);
+  TemplateArgument TA(T->getNumBitsExpr());
   mangleTemplateArgs(&TA, 1);
   if (T->isUnsigned())
     Out << "j";
@@ -4016,12 +3994,11 @@ recurse:
   case Expr::OMPArrayShapingExprClass:
   case Expr::OMPIteratorExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
-  case Expr::CXXIdExprExprClass:
-  case Expr::CXXMemberIdExprExprClass:
+  case Expr::CXXExprSpliceExprClass:
+  case Expr::CXXMemberExprSpliceExprClass:
+  case Expr::CXXPackSpliceExprClass:
   case Expr::CXXDependentSpliceIdExprClass:
-  case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
-  case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXParameterInfoExprClass:
     llvm_unreachable("unexpected statement kind");
@@ -4305,7 +4282,7 @@ recurse:
 
   case Expr::CXXUnresolvedConstructExprClass: {
     const CXXUnresolvedConstructExpr *CE = cast<CXXUnresolvedConstructExpr>(E);
-    unsigned N = CE->arg_size();
+    unsigned N = CE->getNumArgs();
 
     if (CE->isListInitialization()) {
       assert(N == 1 && "unexpected form for list initialization");
@@ -4979,6 +4956,8 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   switch (A.getKind()) {
   case TemplateArgument::Null:
     llvm_unreachable("Cannot mangle NULL template argument");
+  case TemplateArgument::PackSplice:
+    llvm_unreachable("Can't mangle pack splice template arguments!");
 
   case TemplateArgument::Type:
     mangleType(A.getAsType());
@@ -5053,8 +5032,6 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     Out << 'E';
     break;
   }
-  case TemplateArgument::Reflected:
-    llvm_unreachable("This should not exist at codegen");
   }
 }
 
@@ -5604,8 +5581,7 @@ void ItaniumMangleContextImpl::mangleLambdaSig(const CXXRecordDecl *Lambda,
   Mangler.mangleLambdaSig(Lambda);
 }
 
-ItaniumMangleContext *ItaniumMangleContext::create(ASTContext &Context,
-                                                   DiagnosticsEngine &Diags,
-                                                   bool IsUniqueNameMangler) {
-  return new ItaniumMangleContextImpl(Context, Diags, IsUniqueNameMangler);
+ItaniumMangleContext *
+ItaniumMangleContext::create(ASTContext &Context, DiagnosticsEngine &Diags) {
+  return new ItaniumMangleContextImpl(Context, Diags);
 }

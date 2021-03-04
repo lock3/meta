@@ -1845,10 +1845,8 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
           Tok.is(tok::kw___super)) &&
          "Cannot be a type or scope token!");
 
-  // Ignore this case if reflection is enabled, and the next token is '('
-  // this is the typename reifier, which has different semantic meaning.
   if (Tok.is(tok::kw_typename) &&
-      !(getLangOpts().Reflection && NextToken().is(tok::l_paren))) {
+      !matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
     // MSVC lets you do stuff like:
     //   typename typedef T_::D D;
     //
@@ -1872,9 +1870,6 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     //     'typename' '::' [opt] nested-name-specifier identifier
     //     'typename' '::' [opt] nested-name-specifier template [opt]
     //            simple-template-id
-    //
-    // FIXME: Can we do the normal thing, instead of
-    // special casing 'typename' '(' ... ')'
     SourceLocation TypenameLoc = ConsumeToken();
 
     CXXScopeSpec SS;
@@ -2030,36 +2025,6 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
 /// specifier was extracted from an existing tok::annot_cxxscope annotation.
 bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
                                                        bool IsNewScope) {
-  // Handle the typename reifier
-  if (getLangOpts().Reflection && Tok.is(tok::kw_typename) &&
-      NextToken().is(tok::l_paren)) {
-    if (SS.isNotEmpty()) {
-      Diag(Tok, diag::err_reify_typename_preceded)
-          << SS.getRange();
-      return true;
-    }
-
-    SourceLocation TypenameLoc = ConsumeToken();
-
-    SourceLocation EndLoc;
-    TypeResult Ty = ParseReflectedTypeSpecifier(TypenameLoc, EndLoc);
-    if (Ty.isInvalid())
-      return true;
-
-    // Re-enter the last token ')' and annotate as the reflected type.
-    if (PP.isBacktrackEnabled())
-      PP.RevertCachedTokens(1);
-    else
-      PP.EnterToken(Tok, /*IsReinject=*/true);
-
-    Tok.setKind(tok::annot_refltype);
-    setTypeAnnotation(Tok, Ty.get());
-    Tok.setAnnotationEndLoc(EndLoc);
-    Tok.setLocation(TypenameLoc);
-    PP.AnnotateCachedTokens(Tok);
-    return false;
-  }
-
   if (isIdentifier()) {
     // Determine whether the identifier is a type name.
     if (ParsedType Ty = Actions.getTypeName(

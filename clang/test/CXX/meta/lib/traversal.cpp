@@ -33,7 +33,7 @@ namespace ns {
 }
 
 consteval void namespace_range_test() {
-  constexpr meta::info namespace_refl = reflexpr(ns);
+  constexpr meta::info namespace_refl = ^ns;
   {
     constexpr meta::info first_member_refl = __reflect(query_get_begin_member, namespace_refl);
     static_assert(string_eq(name_of(first_member_refl), "a"));
@@ -92,7 +92,7 @@ namespace class_mem {
 }
 
 consteval void member_range_test() {
-  constexpr meta::info class_refl = __reflect(query_get_begin_member, reflexpr(class_mem));
+  constexpr meta::info class_refl = __reflect(query_get_begin_member, ^class_mem);
   {
     constexpr meta::info first_member_refl = __reflect(query_get_begin_member, class_refl);
     static_assert(string_eq(name_of(first_member_refl), "a"));
@@ -149,7 +149,7 @@ namespace templ_class_mem {
 }
 
 consteval void templ_member_range_test() {
-  constexpr meta::info templ_class_refl = __reflect(query_get_begin_member, reflexpr(templ_class_mem));
+  constexpr meta::info templ_class_refl = __reflect(query_get_begin_member, ^templ_class_mem);
   {
     constexpr meta::info first_member_refl = __reflect(query_get_begin_member, templ_class_refl);
     static_assert(string_eq(name_of(first_member_refl), "a"));
@@ -200,7 +200,7 @@ namespace fn {
 }
 
 constexpr void templ_fn_test() {
-  constexpr meta::info fn_refl = __reflect(query_get_begin_member, reflexpr(fn));
+  constexpr meta::info fn_refl = __reflect(query_get_begin_member, ^fn);
   {
     constexpr meta::info first_param_refl = __reflect(query_get_begin_param, fn_refl);
     static_assert(string_eq(name_of(first_param_refl), "a"));
@@ -230,7 +230,7 @@ namespace fn_type {
 }
 
 constexpr void fn_type_test() {
-  constexpr meta::info fn_pointer_type_decl_refl = __reflect(query_get_begin_member, reflexpr(fn_type));
+  constexpr meta::info fn_pointer_type_decl_refl = __reflect(query_get_begin_member, ^fn_type);
   constexpr meta::info fn_pointer_type_refl = __reflect(query_get_type, fn_pointer_type_decl_refl);
   constexpr meta::info fn_type_refl = __reflect(query_remove_pointer, fn_pointer_type_refl);
   {
@@ -252,7 +252,7 @@ namespace templ_fn {
 }
 
 constexpr void templ_fn_range_test() {
-  constexpr meta::info templ_fn_refl = __reflect(query_get_begin_member, reflexpr(templ_fn));
+  constexpr meta::info templ_fn_refl = __reflect(query_get_begin_member, ^templ_fn);
   {
     constexpr meta::info first_param_refl = __reflect(query_get_begin_param, templ_fn_refl);
     static_assert(string_eq(name_of(first_param_refl), "a"));

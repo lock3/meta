@@ -6,12 +6,12 @@ enum E {
   E_val
 };
 
-static_assert(__reflect(query_is_enumerator, reflexpr(E_val)));
-static_assert(!__reflect(query_is_enumerator, reflexpr(E)));
+static_assert(__reflect(query_is_enumerator, ^E_val));
+static_assert(!__reflect(query_is_enumerator, ^E));
 
 enum class EC {
   val
 };
 
-static_assert(__reflect(query_is_enumerator, reflexpr(EC::val)));
-static_assert(!__reflect(query_is_enumerator, reflexpr(EC)));
+static_assert(__reflect(query_is_enumerator, ^EC::val));
+static_assert(!__reflect(query_is_enumerator, ^EC));

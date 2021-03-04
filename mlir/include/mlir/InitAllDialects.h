@@ -16,6 +16,7 @@
 
 #include "mlir/Dialect/AVX512/AVX512Dialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Async/IR/Async.h"
 #include "mlir/Dialect/GPU/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAVX512Dialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -42,6 +43,7 @@ inline void registerAllDialects(DialectRegistry &registry) {
   // clang-format off
   registry.insert<acc::OpenACCDialect,
                   AffineDialect,
+                  async::AsyncDialect,
                   avx512::AVX512Dialect,
                   gpu::GPUDialect,
                   LLVM::LLVMAVX512Dialect,
@@ -62,13 +64,6 @@ inline void registerAllDialects(DialectRegistry &registry) {
   // clang-format on
 }
 
-// This function should be called before creating any MLIRContext if one expect
-// all the possible dialects to be made available to the context automatically.
-inline void registerAllDialects() {
-  static bool initOnce =
-      ([]() { registerAllDialects(getGlobalDialectRegistry()); }(), true);
-  (void)initOnce;
-}
 } // namespace mlir
 
 #endif // MLIR_INITALLDIALECTS_H_

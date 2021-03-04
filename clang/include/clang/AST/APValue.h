@@ -17,8 +17,10 @@
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/Support/AlignOf.h"
 
 namespace clang {
   class AddrLabelExpr;
@@ -177,6 +179,8 @@ public:
     static LValueBase getDynamicAlloc(DynamicAllocLValue LV, QualType Type);
     static LValueBase getTypeInfo(TypeInfoLValue LV, QualType TypeInfo);
 
+    void Profile(llvm::FoldingSetNodeID &ID) const;
+
     template <class T>
     bool is() const { return Ptr.is<T>(); }
 
@@ -202,6 +206,7 @@ public:
       return !(LHS == RHS);
     }
     friend llvm::hash_code hash_value(const LValueBase &Base);
+    friend struct llvm::DenseMapInfo<LValueBase>;
 
   private:
     PtrTy Ptr;
@@ -229,8 +234,7 @@ public:
 
   public:
     LValuePathEntry() : Value() {}
-    LValuePathEntry(BaseOrMemberType BaseOrMember)
-        : Value{reinterpret_cast<uintptr_t>(BaseOrMember.getOpaqueValue())} {}
+    LValuePathEntry(BaseOrMemberType BaseOrMember);
     static LValuePathEntry ArrayIndex(uint64_t Index) {
       LValuePathEntry Result;
       Result.Value = Index;
@@ -242,6 +246,8 @@ public:
           reinterpret_cast<void *>(Value));
     }
     uint64_t getAsArrayIndex() const { return Value; }
+
+    void Profile(llvm::FoldingSetNodeID &ID) const;
 
     friend bool operator==(LValuePathEntry A, LValuePathEntry B) {
       return A.Value == B.Value;
@@ -257,8 +263,10 @@ public:
   struct UninitArray {};
   struct UninitStruct {};
 
-  friend class ASTReader;
+  friend class ASTRecordReader;
   friend class ASTWriter;
+  friend class ASTImporter;
+  friend class ASTNodeImporter;
 
 private:
   ValueKind Kind;
@@ -380,6 +388,10 @@ public:
     : Kind(None) {
     MakeReflection(ReflKind, ReflEntity, Offset, &Parent);
   }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity, unsigned Offset)
+    : Kind(None) {
+    MakeReflection(ReflKind, ReflEntity, Offset, nullptr);
+  }
   static APValue IndeterminateValue() {
     APValue Result;
     Result.Kind = Indeterminate;
@@ -403,6 +415,11 @@ public:
 
   /// Swaps the contents of this and the given APValue.
   void swap(APValue &RHS);
+
+  /// profile this value. There is no guarantee that values of different
+  /// types will not produce the same profiled value, so the type should
+  /// typically also be profiled if it's not implied by the context.
+  void Profile(llvm::FoldingSetNodeID &ID) const;
 
   ValueKind getKind() const { return Kind; }
 
@@ -633,7 +650,7 @@ public:
   }
 
   bool hasParentReflection() const {
-    return getReflectionOffset();
+    return ((const ReflectionData*)(const char*)Data.buffer)->Parent;
   }
 
   /// Returns the parent reflection, if present.
@@ -656,11 +673,9 @@ public:
     *(APFixedPoint *)(char *)Data.buffer = std::move(FX);
   }
   void setVector(const APValue *E, unsigned N) {
-    assert(isVector() && "Invalid accessor");
-    ((Vec*)(char*)Data.buffer)->Elts = new APValue[N];
-    ((Vec*)(char*)Data.buffer)->NumElts = N;
+    MutableArrayRef<APValue> InternalElts = setVectorUninit(N);
     for (unsigned i = 0; i != N; ++i)
-      ((Vec*)(char*)Data.buffer)->Elts[i] = E[i];
+      InternalElts[i] = E[i];
   }
   void setComplexInt(APSInt R, APSInt I) {
     assert(R.getBitWidth() == I.getBitWidth() &&
@@ -681,11 +696,7 @@ public:
   void setLValue(LValueBase B, const CharUnits &O,
                  ArrayRef<LValuePathEntry> Path, bool OnePastTheEnd,
                  bool IsNullPtr);
-  void setUnion(const FieldDecl *Field, const APValue &Value) {
-    assert(isUnion() && "Invalid accessor");
-    ((UnionData*)(char*)Data.buffer)->Field = Field;
-    *((UnionData*)(char*)Data.buffer)->Value = Value;
-  }
+  void setUnion(const FieldDecl *Field, const APValue &Value);
   void setAddrLabelDiff(const AddrLabelExpr* LHSExpr,
                         const AddrLabelExpr* RHSExpr) {
     ((AddrLabelDiffData*)(char*)Data.buffer)->LHSExpr = LHSExpr;
@@ -748,16 +759,36 @@ private:
     assert(isAbsent() && "Bad state change");
 
 #ifndef NDEBUG
+    // TODO: We're reusing these values for subobject indexing, and these
+    // preconditions don't really apply to those uses.
     if (Offset)
       assert(Parent && "Parent missing");
-    else
-      assert(!Parent && "Parent provided with no offset");
+    // else
+    //   assert(!Parent && "Parent provided with no offset");
 #endif
 
     new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
                                                    Offset, Parent);
     Kind = Reflection;
   }
+
+private:
+  /// The following functions are used as part of initialization, during
+  /// deserialization and importing. Reserve the space so that it can be
+  /// filled in by those steps.
+  MutableArrayRef<APValue> setVectorUninit(unsigned N) {
+    assert(isVector() && "Invalid accessor");
+    Vec *V = ((Vec *)(char *)Data.buffer);
+    V->Elts = new APValue[N];
+    V->NumElts = N;
+    return {V->Elts, V->NumElts};
+  }
+  MutableArrayRef<LValuePathEntry>
+  setLValueUninit(LValueBase B, const CharUnits &O, unsigned Size,
+                  bool OnePastTheEnd, bool IsNullPtr);
+  MutableArrayRef<const CXXRecordDecl *>
+  setMemberPointerUninit(const ValueDecl *Member, bool IsDerivedMember,
+                         unsigned Size);
 };
 
 } // end namespace clang.

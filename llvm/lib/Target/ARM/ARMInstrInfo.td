@@ -104,11 +104,6 @@ def SDT_ARMIntShiftParts : SDTypeProfile<2, 3, [SDTCisSameAs<0, 1>,
                                               SDTCisInt<0>,
                                               SDTCisInt<4>]>;
 
-// TODO Add another operand for 'Size' so that we can re-use this node when we
-// start supporting *TP versions.
-def SDT_ARMLoLoop : SDTypeProfile<0, 2, [SDTCisVT<0, i32>,
-                                         SDTCisVT<1, OtherVT>]>;
-
 def ARMSmlald        : SDNode<"ARMISD::SMLALD", SDT_LongMac>;
 def ARMSmlaldx       : SDNode<"ARMISD::SMLALDX", SDT_LongMac>;
 def ARMSmlsld        : SDNode<"ARMISD::SMLSLD", SDT_LongMac>;
@@ -167,9 +162,9 @@ def ARMcmov          : SDNode<"ARMISD::CMOV", SDT_ARMCMov,
                               [SDNPInGlue]>;
 def ARMsubs          : SDNode<"ARMISD::SUBS", SDTIntBinOp, [SDNPOutGlue]>;
 
-def ARMssatnoshift   : SDNode<"ARMISD::SSAT", SDTIntSatNoShOp, []>;
+def ARMssat   : SDNode<"ARMISD::SSAT", SDTIntSatNoShOp, []>;
 
-def ARMusatnoshift   : SDNode<"ARMISD::USAT", SDTIntSatNoShOp, []>;
+def ARMusat   : SDNode<"ARMISD::USAT", SDTIntSatNoShOp, []>;
 
 def ARMbrcond        : SDNode<"ARMISD::BRCOND", SDT_ARMBrcond,
                               [SDNPHasChain, SDNPInGlue, SDNPOutGlue]>;
@@ -302,10 +297,6 @@ def SDTARMVCMPZ   : SDTypeProfile<1, 2, [SDTCisInt<2>]>;
 
 def ARMvcmp      : SDNode<"ARMISD::VCMP", SDTARMVCMP>;
 def ARMvcmpz     : SDNode<"ARMISD::VCMPZ", SDTARMVCMPZ>;
-
-def ARMWLS      : SDNode<"ARMISD::WLS", SDT_ARMLoLoop, [SDNPHasChain]>;
-def ARMLE       : SDNode<"ARMISD::LE", SDT_ARMLoLoop, [SDNPHasChain]>;
-def ARMLoopDec  : SDNode<"ARMISD::LOOP_DEC", SDTIntBinOp, [SDNPHasChain]>;
 
 // 'VECTOR_REG_CAST' is an operation that reinterprets the contents of a
 // vector register as a different vector type, without changing the contents of
@@ -4082,9 +4073,9 @@ def : ARMV6Pat<(int_arm_ssat GPRnopc:$a, imm1_32:$pos),
                (SSAT imm1_32:$pos, GPRnopc:$a, 0)>;
 def : ARMV6Pat<(int_arm_usat GPRnopc:$a, imm0_31:$pos),
                (USAT imm0_31:$pos, GPRnopc:$a, 0)>;
-def : ARMPat<(ARMssatnoshift GPRnopc:$Rn, imm0_31:$imm),
+def : ARMPat<(ARMssat GPRnopc:$Rn, imm0_31:$imm),
              (SSAT imm0_31:$imm, GPRnopc:$Rn, 0)>;
-def : ARMPat<(ARMusatnoshift GPRnopc:$Rn, imm0_31:$imm),
+def : ARMPat<(ARMusat GPRnopc:$Rn, imm0_31:$imm),
              (USAT imm0_31:$imm, GPRnopc:$Rn, 0)>;
 def : ARMV6Pat<(int_arm_ssat16 GPRnopc:$a, imm1_16:$pos),
                (SSAT16 imm1_16:$pos, GPRnopc:$a)>;
@@ -4098,6 +4089,14 @@ def : ARMV6Pat<(int_arm_usat (shl GPRnopc:$a, imm0_31:$shft), imm0_31:$pos),
                (USAT imm0_31:$pos, GPRnopc:$a, imm0_31:$shft)>;
 def : ARMV6Pat<(int_arm_usat (sra GPRnopc:$a, asr_imm:$shft), imm0_31:$pos),
                (USAT imm0_31:$pos, GPRnopc:$a, asr_imm:$shft)>;
+def : ARMPat<(ARMssat (shl GPRnopc:$Rn, imm0_31:$shft), imm0_31:$pos),
+               (SSAT imm0_31:$pos, GPRnopc:$Rn, imm0_31:$shft)>;                            
+def : ARMPat<(ARMssat (sra GPRnopc:$Rn, asr_imm:$shft), imm0_31:$pos),
+               (SSAT imm0_31:$pos, GPRnopc:$Rn, asr_imm:$shft)>;
+def : ARMPat<(ARMusat (shl GPRnopc:$Rn, imm0_31:$shft), imm0_31:$pos),
+               (USAT imm0_31:$pos, GPRnopc:$Rn, imm0_31:$shft)>;  
+def : ARMPat<(ARMusat (sra GPRnopc:$Rn, asr_imm:$shft), imm0_31:$pos),
+               (USAT imm0_31:$pos, GPRnopc:$Rn, asr_imm:$shft)>;
 
 
 //===----------------------------------------------------------------------===//

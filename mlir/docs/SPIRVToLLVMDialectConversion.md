@@ -51,7 +51,7 @@ SPIR-V Dialect                                | LLVM Dialect
 
 SPIR-V distinguishes between array type and run-time array type, the length of
 which is not known at compile time. In LLVM, it is possible to index beyond the
-end of the array. Therfore, runtime array can be implemented as a zero length
+end of the array. Therefore, runtime array can be implemented as a zero length
 array type.
 
 Moreover, SPIR-V supports the notion of array stride. Currently only natural
@@ -352,6 +352,20 @@ SPIR-V Dialect op                     | LLVM Dialect op
 `spv.ULessThan`                       | `llvm.icmp "ult"`
 `spv.ULessThanEqual`                  | `llvm.icmp "ule"`
 
+### Composite ops
+
+Currently, conversion supports rewrite patterns for `spv.CompositeExtract` and
+`spv.CompositeInsert`. We distinguish two cases for these operations: when the
+composite object is a vector, and when the composite object is of a non-vector
+type (*i.e.* struct, array or runtime array).
+
+Composite type  | SPIR-V Dialect op      | LLVM Dialect op
+:-------------: | :--------------------: | :--------------------:
+vector          | `spv.CompositeExtract` | `llvm.extractelement`
+vector          | `spv.CompositeInsert`  | `llvm.insertelement`
+non-vector      | `spv.CompositeExtract` | `llvm.extractvalue`
+non-vector      | `spv.CompositeInsert`  | `llvm.insertvalue`
+
 ### `spv.EntryPoint` and `spv.ExecutionMode`
 
 **Note: these conversions are likely to be changed in the future**
@@ -597,8 +611,6 @@ There is no support of the following ops:
 As well as:
 
 *   spv.CompositeConstruct
-*   spv.CompositeExtract
-*   spv.CompositeInsert
 *   spv.ControlBarrier
 *   spv.CopyMemory
 *   spv.FMod
@@ -617,7 +629,7 @@ As well as:
 ### Branch ops
 
 `spv.Branch` and `spv.BranchConditional` are mapped to `llvm.br` and
-`llvm.cond_br`. Branch weigths for `spv.BranchConditional` are mapped to
+`llvm.cond_br`. Branch weights for `spv.BranchConditional` are mapped to
 corresponding `branch_weights` attribute of `llvm.cond_br`. When translated to
 proper LLVM, `branch_weights` are converted into LLVM metadata associated with
 the conditional branch.

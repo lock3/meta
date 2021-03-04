@@ -41,6 +41,15 @@
 
 #include "tsan_annotations.h"
 
+#if KMP_OS_WINDOWS
+// windows does not need include files as it doesn't use shared memory
+#else
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#define SHM_SIZE 1024
+#endif
+
 #if defined(KMP_GOMP_COMPAT)
 char const __kmp_version_alt_comp[] =
     KMP_VERSION_PREFIX "alternative compiler support: yes";
@@ -1506,6 +1515,13 @@ int __kmp_fork_call(ident_t *loc, int gtid,
         __kmpc_serialized_parallel(loc, gtid);
         KMP_DEBUG_ASSERT(parent_team->t.t_serialized > 1);
 
+        if (call_context == fork_context_gnu) {
+          // AC: need to decrement t_serialized for enquiry functions to work
+          // correctly, will restore at join time
+          parent_team->t.t_serialized--;
+          return TRUE;
+        }
+
 #if OMPT_SUPPORT
         void *dummy;
         void **exit_frame_p;
@@ -1637,6 +1653,9 @@ int __kmp_fork_call(ident_t *loc, int gtid,
       KF_TRACE(10, ("__kmp_fork_call: after internal fork: root=%p, team=%p, "
                     "master_th=%p, gtid=%d\n",
                     root, parent_team, master_th, gtid));
+
+      if (call_context == fork_context_gnu)
+        return TRUE;
 
       /* Invoke microtask for MASTER thread */
       KA_TRACE(20, ("__kmp_fork_call: T#%d(%d:0) invoke microtask = %p\n", gtid,
@@ -2293,7 +2312,11 @@ void __kmp_join_call(ident_t *loc, int gtid
 
 #if OMPT_SUPPORT
   void *team_microtask = (void *)team->t.t_pkfn;
-  if (ompt_enabled.enabled) {
+  // For GOMP interface with serialized parallel, need the
+  // __kmpc_end_serialized_parallel to call hooks for OMPT end-implicit-task
+  // and end-parallel events.
+  if (ompt_enabled.enabled &&
+      !(team->t.t_serialized && fork_context == fork_context_gnu)) {
     master_th->th.ompt_thread_info.state = ompt_state_overhead;
   }
 #endif
@@ -6125,7 +6148,6 @@ void __kmp_internal_end_library(int gtid_req) {
   }
 
   KMP_MB(); /* Flush all pending memory write invalidates.  */
-
   /* find out who we are and what we should do */
   {
     int gtid = (gtid_req >= 0) ? gtid_req : __kmp_gtid_get_specific();
@@ -6167,6 +6189,10 @@ void __kmp_internal_end_library(int gtid_req) {
       if (__kmp_debug_buf)
         __kmp_dump_debug_buffer();
 #endif
+      // added unregister library call here when we switch to shm linux
+      // if we don't, it will leave lots of files in /dev/shm
+      // cleanup shared memory file before exiting.
+      __kmp_unregister_library();
       return;
     }
   }
@@ -6379,16 +6405,61 @@ void __kmp_register_library_startup(void) {
 
     char *value = NULL; // Actual value of the environment variable.
 
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+    char *shm_name = __kmp_str_format("/%s", name);
+    int shm_preexist = 0;
+    char *data1;
+    int fd1 = shm_open(shm_name, O_CREAT | O_EXCL | O_RDWR, 0666);
+    if ((fd1 == -1) && (errno == EEXIST)) {
+      // file didn't open because it already exists.
+      // try opening existing file
+      fd1 = shm_open(shm_name, O_RDWR, 0666);
+      if (fd1 == -1) { // file didn't open
+        // error out here
+        __kmp_fatal(KMP_MSG(FunctionError, "Can't open SHM"), KMP_ERR(0),
+                    __kmp_msg_null);
+      } else {
+        // able to open existing file
+        shm_preexist = 1;
+      }
+    } else if (fd1 == -1) { // SHM didn't open; it was due to error other than
+      // already exists.
+      // error out here.
+      __kmp_fatal(KMP_MSG(FunctionError, "Can't open SHM2"), KMP_ERR(errno),
+                  __kmp_msg_null);
+    }
+    if (shm_preexist == 0) {
+      // we created SHM now set size
+      if (ftruncate(fd1, SHM_SIZE) == -1) {
+        // error occured setting size;
+        __kmp_fatal(KMP_MSG(FunctionError, "Can't set size of SHM"),
+                    KMP_ERR(errno), __kmp_msg_null);
+      }
+    }
+    data1 =
+        (char *)mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd1, 0);
+    if (data1 == MAP_FAILED) {
+      // failed to map shared memory
+      __kmp_fatal(KMP_MSG(FunctionError, "Can't map SHM"), KMP_ERR(errno),
+                  __kmp_msg_null);
+    }
+    if (shm_preexist == 0) { // set data to SHM, set value
+      KMP_STRCPY_S(data1, SHM_SIZE, __kmp_registration_str);
+    }
+    // Read value from either what we just wrote or existing file.
+    value = __kmp_str_format("%s", data1); // read value from SHM
+    munmap(data1, SHM_SIZE);
+    close(fd1);
+#else // Windows and unix with static library
     // Set environment variable, but do not overwrite if it is exist.
     __kmp_env_set(name, __kmp_registration_str, 0);
-    // Check the variable is written.
+    // read value to see if it got set
     value = __kmp_env_get(name);
+#endif
+
     if (value != NULL && strcmp(value, __kmp_registration_str) == 0) {
-
       done = 1; // Ok, environment variable set successfully, exit the loop.
-
     } else {
-
       // Oops. Write failed. Another copy of OpenMP RTL is in memory.
       // Check whether it alive or dead.
       int neighbor = 0; // 0 -- unknown status, 1 -- alive, 2 -- dead.
@@ -6438,14 +6509,23 @@ void __kmp_register_library_startup(void) {
         done = 1; // Exit the loop.
       } break;
       case 2: { // Neighbor is dead.
+
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+        // close shared memory.
+        shm_unlink(shm_name); // this removes file in /dev/shm
+#else
         // Clear the variable and try to register library again.
         __kmp_env_unset(name);
+#endif
       } break;
       default: { KMP_DEBUG_ASSERT(0); } break;
       }
     }
     KMP_INTERNAL_FREE((void *)value);
-  }
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+    KMP_INTERNAL_FREE((void *)shm_name);
+#endif
+  } // while
   KMP_INTERNAL_FREE((void *)name);
 
 } // func __kmp_register_library_startup
@@ -6453,14 +6533,39 @@ void __kmp_register_library_startup(void) {
 void __kmp_unregister_library(void) {
 
   char *name = __kmp_reg_status_name();
-  char *value = __kmp_env_get(name);
+  char *value = NULL;
+
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+  char *shm_name = __kmp_str_format("/%s", name);
+  int fd1 = shm_open(shm_name, O_RDONLY, 0666);
+  if (fd1 == -1) {
+    // file did not open. return.
+    return;
+  }
+  char *data1 = (char *)mmap(0, SHM_SIZE, PROT_READ, MAP_SHARED, fd1, 0);
+  if (data1 != MAP_FAILED) {
+    value = __kmp_str_format("%s", data1); // read value from SHM
+    munmap(data1, SHM_SIZE);
+  }
+  close(fd1);
+#else
+  value = __kmp_env_get(name);
+#endif
 
   KMP_DEBUG_ASSERT(__kmp_registration_flag != 0);
   KMP_DEBUG_ASSERT(__kmp_registration_str != NULL);
   if (value != NULL && strcmp(value, __kmp_registration_str) == 0) {
-    // Ok, this is our variable. Delete it.
+//  Ok, this is our variable. Delete it.
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+    shm_unlink(shm_name); // this removes file in /dev/shm
+#else
     __kmp_env_unset(name);
+#endif
   }
+
+#if KMP_OS_UNIX && KMP_DYNAMIC_LIB // shared memory is with dynamic library
+  KMP_INTERNAL_FREE(shm_name);
+#endif
 
   KMP_INTERNAL_FREE(__kmp_registration_str);
   KMP_INTERNAL_FREE(value);

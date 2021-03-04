@@ -1344,6 +1344,11 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
       return TPResult::Error;
     return isCXXDeclarationSpecifier(BracedCastResult, InvalidAsDeclSpec);
 
+  case tok::ellipsis:
+    if (isCXXPackSpliceBegin())
+      return TPResult::True;
+    return TPResult::False;
+
     // decl-specifier:
     //   storage-class-specifier
     //   type-specifier
@@ -1593,7 +1598,6 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
 
     // simple-type-specifier:
 
-  case tok::annot_refltype:
   case tok::annot_typename:
   case_typename:
     // In Objective-C, we might have a protocol-qualified type.
@@ -1640,6 +1644,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw___float128:
   case tok::kw_void:
   case tok::annot_decltype:
+  case tok::annot_type_splice:
 #define GENERIC_IMAGE_TYPE(ImgType, Id) case tok::kw_##ImgType##_t:
 #include "clang/Basic/OpenCLImageTypes.def"
     if (NextToken().is(tok::l_paren))

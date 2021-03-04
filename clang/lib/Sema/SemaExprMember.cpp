@@ -1703,8 +1703,9 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
   // Decompose the name into its component parts.
   DeclarationNameInfo NameInfo;
   const TemplateArgumentListInfo *TemplateArgs;
-  DecomposeUnqualifiedId(Id, TemplateArgsBuffer,
-                         NameInfo, TemplateArgs);
+  if (DecomposeUnqualifiedId(Id, TemplateArgsBuffer,
+                             NameInfo, TemplateArgs))
+    return ExprError();
 
   DeclarationName Name = NameInfo.getName();
   bool IsArrow = (OpKind == tok::arrow);

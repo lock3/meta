@@ -1507,7 +1507,8 @@ static void emitPredicates(const CodeGenSchedTransition &T,
 
 // Used by method `SubtargetEmitter::emitSchedModelHelpersImpl()` to generate
 // epilogue code for the auto-generated helper.
-void emitSchedModelHelperEpilogue(raw_ostream &OS, bool ShouldReturnZero) {
+static void emitSchedModelHelperEpilogue(raw_ostream &OS,
+                                         bool ShouldReturnZero) {
   if (ShouldReturnZero) {
     OS << "  // Don't know how to resolve this scheduling class.\n"
        << "  return 0;\n";
@@ -1517,15 +1518,15 @@ void emitSchedModelHelperEpilogue(raw_ostream &OS, bool ShouldReturnZero) {
   OS << "  report_fatal_error(\"Expected a variant SchedClass\");\n";
 }
 
-bool hasMCSchedPredicates(const CodeGenSchedTransition &T) {
+static bool hasMCSchedPredicates(const CodeGenSchedTransition &T) {
   return all_of(T.PredTerm, [](const Record *Rec) {
     return Rec->isSubClassOf("MCSchedPredicate");
   });
 }
 
-void collectVariantClasses(const CodeGenSchedModels &SchedModels,
-                           IdxVec &VariantClasses,
-                           bool OnlyExpandMCInstPredicates) {
+static void collectVariantClasses(const CodeGenSchedModels &SchedModels,
+                                  IdxVec &VariantClasses,
+                                  bool OnlyExpandMCInstPredicates) {
   for (const CodeGenSchedClass &SC : SchedModels.schedClasses()) {
     // Ignore non-variant scheduling classes.
     if (SC.Transitions.empty())
@@ -1544,7 +1545,8 @@ void collectVariantClasses(const CodeGenSchedModels &SchedModels,
   }
 }
 
-void collectProcessorIndices(const CodeGenSchedClass &SC, IdxVec &ProcIndices) {
+static void collectProcessorIndices(const CodeGenSchedClass &SC,
+                                    IdxVec &ProcIndices) {
   // A variant scheduling class may define transitions for multiple
   // processors.  This function identifies wich processors are associated with
   // transition rules specified by variant class `SC`.
@@ -1649,9 +1651,9 @@ void SubtargetEmitter::EmitSchedModelHelpers(const std::string &ClassName,
 
   OS << "unsigned " << ClassName
      << "\n::resolveVariantSchedClass(unsigned SchedClass, const MCInst *MI,"
-     << " unsigned CPUID) const {\n"
+     << " const MCInstrInfo *MCII, unsigned CPUID) const {\n"
      << "  return " << Target << "_MC"
-     << "::resolveVariantSchedClassImpl(SchedClass, MI, CPUID);\n"
+     << "::resolveVariantSchedClassImpl(SchedClass, MI, MCII, CPUID);\n"
      << "} // " << ClassName << "::resolveVariantSchedClass\n\n";
 
   STIPredicateExpander PE(Target);
@@ -1698,7 +1700,8 @@ void SubtargetEmitter::ParseFeaturesFunction(raw_ostream &OS,
   OS << "Subtarget::ParseSubtargetFeatures(StringRef CPU, StringRef TuneCPU, "
      << "StringRef FS) {\n"
      << "  LLVM_DEBUG(dbgs() << \"\\nFeatures:\" << FS);\n"
-     << "  LLVM_DEBUG(dbgs() << \"\\nCPU:\" << CPU << \"\\n\\n\");\n";
+     << "  LLVM_DEBUG(dbgs() << \"\\nCPU:\" << CPU);\n"
+     << "  LLVM_DEBUG(dbgs() << \"\\nTuneCPU:\" << TuneCPU << \"\\n\\n\");\n";
 
   if (Features.empty()) {
     OS << "}\n";
@@ -1731,7 +1734,7 @@ void SubtargetEmitter::ParseFeaturesFunction(raw_ostream &OS,
 void SubtargetEmitter::emitGenMCSubtargetInfo(raw_ostream &OS) {
   OS << "namespace " << Target << "_MC {\n"
      << "unsigned resolveVariantSchedClassImpl(unsigned SchedClass,\n"
-     << "    const MCInst *MI, unsigned CPUID) {\n";
+     << "    const MCInst *MI, const MCInstrInfo *MCII, unsigned CPUID) {\n";
   emitSchedModelHelpersImpl(OS, /* OnlyExpandMCPredicates */ true);
   OS << "}\n";
   OS << "} // end namespace " << Target << "_MC\n\n";
@@ -1749,9 +1752,10 @@ void SubtargetEmitter::emitGenMCSubtargetInfo(raw_ostream &OS) {
      << "      MCSubtargetInfo(TT, CPU, TuneCPU, FS, PF, PD,\n"
      << "                      WPR, WL, RA, IS, OC, FP) { }\n\n"
      << "  unsigned resolveVariantSchedClass(unsigned SchedClass,\n"
-     << "      const MCInst *MI, unsigned CPUID) const override {\n"
+     << "      const MCInst *MI, const MCInstrInfo *MCII,\n"
+     << "      unsigned CPUID) const override {\n"
      << "    return " << Target << "_MC"
-     << "::resolveVariantSchedClassImpl(SchedClass, MI, CPUID); \n";
+     << "::resolveVariantSchedClassImpl(SchedClass, MI, MCII, CPUID); \n";
   OS << "  }\n";
   if (TGT.getHwModes().getNumModeIds() > 1)
     OS << "  unsigned getHwMode() const override;\n";
@@ -1868,7 +1872,7 @@ void SubtargetEmitter::run(raw_ostream &OS) {
   OS << "class DFAPacketizer;\n";
   OS << "namespace " << Target << "_MC {\n"
      << "unsigned resolveVariantSchedClassImpl(unsigned SchedClass,"
-     << " const MCInst *MI, unsigned CPUID);\n"
+     << " const MCInst *MI, const MCInstrInfo *MCII, unsigned CPUID);\n"
      << "} // end namespace " << Target << "_MC\n\n";
   OS << "struct " << ClassName << " : public TargetSubtargetInfo {\n"
      << "  explicit " << ClassName << "(const Triple &TT, StringRef CPU, "
@@ -1878,7 +1882,8 @@ void SubtargetEmitter::run(raw_ostream &OS) {
      << " const MachineInstr *DefMI,"
      << " const TargetSchedModel *SchedModel) const override;\n"
      << "  unsigned resolveVariantSchedClass(unsigned SchedClass,"
-     << " const MCInst *MI, unsigned CPUID) const override;\n"
+     << " const MCInst *MI, const MCInstrInfo *MCII,"
+     << " unsigned CPUID) const override;\n"
      << "  DFAPacketizer *createDFAPacketizer(const InstrItineraryData *IID)"
      << " const;\n";
   if (TGT.getHwModes().getNumModeIds() > 1)
