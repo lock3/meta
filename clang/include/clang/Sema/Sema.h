@@ -7701,6 +7701,10 @@ public:
       const UnqualifiedId &Name, ParsedType ObjectType, bool EnteringContext,
       TemplateTy &Template, bool AllowInjectedClassName = false);
 
+  TemplateNameKind ActOnTemplateSplice(
+      CXXScopeSpec &SS, SourceLocation TemplateKWLoc, Expr *Refl,
+      TemplateTy &Template);
+  
   DeclResult ActOnClassTemplateSpecialization(
       Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
       SourceLocation ModulePrivateLoc, CXXScopeSpec &SS,

@@ -774,7 +774,9 @@ enum class UnqualifiedIdKind {
   /// An implicit 'self' parameter
   IK_ImplicitSelfParam,
   /// A deduction-guide name (a template-name)
-  IK_DeductionGuideName
+  IK_DeductionGuideName,
+  /// A spliced template-name (e.g., [:refl:] designating a template)
+  IK_SplicedTemplate,
 };
 
 /// Represents a C++ unqualified-id that has been parsed.
@@ -984,6 +986,15 @@ public:
     Kind = UnqualifiedIdKind::IK_ImplicitSelfParam;
     Identifier = const_cast<IdentifierInfo *>(Id);
     StartLocation = EndLocation = SourceLocation();
+  }
+
+  /// FIXME: We probably want to provide alternative source locations for
+  /// these things.
+  void setSplicedTemplateName(ParsedTemplateTy Template,
+                              SourceLocation TemplateLoc) {
+    Kind = UnqualifiedIdKind::IK_SplicedTemplate;
+    TemplateName = Template;
+    StartLocation = EndLocation = TemplateLoc;
   }
 
   /// Return the source range that covers this unqualified-id.

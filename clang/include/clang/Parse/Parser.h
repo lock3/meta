@@ -3201,6 +3201,8 @@ private:
 
   bool isCXXPackSpliceBegin(unsigned LookAhead = 0);
 
+  // Reflection splices
+
   bool matchCXXReflectionSpliceBegin(unsigned LookAhead = 0) {
     return matchCXXSpliceBegin(tok::colon, LookAhead);
   }
@@ -3216,6 +3218,24 @@ private:
   bool parseCXXReflectionSpliceEnd(SourceLocation &Loc) {
     return parseCXXSpliceEnd(tok::colon, Loc);
   }
+
+  // Identifier splices
+
+  bool matchCXXIdentifierSpliceBegin(unsigned LookAhead = 0) {
+    return matchCXXSpliceBegin(tok::colon, LookAhead);
+  }
+
+  bool matchCXXIdentifierSpliceEnd(unsigned LookAhead = 0) {
+    return matchCXXSpliceEnd(tok::colon, LookAhead);
+  }
+
+  bool parseCXXIdentifierSpliceBegin(SourceLocation &Loc) {
+    return parseCXXSpliceBegin(tok::colon, Loc);
+  }
+
+  bool parseCXXIdentifierSpliceEnd(SourceLocation &Loc) {
+    return parseCXXSpliceEnd(tok::colon, Loc);
+  }
 public:
   bool ParseCXXIdentifierSplice(
       IdentifierInfo *&Id,
@@ -3224,7 +3244,7 @@ public:
       IdentifierInfo *&Id,
       SourceLocation &IdBeginLoc, SourceLocation &IdEndLoc);
   ExprResult ParseCXXExprSpliceExpr();
-  ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base);
+  ExprResult ParseCXXMemberExprSpliceExpr(Expr *Base, bool IsTemplate);
   ExprResult ParseCXXPackSpliceExpr();
   SourceLocation ParseTypeSplice(DeclSpec &DS);
   void AnnotateExistingTypeSplice(const DeclSpec &DS,
@@ -3242,7 +3262,9 @@ public:
     ExprResult Refl;
   };
 
-  bool ParseReflectionSplice(ParsedSplice& Splice, bool IsTypename);
+  bool ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice& Splice,
+                             bool IsTypename);
+  
   void AnnotateExistingReflectionSplice(ParsedSplice &Splice);
 
   /// Parse a __select expression
