@@ -231,9 +231,7 @@ ExprResult Sema::BuildCXXInvalidReflectionExpr(Expr *MessageExpr,
                                           MessageExpr, BuiltinLoc, RParenLoc);
 }
 
-// Check that the argument has the right type. Ignore references and
-// cv-qualifiers on the expression.
-static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
+static bool isReflectionOperand(Sema &SemaRef, Expr *E) {
   // Get the type of the expression.
   QualType Source = E->getType();
   if (Source->isReferenceType())
@@ -241,7 +239,13 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
   Source = Source.getUnqualifiedType();
   Source = SemaRef.Context.getCanonicalType(Source);
 
-  if (Source != SemaRef.Context.MetaInfoTy) {
+  return Source->isReflectionType();
+}
+
+// Check that the argument has the right type. Ignore references and
+// cv-qualifiers on the expression.
+static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
+  if (!isReflectionOperand(SemaRef, E)) {
     SemaRef.Diag(E->getBeginLoc(), diag::err_expression_not_reflection);
     return false;
   }
@@ -1088,6 +1092,13 @@ TemplateArgumentLoc Sema::BuildCXXPackSpliceTemplateArgument(
 }
 
 PackSplice *Sema::ActOnCXXPackSplice(Scope *S, Expr *Operand) {
+  if (!isRangeSpliceEnabled()) {
+    // FIXME: Implement diagnostic, possibly see if this would have
+    // succeeded and report that as part of the diagnostic.
+    llvm_unreachable("diagnose, tried to form pack splice, "
+                     "but range splices not valid here");
+  }
+
   return BuildUnresolvedCXXPackSplice(S, Operand);
 }
 
@@ -1945,67 +1956,24 @@ DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
 //    typename [:^some_class:]::type
 //
 // If the splice operand is dependent, then this is a dependent type.
-TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Expr *Refl) {
+TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Scope *S, Expr *Operand) {
   // If the expression is dependent, the type is dependent.
-  if (Refl->isTypeDependent() || Refl->isValueDependent())
-    return ParsedType::make(Context.DependentTy);
+  if (Operand->isTypeDependent())
+    llvm_unreachable("dependent type not implemented");
 
-  // Evaluate the reflection.
-  Expr::EvalResult Eval;
-  Expr::EvalContext EvalCtx(Context, nullptr);
-  if (!Refl->EvaluateAsConstantExpr(Eval, EvalCtx))
-    return TypeError();
-  APValue const& Result = Eval.Val;
-
-  // The kind depends on the type. See through cv-references.
-  QualType T = Refl->getType().getCanonicalType();
-  if (T->isReferenceType())
-    T = T->getPointeeType();
-  T = T.getUnqualifiedType();
-  T = Context.getCanonicalType(T);
-
-  // Evaluate the expression to see what's been reflected.
-  //
-  // FIXME: What about references to meta::infos.
-  if (T->isReflectionType()) {
-    assert(Result.isReflection() && "Value of meta::info is not a reflection");
-    switch (Result.getReflectionKind()) {
-    case RK_invalid:
-      Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+  if (isReflectionOperand(*this, Operand)) {
+    QualType TypeSpliceTy = ActOnTypeSpliceType(Operand);
+    if (TypeSpliceTy.isNull())
       return TypeError();
 
-    case RK_declaration: {
-      const Decl *D = Result.getReflectedDeclaration();
-      if (TypeDecl const* TD = dyn_cast<TypeDecl>(D))
-        return ParsedType::make(Context.getTypeDeclType(TD));
-      break;
-    }
+    return ParsedType::make(TypeSpliceTy);
+  }
 
-    case RK_type:
-      return ParsedType::make(Result.getReflectedType());
-
-    default:
-      break;
-    }
-
-    // FIXME: This could be a better diagnostic.
-    Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
+  // Since this is not dependent, and not a reflection operand,
+  // try to form a pack splice.
+  QualType TypePackSpliceTy = ActOnTypePackSpliceType(S, Operand);
+  if (TypePackSpliceTy.isNull())
     return TypeError();
-  }
 
-  // FIXME: This is a poor man's approximation of testing to see if `T` is
-  // a range. It would be nice if there were a simple predicate that asked
-  // "is T a range" (and the provided the looked up members if needed). That
-  // would be a nice cleanup for the Range/Expansion statement code.
-  //
-  // FIXME: We need to know if the prefix ... has been seen. If so, then
-  // the resulting type is "expansion dependent?" or something like that.
-  // If not, the program is ill-formed.
-  if (T->isRecordType()) {
-    // Just fall through for now.
-  }
-
-  // FIXME: This could be a better diagnostic.
-  Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
-  return TypeError();
+  return ParsedType::make(TypePackSpliceTy);
 }

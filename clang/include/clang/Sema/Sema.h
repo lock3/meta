@@ -10273,6 +10273,11 @@ private:
   bool ParsingOverloads = false;
   bool ImmediateInvocation = false;
 public:
+  SourceLocation RangeSpliceIntroEllipsisLoc = {};
+
+  bool isRangeSpliceEnabled() {
+    return !RangeSpliceIntroEllipsisLoc.isInvalid();
+  }
 
   ReflectionCallback *GetReflectionCallbackObj() {
     return &ReflectionCallbackObj;
@@ -10372,7 +10377,7 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  TypeResult ActOnCXXTypenameSpecifierSplice(Expr *Refl);
+  TypeResult ActOnCXXTypenameSpecifierSplice(Scope *S, Expr *Operand);
 
 
   ExprResult ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
