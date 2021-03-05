@@ -36,8 +36,8 @@ namespace clang {
       NonType,
       /// A template template argument, stored as a template name.
       Template,
-      /// A pack splice parameter, stored as an expression.
-      PackSplice
+      /// A dependently spliced template argument of unknown kind.
+      Mystery,
     };
 
     /// Build an empty template argument.
@@ -66,22 +66,18 @@ namespace clang {
                            SourceLocation TemplateLoc)
       : Kind(ParsedTemplateArgument::Template),
         Arg(Template.getAsOpaquePtr()),
-        SS(SS), Loc(TemplateLoc), EllipsisLoc() { }
+        SS(SS), Loc(TemplateLoc), EllipsisLoc() {}
 
-    /// Create a pack splice template argument.
+    /// Create a mystery template argument.
     ///
-    /// \param E the operand of the pack splice operator.
+    /// \param E the reflection expression.
     ///
-    /// \param IntroEllipsisLoc the location of the ellipsis introducing
-    /// the pack splice.
-    ///
-    /// \param EndEllipsisLoc the location of the ellipsis triggering
+    /// \param EllipsisLoc the location of the ellipsis triggering
     /// expansion if present.
-    ParsedTemplateArgument(Expr *E, SourceLocation IntroEllipsisLoc,
-                           SourceLocation EndEllipsisLoc)
-      : Kind(ParsedTemplateArgument::PackSplice),
-        Arg(reinterpret_cast<void *>(E)), Loc(IntroEllipsisLoc),
-        EllipsisLoc(EndEllipsisLoc) { }
+    ParsedTemplateArgument(Expr *E, SourceLocation Loc,
+                           SourceLocation EllipsisLoc)
+      : Kind(ParsedTemplateArgument::Mystery), Arg(reinterpret_cast<void *>(E)),
+        Loc(Loc), EllipsisLoc(EllipsisLoc) {}
 
     /// Determine whether the given template argument is invalid.
     bool isInvalid() const { return Arg == nullptr; }
@@ -108,8 +104,8 @@ namespace clang {
     }
 
     /// Retrieve the operand for a pack splice.
-    Expr *getPackSpliceOperand() const {
-      assert(Kind == PackSplice && "Not a pack splice template argument");
+    Expr *getMysterySpliceOperand() const {
+      assert(Kind == Mystery && "Not a mystery template argument");
       return static_cast<Expr*>(Arg);
     }
 
@@ -127,7 +123,7 @@ namespace clang {
     /// Retrieve the location of the ellipsis that makes a template
     /// template argument or a pack splice into a pack expansion.
     SourceLocation getEllipsisLoc() const {
-      assert((Kind == Template || Kind == PackSplice) &&
+      assert((Kind == Template || Kind == Mystery) &&
              "Only template template arguments and pack splices "
              "can have an ellipsis");
       return EllipsisLoc;

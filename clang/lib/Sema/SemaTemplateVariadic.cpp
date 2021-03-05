@@ -602,23 +602,23 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
 
     return Arg.getTemplatePackExpansion(EllipsisLoc);
 
-  case ParsedTemplateArgument::PackSplice: {
-    // FIXME: We could conceivably check to see if a non-dependent operand
-    // is expandable at this point and diagnose early if it isn't.
-    //
-    // Given that the "machinery" to check this currently generates
-    // the logic for expansion, and we'll still get a diagnostic, with
-    // adequate information very shortly when we try to expand any
-    // non-dependent TemplateArguments, we probably don't want to do
-    // that here (yet?).
-    //
-    // Performing the actual expansion here in non-dependent contexts
-    // also seems far too heavy handed, and will necessarily pull in a
-    // lot of semantic detail into what really is more of a parsing
-    // structure.
-    return ParsedTemplateArgument(Arg.getPackSpliceOperand(), Arg.getLocation(),
-                                  EllipsisLoc);
-  }
+  // case ParsedTemplateArgument::PackSplice: {
+  //   // FIXME: We could conceivably check to see if a non-dependent operand
+  //   // is expandable at this point and diagnose early if it isn't.
+  //   //
+  //   // Given that the "machinery" to check this currently generates
+  //   // the logic for expansion, and we'll still get a diagnostic, with
+  //   // adequate information very shortly when we try to expand any
+  //   // non-dependent TemplateArguments, we probably don't want to do
+  //   // that here (yet?).
+  //   //
+  //   // Performing the actual expansion here in non-dependent contexts
+  //   // also seems far too heavy handed, and will necessarily pull in a
+  //   // lot of semantic detail into what really is more of a parsing
+  //   // structure.
+  //   return ParsedTemplateArgument(Arg.getPackSpliceOperand(), Arg.getLocation(),
+  //                                 EllipsisLoc);
+  // }
 
   }
   llvm_unreachable("Unhandled template argument kind?");

@@ -945,10 +945,10 @@ TemplateArgumentLoc Sema::translateTemplateArgument(
         Arg.getLocation(), Arg.getEllipsisLoc());
   }
 
-  case ParsedTemplateArgument::PackSplice: {
-    return ActOnCXXPackSpliceTemplateArgument(Arg.getPackSpliceOperand(),
-                                              Arg.getEllipsisLoc());
-  }
+  // case ParsedTemplateArgument::PackSplice: {
+  //   return ActOnCXXPackSpliceTemplateArgument(Arg.getPackSpliceOperand(),
+  //                                             Arg.getEllipsisLoc());
+  // }
   }
 
   llvm_unreachable("Unhandled parsed template argument");
@@ -5638,8 +5638,8 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Pack:
       llvm_unreachable("Caller must expand template argument packs");
 
-    case TemplateArgument::PackSplice: // FIXME: Is this right?
-      llvm_unreachable("Caller must expand template argument splices");
+    // case TemplateArgument::PackSplice: // FIXME: Is this right?
+    //   llvm_unreachable("Caller must expand template argument splices");
 
     }
 
