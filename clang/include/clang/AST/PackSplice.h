@@ -69,7 +69,7 @@ public:
 
   Expr *getExpansion(unsigned I) const {
     assert(isExpanded() && "Pack splice not expanded");
-    assert(0 <= I && I < getNumExpansions() && "index out of bounds");
+    assert(I < getNumExpansions() && "index out of bounds");
     return getTrailingObjects<Expr *>()[I];
   }
 
