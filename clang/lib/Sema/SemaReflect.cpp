@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TreeTransform.h"
 #include "TypeLocBuilder.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Expr.h"
@@ -27,6 +26,7 @@
 #include "clang/Sema/ParserLookupSetup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaInternal.h"
+#include "clang/Sema/Template.h"
 
 using namespace clang;
 using namespace sema;
