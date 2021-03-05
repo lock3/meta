@@ -581,14 +581,17 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
 /// \param IsTypename True if this is part of a typename-specifier. A typename
 /// specifier can be followed by template arguments.
 ///
-/// \return True if the splice is obviously ill-formed.
+/// \param TemplateKeywordLoc If valid, the location of the preceding 'template'
+/// keyword. This idn
 ///
+/// \return True if the splice is obviously ill-formed.
 ///
 /// FIXME: We need to pass the 'template' keyword as part of the template name,
 /// if its present. It would also be nice to parse pass the 'typename' keyword,
 /// but I don't think we have access to it in the calling contexts.
 bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
-                                   bool IsTypename) {
+                                   bool IsTypename,
+                                   SourceLocation TemplateKeywordLoc) {
   // This is already a splice token.
   if (Tok.is(tok::annot_reflection_splice)) {
     Splice.Start = Tok.getLocation();
@@ -607,32 +610,42 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
   if (parseCXXReflectionSpliceEnd(Splice.End))
     return true;
 
-  // Inside a typename-specifier, we could have a template-id. Note that
-  // the typename-specifier does not permit the 'template' keyword after
-  // the splice.
-  if (IsTypename) {
-    if (Tok.is(tok::less)) {
-      // We have something template of the form 'typename [:x:]<args>'. Try
-      // to interpret this as a template-id.
-      TemplateTy Template;
-      TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SourceLocation(),
-                                                          Splice.Refl.get(),
-                                                          Template);
-      if (Kind == TNK_Non_template)
-        return true;
-      UnqualifiedId TemplateName;
-      TemplateName.setSplicedTemplateName(Template, Splice.Start);
+  // When the splice is followed by a template argument list, try parsing
+  // the arguments and annotating the token as a template-id.
+  auto AnnotateTemplateId = [&](){
+    TemplateTy Template;
+    TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SourceLocation(),
+                                                        Splice.Refl.get(),
+                                                        Template);
+    if (Kind == TNK_Non_template)
+      return true;
+    UnqualifiedId TemplateName;
+    TemplateName.setSplicedTemplateName(Template, Splice.Start);
 
-      // Annotate the current token as a typename or template-id, depending
-      // on what follows.
-      if (AnnotateTemplateIdToken(Template, Kind, SS, SourceLocation(),
-                                  TemplateName, /*NameSpliced=*/true,
-                                  /*AllowTypeAnnotation=*/true))
-        return true;
+    // Annotate the current token as a typename or template-id, depending
+    // on what follows.
+    if (AnnotateTemplateIdToken(Template, Kind, SS, SourceLocation(),
+                                TemplateName, /*NameSpliced=*/true,
+                                /*AllowTypeAnnotation=*/true))
+      return true;
+    
+    return false;
+  };
+
+  // For typename-specifiers and splices preceded by constructs, parse the
+  // trailing template-argument list (if present) and annotate the construct
+  // as a template-id.
+  if (IsTypename && Tok.is(tok::less)) {
+    if (AnnotateTemplateId())
+      return true;
+  }
+  else if (TemplateKeywordLoc.isValid()) {
+    if (Tok.isNot(tok::less)) {
+      Diag(Splice.End, diag::err_expected_after) << ":]" << "<";
+      return true;
     }
-
-    // Fall through. This may or may not be a type (either dependently or
-    // erroneouly). We'll figure out what to do with it later.
+    if (AnnotateTemplateId())
+      return true;
   }
 
   return false;

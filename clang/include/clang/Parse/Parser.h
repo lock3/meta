@@ -1943,7 +1943,8 @@ private:
                                       bool IsTypename = false,
                                       IdentifierInfo **LastII = nullptr,
                                       bool OnlyNamespace = false,
-                                      bool InUsingDeclaration = false);
+                                      bool InUsingDeclaration = false,
+                                      SourceLocation TemplateKeywordLoc = {});
 
   //===--------------------------------------------------------------------===//
   // C++11 5.1.2: Lambda expressions
@@ -3261,9 +3262,11 @@ public:
     ExprResult Refl;
   };
 
-  bool ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice& Splice,
-                             bool IsTypename);
-
+  bool ParseReflectionSplice(CXXScopeSpec &SS,
+                             ParsedSplice& Splice,
+                             bool IsTypename,
+                             SourceLocation TemplateKeywordLoc);
+  
   void AnnotateExistingReflectionSplice(ParsedSplice &Splice);
 
   /// Parse a __select expression

@@ -149,12 +149,12 @@ void Parser::CheckForTemplateAndDigraph(Token &Next, ParsedType ObjectType,
 ///
 /// \param OnlyNamespace If true, only considers namespaces in lookup.
 ///
-///
 /// \returns true if there was an error parsing a scope specifier
 bool Parser::ParseOptionalCXXScopeSpecifier(
     CXXScopeSpec &SS, ParsedType ObjectType, bool ObjectHadErrors,
     bool EnteringContext, bool *MayBePseudoDestructor, bool IsTypename,
-    IdentifierInfo **LastII, bool OnlyNamespace, bool InUsingDeclaration) {
+    IdentifierInfo **LastII, bool OnlyNamespace, bool InUsingDeclaration,
+    SourceLocation TemplateKeywordLoc) {
   assert(getLangOpts().CPlusPlus &&
          "Call sites of this function should be guarded by checking for C++");
 
@@ -238,6 +238,9 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
   // this has to be a type splice. Otherwise, we assume it's an expression
   // splice.
   //
+  // If TemplateKeywordLoc is valid, then the splice must be followed by
+  // a template-argument-list. We'll try parsing that too.
+  //
   // Note that reflection splices can only appear at the front of a nested-name
   // specifier. Identifier splices can appear pretty much anywhere.
   //
@@ -246,9 +249,10 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
       (matchCXXReflectionSpliceBegin() || Tok.is(tok::annot_reflection_splice))) {
     SourceLocation StartLoc = Tok.getLocation();
 
-    // Parse the reflection splice.
+    // Parse the reflection splice, possibly annotating this as something
+    // other than a splice.
     ParsedSplice Splice;
-    if (ParseReflectionSplice(SS, Splice, IsTypename))
+    if (ParseReflectionSplice(SS, Splice, IsTypename, TemplateKeywordLoc))
       return true;
 
     // Look for the :: after splice. If not, then this is not a nested-name

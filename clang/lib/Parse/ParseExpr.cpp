@@ -1647,17 +1647,34 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   //
   //    template reflection-splice < template-argument-list >
   //    template identifier-splice < template-argument-list >
-  //
-  // FIXME: This may be wrong.
-  case tok::kw_template:
-    if (matchCXXReflectionSpliceBegin(/*LookAhead=*/1))
-      assert(false && "Template reflection splice expressions not implemented");
-
-    if (matchCXXIdentifierSpliceBegin(/*LookAhead=*/1))
+  case tok::kw_template: {
+    SourceLocation TemplateKeywordLoc = ConsumeToken();
+    // A template splice can be part of a nested-name-specifier.
+    if (matchCXXReflectionSpliceBegin()) {
+      CXXScopeSpec SS;
+      if (ParseOptionalCXXScopeSpecifier(SS,
+                                         /*ObjectType=*/nullptr,
+                                         /*ObjectHasErrors=*/false,
+                                         /*EnteringContext=*/false,
+                                         /*MayBePseudoDestructor=*/nullptr,
+                                         /*IsTypename=*/false,
+                                         /*LastII=*/nullptr,
+                                         /*OnlyNamespace=*/false,
+                                         /*InUsingDeclaration=*/false,
+                                         TemplateKeywordLoc))
+        return true;
+    } else if (matchCXXIdentifierSpliceBegin(/*LookAhead=*/1)) {
+      // FIXME: Probably the same as above.
       assert(false && "Template identifier expressions not implemented");
-
-    NotCastExpr = true;
-    return ExprError();
+    } else {
+      NotCastExpr = true;
+      return ExprError();
+    }
+    
+    // Re-parse the expression using the annotated token.
+    return ParseCastExpression(ParseKind, isAddressOfOperand, isTypeCast,
+                               isVectorLiteral, NotPrimaryExpression);
+  }
 
   case tok::coloncolon: {
     // ::foo::bar -> global qualified name etc.   If TryAnnotateTypeOrScopeToken
