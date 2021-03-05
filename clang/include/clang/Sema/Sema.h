@@ -7705,6 +7705,18 @@ public:
       CXXScopeSpec &SS, SourceLocation TemplateKWLoc, Expr *Refl,
       TemplateTy &Template);
 
+  enum TemplateTemplateArgumentSpliceKind
+  {
+    TTASK_Type,      // A "real" template template argument.
+    TTASK_Value,     // The template is not a type.
+    TTASK_Dependent, // A splice of a dependent template argument.
+    TTASK_Invalid,   // Some other kind of error.
+  };
+
+  TemplateTemplateArgumentSpliceKind ActOnTemplateTemplateArgumentSplice(
+      CXXScopeSpec &SS, SourceLocation TemplateKWLoc, Expr *Refl,
+      TemplateTy &Template, TemplateNameKind &Kind);
+
   DeclResult ActOnClassTemplateSpecialization(
       Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
       SourceLocation ModulePrivateLoc, CXXScopeSpec &SS,

@@ -1504,19 +1504,27 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
     ExprResult Refl = getExprAnnotation(Tok);
     SourceLocation SpliceLoc = ConsumeAnnotationToken();
 
-    // If Refl is dependent, then this could be a universal or wildcard
-    // template argument. However, we need to look past the closing token
-    // to make sure this isn't part of an expression.
-    if (Refl.get()->isTypeDependent())
-      assert(false && "Wildcard not implemented");
+    // If the next token is something other then the end of a template-argument,
+    // don't try to interpret this a template template argument. Fail here
+    // and analyze the term as an expression.
+    if (!Tok.is(tok::comma) &&
+        !Tok.is(tok::greater) &&
+        !Tok.is(tok::greatergreater) &&
+        !Tok.is(tok::ellipsis))
+      return Result;
 
-    // Otherwise, we can build a normal template template argument.
+    // Grab the trailing ellipsis, if present.
+    TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+    // Analyze the template template argument. 
     TemplateTy Template;
-    TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SpliceLoc,
-                                                        Refl.get(),
-                                                        Template);
-      if (Kind == TNK_Dependent_template_name || Kind == TNK_Type_template)
-        Result = ParsedTemplateArgument(SS, Template, SpliceLoc);
+    TemplateNameKind Kind;
+    auto ArgKind = Actions.ActOnTemplateTemplateArgumentSplice(
+      SS, SpliceLoc, Refl.get(), Template, Kind);
+    if (ArgKind == Sema::TTASK_Type && Kind == TNK_Type_template)
+      Result = ParsedTemplateArgument(SS, Template, SpliceLoc);
+    else if (ArgKind == Sema::TTASK_Dependent)
+      assert(false && "Wildcard not implemented");
   }
 
   // If this is a pack expansion, build it as such.

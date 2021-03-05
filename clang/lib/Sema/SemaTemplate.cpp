@@ -5003,6 +5003,62 @@ TemplateNameKind Sema::ActOnTemplateSplice(CXXScopeSpec &SS,
   return TNK_Non_template;
 }
 
+// This is largely the same as ActOnTemplateSplice, except that it won't
+// produce diagnostics.
+Sema::TemplateTemplateArgumentSpliceKind
+Sema::ActOnTemplateTemplateArgumentSplice(CXXScopeSpec &SS,
+                                          SourceLocation TemplateKWLoc,
+                                          Expr *Refl,
+                                          TemplateTy &Template,
+                                          TemplateNameKind &Kind) {
+  // If the expression is dependent, then this is going to be a wildcard
+  // template argument.
+  if (Refl->isTypeDependent() || Refl->isValueDependent()) {
+    Kind = TNK_Dependent_template_name;
+    return TTASK_Dependent;
+  }
+
+  // Evaluate the reflection.
+  Expr::EvalResult Eval;
+  Expr::EvalContext EvalCtx(Context, nullptr);
+  if (!Refl->EvaluateAsConstantExpr(Eval, EvalCtx))
+    return TTASK_Invalid;
+  APValue const& Result = Eval.Val;
+
+  // The kind depends on the type. See through cv-references.
+  QualType T = Refl->getType().getCanonicalType();
+  if (T->isReferenceType())
+    T = T->getPointeeType();
+  T = T.getUnqualifiedType();
+  T = Context.getCanonicalType(T);
+
+  // Evaluate the expression to see what's been reflected.
+  if (T == Context.MetaInfoTy) {
+    assert(Result.isReflection() && "Value of meta::info is not a reflection");
+
+    // FIXME: What if the splice names an overload set? We should
+
+    if (Result.getReflectionKind() == RK_declaration) {
+      if (auto *TD = dyn_cast<TemplateDecl>(Result.getReflectedDeclaration())) {
+        TemplateName N = Context.getSplicedTemplateReflection(Refl, TD);
+        Template = TemplateTy::make(N);
+        if (isa<FunctionTemplateDecl>(TD))
+          Kind = TNK_Function_template;
+        else if (isa<VarTemplateDecl>(TD))
+          Kind = TNK_Var_template;
+        else if (isa<ConceptDecl>(TD))
+          Kind = TNK_Concept_template;
+        else
+          Kind = TNK_Type_template;
+        return Kind == TNK_Type_template ? TTASK_Type : TTASK_Value;
+      }
+    }
+  }
+
+  // This is something else.
+  return TTASK_Invalid;
+}
+
 bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                      TemplateArgumentLoc &AL,
                           SmallVectorImpl<TemplateArgument> &Converted) {
