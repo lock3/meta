@@ -1431,8 +1431,10 @@ static bool isEndOfTemplateArgument(Token Tok) {
 
 /// Parse a C++ template template argument.
 ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
-  if (!isIdentifier() && !Tok.is(tok::coloncolon) &&
-      !Tok.is(tok::annot_cxxscope))
+  if (!isIdentifier() &&
+      !Tok.is(tok::coloncolon) &&
+      !Tok.is(tok::annot_cxxscope) &&
+      !matchCXXReflectionSpliceBegin())
     return ParsedTemplateArgument();
 
   // C++0x [temp.arg.template]p1:
@@ -1498,6 +1500,23 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
         Result = ParsedTemplateArgument(SS, Template, Name.StartLocation);
       }
     }
+  } else if (Tok.is(tok::annot_reflection_splice)) {
+    ExprResult Refl = getExprAnnotation(Tok);
+    SourceLocation SpliceLoc = ConsumeAnnotationToken();
+
+    // If Refl is dependent, then this could be a universal or wildcard
+    // template argument. However, we need to look past the closing token
+    // to make sure this isn't part of an expression.
+    if (Refl.get()->isTypeDependent())
+      assert(false && "Wildcard not implemented");
+
+    // Otherwise, we can build a normal template template argument.
+    TemplateTy Template;
+    TemplateNameKind Kind = Actions.ActOnTemplateSplice(SS, SpliceLoc,
+                                                        Refl.get(),
+                                                        Template);
+      if (Kind == TNK_Dependent_template_name || Kind == TNK_Type_template)
+        Result = ParsedTemplateArgument(SS, Template, SpliceLoc);
   }
 
   // If this is a pack expansion, build it as such.
@@ -1510,7 +1529,6 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).
 ///
 ///       template-argument: [C++ 14.2]
-///         pack-splice
 ///         constant-expression
 ///         type-id
 ///         id-expression
@@ -1519,21 +1537,6 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
     Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
     /*LambdaContextDecl=*/nullptr,
     /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
-
-  // Pack splices have a special template argument kind that can
-  // become either a type or non-type template argument when expanded.
-  if (isCXXPackSpliceBegin()) {
-    TentativeParsingAction TPA(*this);
-
-    ParsedTemplateArgument PackSpliceTemplateArgument
-      = ParseCXXTemplateArgumentPackSplice();
-    if (!PackSpliceTemplateArgument.isInvalid()) {
-      TPA.Commit();
-      return PackSpliceTemplateArgument;
-    }
-
-    TPA.Revert();
-  }
 
   // C++ [temp.arg]p2:
   //   In a template-argument, an ambiguity between a type-id and an

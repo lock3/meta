@@ -1856,8 +1856,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
           SourceLocation StartLoc = ConsumeAnnotationToken();
           return Actions.ActOnCXXExprSpliceExpr(StartLoc, Refl.get(), EndLoc);
         }
-        
-        // FIXME: What else could this be,
+
+        // FIXME: What else could this be?
         assert(false && "Unhandled parse");
       }
 

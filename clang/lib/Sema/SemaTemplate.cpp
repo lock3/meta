@@ -4998,10 +4998,6 @@ TemplateNameKind Sema::ActOnTemplateSplice(CXXScopeSpec &SS,
     }
   }
 
-  llvm::errs() << "WTF?\n";
-  Refl->dump();
-  T->dump();
-
   // FIXME: Do better with diagnostics.
   Diag(Refl->getExprLoc(), diag::err_splice_invalid_reflection);
   return TNK_Non_template;
