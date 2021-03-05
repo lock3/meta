@@ -214,6 +214,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
+  mutable llvm::FoldingSet<TypenameSpecifierSpliceType>
+    TypenameSpecifierSpliceTypes;
   mutable llvm::FoldingSet<DependentTypeSpliceType> DependentTypeSpliceTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
@@ -1580,6 +1582,7 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs) const;
 
   /// Reflection splice types.
+  QualType getTypenameSpecifierSpliceType(Expr *E) const;
   QualType getTypeSpliceType(Expr *E, QualType UnderlyingType) const;
 
   QualType getTypePackSpliceType(const PackSplice *PS) const;

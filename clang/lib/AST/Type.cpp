@@ -3580,6 +3580,24 @@ void DependentIdentifierSpliceType::Profile(
   }
 }
 
+TypenameSpecifierSpliceType::TypenameSpecifierSpliceType(
+    const ASTContext &Context, Expr *Operand, QualType Can)
+  : Type(TypenameSpecifierSplice, Can,
+         toTypeDependence(Operand->getDependence()), /*IsMetaType=*/false),
+    Context(Context), Operand(Operand) {
+  assert(Operand->isTypeDependent());
+}
+
+QualType TypenameSpecifierSpliceType::getUnderlyingType() const {
+  return Context.DependentTy;
+}
+
+void TypenameSpecifierSpliceType::Profile(llvm::FoldingSetNodeID &ID,
+                                          const ASTContext &Context,
+                                          Expr *Operand) {
+  Operand->Profile(ID, Context, true);
+}
+
 TypeSpliceType::TypeSpliceType(Expr *E, QualType T, QualType Can)
   : Type(TypeSplice, Can, toTypeDependence(E->getDependence()),
          T->isMetaType()),
@@ -4237,6 +4255,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::TypenameSpecifierSplice:
   case Type::TypeSplice:
   case Type::TypePackSplice:
   case Type::UnaryTransform:

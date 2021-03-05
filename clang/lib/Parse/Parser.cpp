@@ -2023,7 +2023,8 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
                      TemplateArgsPtr, TemplateId->RAngleLoc);
     } else if (Tok.is(tok::annot_reflection_splice)) {
       ExprResult Refl = getExprAnnotation(Tok);
-      Ty = Actions.ActOnCXXTypenameSpecifierSplice(getCurScope(), Refl.get());
+      Ty = Actions.ActOnCXXTypenameSpecifierSpliceType(getCurScope(),
+                                                       Refl.get());
     } else {
       Diag(Tok, diag::err_expected_type_name_after_typename)
         << SS.getRange();

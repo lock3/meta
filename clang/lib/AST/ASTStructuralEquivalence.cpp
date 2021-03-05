@@ -1030,6 +1030,17 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
+  case Type::TypenameSpecifierSplice: {
+    const auto *SpliceTy1 = cast<TypenameSpecifierSpliceType>(T1);
+    const auto *SpliceTy2 = cast<TypenameSpecifierSpliceType>(T2);
+
+    if (!IsStructurallyEquivalent(Context,
+                                  SpliceTy1->getOperand(),
+                                  SpliceTy2->getOperand()))
+      return false;
+    break;
+  }
+
   case Type::TypeSplice:
     if (!IsStructurallyEquivalent(Context,
                                   cast<TypeSpliceType>(T1)->getReflection(),

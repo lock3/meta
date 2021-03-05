@@ -1815,7 +1815,11 @@ bool Sema::ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
 
   assert(DS.getTypeSpecType() == DeclSpec::TST_type_splice);
 
-  QualType T = BuildTypeSpliceType(DS.getRepAsExpr());
+  TypeLocBuilder TLB;
+  // FIXME: Provide source location information for SBELoc and SEELoc
+  QualType T = BuildTypeSpliceTypeLoc(
+      TLB, DS.getTypeSpecTypeLoc(), /*SBELoc=*/SourceLocation(),
+      DS.getRepAsExpr(), /*SEELoc=*/SourceLocation());
   if (T.isNull())
     return true;
 
@@ -1825,10 +1829,6 @@ bool Sema::ActOnCXXNestedNameSpecifierTypeSplice(CXXScopeSpec &SS,
     return true;
   }
 
-  TypeLocBuilder TLB;
-  // FIXME: Provide source location information for SBELoc and SEELoc
-  BuildTypeSpliceTypeLoc(TLB, T, DS.getTypeSpecTypeLoc(),
-                         SourceLocation(), SourceLocation());
   SS.Extend(Context, SourceLocation(), TLB.getTypeLocInContext(Context, T),
             ColonColonLoc);
   return false;
@@ -1867,14 +1867,17 @@ QualType Sema::BuildTypeSpliceType(Expr *E) {
   return Context.getTypeSpliceType(E, Reflected);
 }
 
-void Sema::BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
-                                  SourceLocation TypenameLoc,
-                                  SourceLocation SBELoc,
-                                  SourceLocation SEELoc) {
-  TypeSpliceTypeLoc TL = TLB.push<TypeSpliceTypeLoc>(T);
-  TL.setTypenameKeywordLoc(TypenameLoc);
+QualType Sema::BuildTypeSpliceTypeLoc(
+    TypeLocBuilder &TLB, SourceLocation TypenameKWLoc,
+    SourceLocation SBELoc, Expr *E, SourceLocation SEELoc) {
+  QualType SpliceTy = BuildTypeSpliceType(E);
+
+  auto TL = TLB.push<TypeSpliceTypeLoc>(SpliceTy);
+  TL.setTypenameKeywordLoc(TypenameKWLoc);
   TL.setSBELoc(SBELoc);
   TL.setSEELoc(SEELoc);
+
+  return SpliceTy;
 }
 
 QualType Sema::ActOnTypePackSpliceType(Scope *S, Expr *Operand) {
@@ -1883,6 +1886,21 @@ QualType Sema::ActOnTypePackSpliceType(Scope *S, Expr *Operand) {
     return QualType();
 
   return BuildTypePackSpliceType(PS);
+}
+
+QualType Sema::BuildTypePackSpliceTypeLoc(
+    TypeLocBuilder &TLB, Scope *S, SourceLocation IntroEllipsisLoc,
+    SourceLocation TemplateKWLoc, SourceLocation SBELoc,
+    Expr *Operand, SourceLocation SEELoc) {
+  QualType SpliceTy = ActOnTypePackSpliceType(S, Operand);
+
+  auto TL = TLB.push<TypePackSpliceTypeLoc>(SpliceTy);
+  TL.setEllipsisLoc(IntroEllipsisLoc);
+  // TL.setTypenameKeywordLoc(TypenameLoc);
+  TL.setSBELoc(SBELoc);
+  TL.setSEELoc(SEELoc);
+
+  return SpliceTy;
 }
 
 QualType Sema::BuildTypePackSpliceType(const PackSplice *PS) {
@@ -1948,7 +1966,7 @@ DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
   return SemaRef.PP.getDiagnostics();
 }
 
-// This is called from when analylzing typename-specifiers (generally when
+// This is called from when analyzing typename-specifiers (generally when
 // optionally parsing nested-name-specifiers) to determine that a type splice
 // is valid. For example:
 //
@@ -1956,24 +1974,49 @@ DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
 //    typename [:^some_class:]::type
 //
 // If the splice operand is dependent, then this is a dependent type.
-TypeResult Sema::ActOnCXXTypenameSpecifierSplice(Scope *S, Expr *Operand) {
+TypeResult Sema::ActOnCXXTypenameSpecifierSpliceType(Scope *S, Expr *Operand) {
+  TypeLocBuilder TLB;
+  QualType SpliceTy = BuildCXXTypenameSpecifierSpliceTypeLoc(
+      TLB, S, RangeSpliceIntroEllipsisLoc, /*TemplateKWLoc=*/SourceLocation(),
+      /*SBELoc=*/SourceLocation(), Operand, /*SEELoc=*/SourceLocation());
+  if (SpliceTy.isNull())
+    return TypeError();
+
+  return CreateParsedType(SpliceTy, TLB.getTypeSourceInfo(Context, SpliceTy));
+}
+
+// Internal function for building a dependent typename specifier
+// splice type loc
+QualType Sema::BuildCXXTypenameSpecifierSpliceTypeLoc(
+    TypeLocBuilder &TLB, SourceLocation IntroEllipsisLoc,
+    SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+    Expr *Operand, SourceLocation SEELoc) {
+  QualType SpliceTy = Context.getTypenameSpecifierSpliceType(Operand);
+
+  auto TL = TLB.push<TypenameSpecifierSpliceTypeLoc>(SpliceTy);
+  TL.setIntroEllipsisLoc(IntroEllipsisLoc);
+  TL.setTypenameKeywordLoc(TypenameKWLoc);
+  TL.setSBELoc(SBELoc);
+  TL.setSEELoc(SEELoc);
+
+  return SpliceTy;
+}
+
+QualType Sema::BuildCXXTypenameSpecifierSpliceTypeLoc(
+    TypeLocBuilder &TLB, Scope *S, SourceLocation IntroEllipsisLoc,
+    SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+    Expr *Operand, SourceLocation SEELoc) {
   // If the expression is dependent, the type is dependent.
   if (Operand->isTypeDependent())
-    llvm_unreachable("dependent type not implemented");
+    return BuildCXXTypenameSpecifierSpliceTypeLoc(
+        TLB, IntroEllipsisLoc, TypenameKWLoc, SBELoc, Operand, SEELoc);
 
-  if (isReflectionOperand(*this, Operand)) {
-    QualType TypeSpliceTy = ActOnTypeSpliceType(Operand);
-    if (TypeSpliceTy.isNull())
-      return TypeError();
-
-    return ParsedType::make(TypeSpliceTy);
-  }
+  if (isReflectionOperand(*this, Operand))
+    return BuildTypeSpliceTypeLoc(TLB, TypenameKWLoc, SBELoc, Operand, SEELoc);
 
   // Since this is not dependent, and not a reflection operand,
   // try to form a pack splice.
-  QualType TypePackSpliceTy = ActOnTypePackSpliceType(S, Operand);
-  if (TypePackSpliceTy.isNull())
-    return TypeError();
-
-  return ParsedType::make(TypePackSpliceTy);
+  return BuildTypePackSpliceTypeLoc(
+      TLB, S, IntroEllipsisLoc, TypenameKWLoc, SBELoc, Operand, SEELoc);
 }
+

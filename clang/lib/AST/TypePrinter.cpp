@@ -1115,13 +1115,25 @@ void TypePrinter::printDependentIdentifierSpliceBefore(
 void TypePrinter::printDependentIdentifierSpliceAfter(
     const DependentIdentifierSpliceType *T, raw_ostream &OS) { }
 
+void TypePrinter::printTypenameSpecifierSpliceBefore(
+    const TypenameSpecifierSpliceType *T, raw_ostream &OS) {
+  OS << "typename [:";
+  if (T->getOperand())
+    T->getOperand()->printPretty(OS, nullptr, Policy);
+  OS << ":]";
+  spaceBeforePlaceHolder(OS);
+}
+
+void TypePrinter::printTypenameSpecifierSpliceAfter(
+    const TypenameSpecifierSpliceType *T, raw_ostream &OS) { }
+
 void TypePrinter::printTypeSpliceBefore(const TypeSpliceType *T,
                                         raw_ostream &OS) {
   if (T->isDependentType()) {
-    OS << "typename [<";
+    OS << "typename [:";
     if (T->getReflection())
       T->getReflection()->printPretty(OS, nullptr, Policy);
-    OS << ">]";
+    OS << ":]";
   } else {
     print(T->getUnderlyingType(), OS, StringRef());
   }

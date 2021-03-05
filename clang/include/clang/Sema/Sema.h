@@ -10389,8 +10389,17 @@ public:
                                        SourceLocation BuiltinLoc,
                                        SourceLocation RParenLoc);
 
-  TypeResult ActOnCXXTypenameSpecifierSplice(Scope *S, Expr *Operand);
-
+  TypeResult ActOnCXXTypenameSpecifierSpliceType(Scope *S, Expr *Operand);
+private:
+  QualType BuildCXXTypenameSpecifierSpliceTypeLoc(
+      TypeLocBuilder &TLB, SourceLocation IntroEllipsisLoc,
+      SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+      Expr *Operand, SourceLocation SEELoc);
+public:
+  QualType BuildCXXTypenameSpecifierSpliceTypeLoc(
+      TypeLocBuilder &TLB, Scope *S, SourceLocation IntroEllipsisLoc,
+      SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+      Expr *Operand, SourceLocation SEELoc);
 
   ExprResult ActOnCXXExprSpliceExpr(SourceLocation SBELoc,
                                     Expr *Reflection,
@@ -10537,13 +10546,15 @@ public:
 
   QualType ActOnTypeSpliceType(Expr *E);
   QualType BuildTypeSpliceType(Expr *E);
-
-  void BuildTypeSpliceTypeLoc(TypeLocBuilder &TLB, QualType T,
-                              SourceLocation TypenameLoc,
-                              SourceLocation SBELoc,
-                              SourceLocation SEELoc);
+  QualType BuildTypeSpliceTypeLoc(
+    TypeLocBuilder &TLB, SourceLocation TypenameKWLoc,
+    SourceLocation SBELoc, Expr *E, SourceLocation SEELoc);
 
   QualType ActOnTypePackSpliceType(Scope *S, Expr *Operand);
+  QualType BuildTypePackSpliceTypeLoc(
+      TypeLocBuilder &TLB, Scope *S, SourceLocation IntroEllipsisLoc,
+      SourceLocation TemplateKWLoc, SourceLocation SBELoc,
+      Expr *Operand, SourceLocation SEELoc);
   QualType BuildTypePackSpliceType(const PackSplice *PS);
 
   ExprResult ActOnMemberAccessExpr(Expr *Base,

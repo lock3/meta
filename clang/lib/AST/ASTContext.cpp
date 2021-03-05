@@ -3494,6 +3494,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::TypenameSpecifierSplice:
   case Type::TypeSplice:
   case Type::TypePackSplice:
   case Type::UnaryTransform:
@@ -5486,6 +5487,27 @@ QualType ASTContext::getDependentIdentifierSpliceType(
   auto *T = DependentIdentifierSpliceType::Create(*this, NNS, II, TemplateArgs);
   Types.push_back(T);
   return QualType(T, 0);
+}
+
+QualType ASTContext::getTypenameSpecifierSpliceType(Expr *Operand) const {
+  assert(Operand->isTypeDependent());
+
+  llvm::FoldingSetNodeID ID;
+  TypenameSpecifierSpliceType::Profile(ID, *this, Operand);
+
+  void *InsertPos = nullptr;
+  TypenameSpecifierSpliceType *Canon
+      = TypenameSpecifierSpliceTypes.FindNodeOrInsertPos(ID, InsertPos);
+  if (!Canon) {
+    Canon = new (*this, TypeAlignment) TypenameSpecifierSpliceType(
+        *this, Operand);
+    TypenameSpecifierSpliceTypes.InsertNode(Canon, InsertPos);
+  }
+
+  auto *SpliceTy = new (*this, TypeAlignment) TypenameSpecifierSpliceType(
+      *this, Operand, QualType(Canon, 0));
+  Types.push_back(SpliceTy);
+  return QualType(SpliceTy, 0);
 }
 
 QualType ASTContext::getTypeSpliceType(Expr *E, QualType UnderlyingType) const {

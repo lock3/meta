@@ -1820,6 +1820,14 @@ bool CursorVisitor::VisitDependentIdentifierSpliceTypeLoc(
   return false;
 }
 
+bool CursorVisitor::VisitTypenameSpecifierSpliceTypeLoc(
+                                            TypenameSpecifierSpliceTypeLoc TL) {
+  if (Expr *E = TL.getOperand())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
 bool CursorVisitor::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   if (Expr *E = TL.getReflection())
     return Visit(MakeCXCursor(E, StmtParent, TU));

@@ -1009,8 +1009,16 @@ public:
     }
   }
 
-  /// Build a new type splice type
-  QualType RebuildTypeSpliceType(Expr *E);
+  /// Build a new typename specifier splice type loc
+  QualType RebuildTypenameSpecifierSpliceTypeLoc(
+      TypeLocBuilder &TLB, SourceLocation IntroEllipsisLoc,
+      SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+      Expr *E, SourceLocation SEELoc);
+
+  /// Build a new type splice type loc
+  QualType RebuildTypeSpliceTypeLoc(
+      TypeLocBuilder &TLB, SourceLocation TypenameKWLoc,
+      SourceLocation SBELoc, Expr *E, SourceLocation SEELoc);
 
   /// Build a new type pack splice type
   QualType RebuildTypePackSpliceType(const PackSplice *PS);
@@ -6452,24 +6460,36 @@ QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
+QualType TreeTransform<Derived>::TransformTypenameSpecifierSpliceType(
+    TypeLocBuilder &TLB, TypenameSpecifierSpliceTypeLoc TL) {
+  const TypenameSpecifierSpliceType *T = TL.getTypePtr();
+
+  EnterExpressionEvaluationContext EvalContext(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+  ExprResult Operand = getDerived().TransformExpr(T->getOperand());
+  if (Operand.isInvalid())
+    return QualType();
+
+  return getDerived().RebuildTypenameSpecifierSpliceTypeLoc(
+      TLB, TL.getIntroEllipsisLoc(), TL.getTypenameKeywordLoc(),
+      TL.getSBELoc(), Operand.get(), TL.getSEELoc());
+}
+
+template<typename Derived>
 QualType TreeTransform<Derived>::TransformTypeSpliceType(TypeLocBuilder &TLB,
                                                          TypeSpliceTypeLoc TL) {
   const TypeSpliceType *T = TL.getTypePtr();
 
-  EnterExpressionEvaluationContext Unevaluated(
+  EnterExpressionEvaluationContext EvalContext(
       SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   ExprResult E = getDerived().TransformExpr(T->getReflection());
   if (E.isInvalid())
     return QualType();
 
-  QualType Result = getDerived().RebuildTypeSpliceType(E.get());
-  if (Result.isNull())
-    return QualType();
-
-  getSema().BuildTypeSpliceTypeLoc(TLB, Result, TL.getTypenameKeywordLoc(),
-                                   TL.getSBELoc(), TL.getSEELoc());
-  return Result;
+  return getDerived().RebuildTypeSpliceTypeLoc(
+     TLB, TL.getTypenameKeywordLoc(), TL.getSBELoc(), E.get(), TL.getSEELoc());
 }
 
 template<typename Derived>
@@ -15154,8 +15174,20 @@ QualType TreeTransform<Derived>::RebuildDecltypeType(Expr *E,
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::RebuildTypeSpliceType(Expr *E) {
-  return SemaRef.BuildTypeSpliceType(E);
+QualType TreeTransform<Derived>::RebuildTypenameSpecifierSpliceTypeLoc(
+    TypeLocBuilder &TLB, SourceLocation IntroEllipsisLoc,
+    SourceLocation TypenameKWLoc, SourceLocation SBELoc,
+    Expr *E, SourceLocation SEELoc) {
+  return SemaRef.BuildCXXTypenameSpecifierSpliceTypeLoc(
+      TLB, /*Scope=*/nullptr, IntroEllipsisLoc,
+      TypenameKWLoc, SBELoc, E, SEELoc);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::RebuildTypeSpliceTypeLoc(
+    TypeLocBuilder &TLB, SourceLocation TypenameKWLoc,
+    SourceLocation SBELoc, Expr *E, SourceLocation SEELoc) {
+  return SemaRef.BuildTypeSpliceTypeLoc(TLB, TypenameKWLoc, SBELoc, E, SEELoc);
 }
 
 template<typename Derived>

@@ -1014,6 +1014,10 @@ DEF_TRAVERSE_TYPE(DependentIdentifierSpliceType, {
                                    T->getNumArgs()));
 })
 
+DEF_TRAVERSE_TYPE(TypenameSpecifierSpliceType, {
+  TRY_TO(TraverseStmt(T->getOperand()));
+})
+
 DEF_TRAVERSE_TYPE(TypeSpliceType, {
   TRY_TO(TraverseStmt(T->getReflection()));
 })
@@ -1308,6 +1312,10 @@ DEF_TRAVERSE_TYPELOC(DependentIdentifierSpliceType, {
   for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
     TRY_TO(TraverseTemplateArgumentLoc(TL.getArgLoc(I)));
   }
+})
+
+DEF_TRAVERSE_TYPELOC(TypenameSpecifierSpliceType, {
+  TRY_TO(TraverseStmt(TL.getOperand()));
 })
 
 DEF_TRAVERSE_TYPELOC(TypeSpliceType, {

@@ -2115,6 +2115,68 @@ private:
   }
 };
 
+struct TypenameSpecifierSpliceLocInfo {
+  SourceLocation IntroEllipsisLoc;
+
+  SourceLocation TypenameKWLoc;
+  SourceLocation SBELoc;
+  SourceLocation SEELoc;
+};
+
+class TypenameSpecifierSpliceTypeLoc
+    : public ConcreteTypeLoc<UnqualTypeLoc,
+                             TypenameSpecifierSpliceTypeLoc,
+                             TypenameSpecifierSpliceType,
+                             TypenameSpecifierSpliceLocInfo> {
+public:
+  Expr *getOperand() const {
+    return getTypePtr()->getOperand();
+  }
+
+  SourceLocation getIntroEllipsisLoc() const {
+    return getLocalData()->IntroEllipsisLoc;
+  }
+
+  void setIntroEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->IntroEllipsisLoc = Loc;
+  }
+
+  SourceLocation getTypenameKeywordLoc() const {
+    return getLocalData()->TypenameKWLoc;
+  }
+
+  void setTypenameKeywordLoc(SourceLocation Loc) {
+    this->getLocalData()->TypenameKWLoc = Loc;
+  }
+
+  SourceLocation getSBELoc() const {
+    return this->getLocalData()->SBELoc;
+  }
+
+  void setSBELoc(SourceLocation Loc) {
+    this->getLocalData()->SBELoc = Loc;
+  }
+
+  SourceLocation getSEELoc() const {
+    return this->getLocalData()->SEELoc;
+  }
+
+  void setSEELoc(SourceLocation Loc) {
+    this->getLocalData()->SEELoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    if (getSEELoc().isValid())
+      return SourceRange(getTypenameKeywordLoc(), getSEELoc());
+    else
+      // FIXME: We should be able to do better than this with better
+      // identifier location info in the future.
+      return SourceRange(getTypenameKeywordLoc(), getTypenameKeywordLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc);
+};
+
 struct TypeSpliceLocInfo {
   SourceLocation TypenameKWLoc;
 

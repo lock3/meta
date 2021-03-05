@@ -6194,6 +6194,11 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentIdentifierSpliceType(
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitTypenameSpecifierSpliceType(
+                                           const TypenameSpecifierSpliceType*) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitTypeSpliceType(const TypeSpliceType*) {
   return false;
 }

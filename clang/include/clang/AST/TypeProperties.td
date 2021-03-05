@@ -429,6 +429,16 @@ let Class = DecltypeType in {
   }]>;
 }
 
+let Class = TypenameSpecifierSpliceType in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node->getOperand() }];
+  }
+
+  def : Creator<[{
+    return ctx.getTypenameSpecifierSpliceType(operand);
+  }]>;
+}
+
 let Class = TypeSpliceType in {
   def : Property<"underlyingType", QualType> {
     let Read = [{ node->getUnderlyingType() }];

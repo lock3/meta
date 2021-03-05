@@ -2158,6 +2158,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::TypenameSpecifierSplice:
   case Type::TypeSplice:
   case Type::TypePackSplice:
   case Type::SubstTypePackSplice:

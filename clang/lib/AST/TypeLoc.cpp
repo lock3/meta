@@ -524,6 +524,14 @@ void DependentIdentifierSpliceTypeLoc::initializeLocal(ASTContext &Context,
                                                    getArgInfos(), Loc);
 }
 
+void TypenameSpecifierSpliceTypeLoc::initializeLocal(ASTContext &Context,
+                                                     SourceLocation Loc) {
+  setIntroEllipsisLoc(Loc);
+  setTypenameKeywordLoc(Loc);
+  setSBELoc(Loc);
+  setSEELoc(Loc);
+}
+
 void TypeSpliceTypeLoc::initializeLocal(ASTContext &Context,
                                         SourceLocation Loc) {
   setTypenameKeywordLoc(Loc);

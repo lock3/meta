@@ -2301,6 +2301,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::UnresolvedUsing:
     case Type::Decltype:
     case Type::DependentIdentifierSplice:
+    case Type::TypenameSpecifierSplice:
     case Type::TypeSplice:
     case Type::TypePackSplice:
     case Type::UnaryTransform:
@@ -6100,6 +6101,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                  Used);
     break;
   }
+
+  case Type::TypenameSpecifierSplice:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(Ctx,
+                             cast<TypenameSpecifierSpliceType>(T)->getOperand(),
+                                 OnlyDeduced, Depth, Used);
+    break;
 
   case Type::TypeSplice:
     if (!OnlyDeduced)

@@ -373,6 +373,13 @@ void TypeLocWriter::VisitDependentIdentifierSpliceTypeLoc(
                                       TL.getArgLocInfo(I));
 }
 
+void TypeLocWriter::VisitTypenameSpecifierSpliceTypeLoc(
+                                            TypenameSpecifierSpliceTypeLoc TL) {
+  Record.AddSourceLocation(TL.getIntroEllipsisLoc());
+  Record.AddSourceLocation(TL.getTypenameKeywordLoc());
+  Record.AddSourceLocation(TL.getSBELoc());
+  Record.AddSourceLocation(TL.getSEELoc());
+}
 
 void TypeLocWriter::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   Record.AddSourceLocation(TL.getTypenameKeywordLoc());

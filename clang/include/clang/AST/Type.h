@@ -4652,6 +4652,42 @@ public:
       ArrayRef<TemplateArgument> TemplateArgs);
 };
 
+/// Representation of a type dependent typename specifier splice.
+class TypenameSpecifierSpliceType : public Type, public llvm::FoldingSetNode {
+  const ASTContext &Context;
+  Expr *Operand;
+
+protected:
+  friend class ASTContext; // ASTContext creates these.
+
+  TypenameSpecifierSpliceType(const ASTContext &Context, Expr *Operand,
+                              QualType Can = QualType());
+
+public:
+  /// Returns the operand of the splice
+  Expr *getOperand() const { return Operand; }
+
+  /// Returns the underlying type. (Always the Dependent type)
+  QualType getUnderlyingType() const;
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TypenameSpecifierSplice;
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Context, Operand);
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      const ASTContext &Context, Expr *Operand);
+};
+
 /// Representation of spliced types.
 ///
 /// Spliced types have the form 'typename [< x >]' where x is a reflection.

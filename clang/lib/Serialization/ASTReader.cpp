@@ -6670,6 +6670,14 @@ void TypeLocReader::VisitDependentIdentifierSpliceTypeLoc(
         TL.getTypePtr()->getArg(I).getKind()));
 }
 
+void TypeLocReader::VisitTypenameSpecifierSpliceTypeLoc(
+                                            TypenameSpecifierSpliceTypeLoc TL) {
+  TL.setIntroEllipsisLoc(readSourceLocation());
+  TL.setTypenameKeywordLoc(readSourceLocation());
+  TL.setSBELoc(readSourceLocation());
+  TL.setSEELoc(readSourceLocation());
+}
+
 void TypeLocReader::VisitTypeSpliceTypeLoc(TypeSpliceTypeLoc TL) {
   TL.setTypenameKeywordLoc(readSourceLocation());
   TL.setSBELoc(readSourceLocation());
