@@ -328,24 +328,34 @@ bool Parser::parseCXXSpliceEnd(tok::TokenKind T, SourceLocation &SL) {
 ///
 /// \verbatim
 ///   decl-splice:
-///     '[' '<' constant-expression '>' ']'
+///     '[: constant-expression ':]'
 /// \endverbatim
 ExprResult Parser::ParseCXXExprSpliceExpr() {
-  assert(matchCXXSpliceBegin(tok::colon) && "Not '[<'");
+  assert(matchCXXSpliceBegin(tok::colon) && "Not '[:'");
 
-  SourceLocation SBELoc;
-  if (parseCXXSpliceBegin(tok::colon, SBELoc))
-    return ExprError();
+  // Try parsing the splice as part of a nested-name-specifier. Note that
+  // this will annotate the splice as a single token.
+  CXXScopeSpec SS;
+  if (ParseOptionalCXXScopeSpecifier(SS,
+                                      /*ObjectType=*/nullptr,
+                                      /*ObjectHasErrors=*/false,
+                                      /*EnteringContext=*/false))
 
-  ExprResult Expr = ParseConstantExpression();
-  if (Expr.isInvalid())
-    return ExprError();
+  if (Tok.is(tok::annot_reflection_splice)) {
+    // A splice cannot be the inner identifier of a nested-name-specifier.
+    if (SS.isValid()) {
+      // FIXME: This is probable the wrong diagnostic.
+      Diag(Tok.getLocation(), diag::err_expected) << "identifier";
+      return ExprError();
+    }
+    ExprResult Refl = getExprAnnotation(Tok);
+    SourceLocation EndLoc = Tok.getEndLoc();
+    SourceLocation StartLoc = ConsumeAnnotationToken();
+    return Actions.ActOnCXXExprSpliceExpr(StartLoc, Refl.get(), EndLoc);
+  }
 
-  SourceLocation SEELoc;
-  if (parseCXXSpliceEnd(tok::colon, SEELoc))
-    return ExprError();
-
-  return Actions.ActOnCXXExprSpliceExpr(SBELoc, Expr.get(), SEELoc);
+  // FIXME: What else could this be?
+  assert(false && "Unhandled parse");
 }
 
 ExprResult Parser::ParseCXXMemberExprSpliceExpr(Expr *Base, bool IsTemplate) {

@@ -1828,37 +1828,10 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
       if (getLangOpts().Reflection) {
         // A splice can begin of a nested-name-specifier, so try parsing that
         // to annotate the token.
-        CXXScopeSpec SS;
-        if (NextToken().is(tok::colon)) {
-          if (ParseOptionalCXXScopeSpecifier(SS,
-                                            /*ObjectType=*/nullptr,
-                                            /*ObjectHasErrors=*/false,
-                                            /*EnteringContext=*/false))
-            return true;
-        } else if (NextToken().is(tok::hash)) {
-          // FIXME: Probably the same as above.
+        if (NextToken().is(tok::colon))
+          return ParseCXXExprSpliceExpr();
+        else if (NextToken().is(tok::hash))
           assert(false && "Template identifier expressions not implemented");
-        } else {
-          NotCastExpr = true;
-          return ExprError();
-        }
-
-        if (Tok.is(tok::annot_reflection_splice)) {
-          // A splice cannot be the inner identifier of a nested-name-specifier.
-          if (SS.isValid()) {
-            // FIXME: This is probable the wrong diagnostic.
-            Diag(Tok.getLocation(), diag::err_expected) << "identifier";
-            NotCastExpr = true;
-            return ExprError();
-          }
-          ExprResult Refl = getExprAnnotation(Tok);
-          SourceLocation EndLoc = Tok.getEndLoc();
-          SourceLocation StartLoc = ConsumeAnnotationToken();
-          return Actions.ActOnCXXExprSpliceExpr(StartLoc, Refl.get(), EndLoc);
-        }
-
-        // FIXME: What else could this be?
-        assert(false && "Unhandled parse");
       }
 
       if (getLangOpts().ObjC) {
