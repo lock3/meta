@@ -3253,6 +3253,7 @@ public:
                                   SourceLocation EndLoc);
   SourceLocation ParseTypePackSplice(DeclSpec &DS);
   bool ConsumeAndStoreTypePackSplice(CachedTokens &Toks);
+  bool ParseCXXTemplateArgumentMysterySplice(ParsedTemplateArgument &ParsedArg);
   ParsedTemplateArgument ParseCXXTemplateArgumentPackSplice();
   ExprResult ParseCXXConcatenateExpression();
 
@@ -3262,11 +3263,12 @@ public:
     ExprResult Refl;
   };
 
+  bool ParseReflectionSplice(ParsedSplice& Splice);
   bool ParseReflectionSplice(CXXScopeSpec &SS,
                              ParsedSplice& Splice,
                              bool IsTypename,
                              SourceLocation TemplateKeywordLoc);
-  
+
   void AnnotateExistingReflectionSplice(ParsedSplice &Splice);
 
   /// Parse a __select expression

@@ -833,6 +833,14 @@ let Class = PropertyTypeCase<TemplateArgument, "Pack"> in {
     return TemplateArgument(llvm::makeArrayRef(ctxElements, elements.size()));
   }]>;
 }
+let Class = PropertyTypeCase<TemplateArgument, "Mystery"> in {
+  def : Property<"operand", ExprRef> {
+    let Read = [{ node.getMysterySpliceOperand() }];
+  }
+  def : Creator<[{
+    return TemplateArgument(TemplateArgument::Mystery, operand);
+  }]>;
+}
 let Class = PropertyTypeCase<TemplateArgument, "PackSplice"> in {
   def : Property<"packSplice", PackSplice> {
     let Read = [{ *node.getPackSplice() }];

@@ -2308,6 +2308,10 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
       VisitTemplateArgument(P);
     break;
 
+  case TemplateArgument::Mystery:
+    Visit(Arg.getMysterySpliceOperand());
+    break;
+
   case TemplateArgument::PackSplice:
     VisitPackSplice(Arg.getPackSplice());
     break;

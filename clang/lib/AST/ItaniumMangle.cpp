@@ -5226,8 +5226,10 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A, bool NeedExactType) {
   switch (A.getKind()) {
   case TemplateArgument::Null:
     llvm_unreachable("Cannot mangle NULL template argument");
+  case TemplateArgument::Mystery:
+    llvm_unreachable("Cannot mangle mystery template arguments");
   case TemplateArgument::PackSplice:
-    llvm_unreachable("Can't mangle pack splice template arguments!");
+    llvm_unreachable("Cannot mangle pack splice template arguments");
 
   case TemplateArgument::Type:
     mangleType(A.getAsType());

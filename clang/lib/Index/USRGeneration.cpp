@@ -952,7 +952,9 @@ void USRGenerator::VisitTemplateName(TemplateName Name) {
 void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
   switch (Arg.getKind()) {
   case TemplateArgument::Null:
-  case TemplateArgument::PackSplice: // FIXME: Is this right?
+  // FIXME: Is this right?
+  case TemplateArgument::Mystery:
+  case TemplateArgument::PackSplice:
     break;
 
   case TemplateArgument::Declaration:

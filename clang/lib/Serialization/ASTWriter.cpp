@@ -5236,6 +5236,10 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
     AddSourceLocation(Arg.getTemplateNameLoc());
     AddSourceLocation(Arg.getTemplateEllipsisLoc());
     break;
+  case TemplateArgument::Mystery:
+    AddSourceLocation(Arg.getMysterySpliceSBELoc());
+    AddSourceLocation(Arg.getMysterySpliceSEELoc());
+    break;
   case TemplateArgument::PackSplice:
     AddSourceLocation(Arg.getPackSpliceIntroductionEllipsisLoc());
     AddSourceLocation(Arg.getPackSpliceSBELoc());

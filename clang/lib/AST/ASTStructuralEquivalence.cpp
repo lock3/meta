@@ -614,6 +614,11 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
 
     return true;
 
+  case TemplateArgument::Mystery:
+    return IsStructurallyEquivalent(Context,
+                                    Arg1.getMysterySpliceOperand(),
+                                    Arg2.getMysterySpliceOperand());
+
   case TemplateArgument::PackSplice: {
     return IsStructurallyEquivalent(Context, Arg1.getPackSplice(),
                                     Arg2.getPackSplice());

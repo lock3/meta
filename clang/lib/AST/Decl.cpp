@@ -388,6 +388,7 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
                                             computation));
       continue;
 
+    case TemplateArgument::Mystery:
     case TemplateArgument::PackSplice:
       llvm_unreachable("should have been expanded away");
 

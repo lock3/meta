@@ -6085,6 +6085,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
     case TemplateArgument::Expression:
+    case TemplateArgument::Mystery:
     case TemplateArgument::PackSplice:
       return Arg;
 

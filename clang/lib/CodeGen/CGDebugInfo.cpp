@@ -2037,6 +2037,7 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
     } break;
     // And the following should never occur:
     case TemplateArgument::TemplateExpansion:
+    case TemplateArgument::Mystery:
     case TemplateArgument::PackSplice:
     case TemplateArgument::Null:
       llvm_unreachable(

@@ -1299,6 +1299,15 @@ public:
     return getSema().Context.getSubstTemplateTemplateParmPack(Param, ArgPack);
   }
 
+  bool RebuildCXXMysterySpliceTemplateArgument(SourceLocation SBELoc,
+                                               Expr *Operand,
+                                               SourceLocation SEELoc,
+                                               TemplateArgumentLoc &TemplArg) {
+    TemplArg = getSema().BuildCXXMysterySpliceTemplateArgument(
+        /*ExpansionEllipsisLoc=*/SourceLocation(), SBELoc, Operand, SEELoc);
+    return TemplArg.getArgument().isNull();
+  }
+
   // FIXME: Move these
 
   /// Build a new dependent pack splice.
@@ -3787,6 +3796,7 @@ public:
     case TemplateArgument::Pack:
     case TemplateArgument::TemplateExpansion:
     case TemplateArgument::NullPtr:
+    case TemplateArgument::Mystery:
       llvm_unreachable("Pack expansion pattern has no parameter packs");
 
     case TemplateArgument::Type:
@@ -4641,6 +4651,20 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
 
     Output = TemplateArgumentLoc(TemplateArgument(E.get()), E.get());
     return false;
+  }
+
+  case TemplateArgument::Mystery: {
+    const TemplateArgument &Arg = Input.getArgument();
+
+    ExprResult Operand = getDerived().TransformExpr(
+        Arg.getMysterySpliceOperand());
+    if (Operand.isInvalid())
+      return true;
+
+    TemplateArgumentLocInfo LocInfo = Input.getLocInfo();
+    return getDerived().RebuildCXXMysterySpliceTemplateArgument(
+        LocInfo.getMysterySpliceSBELoc(), Operand.get(),
+        LocInfo.getMysterySpliceSEELoc(), Output);
   }
 
   case TemplateArgument::PackSplice: {

@@ -801,6 +801,9 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::Mystery:
+    return getDerived().TraverseStmt(Arg.getMysterySpliceOperand());
+
   case TemplateArgument::PackSplice:
     return getDerived().TraversePackSplice(Arg.getPackSplice());
 
@@ -845,6 +848,9 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+  case TemplateArgument::Mystery:
+    return getDerived().TraverseStmt(Arg.getMysterySpliceOperand());
+
   case TemplateArgument::PackSplice: {
     return getDerived().TraversePackSpliceLoc(ArgLoc.getAsPackSpliceLoc());
   }

@@ -1406,6 +1406,8 @@ enum CXTemplateArgumentKind clang_Cursor_getTemplateArgumentKind(CXCursor C,
     return CXTemplateArgumentKind_Expression;
   case TemplateArgument::Pack:
     return CXTemplateArgumentKind_Pack;
+  case TemplateArgument::Mystery:
+    return CXTemplateArgumentKind_Pack;
   case TemplateArgument::PackSplice:
     return CXTemplateArgumentKind_PackSplice;
   }

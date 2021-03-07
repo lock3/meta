@@ -7190,6 +7190,11 @@ ASTRecordReader::readTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind) {
     return TemplateArgumentLocInfo(getASTContext(), QualifierLoc,
                                    TemplateNameLoc, EllipsisLoc);
   }
+  case TemplateArgument::Mystery: {
+    SourceLocation SBELoc = readSourceLocation();
+    SourceLocation SEELoc = readSourceLocation();
+    return TemplateArgumentLocInfo(getASTContext(), SBELoc, SEELoc);
+  }
   case TemplateArgument::PackSplice: {
     SourceLocation IntroductionEllipsisLoc = readSourceLocation();
     SourceLocation SBELoc = readSourceLocation();

@@ -945,10 +945,12 @@ TemplateArgumentLoc Sema::translateTemplateArgument(
         Arg.getLocation(), Arg.getEllipsisLoc());
   }
 
-  // case ParsedTemplateArgument::PackSplice: {
-  //   return ActOnCXXPackSpliceTemplateArgument(Arg.getPackSpliceOperand(),
-  //                                             Arg.getEllipsisLoc());
-  // }
+  case ParsedTemplateArgument::Mystery: {
+    // FIXME: Provide the right source location information
+    return ActOnCXXMysterySpliceTemplateArgument(
+        Arg.getEllipsisLoc(), /*SBELoc=*/Arg.getLocation(),
+        Arg.getMysterySpliceOperand(), /*SEELoc=*/SourceLocation());
+  }
   }
 
   llvm_unreachable("Unhandled parsed template argument");
@@ -4111,7 +4113,9 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
-  case TemplateArgument::PackSplice: // FIXME: Is this right?
+  // FIXME: Are these right?
+  case TemplateArgument::Mystery:
+  case TemplateArgument::PackSplice:
     return false;
 
   case TemplateArgument::Type: {
@@ -5638,8 +5642,11 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Pack:
       llvm_unreachable("Caller must expand template argument packs");
 
-    // case TemplateArgument::PackSplice: // FIXME: Is this right?
-    //   llvm_unreachable("Caller must expand template argument splices");
+    // FIXME: Are these right?
+    case TemplateArgument::Mystery:
+      llvm_unreachable("Caller must splice mystery splices");
+    case TemplateArgument::PackSplice:
+      llvm_unreachable("Caller must expand template argument splices");
 
     }
 
@@ -5716,7 +5723,10 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
   case TemplateArgument::Pack:
     llvm_unreachable("Caller must expand template argument packs");
 
-  case TemplateArgument::PackSplice: // FIXME: Is this right?
+  // FIXME: Are these right?
+  case TemplateArgument::Mystery:
+    llvm_unreachable("Caller must splice mystery splices");
+  case TemplateArgument::PackSplice:
     llvm_unreachable("Caller must expand template argument splices");
 
   }

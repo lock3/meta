@@ -588,20 +588,7 @@ void Parser::AnnotateExistingTypeSplice(const DeclSpec &DS,
 ///   splice:
 ///     [: constant-expression :]
 ///
-/// \param IsTypename True if this is part of a typename-specifier. A typename
-/// specifier can be followed by template arguments.
-///
-/// \param TemplateKeywordLoc If valid, the location of the preceding 'template'
-/// keyword. This idn
-///
-/// \return True if the splice is obviously ill-formed.
-///
-/// FIXME: We need to pass the 'template' keyword as part of the template name,
-/// if its present. It would also be nice to parse pass the 'typename' keyword,
-/// but I don't think we have access to it in the calling contexts.
-bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
-                                   bool IsTypename,
-                                   SourceLocation TemplateKeywordLoc) {
+bool Parser::ParseReflectionSplice(ParsedSplice &Splice) {
   // This is already a splice token.
   if (Tok.is(tok::annot_reflection_splice)) {
     Splice.Start = Tok.getLocation();
@@ -618,6 +605,31 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
   if (Splice.Refl.isInvalid())
     return true;
   if (parseCXXReflectionSpliceEnd(Splice.End))
+    return true;
+
+  return false;
+}
+
+/// Parse a reflection splice.
+///
+///   splice:
+///     [: constant-expression :]
+///
+/// \param IsTypename True if this is part of a typename-specifier. A typename
+/// specifier can be followed by template arguments.
+///
+/// \param TemplateKeywordLoc If valid, the location of the preceding 'template'
+/// keyword. This idn
+///
+/// \return True if the splice is obviously ill-formed.
+///
+/// FIXME: We need to pass the 'template' keyword as part of the template name,
+/// if its present. It would also be nice to parse pass the 'typename' keyword,
+/// but I don't think we have access to it in the calling contexts.
+bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
+                                   bool IsTypename,
+                                   SourceLocation TemplateKeywordLoc) {
+  if (ParseReflectionSplice(Splice))
     return true;
 
   // When the splice is followed by a template argument list, try parsing
@@ -638,7 +650,7 @@ bool Parser::ParseReflectionSplice(CXXScopeSpec &SS, ParsedSplice &Splice,
                                 TemplateName, /*NameSpliced=*/true,
                                 /*AllowTypeAnnotation=*/true))
       return true;
-    
+
     return false;
   };
 
@@ -794,14 +806,39 @@ bool Parser::ConsumeAndStoreTypePackSplice(CachedTokens &Toks) {
   return true;
 }
 
-/// Parse a type pack splice
+/// Parse a mystery splice.
+///
+/// \verbatim
+///   template-argument:
+///     '[' ':' reflection ':' ']'
+/// \endverbatim
+bool Parser::ParseCXXTemplateArgumentMysterySplice(
+                                            ParsedTemplateArgument &ParsedArg) {
+  ParsedSplice PS;
+  if (ParseReflectionSplice(PS))
+    return true;
+
+  if (!Tok.isOneOf(tok::ellipsis, tok::comma, tok::greater, tok::greatergreater,
+                   tok::greatergreatergreater)) {
+    // The next token does not end this splice, this is something else
+    AnnotateExistingReflectionSplice(PS);
+    return false;
+  }
+
+  ParsedArg = ParsedTemplateArgument(PS.Refl.get(), PS.Start,
+                                     /*EllipsisLoc=*/SourceLocation());
+
+  return false;
+}
+
+/// Parse a template argument pack splice.
 ///
 /// \verbatim
 ///   type-pack-splice:
 ///     '...' '[' '<' reflection '>' ']'
 /// \endverbatim
 ParsedTemplateArgument Parser::ParseCXXTemplateArgumentPackSplice() {
-  assert(isCXXPackSpliceBegin() && "Not a type pack splice");
+  assert(isCXXPackSpliceBegin() && "Not a pack splice");
 
   SourceLocation StartLoc = ConsumeToken();
   SourceLocation SBELoc;

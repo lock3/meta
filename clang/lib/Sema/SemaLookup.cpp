@@ -2659,6 +2659,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
   //   -- [...] ;
   switch (Arg.getKind()) {
     case TemplateArgument::Null:
+    case TemplateArgument::Mystery:
     case TemplateArgument::PackSplice:
       llvm_unreachable("these shouldn't be present during ADL");
 

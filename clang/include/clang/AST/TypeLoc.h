@@ -2330,12 +2330,6 @@ public:
     this->getLocalData()->SEELoc = Loc;
   }
 
-  void setFromPackSpliceLoc(PackSpliceLoc Loc) {
-    setEllipsisLoc(Loc.getEllipsisLoc());
-    setSBELoc(Loc.getSBELoc());
-    setSEELoc(Loc.getSEELoc());
-  }
-
   SourceRange getLocalSourceRange() const {
     if (getSEELoc().isValid())
       return SourceRange(getEllipsisLoc(), getSEELoc());

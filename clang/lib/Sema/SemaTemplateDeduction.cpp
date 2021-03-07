@@ -376,6 +376,7 @@ checkDeducedTemplateArguments(ASTContext &Context,
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
 
+  case TemplateArgument::Mystery:
   case TemplateArgument::PackSplice:
     // FIXME: Figure out what it means to deduce a pack splice
     llvm_unreachable("Deduction not yet supported");
@@ -2427,6 +2428,7 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
 
+  case TemplateArgument::Mystery:
   case TemplateArgument::PackSplice:
     // FIXME: Figure out what it means to deduce a pack splice
     llvm_unreachable("Deduction not yet supported");
@@ -2631,6 +2633,7 @@ static bool isSameTemplateArg(ASTContext &Context,
 
       return true;
 
+  case TemplateArgument::Mystery:
   case TemplateArgument::PackSplice:
     // FIXME: Figure out what it means to deduce a pack splice
     llvm_unreachable("Deduction not yet supported");
@@ -2710,6 +2713,9 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
 
   case TemplateArgument::Pack:
     return TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
+
+  case TemplateArgument::Mystery:
+    return TemplateArgumentLoc(Context, Arg, Loc, Loc);
 
   case TemplateArgument::PackSplice:
     return TemplateArgumentLoc(Context, Arg, Loc, Loc, Loc, Loc);
@@ -6207,6 +6213,11 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   case TemplateArgument::Pack:
     for (const auto &P : TemplateArg.pack_elements())
       MarkUsedTemplateParameters(Ctx, P, OnlyDeduced, Depth, Used);
+    break;
+
+  case TemplateArgument::Mystery:
+    MarkUsedTemplateParameters(Ctx, TemplateArg.getMysterySpliceOperand(),
+                               OnlyDeduced, Depth, Used);
     break;
 
   case TemplateArgument::PackSplice:

@@ -102,6 +102,8 @@ public:
     /// in the Args struct.
     Pack,
 
+    Mystery,
+
     PackSplice
   };
 
@@ -227,8 +229,14 @@ public:
   /// This form of template argument only occurs in template argument
   /// lists used for dependent types and for expression; it will not
   /// occur in a non-dependent, canonical template argument list.
-  explicit TemplateArgument(Expr *E) {
-    TypeOrValue.Kind = Expression;
+  explicit TemplateArgument(Expr *E) : TemplateArgument(Expression, E) { }
+
+  /// Either directly construct an expression template argument, where
+  /// E is equivalent to getAsExpr() or construct a mystery template
+  /// argument, where E is equivalent to getMysterySpliceOperand().
+  TemplateArgument(ArgKind Kind, Expr *E) {
+    assert(Kind == Expression || Kind == Mystery);
+    TypeOrValue.Kind = Kind;
     TypeOrValue.V = reinterpret_cast<uintptr_t>(E);
   }
 
@@ -325,6 +333,15 @@ public:
            "Unexpected kind");
 
     return TemplateName::getFromVoidPointer(TemplateArg.Name);
+  }
+
+  bool isMystery() const {
+    return getKind() == Mystery;
+  }
+
+  Expr *getMysterySpliceOperand() const {
+    assert(isMystery() && "Unexpected kind");
+    return reinterpret_cast<Expr *>(TypeOrValue.V);
   }
 
   /// Retrieve the number of expansions that a template template argument
@@ -445,22 +462,35 @@ private:
     SourceLocation EllipsisLoc;
   };
 
-  struct PackSpliceArgLocInfo {
+  // FIXME: This is shared between Mystery and Pack splice so we don't
+  // hit the limits of PointerUnion. An aside, these may be merged
+  // anyways, so this may not need fixing.
+  struct SpliceArgLocInfo {
+    unsigned IsPackExpansion : 1;
+
     unsigned IntroEllipsisLoc;
     unsigned SBELoc;
     unsigned SEELoc;
     unsigned ExpansionEllipsisLoc;
   };
 
-  llvm::PointerUnion<TemplateTemplateArgLocInfo *, PackSpliceArgLocInfo *,
+  llvm::PointerUnion<TemplateTemplateArgLocInfo *, SpliceArgLocInfo *,
                      Expr *, TypeSourceInfo *> Pointer;
 
   TemplateTemplateArgLocInfo *getTemplate() const {
     return Pointer.get<TemplateTemplateArgLocInfo *>();
   }
 
-  PackSpliceArgLocInfo *getPackSplice() const {
-    return Pointer.get<PackSpliceArgLocInfo *>();
+  SpliceArgLocInfo *getMysterySplice() const {
+    auto *LocInfo = Pointer.get<SpliceArgLocInfo *>();
+    assert(!LocInfo->IsPackExpansion && "not a mystery splice");
+    return LocInfo;
+  }
+
+  SpliceArgLocInfo *getPackSplice() const {
+    auto *LocInfo = Pointer.get<SpliceArgLocInfo *>();
+    assert(LocInfo->IsPackExpansion && "not a pack splice");
+    return LocInfo;
   }
 
 public:
@@ -473,6 +503,8 @@ public:
   TemplateArgumentLocInfo(ASTContext &Ctx, NestedNameSpecifierLoc QualifierLoc,
                           SourceLocation TemplateNameLoc,
                           SourceLocation EllipsisLoc);
+  TemplateArgumentLocInfo(ASTContext &Ctx, SourceLocation SBELoc,
+                          SourceLocation SEELoc);
   TemplateArgumentLocInfo(ASTContext &Ctx, SourceLocation IntroEllipsisLoc,
                           SourceLocation SBELoc, SourceLocation SEELoc,
                           SourceLocation ExpansionEllipsisLoc);
@@ -495,6 +527,16 @@ public:
 
   SourceLocation getTemplateEllipsisLoc() const {
     return getTemplate()->EllipsisLoc;
+  }
+
+  SourceLocation getMysterySpliceSBELoc() const {
+    unsigned RawLoc = getMysterySplice()->SBELoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
+  }
+
+  SourceLocation getMysterySpliceSEELoc() const {
+    unsigned RawLoc = getMysterySplice()->SEELoc;
+    return SourceLocation::getFromRawEncoding(RawLoc);
   }
 
   SourceLocation getPackSpliceIntroductionEllipsisLoc() const {
@@ -555,6 +597,12 @@ public:
         LocInfo(Ctx, QualifierLoc, TemplateNameLoc, EllipsisLoc) {
     assert(Argument.getKind() == TemplateArgument::Template ||
            Argument.getKind() == TemplateArgument::TemplateExpansion);
+  }
+
+  TemplateArgumentLoc(ASTContext &Ctx, const TemplateArgument &Argument,
+                      SourceLocation SBELoc, SourceLocation SEELoc)
+      : Argument(Argument), LocInfo(Ctx, SBELoc, SEELoc) {
+    assert(Argument.getKind() == TemplateArgument::Mystery);
   }
 
   TemplateArgumentLoc(ASTContext &Ctx, const TemplateArgument &Argument,
@@ -637,6 +685,34 @@ public:
     if (Argument.getKind() != TemplateArgument::TemplateExpansion)
       return SourceLocation();
     return LocInfo.getTemplateEllipsisLoc();
+  }
+
+  SourceLocation getMysterySpliceSBELoc() const {
+    if (Argument.getKind() != TemplateArgument::Mystery)
+      return SourceLocation();
+
+    return LocInfo.getMysterySpliceSBELoc();
+  }
+
+  SourceLocation getMysterySpliceSEELoc() const {
+    if (Argument.getKind() != TemplateArgument::Mystery)
+      return SourceLocation();
+
+    return LocInfo.getMysterySpliceSEELoc();
+  }
+
+  SourceLocation getPackSpliceIntroductionEllipsisLoc() const {
+    if (Argument.getKind() != TemplateArgument::PackSplice)
+      return SourceLocation();
+
+    return LocInfo.getPackSpliceIntroductionEllipsisLoc();
+  }
+
+  SourceLocation getPackSpliceExpansionEllipsisLoc() const {
+    if (Argument.getKind() != TemplateArgument::PackSplice)
+      return SourceLocation();
+
+    return LocInfo.getPackSpliceExpansionEllipsisLoc();
   }
 
   SourceLocation getExpansionEllipsisLoc() const;

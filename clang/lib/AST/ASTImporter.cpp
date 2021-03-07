@@ -846,6 +846,12 @@ ASTNodeImporter::import(const TemplateArgument &From) {
         llvm::makeArrayRef(ToPack).copy(Importer.getToContext()));
   }
 
+  case TemplateArgument::Mystery:
+    if (ExpectedExpr ToExpr = import(From.getAsExpr()))
+      return TemplateArgument(TemplateArgument::Mystery, *ToExpr);
+    else
+      return ToExpr.takeError();
+
   case TemplateArgument::PackSplice: {
     Expected<PackSplice *> ToSplice = import(From.getPackSplice());
     if (!ToSplice)

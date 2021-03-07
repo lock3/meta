@@ -186,6 +186,9 @@ void ODRHash::AddTemplateArgument(TemplateArgument TA) {
         AddTemplateArgument(SubTA);
       }
       break;
+    case TemplateArgument::Mystery:
+      AddStmt(TA.getMysterySpliceOperand());
+      break;
     case TemplateArgument::PackSplice:
       AddPackSplice(TA.getPackSplice());
       break;

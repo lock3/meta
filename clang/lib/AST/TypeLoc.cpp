@@ -607,6 +607,8 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
   for (unsigned i = 0, e = NumArgs; i != e; ++i) {
     switch (Args[i].getKind()) {
     case TemplateArgument::Null:
+    case TemplateArgument::Mystery:
+    case TemplateArgument::PackSplice:
       llvm_unreachable("Impossible TemplateArgument");
 
     case TemplateArgument::Integral:
@@ -642,10 +644,6 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
     }
 
     case TemplateArgument::Pack:
-      ArgInfos[i] = TemplateArgumentLocInfo();
-      break;
-
-    case TemplateArgument::PackSplice:
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
     }

@@ -172,6 +172,12 @@ TemplateArgumentDependence TemplateArgument::getDependence() const {
       Deps |= P.getDependence();
     return Deps;
 
+  case Mystery: {
+    ExprDependence OpDeps = getMysterySpliceOperand()->getDependence();
+    Deps = toTemplateArgumentDependence(OpDeps);
+    return Deps;
+  }
+
   case PackSplice: {
     const class PackSplice *PS = getPackSplice();
     if (PS->isExpanded()) {
@@ -205,6 +211,7 @@ bool TemplateArgument::isPackExpansion() const {
   case Pack:
   case Template:
   case NullPtr:
+  case Mystery:
     return false;
 
   case TemplateExpansion:
@@ -249,6 +256,7 @@ QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
   case TemplateArgument::Pack:
+  case TemplateArgument::Mystery:
   case TemplateArgument::PackSplice:
     return QualType();
 
@@ -321,6 +329,10 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
       Args.Args[I].Profile(ID, Context);
     break;
 
+  case Mystery:
+    getMysterySpliceOperand()->Profile(ID, Context, true);
+    break;
+
   case PackSplice:
     getPackSplice()->Profile(ID, Context);
     break;
@@ -334,6 +346,7 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
   case Null:
   case Type:
   case Expression:
+  case Mystery:
   case NullPtr:
     return TypeOrValue.V == Other.TypeOrValue.V;
 
@@ -406,6 +419,7 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case Null:
   case Template:
   case NullPtr:
+  case Mystery:
     return TemplateArgument();
   }
 
@@ -477,10 +491,16 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
     break;
   }
 
+  case Mystery:
+    Out << "[:";
+    getAsExpr()->printPretty(Out, nullptr, Policy);
+    Out << ":]";
+    break;
+
   case PackSplice:
-    Out << "...[< ";
+    Out << "...[:";
     getPackSplice()->getOperand()->printPretty(Out, nullptr, Policy);
-    Out << ">]...";
+    Out << ":]...";
     break;
   }
 }
@@ -534,9 +554,12 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
   case TemplateArgument::Null:
     return SourceRange();
 
+  case TemplateArgument::Mystery:
+    return SourceRange(getMysterySpliceSBELoc(), getMysterySpliceSEELoc());
+
   case TemplateArgument::PackSplice:
-    // FIXME: Improve this
-    return SourceRange();
+    return SourceRange(getPackSpliceIntroductionEllipsisLoc(),
+                       getPackSpliceExpansionEllipsisLoc());
 
   }
 
@@ -554,6 +577,7 @@ SourceLocation TemplateArgumentLoc::getExpansionEllipsisLoc() const {
   case TemplateArgument::Pack:
   case TemplateArgument::Template:
   case TemplateArgument::NullPtr:
+  case TemplateArgument::Mystery:
     return SourceLocation();
 
   case TemplateArgument::TemplateExpansion:
@@ -609,6 +633,7 @@ static const T &DiagTemplateArg(const T &DB, const TemplateArgument &Arg) {
   }
 
   case TemplateArgument::Pack:
+  case TemplateArgument::Mystery:
   case TemplateArgument::PackSplice: {
     // FIXME: We're guessing at LangOptions!
     SmallString<32> Str;
@@ -642,10 +667,20 @@ clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
 }
 
 clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
+    ASTContext &Ctx, SourceLocation SBELoc, SourceLocation SEELoc) {
+  auto *MysterySplice = new (Ctx) SpliceArgLocInfo;
+  MysterySplice->IsPackExpansion = false;
+  MysterySplice->SBELoc = SBELoc.getRawEncoding();
+  MysterySplice->SEELoc = SEELoc.getRawEncoding();
+  Pointer = MysterySplice;
+}
+
+clang::TemplateArgumentLocInfo::TemplateArgumentLocInfo(
     ASTContext &Ctx, SourceLocation IntroEllipsisLoc,
     SourceLocation SBELoc, SourceLocation SEELoc,
     SourceLocation ExpansionEllipsisLoc) {
-  auto *PackSplice = new (Ctx) PackSpliceArgLocInfo;
+  auto *PackSplice = new (Ctx) SpliceArgLocInfo;
+  PackSplice->IsPackExpansion = true;
   PackSplice->IntroEllipsisLoc = IntroEllipsisLoc.getRawEncoding();
   PackSplice->SBELoc = SBELoc.getRawEncoding();
   PackSplice->SEELoc = SEELoc.getRawEncoding();

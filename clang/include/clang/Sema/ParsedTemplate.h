@@ -30,14 +30,14 @@ namespace clang {
   public:
     /// Describes the kind of template argument that was parsed.
     enum KindType {
-      /// A template type parameter, stored as a type.
+      /// A template type argument, stored as a type.
       Type,
-      /// A non-type template parameter, stored as an expression.
+      /// A non-type template argument, stored as an expression.
       NonType,
       /// A template template argument, stored as a template name.
       Template,
-      /// A dependently spliced template argument of unknown kind.
-      Mystery,
+      /// A template argument splice, stored as an expression.
+      Mystery
     };
 
     /// Build an empty template argument.
@@ -66,14 +66,16 @@ namespace clang {
                            SourceLocation TemplateLoc)
       : Kind(ParsedTemplateArgument::Template),
         Arg(Template.getAsOpaquePtr()),
-        SS(SS), Loc(TemplateLoc), EllipsisLoc() {}
+        SS(SS), Loc(TemplateLoc), EllipsisLoc() { }
 
     /// Create a mystery template argument.
     ///
     /// \param E the reflection expression.
     ///
-    /// \param EllipsisLoc the location of the ellipsis triggering
-    /// expansion if present.
+    /// \param Loc the location of the splice opening
+    ///
+    /// \param EllipsisLoc the location of any ellipsis marking this
+    /// argument for expansion.
     ParsedTemplateArgument(Expr *E, SourceLocation Loc,
                            SourceLocation EllipsisLoc)
       : Kind(ParsedTemplateArgument::Mystery), Arg(reinterpret_cast<void *>(E)),
@@ -103,7 +105,7 @@ namespace clang {
       return ParsedTemplateTy::getFromOpaquePtr(Arg);
     }
 
-    /// Retrieve the operand for a pack splice.
+    /// Retrieve the operand for a mystery splice.
     Expr *getMysterySpliceOperand() const {
       assert(Kind == Mystery && "Not a mystery template argument");
       return static_cast<Expr*>(Arg);
@@ -124,7 +126,7 @@ namespace clang {
     /// template argument or a pack splice into a pack expansion.
     SourceLocation getEllipsisLoc() const {
       assert((Kind == Template || Kind == Mystery) &&
-             "Only template template arguments and pack splices "
+             "Only template template arguments and mystery splices "
              "can have an ellipsis");
       return EllipsisLoc;
     }

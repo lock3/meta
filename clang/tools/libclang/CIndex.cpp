@@ -1512,6 +1512,10 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
     return VisitTemplateName(TAL.getArgument().getAsTemplateOrTemplatePattern(),
                              TAL.getTemplateNameLoc());
 
+  case TemplateArgument::Mystery:
+    if (Expr *Op = TAL.getArgument().getMysterySpliceOperand())
+      return Visit(MakeCXCursor(Op, StmtParent, TU, RegionOfInterest));
+    return false;
   case TemplateArgument::PackSplice:
     return VisitPackSplice(TAL.getArgument().getPackSplice());
   }

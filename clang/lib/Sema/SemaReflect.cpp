@@ -636,7 +636,7 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
   ExprResult ReflectedExprResult = getSplicedExpr(*this, Refl);
   if (ReflectedExprResult.isInvalid())
     return ExprError();
-  
+
   // Extract the relevant information for transform into an
   // UnresolvedMemberExpr.
   Expr *ReflectedExpr = ReflectedExprResult.get();
@@ -706,6 +706,68 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
   return ActOnCXXMemberExprSpliceExpr(
       Base, Refl, IsArrow, OpLoc, TemplateKWLoc,
       LParenLoc, RParenLoc, &TemplateArgs);
+}
+
+TemplateArgumentLoc Sema::ActOnCXXMysterySpliceTemplateArgument(
+    SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
+    Expr *Operand, SourceLocation SEELoc) {
+  return BuildCXXMysterySpliceTemplateArgument(
+      ExpansionEllipsisLoc, SBELoc, Operand, SEELoc);
+}
+
+TemplateArgumentLoc Sema::BuildCXXMysterySpliceTemplateArgument(
+    SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
+    Expr *Operand, SourceLocation SEELoc) {
+  // FIXME: What do we do if there's an ellipsis loc?
+  // Make a "PackSplice"?
+  assert(ExpansionEllipsisLoc.isInvalid() && "not implemented");
+
+  if (Operand->isTypeDependent() || Operand->isValueDependent()) {
+    TemplateArgument Arg(TemplateArgument::Mystery, Operand);
+    return TemplateArgumentLoc(Context, Arg, SBELoc, SEELoc);
+  }
+
+  if (!CheckReflectionOperand(*this, Operand))
+    return TemplateArgumentLoc();
+
+  // FIXME: This is duplicated by the handling of pack splices
+
+  // FIXME: We have to evaluate the reflection expression twice,
+  // once to figure out which splice to direct to, and once for the
+  // actual splice expression.
+  Reflection Refl;
+  if (EvaluateReflection(*this, Operand, Refl))
+    return TemplateArgumentLoc();
+
+  switch (Refl.getKind()) {
+  case RK_type: {
+    TypeLocBuilder TLB;
+    QualType Res = BuildTypeSpliceTypeLoc(
+        TLB, /*TypenameKWLoc=*/SourceLocation(), SBELoc, Operand, SEELoc);
+    if (Res.isNull())
+      return TemplateArgumentLoc();
+
+    return TemplateArgumentLoc(TemplateArgument(Res),
+                               TLB.getTypeSourceInfo(Context, Res));
+  }
+  case RK_declaration: {
+    if (auto *TD = dyn_cast<TemplateDecl>(Refl.getAsDeclaration())) {
+      TemplateName N = Context.getSplicedTemplateReflection(Operand, TD);
+      return TemplateArgumentLoc(Context, TemplateArgument(N),
+                                 /*QualifierLoc=*/NestedNameSpecifierLoc(),
+                                 /*TemplateNameLoc=*/SourceLocation());
+    }
+    [[clang::fallthrough]];
+  }
+  default: {
+    ExprResult Res = ActOnCXXExprSpliceExpr(SBELoc, Operand, SEELoc);
+    if (Res.isInvalid())
+      return TemplateArgumentLoc();
+
+    Expr *NE = Res.get();
+    return TemplateArgumentLoc(TemplateArgument(NE), NE);
+  }
+  }
 }
 
 namespace {
@@ -1163,16 +1225,19 @@ static bool ExpandCXXPackSplice(Sema &SemaRef, PackSpliceLoc PSLoc,
 
   ASTContext &Ctx = SemaRef.getASTContext();
 
+  Expr *RTE = PS->getExpansion(SemaRef.ArgumentPackSubstitutionIndex);
   // FIXME: We have to evaluate the reflection expression twice,
   // once to figure out which splice to direct to, and once for the
   // actual splice expression.
-  Expr *RTE = PS->getExpansion(SemaRef.ArgumentPackSubstitutionIndex);
   Reflection Refl;
   if (EvaluateReflection(SemaRef, RTE, Refl))
     return true;
 
+  // FIXME: Handle template template arguments
   switch (Refl.getKind()) {
   case RK_type: {
+    // FIXME: This can likely be migrated to BuildTypeSpliceTypeLoc
+    // and then we can drop SubstTypePackSpliceType; (Should we?)
     QualType Res = SemaRef.BuildTypeSpliceType(RTE);
     if (Res.isNull())
       return true;
@@ -1186,7 +1251,9 @@ static bool ExpandCXXPackSplice(Sema &SemaRef, PackSpliceLoc PSLoc,
     // in the transform function.
     TypeLocBuilder TLB;
     auto NewTL = TLB.push<SubstTypePackSpliceTypeLoc>(Res);
-    NewTL.setFromPackSpliceLoc(PSLoc);
+    NewTL.setEllipsisLoc(PSLoc.getEllipsisLoc());
+    NewTL.setSBELoc(PSLoc.getSBELoc());
+    NewTL.setSEELoc(PSLoc.getSEELoc());
 
     TemplArg = TemplateArgumentLoc(TemplateArgument(Res),
                                    TLB.getTypeSourceInfo(Ctx, Res));

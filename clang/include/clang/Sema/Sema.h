@@ -10418,6 +10418,13 @@ public:
       SourceLocation LAngleLoc, ASTTemplateArgsPtr TemplateArgsPtr,
       SourceLocation RAngleLoc);
 
+  TemplateArgumentLoc ActOnCXXMysterySpliceTemplateArgument(
+      SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
+      Expr *Operand, SourceLocation SEELoc);
+  TemplateArgumentLoc BuildCXXMysterySpliceTemplateArgument(
+      SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
+      Expr *Operand, SourceLocation SEELoc);
+
   // Set when splicing members to force conversions for inaccessible
   // base classes.
   bool ForceBaseConversion = false;

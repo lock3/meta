@@ -1546,6 +1546,22 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
     /*LambdaContextDecl=*/nullptr,
     /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
 
+  if (matchCXXReflectionSpliceBegin()) {
+    ParsedTemplateArgument MysteryTemplateArgument;
+    // If we fail here, we have a grammatically invalid splice,
+    // nothing more to do.
+    if (ParseCXXTemplateArgumentMysterySplice(MysteryTemplateArgument))
+      return ParsedTemplateArgument();
+
+    // If we don't have a valid mystery template argument, we
+    // encountered a different splice.
+    //
+    // An annot_reflection_splice token has been generated, fall
+    // through.
+    if (!MysteryTemplateArgument.isInvalid())
+      return MysteryTemplateArgument;
+  }
+
   // C++ [temp.arg]p2:
   //   In a template-argument, an ambiguity between a type-id and an
   //   expression is resolved to a type-id, regardless of the form of
