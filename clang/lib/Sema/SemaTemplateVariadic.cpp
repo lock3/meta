@@ -603,26 +603,16 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
     return Arg.getTemplatePackExpansion(EllipsisLoc);
 
   case ParsedTemplateArgument::Mystery:
-    // FIXME: Should this become a TemplateArgument::PackSplice?
-    // Do these need unified in some way?
+    if (!isDependentContext()) {
+      Diag(DependentCtxEllipsisLoc, diag::err_expected_introducing_ellipsis);
+      Diag(EllipsisLoc, diag::note_nondependent_expansion_here);
+      return ParsedTemplateArgument();
+    }
 
-    // Considerations from when this was ParsedTemplateArgument::PackSplice:
-    //
-    //   We could conceivably check to see if a non-dependent operand
-    //   is expandable at this point and diagnose early if it isn't.
-    //
-    //   Given that the "machinery" to check this currently generates
-    //   the logic for expansion, and we'll still get a diagnostic, with
-    //   adequate information very shortly when we try to expand any
-    //   non-dependent TemplateArguments, we probably don't want to do
-    //   that here (yet?).
-    //
-    //   Performing the actual expansion here in non-dependent contexts
-    //   also seems far too heavy handed, and will necessarily pull in a
-    //   lot of semantic detail into what really is more of a parsing
-    //   structure.
-
-    llvm_unreachable("pack expansion of mystery argument kind not implemented");
+    // This argument will be checked when forming the semantic,
+    // TemplateArgument.
+    return ParsedTemplateArgument(Arg.getMysterySpliceOperand(),
+                                  Arg.getLocation(), EllipsisLoc);
   }
   llvm_unreachable("Unhandled template argument kind?");
 }

@@ -55,31 +55,31 @@ namespace dependent {
 template<int I>
 void template_argument_list() {
   constexpr info els [] = { ^I, ^1, ^0 };
-  static_assert(total<...[: els :]...>() == 2);
+  static_assert(total<[: els :]...>() == 2);
 }
 
 template<int I>
 void function_call() {
   constexpr info els [] = { ^I, ^1, ^0 };
-  static_assert(tri_construct(...[: els :]...).total == 2);
+  static_assert(tri_construct([: els :]...).total == 2);
 }
 
 template<int I>
 void initializer_list() {
   constexpr info els [] = { ^I, ^1, ^0 };
 
-  constexpr tri_construct init_list = { ...[: els :]... };
+  constexpr tri_construct init_list = { [: els :]... };
   static_assert(init_list.total == 2);
 }
 
 template<int I>
 void mixed_pack() {
   constexpr info construct_args [] = { ^int, ^I };
-  static_assert(construct_the_thing<...[: construct_args :]...>() == 1);
+  static_assert(construct_the_thing<[: construct_args :]...>() == 1);
 }
 
 template<info X>
-struct base_class : public ...[: [: X :] :]... { };
+struct base_class : public [: [: X :] :]... { };
 
 template<int I>
 void base_splice() {
@@ -89,9 +89,9 @@ void base_splice() {
 }
 
 template<info X>
-struct constructed_base_class : public ...[: [: X :] :]... {
-  constructed_base_class(const ...[: [: X :] :]&... args)
-    : ...[: [: X :] :](args)... {
+struct constructed_base_class : public [: [: X :] :]... {
+  constructed_base_class(const [: [: X :] :]&... args)
+    : [: [: X :] :](args)... {
   }
 };
 

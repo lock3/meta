@@ -10284,11 +10284,37 @@ private:
 
   bool ParsingOverloads = false;
   bool ImmediateInvocation = false;
-public:
-  SourceLocation RangeSpliceIntroEllipsisLoc = {};
 
-  bool isRangeSpliceEnabled() {
-    return !RangeSpliceIntroEllipsisLoc.isInvalid();
+  /// This source location either where a dependent context
+  /// introductory ellipsis was found, or should've been.
+  SourceLocation DependentCtxEllipsisLoc = {};
+  /// Whether or not we found an ellipsis at the DependentCtxEllipsisLoc.
+  bool EllipsisIntroducerPresent;
+public:
+  /// RAII object used to control DependentCtxEllipsisLoc and
+  /// EllipsisIntroducerPresent
+  class CXXDependentContextEllipsisRAII {
+    Sema &S;
+    SourceLocation PreviousEllipsisLoc;
+    bool WasEllipsis;
+
+  public:
+    CXXDependentContextEllipsisRAII(Sema &S, SourceLocation EllipsisLoc,
+                                    bool IsEllipsis)
+        : S(S), PreviousEllipsisLoc(S.DependentCtxEllipsisLoc),
+          WasEllipsis(S.EllipsisIntroducerPresent) {
+      S.DependentCtxEllipsisLoc = EllipsisLoc;
+      S.EllipsisIntroducerPresent = IsEllipsis;
+    }
+
+    ~CXXDependentContextEllipsisRAII() {
+      S.EllipsisIntroducerPresent = WasEllipsis;
+      S.DependentCtxEllipsisLoc = PreviousEllipsisLoc;
+    }
+  };
+
+  bool isDependentContext() const {
+    return CurContext->isDependentContext() || EllipsisIntroducerPresent;
   }
 
   ReflectionCallback *GetReflectionCallbackObj() {
@@ -10419,11 +10445,10 @@ public:
       SourceLocation RAngleLoc);
 
   TemplateArgumentLoc ActOnCXXMysterySpliceTemplateArgument(
-      SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
-      Expr *Operand, SourceLocation SEELoc);
+      SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc,
+      SourceLocation ExpansionEllipsisLoc);
   TemplateArgumentLoc BuildCXXMysterySpliceTemplateArgument(
-      SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
-      Expr *Operand, SourceLocation SEELoc);
+      SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc);
 
   // Set when splicing members to force conversions for inaccessible
   // base classes.
@@ -10438,10 +10463,12 @@ public:
                                     SourceLocation SBELoc,
                                     SourceLocation SEELoc);
 
-  TemplateArgumentLoc ActOnCXXPackSpliceTemplateArgument(
-      Expr *Operand, SourceLocation ExpansionEllipsisLoc);
   TemplateArgumentLoc BuildCXXPackSpliceTemplateArgument(
-      PackSplice *PS, SourceLocation ExpansionEllipsisLoc);
+      SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc,
+      SourceLocation ExpansionEllipsisLoc);
+  TemplateArgumentLoc BuildCXXPackSpliceTemplateArgument(
+      SourceLocation SBELoc, PackSplice *PS, SourceLocation SEELoc,
+      SourceLocation ExpansionEllipsisLoc);
 
   PackSplice *ActOnCXXPackSplice(Scope *S, Expr *Operand);
   PackSplice *BuildUnresolvedCXXPackSplice(Scope *S, Expr *Operand);

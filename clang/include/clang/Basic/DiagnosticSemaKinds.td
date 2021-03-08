@@ -2876,6 +2876,10 @@ def err_compiler_error_wrong_operand_type : Error<
   "expected a string operand">;
 def err_concatenate_wrong_operand_type : Error<
   "expected either integer or string operand">;
+def err_expected_introducing_ellipsis : Error<
+  "expected introducing '...' for expansion outside of template">;
+def note_nondependent_expansion_here : Note<
+  "expansion requested here">;
 def err_unexpanded_pack_splice : Error<
   "template argument contains an unexpanded pack splice">;
 def err_pack_splice_mismatch : Error<

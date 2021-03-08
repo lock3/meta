@@ -836,7 +836,7 @@ bool Parser::ParseCXXTemplateArgumentMysterySplice(
 ///
 /// \verbatim
 ///   type-pack-splice:
-///     '...' '[' '<' reflection '>' ']'
+///     '...' '[' ':' reflection ':' ']'
 /// \endverbatim
 ParsedTemplateArgument Parser::ParseCXXTemplateArgumentPackSplice() {
   assert(isCXXPackSpliceBegin() && "Not a pack splice");

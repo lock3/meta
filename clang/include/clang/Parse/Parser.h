@@ -65,6 +65,7 @@ class Parser : public CodeCompletionHandler {
   friend class ObjCDeclContextSwitch;
   friend class ParenBraceBracketBalancer;
   friend class BalancedDelimiterTracker;
+  friend class CXXDependentContextEllipsisRAII;
 
   Preprocessor &PP;
 

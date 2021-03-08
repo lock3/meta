@@ -709,19 +709,17 @@ ExprResult Sema::ActOnCXXMemberExprSpliceExpr(
 }
 
 TemplateArgumentLoc Sema::ActOnCXXMysterySpliceTemplateArgument(
-    SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
-    Expr *Operand, SourceLocation SEELoc) {
-  return BuildCXXMysterySpliceTemplateArgument(
-      ExpansionEllipsisLoc, SBELoc, Operand, SEELoc);
+    SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc,
+    SourceLocation ExpansionEllipsisLoc) {
+  if (!ExpansionEllipsisLoc.isInvalid())
+    return BuildCXXPackSpliceTemplateArgument(SBELoc, Operand, SEELoc,
+                                              ExpansionEllipsisLoc);
+
+  return BuildCXXMysterySpliceTemplateArgument(SBELoc, Operand, SEELoc);
 }
 
 TemplateArgumentLoc Sema::BuildCXXMysterySpliceTemplateArgument(
-    SourceLocation ExpansionEllipsisLoc, SourceLocation SBELoc,
-    Expr *Operand, SourceLocation SEELoc) {
-  // FIXME: What do we do if there's an ellipsis loc?
-  // Make a "PackSplice"?
-  assert(ExpansionEllipsisLoc.isInvalid() && "not implemented");
-
+    SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc) {
   if (Operand->isTypeDependent() || Operand->isValueDependent()) {
     TemplateArgument Arg(TemplateArgument::Mystery, Operand);
     return TemplateArgumentLoc(Context, Arg, SBELoc, SEELoc);
@@ -1124,42 +1122,33 @@ ExprResult Sema::BuildCXXPackSpliceExpr(const PackSplice *PS,
   return CXXPackSpliceExpr::Create(Context, PS, EllipsisLoc, SBELoc, SEELoc);
 }
 
-TemplateArgumentLoc Sema::ActOnCXXPackSpliceTemplateArgument(
-                           Expr *Operand, SourceLocation ExpansionEllipsisLoc) {
+TemplateArgumentLoc Sema::BuildCXXPackSpliceTemplateArgument(
+    SourceLocation SBELoc, Expr *Operand, SourceLocation SEELoc,
+    SourceLocation ExpansionEllipsisLoc) {
   PackSplice *PS = ActOnCXXPackSplice(getCurScope(), Operand);
   if (!PS)
     return TemplateArgumentLoc();
 
-  if (ExpansionEllipsisLoc.isInvalid()) {
-    // FIXME: Should this be part of a more general mechanism?
-    //
-    // We can get away with doing this here as this is a rather
-    // special case, and we don't need to worry about a template
-    // argument pack splice being expanded at a later point.
-    Diag(Operand->getBeginLoc(), diag::err_unexpanded_pack_splice);
-    return TemplateArgumentLoc();
-  }
-
-  return BuildCXXPackSpliceTemplateArgument(PS, ExpansionEllipsisLoc);
+  return BuildCXXPackSpliceTemplateArgument(SBELoc, PS, SEELoc,
+                                            ExpansionEllipsisLoc);
 }
 
 TemplateArgumentLoc Sema::BuildCXXPackSpliceTemplateArgument(
-                          PackSplice *PS, SourceLocation ExpansionEllipsisLoc) {
+    SourceLocation SBELoc, PackSplice *PS, SourceLocation SEELoc,
+    SourceLocation ExpansionEllipsisLoc) {
   TemplateArgument TArg(PS, /*IsPattern=*/ExpansionEllipsisLoc.isInvalid());
   return TemplateArgumentLoc(Context, TArg,
                              /*IntroEllipsisLoc=*/SourceLocation(),
-                             /*SBELoc=*/SourceLocation(),
-                             /*SEELoc=*/SourceLocation(),
-                             ExpansionEllipsisLoc);
+                             SBELoc, SEELoc, ExpansionEllipsisLoc);
 }
 
 PackSplice *Sema::ActOnCXXPackSplice(Scope *S, Expr *Operand) {
-  if (!isRangeSpliceEnabled()) {
-    // FIXME: Implement diagnostic, possibly see if this would have
-    // succeeded and report that as part of the diagnostic.
-    llvm_unreachable("diagnose, tried to form pack splice, "
-                     "but range splices not valid here");
-  }
+  // if (!isDependentContext()) {
+  //   // FIXME: Implement diagnostic, possibly see if this would have
+  //   // succeeded and report that as part of the diagnostic.
+  //   llvm_unreachable("diagnose, tried to form pack splice, "
+  //                    "but range splices not valid here");
+  // }
 
   return BuildUnresolvedCXXPackSplice(S, Operand);
 }
@@ -2044,7 +2033,7 @@ DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
 TypeResult Sema::ActOnCXXTypenameSpecifierSpliceType(Scope *S, Expr *Operand) {
   TypeLocBuilder TLB;
   QualType SpliceTy = BuildCXXTypenameSpecifierSpliceTypeLoc(
-      TLB, S, RangeSpliceIntroEllipsisLoc, /*TemplateKWLoc=*/SourceLocation(),
+      TLB, S, DependentCtxEllipsisLoc, /*TemplateKWLoc=*/SourceLocation(),
       /*SBELoc=*/SourceLocation(), Operand, /*SEELoc=*/SourceLocation());
   if (SpliceTy.isNull())
     return TypeError();

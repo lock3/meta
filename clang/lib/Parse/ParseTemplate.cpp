@@ -1607,16 +1607,14 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
 /// (C++ [temp.names]). Returns true if there was an error.
 ///
 ///       template-argument-list: [C++ 14.2]
-///         template-argument
-///         template-argument-list ',' template-argument ...[opt]
+///         ...[opt] template-argument ...[opt]
+///         template-argument-list ',' ...[opt] template-argument ...[opt]
 bool
 Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-    // FIXME: Implement me.
-    if (Tok.is(tok::ellipsis))
-      assert(false && "nomination of template argument as expandable");
+    CXXDependentContextEllipsisRAII Ctx(*this);
 
     ParsedTemplateArgument Arg = ParseTemplateArgument();
     SourceLocation EllipsisLoc;

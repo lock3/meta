@@ -459,6 +459,17 @@ namespace clang {
     }
     void skipToEnd();
   };
+
+  class CXXDependentContextEllipsisRAII {
+    Sema::CXXDependentContextEllipsisRAII SemaObj;
+
+  public:
+    CXXDependentContextEllipsisRAII(Parser& P)
+        : SemaObj(P.Actions, P.Tok.getLocation(), P.Tok.is(tok::ellipsis)) {
+      if (P.Tok.is(tok::ellipsis))
+        P.ConsumeToken();
+    }
+  };
 } // end namespace clang
 
 #endif

@@ -948,8 +948,8 @@ TemplateArgumentLoc Sema::translateTemplateArgument(
   case ParsedTemplateArgument::Mystery: {
     // FIXME: Provide the right source location information
     return ActOnCXXMysterySpliceTemplateArgument(
-        Arg.getEllipsisLoc(), /*SBELoc=*/Arg.getLocation(),
-        Arg.getMysterySpliceOperand(), /*SEELoc=*/SourceLocation());
+        /*SBELoc=*/Arg.getLocation(), Arg.getMysterySpliceOperand(),
+        /*SEELoc=*/SourceLocation(), Arg.getEllipsisLoc());
   }
   }
 

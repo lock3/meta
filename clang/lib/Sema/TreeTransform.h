@@ -1304,7 +1304,7 @@ public:
                                                SourceLocation SEELoc,
                                                TemplateArgumentLoc &TemplArg) {
     TemplArg = getSema().BuildCXXMysterySpliceTemplateArgument(
-        /*ExpansionEllipsisLoc=*/SourceLocation(), SBELoc, Operand, SEELoc);
+        SBELoc, Operand, SEELoc);
     return TemplArg.getArgument().isNull();
   }
 
