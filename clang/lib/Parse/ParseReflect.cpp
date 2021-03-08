@@ -340,6 +340,7 @@ ExprResult Parser::ParseCXXExprSpliceExpr() {
                                       /*ObjectType=*/nullptr,
                                       /*ObjectHasErrors=*/false,
                                       /*EnteringContext=*/false))
+    return ExprError();
 
   if (Tok.is(tok::annot_reflection_splice)) {
     // A splice cannot be the inner identifier of a nested-name-specifier.
