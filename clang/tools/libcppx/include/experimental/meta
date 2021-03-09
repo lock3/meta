@@ -143,6 +143,7 @@ enum reflection_query : unsigned {
   query_is_explicit_specialization,
   query_is_implicit_instantiation,
   query_is_explicit_instantiation,
+  query_is_specialization_of,
 
   // Base class specifiers
   query_is_direct_base,
@@ -290,6 +291,10 @@ consteval static void require_spec_mem_function(info reflection,
                                                 const char *custom_err = nullptr);
 consteval static void require_function(info reflection,
                                        const char *custom_err = nullptr);
+consteval static void require_template(info reflection,
+                                       const char *custom_err = nullptr);
+consteval static void require_specialization(info reflection,
+                                             const char *custom_err = nullptr);
 consteval static void require_base_or_mem(info reflection,
                                           const char *custom_err = nullptr);
 consteval static void require_type(info reflection,
@@ -1409,6 +1414,18 @@ constexpr struct is_explicit_instantiation_fn
     return __reflect(detail::query_is_explicit_instantiation, reflection);
   }
 } is_explicit_instantiation;
+
+// Returns true if the reflected specialization, specializes the
+// reflected template.
+constexpr struct is_specialization_of_fn
+{
+  consteval bool operator()(info templ, info spec) const
+  {
+    detail::require_template(templ);
+    detail::require_specialization(spec);
+    return __reflect(detail::query_is_specialization_of, templ, spec);
+  }
+} is_specialization_of;
 
 // -------------------------------------------------------------------------- //
 // Base class specifiers
@@ -3324,7 +3341,7 @@ consteval void
 detail::require_variable(info reflection, const char* custom_err) {
   if (is_variable(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a variable.");
 }
@@ -3335,7 +3352,7 @@ detail::require_var_or_data_mem(info reflection, const char* custom_err) {
     return;
   if (is_data_member(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a variable or data member.");
 }
@@ -3344,7 +3361,7 @@ consteval void
 detail::require_class(info reflection, const char* custom_err) {
   if (is_class_type(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a class or structure.");
 }
@@ -3354,7 +3371,7 @@ detail::require_class_member(info reflection,
                              const char* custom_err) {
   if (is_class_member(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a class member.");
 }
@@ -3364,7 +3381,7 @@ detail::require_data_member(info reflection,
                             const char* custom_err) {
   if (is_data_member(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a data member.");
 }
@@ -3374,7 +3391,7 @@ detail::require_mem_function(info reflection,
                              const char* custom_err) {
   if (is_member_function(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a member function.");
 }
@@ -3384,9 +3401,29 @@ detail::require_spec_mem_function(info reflection,
                                   const char* custom_err) {
   if (is_special_member_function(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a special member function.");
+}
+
+consteval void
+detail::require_template(info reflection,
+                         const char *custom_err) {
+  if (is_template(reflection))
+    return;
+  if (custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a template.");
+}
+
+consteval void
+detail::require_specialization(info reflection,
+                               const char *custom_err) {
+  if (is_specialization(reflection))
+    return;
+  if (custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a specialization.");
 }
 
 consteval void
@@ -3397,7 +3434,7 @@ detail::require_base_or_mem(info reflection,
   if (is_base_class(reflection))
     return;
 
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
 
   __compiler_error("Reflected entity must be a base class specifier or class member.");
@@ -3407,7 +3444,7 @@ consteval void
 detail::require_function(info reflection, const char *custom_err) {
   if (is_function(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a function.");
 }
@@ -3416,7 +3453,7 @@ consteval void
 detail::require_type(info reflection, const char *custom_err) {
   if (is_type(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a type.");
 }
@@ -3425,7 +3462,7 @@ consteval void
 detail::require_parameter(info reflection, const char *custom_err) {
   if (is_function_parameter(reflection) || is_template_parameter(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a parameter.");
 }
@@ -3434,7 +3471,7 @@ consteval void
 detail::require_named(info reflection, const char *custom_err) {
   if (is_named(reflection))
     return;
-  if(custom_err)
+  if (custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be named.");
 }

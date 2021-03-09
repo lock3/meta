@@ -138,6 +138,7 @@ namespace clang {
     query_is_explicit_specialization,
     query_is_implicit_instantiation,
     query_is_explicit_instantiation,
+    query_is_specialization_of,
 
     // Base class specifiers
     query_is_direct_base,
@@ -298,6 +299,7 @@ namespace clang {
       case query_is_trivially_constructible:
       case query_is_nothrow_constructible:
         return 0;
+      case query_is_specialization_of:
       case query_has_attribute:
       case query_is_assignable:
       case query_is_trivially_assignable:
@@ -318,6 +320,7 @@ namespace clang {
       case query_is_trivially_constructible:
       case query_is_nothrow_constructible:
         return UINT_MAX - 1;
+      case query_is_specialization_of:
       case query_has_attribute:
       case query_is_assignable:
       case query_is_trivially_assignable:
@@ -1403,6 +1406,22 @@ static bool isExplicitInstantiation(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if Args[2] is a specialization of Args[1].
+static bool isSpecializationOf(ReflectionQueryEvaluator &Eval,
+                               SmallVectorImpl<APValue> &Args,
+                               APValue &Result) {
+  Reflection TemplRefl(Eval.getContext(), Args[1]);
+  Reflection SpecRefl(Eval.getContext(), Args[2]);
+
+  const Decl *Templ = getReachableDecl(TemplRefl);
+  const Decl *Spec = getReachableDecl(SpecRefl);
+
+  if (auto *SpecClass = dyn_cast<ClassTemplateSpecializationDecl>(Spec))
+    return SuccessBool(Eval, Result, Templ == SpecClass->getSpecializedTemplate());
+
+  return SuccessFalse(Eval, Result);
+}
+
 /// Returns true if Args[1] designates a direct base.
 static bool isDirectBase(ReflectionQueryEvaluator &Eval,
                          SmallVectorImpl<APValue> &Args,
@@ -1421,7 +1440,6 @@ static bool isVirtualBase(ReflectionQueryEvaluator &Eval,
   if (const CXXBaseSpecifier *B = getReachableBase(R))
     return SuccessBool(Eval, Result, B->isVirtual());
   return SuccessFalse(Eval, Result);
-
 }
 
 /// Returns true if R designates a function parameter.
@@ -2156,6 +2174,8 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
     return isImplicitInstantiation(makeReflection(*this, Args[1]), Result);
   case query_is_explicit_instantiation:
     return isExplicitInstantiation(makeReflection(*this, Args[1]), Result);
+  case query_is_specialization_of:
+    return isSpecializationOf(*this, Args, Result);
 
   // Base class specifiers
   case query_is_direct_base:

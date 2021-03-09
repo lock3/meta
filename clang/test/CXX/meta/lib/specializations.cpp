@@ -81,3 +81,29 @@ namespace explicit_instantiation {
   static_assert(!__reflect(query_is_implicit_instantiation, explicit_inst_refl));
   static_assert(__reflect(query_is_explicit_instantiation, explicit_inst_refl));
 }
+
+namespace specialization_of {
+  namespace clazz {
+    namespace refl {
+      template<typename A, int B>
+      class Foo { };
+
+      template<typename A, int B>
+      class Bar { };
+    }
+
+    constexpr auto base_template_refl = ^refl::Foo;
+
+    namespace is {
+      constexpr auto specialization_refl = ^refl::Foo<int, 1>;
+
+      static_assert(__reflect(query_is_specialization_of, base_template_refl, specialization_refl));
+    }
+
+    namespace is_not {
+      constexpr auto specialization_refl = ^refl::Bar<int, 1>;
+
+      static_assert(!__reflect(query_is_specialization_of, base_template_refl, specialization_refl));
+    }
+  }
+}

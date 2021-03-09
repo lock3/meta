@@ -121,6 +121,7 @@ enum reflection_query {
   query_is_explicit_specialization,
   query_is_implicit_instantiation,
   query_is_explicit_instantiation,
+  query_is_specialization_of,
 
   // Base class specifiers
   query_is_direct_base,
