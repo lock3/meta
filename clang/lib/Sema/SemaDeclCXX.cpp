@@ -2479,11 +2479,14 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }
 
-  if (EllipsisLoc.isValid() &&
-      !TInfo->getType()->containsUnexpandedParameterPack()) {
-    Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
-      << TInfo->getTypeLoc().getSourceRange();
-    EllipsisLoc = SourceLocation();
+  if (EllipsisLoc.isValid()) {
+    QualType Ty = TInfo->getType();
+    if (!Ty->isInstantiationDependentType() &&
+        !Ty->containsUnexpandedParameterPack()) {
+      Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+          << TInfo->getTypeLoc().getSourceRange();
+      EllipsisLoc = SourceLocation();
+    }
   }
 
   SourceLocation BaseLoc = TInfo->getTypeLoc().getBeginLoc();

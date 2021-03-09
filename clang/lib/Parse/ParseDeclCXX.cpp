@@ -1165,9 +1165,8 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
 ///         ::[opt] nested-name-specifier[opt] class-name
 TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                           SourceLocation &EndLocation) {
-  if (Tok.is(tok::kw_typename) &&
-      !matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1)) {
-    // Ignore attempts to use typename
+  // Ignore attempts to use typename
+  if (Tok.is(tok::kw_typename)) {
     Diag(Tok, diag::err_expected_class_name_not_template)
       << FixItHint::CreateRemoval(Tok.getLocation());
     ConsumeToken();
@@ -1177,7 +1176,9 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
   CXXScopeSpec SS;
   if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
                                      /*ObjectHadErrors=*/false,
-                                     /*EnteringContext=*/false))
+                                     /*EnteringContext=*/false,
+                                     /*MayBePseudoDestructor=*/nullptr,
+                                     /*IsTypename=*/true))
     return true;
 
   BaseLoc = Tok.getLocation();
@@ -1198,26 +1199,13 @@ TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
     return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
   }
 
-  if (Tok.is(tok::annot_type_splice) ||
-         (Tok.is(tok::kw_typename) &&
-          matchCXXSpliceBegin(tok::colon, /*LookAhead=*/1))) {
-    // Fake up a Declarator to use with ActOnTypeName.
-    DeclSpec DS(AttrFactory);
-
-    EndLocation = ParseTypeSplice(DS);
-
-    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeName);
-    return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
-  }
-
-  if (isCXXPackSpliceBegin()) {
-    // Fake up a Declarator to use with ActOnTypeName.
-    DeclSpec DS(AttrFactory);
-
-    EndLocation = ParseTypePackSplice(DS);
-
-    Declarator DeclaratorInfo(DS, DeclaratorContext::TypeName);
-    return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
+  if (Tok.is(tok::annot_reflection_splice)) {
+    ExprResult Refl = getExprAnnotation(Tok);
+    TypeResult Type = Actions.ActOnCXXTypenameSpecifierSpliceType(getCurScope(),
+                                                                  Refl.get());
+    EndLocation = Tok.getAnnotationEndLoc();
+    ConsumeAnnotationToken();
+    return Type;
   }
 
   // Check whether we have a template-id that names a type.
@@ -2108,8 +2096,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 ///       base-clause : [C++ class.derived]
 ///         ':' base-specifier-list
 ///       base-specifier-list:
-///         base-specifier '...'[opt]
-///         base-specifier-list ',' base-specifier '...'[opt]
+///         '...'[opt] base-specifier '...'[opt]
+///         base-specifier-list ',' '...'[opt] base-specifier '...'[opt]
 void Parser::ParseBaseClause(Decl *ClassDecl) {
   assert(Tok.is(tok::colon) && "Not a base clause");
   ConsumeToken();
@@ -2118,6 +2106,8 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
   SmallVector<CXXBaseSpecifier *, 8> BaseInfo;
 
   while (true) {
+    CXXDependentContextEllipsisRAII Ctx(*this);
+
     // Parse a base-specifier.
     BaseResult Result = ParseBaseSpecifier(ClassDecl);
     if (Result.isInvalid()) {
@@ -2152,14 +2142,6 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
-
-  // Parse the optional prefix ellipsis (designating an expandable term). The
-  // ellipsis is actually part of the base-specifier-list grammar productions,
-  // but we parse it here for convenience.
-  //
-  // FIXME: Implement me.
-  if (Tok.is(tok::ellipsis))
-    assert(false && "nomination of base specifier as expandable");
 
   ParsedAttributesWithRange Attributes(AttrFactory);
   MaybeParseCXX11Attributes(Attributes);

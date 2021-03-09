@@ -1927,6 +1927,8 @@ QualType Sema::BuildTypeSpliceTypeLoc(
     TypeLocBuilder &TLB, SourceLocation TypenameKWLoc,
     SourceLocation SBELoc, Expr *E, SourceLocation SEELoc) {
   QualType SpliceTy = BuildTypeSpliceType(E);
+  if (SpliceTy.isNull())
+    return QualType();
 
   auto TL = TLB.push<TypeSpliceTypeLoc>(SpliceTy);
   TL.setTypenameKeywordLoc(TypenameKWLoc);
@@ -1949,6 +1951,8 @@ QualType Sema::BuildTypePackSpliceTypeLoc(
     SourceLocation TemplateKWLoc, SourceLocation SBELoc,
     Expr *Operand, SourceLocation SEELoc) {
   QualType SpliceTy = ActOnTypePackSpliceType(S, Operand);
+  if (SpliceTy.isNull())
+    return QualType();
 
   auto TL = TLB.push<TypePackSpliceTypeLoc>(SpliceTy);
   TL.setEllipsisLoc(IntroEllipsisLoc);
