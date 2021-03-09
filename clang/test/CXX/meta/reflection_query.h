@@ -218,6 +218,7 @@ enum reflection_query {
   query_get_entity,
   query_get_parent,
   query_get_definition,
+  query_get_template,
 
   // Traversal
   query_get_begin,

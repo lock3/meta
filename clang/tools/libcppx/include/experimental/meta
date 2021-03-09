@@ -240,6 +240,7 @@ enum reflection_query : unsigned {
   query_get_entity,
   query_get_parent,
   query_get_definition,
+  query_get_template,
 
   // Traversal
   query_get_begin,
@@ -3009,6 +3010,13 @@ consteval info parent_of(info reflection) {
 // returns an invalid reflection.
 consteval info definition_of(info reflection) {
   return __reflect(detail::query_get_definition, reflection);
+}
+
+// Returns a reflection of the template which was instantiated
+// to produce this specialization.
+consteval info template_of(info spec) {
+  detail::require_specialization(spec);
+  return __reflect(detail::query_get_template, spec);
 }
 
 // -------------------------------------------------------------------------- //

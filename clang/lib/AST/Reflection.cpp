@@ -235,6 +235,7 @@ namespace clang {
     query_get_entity,
     query_get_parent,
     query_get_definition,
+    query_get_template,
 
     // Traversal
     query_get_begin,
@@ -1406,6 +1407,15 @@ static bool isExplicitInstantiation(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+static const Decl *getReachableSpecializedTemplateDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (auto *SpecClass = dyn_cast<ClassTemplateSpecializationDecl>(D))
+      return SpecClass->getSpecializedTemplate();
+  }
+
+  return nullptr;
+}
+
 /// Returns true if Args[2] is a specialization of Args[1].
 static bool isSpecializationOf(ReflectionQueryEvaluator &Eval,
                                SmallVectorImpl<APValue> &Args,
@@ -1414,12 +1424,9 @@ static bool isSpecializationOf(ReflectionQueryEvaluator &Eval,
   Reflection SpecRefl(Eval.getContext(), Args[2]);
 
   const Decl *Templ = getReachableDecl(TemplRefl);
-  const Decl *Spec = getReachableDecl(SpecRefl);
+  const Decl *SpecTempl = getReachableSpecializedTemplateDecl(SpecRefl);
 
-  if (auto *SpecClass = dyn_cast<ClassTemplateSpecializationDecl>(Spec))
-    return SuccessBool(Eval, Result, Templ == SpecClass->getSpecializedTemplate());
-
-  return SuccessFalse(Eval, Result);
+  return SuccessBool(Eval, Result, Templ == SpecTempl);
 }
 
 /// Returns true if Args[1] designates a direct base.
@@ -2490,6 +2497,12 @@ static bool getDefinition(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static bool getTemplate(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableSpecializedTemplateDecl(R))
+    return makeReflection(D, Result);
+  return Error(R);
+}
+
 /// True if D is reflectable. Some declarations are not reflected (e.g.,
 /// access specifiers, non-canonical decls).
 static bool isReflectableDecl(const Decl *D) {
@@ -3104,6 +3117,8 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return ::getParent(*this, Result);
   case query_get_definition:
     return getDefinition(*this, Result);
+  case query_get_template:
+    return getTemplate(*this, Result);
 
   // Traversal
   case query_get_begin:
