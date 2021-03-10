@@ -2872,11 +2872,10 @@ static bool getNextSubobject(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
-
 static const CXXBaseSpecifier *
 getBaseSpecifier(const CXXRecordDecl *RD, unsigned Index) {
   if (Index < RD->getNumBases())
-    return (RD->bases_begin() + Index);
+    return RD->bases_begin() + Index;
 
   return nullptr;
 }
@@ -2890,7 +2889,7 @@ getBaseSpecifier(const Reflection &R, unsigned Index, APValue &Result) {
     if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
       APValue ParentRefl;
       if (!makeReflection(D, ParentRefl))
-        llvm_unreachable("function type reflection creation failed");
+        llvm_unreachable("creation of parent reflection failed");
 
       const CXXBaseSpecifier *Base = getBaseSpecifier(RD, Index);
       return makeReflection(Base, Index + 1, ParentRefl, Result);
@@ -2910,8 +2909,8 @@ static bool getNextBaseSpec(const Reflection &R, APValue &Result) {
   if (R.isBase() && R.hasParent()) {
     Reflection Parent = R.getParent();
 
-    // Note the offset stored is starts at 1, the offset used starts at 0
-    // so no addition is required here.
+    // Note the offset stored starts at 1, and the offset used starts at 0.
+    // Thus, no addition is required here.
     return getBaseSpecifier(Parent, R.getOffsetInParent(), Result);
   }
 
