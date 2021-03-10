@@ -240,6 +240,8 @@ namespace clang {
     // Traversal
     query_get_begin,
     query_get_next,
+    query_get_begin_overload_candidate,
+    query_get_next_overload_candidate,
     query_get_begin_template_param,
     query_get_next_template_param,
     query_get_begin_param,
@@ -573,6 +575,13 @@ static QualType getCanonicalType(const Reflection &R) {
 static const Expr *getExpr(const Reflection &R) {
   if (R.isExpression())
     return R.getAsExpression();
+  return nullptr;
+}
+
+template<typename T>
+static const T *getExpr(const Reflection &R) {
+  if (const Expr *E = getExpr(R))
+    return dyn_cast<T>(E);
   return nullptr;
 }
 
@@ -2358,6 +2367,15 @@ static bool makeInvalidReflection(APValue &Result) {
   return true;
 }
 
+/// Set Result to a reflection of E.
+static bool makeReflection(const Expr *E, APValue &Result) {
+  if (!E)
+    return makeReflection(Result);
+  Result = APValue(RK_expression, E);
+  return true;
+}
+
+
 /// Set Result to a reflection of D.
 static bool makeReflection(const Decl *D, APValue &Result) {
   if (!D)
@@ -2397,6 +2415,18 @@ static bool makeReflection(QualType T, unsigned Offset, const APValue &P,
     return makeReflection(Result);
   Result = APValue(RK_type, T.getAsOpaquePtr(), Offset, P);
   return true;
+}
+
+/// Set Result to a reflection of D, at the given offset,
+/// for a parent reflection P.
+static bool makeReflection(const Decl *D, unsigned Offset,
+                           const APValue &P, APValue &Result) {
+  if (D) {
+    Result = APValue(RK_declaration, D, Offset, P);
+    return true;
+  }
+
+  return makeReflection(Result);
 }
 
 /// Set Result to a reflection of B, at the given offset,
@@ -2602,6 +2632,51 @@ static bool getBegin(const Reflection &R, APValue &Result) {
 static bool getNext(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableAliasDecl(R))
     return makeReflection(legacyGetNextMember(D), Result);
+  return Error(R);
+}
+
+static const Decl *
+getOverloadCandidate(const OverloadExpr *OE, unsigned Index) {
+  if (Index < OE->getNumDecls()) {
+    auto It = OE->decls_begin();
+    for (; Index > 0; --Index)
+      ++It;
+
+    return *It;
+  }
+
+  return nullptr;
+}
+
+static bool
+getOverloadCandidate(const Reflection &R, unsigned Index, APValue &Result) {
+  if (const auto *E = getExpr<OverloadExpr>(R)) {
+    APValue ParentRefl;
+    if (!makeReflection(E, ParentRefl))
+      llvm_unreachable("creation of parent reflection failed");
+
+    const Decl *D = getOverloadCandidate(E, Index);
+    return makeReflection(D, Index + 1, ParentRefl, Result);
+  }
+
+  return Error(R);
+}
+
+/// Returns the first candidate of an overload set
+static bool getBeginOverloadCandidate(const Reflection &R, APValue &Result) {
+  return getOverloadCandidate(R, 0, Result);
+}
+
+/// Returns the \next candidate of an overload set
+static bool getNextOverloadCandidate(const Reflection &R, APValue &Result) {
+  if (R.isDeclaration() && R.hasParent()) {
+    Reflection Parent = R.getParent();
+
+    // Note the offset stored starts at 1, and the offset used starts at 0.
+    // Thus, no addition is required here.
+    return getOverloadCandidate(Parent, R.getOffsetInParent(), Result);
+  }
+
   return Error(R);
 }
 
@@ -3125,6 +3200,10 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getBegin(*this, Result);
   case query_get_next:
     return getNext(*this, Result);
+  case query_get_begin_overload_candidate:
+    return getBeginOverloadCandidate(*this, Result);
+  case query_get_next_overload_candidate:
+    return getNextOverloadCandidate(*this, Result);
   case query_get_begin_template_param:
     return getBeginTemplateParam(*this, Result);
   case query_get_next_template_param:

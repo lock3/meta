@@ -223,6 +223,8 @@ enum reflection_query {
   // Traversal
   query_get_begin,
   query_get_next,
+  query_get_begin_overload_candidate,
+  query_get_next_overload_candidate,
   query_get_begin_template_param,
   query_get_next_template_param,
   query_get_begin_param,
