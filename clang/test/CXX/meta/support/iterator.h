@@ -1,7 +1,7 @@
-#ifndef REFLECTION_ITERATOR_H
-#define REFLECTION_ITERATOR_H
+#ifndef SUPPORT_ITERATOR_H
+#define SUPPORT_ITERATOR_H
 
-#include "reflection_query.h"
+#include "query.h"
 
 namespace std {
 

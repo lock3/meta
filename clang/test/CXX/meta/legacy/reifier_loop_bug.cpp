@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 
-#include "reflection_iterator.h"
+#include "../support/iterator.h"
 
 namespace meta {
   using info = decltype(^void);

@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-#include "../reflection_query.h"
+#include "../support/query.h"
 
 constexpr meta::info expr_refl = ^(2 + 2);
 static_assert(expr_refl != ^int);

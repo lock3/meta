@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++1z -freflection %s
 
-#include "reflection_query.h"
+#include "../support/query.h"
 
 struct assertion { };
 

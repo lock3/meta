@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-#include "../reflection_query.h"
+#include "../support/query.h"
 
 constexpr meta::info void_refl = ^void;
 static_assert(!__reflect(query_is_constructible, void_refl));

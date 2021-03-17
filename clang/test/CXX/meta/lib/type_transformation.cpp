@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 // expected-no-diagnostics
 
-#include "../reflection_query.h"
+#include "../support/query.h"
 
 using info = decltype(^void);
 

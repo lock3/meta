@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
-#include "../reflection_query.h"
+#include "../support/query.h"
 
 consteval auto name_of(meta::info refl) {
   return __reflect(query_get_name, refl);

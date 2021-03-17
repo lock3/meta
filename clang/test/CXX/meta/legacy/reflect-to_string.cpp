@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -freflection -std=c++2a %s
 
-#include "reflection_iterator.h"
+#include "../support/iterator.h"
 
 consteval char const* name_of(meta::info x) {
   return __reflect(query_get_name, x);

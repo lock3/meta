@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -std=c++2a -freflection -emit-llvm -triple %itanium_abi_triple -o - %s | FileCheck %s
 // RUN: %clang_cc1 -std=c++2a -freflection -debug-info-kind=limited -emit-llvm -triple %itanium_abi_triple -o - %s | FileCheck %s
 
-#include "reflection_query.h"
+#include "../support/query.h"
 
 namespace meta {
   using info = decltype(^void);

@@ -1,5 +1,5 @@
-#ifndef REFLECTION_QUERY_H
-#define REFLECTION_QUERY_H
+#ifndef SUPPORT_QUERY_H
+#define SUPPORT_QUERY_H
 
 namespace meta {
   using info = decltype(^void);

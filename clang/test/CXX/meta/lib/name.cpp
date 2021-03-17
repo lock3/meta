@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -std=c++2a -freflection %s
 
-#include "../reflection_query.h"
+#include "../support/query.h"
 
 using string_type = const char *;
 
