@@ -1333,40 +1333,51 @@ static bool isConcept(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-static bool isPartialTemplateSpecialization(const Decl *D) {
-  if (isa<ClassTemplatePartialSpecializationDecl>(D))
-    return true;
+static const Decl *getReachablePartialSpecializedTemplateDecl(const Decl *D) {
+  if (auto *Class = dyn_cast<ClassTemplatePartialSpecializationDecl>(D))
+    return Class->getSpecializedTemplate();
 
-  if (isa<VarTemplatePartialSpecializationDecl>(D))
-    return true;
+  if (auto *Var = dyn_cast<VarTemplatePartialSpecializationDecl>(D))
+    return Var->getSpecializedTemplate();
 
-  return false;
+  return nullptr;
 }
 
-static bool isTemplateSpecialization(const Decl *D) {
-  if (isa<ClassTemplateSpecializationDecl>(D))
-    return true;
+static const Decl *getReachableSpecializedTemplateDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (auto *Class = dyn_cast<ClassTemplateSpecializationDecl>(D))
+      return Class->getSpecializedTemplate();
+    if (auto *Fn = dyn_cast<FunctionDecl>(D))
+      return Fn->getPrimaryTemplate();
+    // if (auto *Fn = dyn_cast<ClassScopeFunctionSpecializationDecl>(D))
+    //   return Fn->getSpecialization();
+    if (auto *Var = dyn_cast<VarTemplateSpecializationDecl>(D))
+      return Var->getSpecializedTemplate();
 
-  if (isa<ClassScopeFunctionSpecializationDecl>(D))
-    return true;
+    return getReachablePartialSpecializedTemplateDecl(D);
+  }
 
-  if (isa<VarTemplateSpecializationDecl>(D))
-    return true;
-
-  return isPartialTemplateSpecialization(D);
+  return nullptr;
 }
 
 /// Returns true if R designates a specialized template.
 static bool isSpecialization(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isTemplateSpecialization(D));
+  if (const Decl *D = getReachableSpecializedTemplateDecl(R))
+    return SuccessTrue(R, Result);
   return SuccessFalse(R, Result);
+}
+
+static const Decl *getReachablePartialSpecializedTemplateDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return getReachablePartialSpecializedTemplateDecl(D);
+
+  return nullptr;
 }
 
 /// Returns true if R designates a partially specialized template.
 static bool isPartialSpecialization(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isPartialTemplateSpecialization(D));
+  if (const Decl *D = getReachablePartialSpecializedTemplateDecl(R))
+    return SuccessTrue(R, Result);
   return SuccessFalse(R, Result);
 }
 
@@ -1414,15 +1425,6 @@ static bool isExplicitInstantiation(const Reflection &R, APValue &Result) {
     return SuccessBool(R, Result, TSK == TSK_ExplicitInstantiationDeclaration
                                || TSK == TSK_ExplicitInstantiationDefinition);
   return SuccessFalse(R, Result);
-}
-
-static const Decl *getReachableSpecializedTemplateDecl(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R)) {
-    if (auto *SpecClass = dyn_cast<ClassTemplateSpecializationDecl>(D))
-      return SpecClass->getSpecializedTemplate();
-  }
-
-  return nullptr;
 }
 
 /// Returns true if Args[2] is a specialization of Args[1].
