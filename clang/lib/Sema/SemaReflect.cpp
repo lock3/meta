@@ -27,6 +27,7 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
+#include "clang/Sema/TemplateDeduction.h"
 
 using namespace clang;
 using namespace sema;
@@ -65,6 +66,69 @@ ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
   return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
+static QualType tryCompleteTypeOperand(Sema &SemaRef,
+                                       SourceLocation ReflOpLoc, QualType Ty) {
+  if (const auto *LIT = Ty->getAs<LocInfoType>()) {
+    QualType TargetType = LIT->getType();
+    if (const auto *ET = TargetType->getAs<ElaboratedType>())
+      TargetType = ET->desugar();
+
+    // isCompleteType will try to complete the type. This ensures
+    // template types that can be instantiated for a complete type are
+    // instantiated, so we end up looking at the complete type.
+    SemaRef.isCompleteType(ReflOpLoc, TargetType);
+  }
+
+  return Ty;
+}
+
+// Handle reflection of implicit instantiation:
+//
+//  template<typename T> T fn();
+//
+//  ^fn<int>
+//
+static ExprResult instantiateUnresolvedLookupExpr(Sema &SemaRef,
+                                                  SourceLocation ReflOpLoc,
+                                                  UnresolvedLookupExpr *E) {
+  // This is loosely based on AddMatchingTemplateFunction from the
+  // AddressOfFunctionResolver.
+
+  if (!E->hasExplicitTemplateArgs())
+    return E;
+
+  TemplateArgumentListInfo OvlExplicitTemplateArgs;
+  E->copyTemplateArgumentsInto(OvlExplicitTemplateArgs);
+
+  UnresolvedSet<2> Specializations;
+  for (Decl *D : E->decls()) {
+    FunctionDecl *Specialization;
+    TemplateDeductionInfo Info(ReflOpLoc);
+    if (Sema::TemplateDeductionResult TDR = SemaRef.DeduceTemplateArguments(
+        cast<FunctionTemplateDecl>(D), &OvlExplicitTemplateArgs,
+        /*TargetFunctionType=*/QualType(), Specialization, Info)) {
+      return ExprError();
+    }
+
+    Specializations.addDecl(Specialization);
+  }
+
+  return UnresolvedLookupExpr::Create(SemaRef.Context, E->getNamingClass(),
+                                      E->getQualifierLoc(),
+                                      E->getNameInfo(), E->requiresADL(),
+                                      E->isOverloaded(),
+                                      Specializations.begin(),
+                                      Specializations.end());
+}
+
+static ExprResult tryCompleteExprOperand(Sema &SemaRef,
+                                         SourceLocation ReflOpLoc, Expr *E) {
+  if (auto *ULE = dyn_cast<UnresolvedLookupExpr>(E))
+    return instantiateUnresolvedLookupExpr(SemaRef, ReflOpLoc, ULE);
+
+  return E;
+}
+
 /// Returns a constant expression that encodes the value of the reflection.
 /// The type of the reflection is meta::reflection, an enum class.
 ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
@@ -77,6 +141,11 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
     break;
   case ParsedReflectionOperand::Type: {
     QualType Arg = Ref.getAsType().get();
+
+    Arg = tryCompleteTypeOperand(*this, Loc, Arg);
+    if (Arg.isNull())
+      return ExprError();
+
     return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   case ParsedReflectionOperand::Template: {
@@ -99,6 +168,12 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
   }
   case ParsedReflectionOperand::Expression: {
     Expr *Arg = Ref.getAsExpr();
+
+    ExprResult ArgRes = tryCompleteExprOperand(*this, Loc, Arg);
+    if (ArgRes.isInvalid())
+      return ExprError();
+    Arg = ArgRes.get();
+
     return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   }
