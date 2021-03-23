@@ -1,3 +1,4 @@
+// XFAIL: *
 // RUN: %clang_cc1 -freflection -verify -std=c++1z %s
 
 namespace meta {
