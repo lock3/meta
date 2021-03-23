@@ -1428,6 +1428,13 @@ constexpr struct is_specialization_of_fn
     detail::require_specialization(spec);
     return __reflect(detail::query_is_specialization_of, templ, spec);
   }
+
+  template<info templ, typename T>
+  consteval bool operator()() const
+  {
+    return this->operator()(templ, ^T);
+  }
+
 } is_specialization_of;
 
 // -------------------------------------------------------------------------- //
