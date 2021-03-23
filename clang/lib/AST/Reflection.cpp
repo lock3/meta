@@ -1343,16 +1343,26 @@ static const Decl *getReachablePartialSpecializedTemplateDecl(const Decl *D) {
   return nullptr;
 }
 
+template<typename A, typename B>
+static const Decl *unwrapDeclUnion(llvm::PointerUnion<A, B> Union) {
+  assert(!Union.isNull());
+
+  if (Union.template is<A>())
+    return Union.template get<A>();
+  else
+    return Union.template get<B>();
+}
+
 static const Decl *getReachableSpecializedTemplateDecl(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R)) {
     if (auto *Class = dyn_cast<ClassTemplateSpecializationDecl>(D))
-      return Class->getSpecializedTemplate();
+      return unwrapDeclUnion(Class->getSpecializedTemplateOrPartial());
     if (auto *Fn = dyn_cast<FunctionDecl>(D))
       return Fn->getPrimaryTemplate();
     // if (auto *Fn = dyn_cast<ClassScopeFunctionSpecializationDecl>(D))
     //   return Fn->getSpecialization();
     if (auto *Var = dyn_cast<VarTemplateSpecializationDecl>(D))
-      return Var->getSpecializedTemplate();
+      return unwrapDeclUnion(Var->getSpecializedTemplateOrPartial());
 
     return getReachablePartialSpecializedTemplateDecl(D);
   }
