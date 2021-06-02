@@ -12497,16 +12497,20 @@ public:
   class CXXFragmentScopeRAII {
     Sema &S;
     bool PreviouslyInFragment;
+    SmallVector<CXXFragmentCaptureExpr *, 10> OriginalDetachedCaptures;
 
   public:
     CXXFragmentScopeRAII(Sema &S)
-        : S(S), PreviouslyInFragment(S.FragmentScope) {
+        : S(S), PreviouslyInFragment(S.FragmentScope),
+          OriginalDetachedCaptures() {
       S.FragmentScope = true;
+      OriginalDetachedCaptures.swap(S.DetachedCaptures);
     }
 
     ~CXXFragmentScopeRAII() {
       S.FragmentScope = PreviouslyInFragment;
       assert(S.DetachedCaptures.empty() && "captures left unattached");
+      OriginalDetachedCaptures.swap(S.DetachedCaptures);
     }
   };
 
