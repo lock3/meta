@@ -318,6 +318,13 @@ constexpr struct always_true_fn
   }
 } always_true;
 
+constexpr struct identity_fn
+{
+  consteval info operator()(info reflection) const {
+    return reflection;
+  }
+} identity;
+
 } // namespace detail
 
 // -------------------------------------------------------------------------- //
@@ -349,7 +356,7 @@ consteval info invalid_reflection(string_type error_message) {
 
 namespace detail
 {
-template<typename F, typename N, typename P = always_true_fn>
+template<typename F, typename N, typename P = always_true_fn, typename M = identity_fn>
 class iterator
 {
   static constexpr F m_front = { };
@@ -357,6 +364,7 @@ class iterator
 
   info m_info;
   P m_pred;
+  M m_map;
 
   consteval void advance() {
     while (!is_invalid(m_info) && !m_pred(m_info))
@@ -370,19 +378,20 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
   using filter_type = P;
+  using map_type = M;
 
-  consteval iterator(P pred = {})
-    : m_info(), m_pred(pred)
+  consteval iterator(P pred = {}, M map = {})
+    : m_info(), m_pred(pred), m_map(map)
   { }
 
-  consteval iterator(meta::info reflection, P pred = {})
-    : m_info(m_front(reflection)), m_pred(pred)
+  consteval iterator(meta::info reflection, P pred = {}, M map = {})
+    : m_info(m_front(reflection)), m_pred(pred), m_map(map)
   {
     advance();
   }
 
   consteval info operator*() const {
-    return m_info;
+    return m_map(m_info);
   }
 
   consteval iterator operator++() {
@@ -401,6 +410,10 @@ public:
     return m_pred;
   }
 
+  consteval M map() const {
+    return m_map;
+  }
+
   consteval friend bool operator==(iterator a, iterator b) {
     return a.m_info == b.m_info;
   }
@@ -408,6 +421,12 @@ public:
   consteval friend bool operator!=(iterator a, iterator b) {
     return a.m_info != b.m_info;
   }
+
+  template<class NewP>
+  using replace_predicate = iterator<F, N, NewP, M>;
+
+  template<class NewM>
+  using replace_map = iterator<F, N, P, NewM>;
 };
 
 template<typename I>
@@ -419,13 +438,14 @@ class range
 public:
   using iterator = I;
   using filter_type = typename I::filter_type;
+  using map_type = typename I::map_type;
 
-  consteval range(filter_type pred = {})
-    : m_first(pred), m_last(pred)
+  consteval range(filter_type pred = {}, map_type map = {})
+    : m_first(pred, map), m_last(pred, map)
   { }
 
-  consteval range(info reflection, filter_type pred = {})
-    : m_first(reflection, pred), m_last(pred)
+  consteval range(info reflection, filter_type pred = {}, map_type map = {})
+    : m_first(reflection, pred, map), m_last(pred, map)
   { }
 
   consteval iterator begin() const
@@ -437,6 +457,12 @@ public:
   {
     return m_last;
   }
+
+  template<class NewP>
+  using replace_predicate = range<typename I:: template replace_predicate<NewP>>;
+
+  template<class NewM>
+  using replace_map = range<typename I:: template replace_map<NewM>>;
 };
 
 template<typename F, typename N, typename P>
